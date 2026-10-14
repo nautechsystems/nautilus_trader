@@ -370,6 +370,7 @@ impl DataRef<'_> {
 }
 
 impl HasTsInit for DataRef<'_> {
+    #[inline]
     fn ts_init(&self) -> UnixNanos {
         match self {
             Self::Custom(custom) => custom.data.ts_init(),

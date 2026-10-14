@@ -15,7 +15,144 @@
 
 //! Typed and compatibility batch storage for historical replay.
 
-use nautilus_model::data::{BatchView, Data, DataBatch, DataRef};
+use nautilus_core::UnixNanos;
+use nautilus_model::data::{BatchView, Data, DataBatch, DataRef, OrderBookDeltas};
+
+macro_rules! collect_batch {
+    ($data:expr, $data_variant:ident, $batch_variant:ident) => {
+        ReplayBatch::Typed(DataBatch::$batch_variant(BatchView::from(
+            $data
+                .into_iter()
+                .map(|item| match item {
+                    Data::$data_variant(value) => value,
+                    _ => unreachable!("data kind changed during batch conversion"),
+                })
+                .collect::<Vec<_>>(),
+        )))
+    };
+    ($data:expr, $data_variant:ident, $batch_variant:ident, boxed) => {
+        ReplayBatch::Typed(DataBatch::$batch_variant(BatchView::from(
+            $data
+                .into_iter()
+                .map(|item| match item {
+                    Data::$data_variant(value) => *value,
+                    _ => unreachable!("data kind changed during batch conversion"),
+                })
+                .collect::<Vec<_>>(),
+        )))
+    };
+}
+
+/// One batch of typed rows, original mixed or custom rows, or an assembled book event.
+#[derive(Debug)]
+pub enum ReplayBatch {
+    /// Original mixed or custom rows, with logical offsets preserved.
+    Compatibility(BatchView<Data>),
+    /// Homogeneous typed rows.
+    Typed(DataBatch),
+    /// One assembled book event, retaining its original allocation.
+    BookDeltas {
+        /// The completed event, moved out by owned consumption.
+        data: Option<Box<OrderBookDeltas>>,
+        /// The consumed event's timestamp, retained for refill validation.
+        ts_consumed: Option<UnixNanos>,
+    },
+}
+
+impl ReplayBatch {
+    /// Retains a completed book event for transfer without cloning its deltas.
+    pub fn from_book_deltas(data: Box<OrderBookDeltas>) -> Self {
+        Self::BookDeltas {
+            data: Some(data),
+            ts_consumed: None,
+        }
+    }
+
+    pub(crate) fn from_data(data: Vec<Data>) -> Self {
+        let Some(first) = data.first() else {
+            return Self::Compatibility(BatchView::from(data));
+        };
+        let kind = DataKind::from(first);
+        if data.iter().any(|item| DataKind::from(item) != kind) {
+            return Self::Compatibility(BatchView::from(data));
+        }
+
+        match kind {
+            DataKind::Instrument => collect_batch!(data, Instrument, Instrument, boxed),
+            DataKind::BookDelta => collect_batch!(data, BookDelta, BookDelta),
+            DataKind::BookDeltas => collect_batch!(data, BookDeltas, BookDeltas, boxed),
+            DataKind::BookDepth => collect_batch!(data, BookDepth, BookDepth, boxed),
+            DataKind::Quote => collect_batch!(data, Quote, Quote),
+            DataKind::Trade => collect_batch!(data, Trade, Trade),
+            DataKind::Bar => collect_batch!(data, Bar, Bar),
+            DataKind::MarkPrice => collect_batch!(data, MarkPrice, MarkPrice),
+            DataKind::IndexPrice => collect_batch!(data, IndexPrice, IndexPrice),
+            DataKind::FundingRate => collect_batch!(data, FundingRate, FundingRate),
+            DataKind::OptionGreeks => collect_batch!(data, OptionGreeks, OptionGreeks),
+            DataKind::InstrumentStatus => {
+                collect_batch!(data, InstrumentStatus, InstrumentStatus)
+            }
+            DataKind::InstrumentClose => {
+                collect_batch!(data, InstrumentClose, InstrumentClose)
+            }
+            DataKind::Custom => Self::Compatibility(BatchView::from(data)),
+            #[cfg(feature = "defi")]
+            DataKind::Defi => collect_batch!(data, Defi, Defi, boxed),
+        }
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        match self {
+            Self::Compatibility(data) => data.len(),
+            Self::Typed(data) => data.len(),
+            Self::BookDeltas { data, .. } => usize::from(data.is_some()),
+        }
+    }
+
+    // Keeps borrowed replay dispatch inlinable across the crate boundary
+    #[inline]
+    pub(crate) fn get(&self, index: usize) -> Option<DataRef<'_>> {
+        match self {
+            Self::Compatibility(data) => data.get(index).map(DataRef::from),
+            Self::Typed(data) => data.get(index),
+            Self::BookDeltas { data, .. } => {
+                if index == 0 {
+                    data.as_deref().map(DataRef::BookDeltas)
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
+    pub(crate) fn take_owned(&mut self, index: usize) -> Option<Data> {
+        if let Self::BookDeltas { data, ts_consumed } = self {
+            if index != 0 {
+                return None;
+            }
+
+            let deltas = data.take()?;
+            *ts_consumed = Some(deltas.ts_init);
+            return Some(Data::BookDeltas(deltas));
+        }
+
+        self.get_owned(index)
+    }
+
+    pub(crate) fn ts_consumed(&self) -> Option<UnixNanos> {
+        match self {
+            Self::BookDeltas {
+                data: None,
+                ts_consumed,
+            } => *ts_consumed,
+            _ => None,
+        }
+    }
+
+    pub(crate) fn get_owned(&self, index: usize) -> Option<Data> {
+        self.get(index).map(|data| data.to_owned_data())
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum DataKind {
@@ -64,92 +201,6 @@ impl From<&Data> for DataKind {
             )]
             _ => Self::Custom,
         }
-    }
-}
-
-macro_rules! collect_batch {
-    ($data:expr, $data_variant:ident, $batch_variant:ident) => {
-        ReplayBatch::Typed(DataBatch::$batch_variant(BatchView::from(
-            $data
-                .into_iter()
-                .map(|item| match item {
-                    Data::$data_variant(value) => value,
-                    _ => unreachable!("data kind changed during batch conversion"),
-                })
-                .collect::<Vec<_>>(),
-        )))
-    };
-    ($data:expr, $data_variant:ident, $batch_variant:ident, boxed) => {
-        ReplayBatch::Typed(DataBatch::$batch_variant(BatchView::from(
-            $data
-                .into_iter()
-                .map(|item| match item {
-                    Data::$data_variant(value) => *value,
-                    _ => unreachable!("data kind changed during batch conversion"),
-                })
-                .collect::<Vec<_>>(),
-        )))
-    };
-}
-
-/// Replay storage for one logical stream, using typed batches when every item shares a `Data`
-/// variant and retaining mixed and custom streams as original `Data` values.
-#[derive(Debug)]
-pub(super) enum ReplayBatch {
-    Compatibility(BatchView<Data>),
-    Typed(DataBatch),
-}
-
-impl ReplayBatch {
-    pub(super) fn from_data(data: Vec<Data>) -> Self {
-        let Some(first) = data.first() else {
-            return Self::Compatibility(BatchView::from(data));
-        };
-        let kind = DataKind::from(first);
-        if data.iter().any(|item| DataKind::from(item) != kind) {
-            return Self::Compatibility(BatchView::from(data));
-        }
-
-        match kind {
-            DataKind::Instrument => collect_batch!(data, Instrument, Instrument, boxed),
-            DataKind::BookDelta => collect_batch!(data, BookDelta, BookDelta),
-            DataKind::BookDeltas => collect_batch!(data, BookDeltas, BookDeltas, boxed),
-            DataKind::BookDepth => collect_batch!(data, BookDepth, BookDepth, boxed),
-            DataKind::Quote => collect_batch!(data, Quote, Quote),
-            DataKind::Trade => collect_batch!(data, Trade, Trade),
-            DataKind::Bar => collect_batch!(data, Bar, Bar),
-            DataKind::MarkPrice => collect_batch!(data, MarkPrice, MarkPrice),
-            DataKind::IndexPrice => collect_batch!(data, IndexPrice, IndexPrice),
-            DataKind::FundingRate => collect_batch!(data, FundingRate, FundingRate),
-            DataKind::OptionGreeks => collect_batch!(data, OptionGreeks, OptionGreeks),
-            DataKind::InstrumentStatus => {
-                collect_batch!(data, InstrumentStatus, InstrumentStatus)
-            }
-            DataKind::InstrumentClose => {
-                collect_batch!(data, InstrumentClose, InstrumentClose)
-            }
-            DataKind::Custom => Self::Compatibility(BatchView::from(data)),
-            #[cfg(feature = "defi")]
-            DataKind::Defi => collect_batch!(data, Defi, Defi, boxed),
-        }
-    }
-
-    pub(super) fn len(&self) -> usize {
-        match self {
-            Self::Compatibility(data) => data.len(),
-            Self::Typed(data) => data.len(),
-        }
-    }
-
-    pub(super) fn get(&self, index: usize) -> Option<DataRef<'_>> {
-        match self {
-            Self::Compatibility(data) => data.get(index).map(DataRef::from),
-            Self::Typed(data) => data.get(index),
-        }
-    }
-
-    pub(super) fn get_owned(&self, index: usize) -> Option<Data> {
-        self.get(index).map(|data| data.to_owned_data())
     }
 }
 

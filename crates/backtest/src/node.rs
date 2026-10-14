@@ -19,8 +19,9 @@ use std::{iter::Peekable, mem};
 
 use ahash::{AHashMap, AHashSet};
 use nautilus_core::{Params, UnixNanos};
+use nautilus_data::replay::{DataIterator, ReplayBatch};
 use nautilus_model::{
-    data::{Data, HasTsInit, NautilusDataType, OrderBookDelta, OrderBookDeltas},
+    data::{Data, DataBatch, HasTsInit, NautilusDataType, OrderBookDelta, OrderBookDeltas},
     enums::{BookType, OtoTriggerMode, RecordFlag},
     identifiers::{InstrumentId, Venue},
     types::Money,
@@ -449,20 +450,38 @@ fn run_streaming(
 ) -> anyhow::Result<()> {
     let data_configs = config.data();
 
-    // Stream directly from the catalog iterators without materializing the full
-    // dataset, so memory stays bounded by chunk_size for any number of configs
+    // Equal timestamps and incomplete book frames can extend beyond the target chunk size
     let mut catalogs = data_configs
         .iter()
         .map(create_catalog)
         .collect::<anyhow::Result<Vec<_>>>()?;
     let mut streams = Vec::with_capacity(catalogs.len());
 
-    for (catalog, data_config) in catalogs.iter_mut().zip(data_configs) {
-        let result = dispatch_query(catalog, data_config, config.start(), config.end())?;
+    for (index, (catalog, data_config)) in catalogs.iter_mut().zip(data_configs).enumerate() {
+        let result: Box<dyn Iterator<Item = anyhow::Result<ReplayBatch>>> = if data_config
+            .batch_deltas()
+            && *data_config.data_type() == NautilusDataType::OrderBookDelta
+        {
+            let rows = dispatch_query(catalog, data_config, config.start(), config.end())?;
+
+            Box::new(rows.map(|item| {
+                item.map(|data| match data {
+                    Data::BookDeltas(deltas) => ReplayBatch::from_book_deltas(deltas),
+                    _ => unreachable!("delta query yields assembled book events"),
+                })
+            }))
+        } else {
+            let batches = dispatch_batch_query(catalog, data_config, config.start(), config.end())?;
+            Box::new(batches.map(|item| item.map(ReplayBatch::Typed)))
+        };
+
         let mut stream = result.peekable();
 
         match stream.peek() {
-            Some(Ok(_)) => streams.push(stream),
+            Some(Ok(_)) => streams.push((
+                format!("config {index} ({:?})", data_config.data_type()),
+                stream,
+            )),
             // Surface a failed query in config order, before opening later ones
             Some(Err(_)) => {
                 stream.next().transpose()?;
@@ -474,35 +493,52 @@ fn run_streaming(
     stream_chunks(
         engine,
         config,
-        merge_streams(streams).peekable(),
+        merge_streams(streams)?.peekable(),
         chunk_size,
     )
 }
 
-// Merges the data streams of every config in ascending `ts_init` order, taking one
-// item at a time so the merge holds only a single item per config. Ties keep config
-// order, matching the stable sort the eager path applies.
-fn merge_streams<I: Iterator<Item = anyhow::Result<Data>>>(
-    mut streams: Vec<Peekable<I>>,
-) -> impl Iterator<Item = anyhow::Result<Data>> {
-    std::iter::from_fn(move || {
-        let mut next: Option<(usize, UnixNanos)> = None;
+// Sources are synchronous and fixed before consumption; refills happen on the next call so a
+// producer failure cannot swallow the row just selected.
+fn merge_streams<I: Iterator<Item = anyhow::Result<ReplayBatch>>>(
+    streams: Vec<(String, I)>,
+) -> anyhow::Result<impl Iterator<Item = anyhow::Result<Data>>> {
+    let mut iterator = DataIterator::new();
+    let (names, mut streams): (Vec<_>, Vec<_>) = streams.into_iter().unzip();
+    for (stream, name) in streams.iter_mut().zip(&names) {
+        if let Some(batch) = stream.next() {
+            iterator.add_batch(name, batch?, true);
+        }
+    }
 
-        for (i, stream) in streams.iter_mut().enumerate() {
-            match stream.peek() {
-                Some(Ok(data)) => {
-                    let ts_init = data.ts_init();
-                    if next.is_none_or(|(_, ts)| ts_init < ts) {
-                        next = Some((i, ts_init));
-                    }
-                }
-                Some(Err(_)) => return stream.next(),
-                None => {}
-            }
+    let mut refill: Option<usize> = None;
+    let mut failed = false;
+    Ok(std::iter::from_fn(move || {
+        if failed {
+            return None;
         }
 
-        streams[next?.0].next()
-    })
+        let load = (|| -> anyhow::Result<()> {
+            if let Some(index) = refill.take() {
+                let name = &names[index];
+                match streams[index].next() {
+                    Some(batch) => iterator.refill_batch(name, batch?)?,
+                    None => iterator.remove_data(name, true),
+                }
+            }
+
+            Ok(())
+        })();
+
+        if let Err(e) = load {
+            failed = true;
+            return Some(Err(e));
+        }
+
+        let (data, exhausted) = iterator.next_stream_item()?;
+        refill = exhausted.and_then(|name| names.iter().position(|candidate| candidate == name));
+        Some(Ok(data))
+    }))
 }
 
 // Feeds data from an iterator to the engine in timestamp-aligned chunks.
@@ -632,6 +668,28 @@ fn dispatch_query(
     start: Option<UnixNanos>,
     end: Option<UnixNanos>,
 ) -> anyhow::Result<Box<dyn Iterator<Item = anyhow::Result<Data>>>> {
+    let batches = dispatch_batch_query(catalog, config, start, end)?;
+
+    let rows = batches
+        .map(|batch| batch.map(|batch| batch.to_data_vec_for_compat()))
+        .flat_map(|batch| match batch {
+            Ok(rows) => rows.into_iter().map(Ok).collect::<Vec<_>>(),
+            Err(e) => vec![Err(e)],
+        });
+
+    if config.batch_deltas() && *config.data_type() == NautilusDataType::OrderBookDelta {
+        return Ok(Box::new(BookDeltasBatcher::new(rows)));
+    }
+
+    Ok(Box::new(rows))
+}
+
+fn dispatch_batch_query(
+    catalog: &mut DataCatalog,
+    config: &BacktestDataConfig,
+    start: Option<UnixNanos>,
+    end: Option<UnixNanos>,
+) -> anyhow::Result<impl Iterator<Item = anyhow::Result<DataBatch>> + use<>> {
     catalog.reset_session();
     let mut query = CatalogQuery::new(config.data_type().clone())
         .with_identifiers(config.query_identifiers())
@@ -648,30 +706,22 @@ fn dispatch_query(
     query.params = Some(params);
     let mut session = catalog.query_batch_session(&query, None)?;
     let mut failed = false;
-    let rows = std::iter::from_fn(move || {
+    Ok(std::iter::from_fn(move || {
         if failed {
             return None;
         }
 
-        match session.next_batch() {
-            Ok(Some(batch)) => Some(Ok(batch.to_data_vec_for_compat())),
-            Ok(None) => None,
-            Err(e) => {
-                failed = true;
-                Some(Err(e))
+        loop {
+            match session.next_batch() {
+                Ok(Some(batch)) if batch.is_empty() => {}
+                Ok(batch) => return batch.map(Ok),
+                Err(e) => {
+                    failed = true;
+                    return Some(Err(e));
+                }
             }
         }
-    })
-    .flat_map(|batch| match batch {
-        Ok(rows) => rows.into_iter().map(Ok).collect::<Vec<_>>(),
-        Err(e) => vec![Err(e)],
-    });
-
-    if config.batch_deltas() && *config.data_type() == NautilusDataType::OrderBookDelta {
-        return Ok(Box::new(BookDeltasBatcher::new(rows)));
-    }
-
-    Ok(Box::new(rows))
+    }))
 }
 
 fn max_opt(a: Option<UnixNanos>, b: Option<UnixNanos>) -> Option<UnixNanos> {
@@ -782,6 +832,12 @@ fn unterminated_deltas_error(
 mod tests {
     use nautilus_common::component::Component;
     use nautilus_execution::models::fee::{FeeModelAny, MakerTakerFeeModel};
+    #[cfg(feature = "defi")]
+    use nautilus_model::defi::{
+        DefiData,
+        data::block::BlockPosition,
+        pool_analysis::snapshot::{PoolAnalytics, PoolSnapshot, PoolState},
+    };
     use nautilus_model::{
         data::{BookOrder, QuoteTick, TradeTick},
         enums::{AccountType, AggressorSide, BookAction, OmsType, OrderSide},
@@ -835,6 +891,38 @@ mod tests {
 
     fn stream_failure() -> anyhow::Error {
         anyhow::anyhow!("injected stream failure")
+    }
+
+    fn row_batch(data: &Data) -> ReplayBatch {
+        let batch = match data {
+            Data::Quote(quote) => DataBatch::Quote(vec![*quote].into()),
+            Data::Trade(trade) => DataBatch::Trade(vec![*trade].into()),
+            _ => panic!("expected a quote or trade fixture"),
+        };
+
+        ReplayBatch::Typed(batch)
+    }
+
+    fn merge_rows<I: Iterator<Item = anyhow::Result<Data>>>(
+        streams: Vec<Peekable<I>>,
+    ) -> impl Iterator<Item = anyhow::Result<Data>> {
+        let batches = streams
+            .into_iter()
+            .map(|stream| stream.map(|item| item.map(|data| row_batch(&data))))
+            .collect();
+        merge_batches(batches).expect("initial batches must load")
+    }
+
+    fn merge_batches<I: Iterator<Item = anyhow::Result<ReplayBatch>>>(
+        streams: Vec<I>,
+    ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<Data>>> {
+        merge_streams(
+            streams
+                .into_iter()
+                .enumerate()
+                .map(|(index, stream)| (index.to_string(), stream))
+                .collect(),
+        )
     }
 
     #[derive(Debug)]
@@ -923,7 +1011,7 @@ mod tests {
             vec![].into_iter().peekable(),
         ];
 
-        let merged: Vec<(u64, bool)> = merge_streams(streams)
+        let merged: Vec<(u64, bool)> = merge_rows(streams)
             .map(|item| item.expect("the merged stream must not fail"))
             .map(|data| (data.ts_init().as_u64(), matches!(data, Data::Trade(_))))
             .collect();
@@ -941,7 +1029,7 @@ mod tests {
         let evens = (0u64..).step_by(2).map(ok_quote);
         let odds = (1u64..).step_by(2).map(ok_quote);
 
-        let merged: Vec<u64> = merge_streams(vec![evens.peekable(), odds.peekable()])
+        let merged: Vec<u64> = merge_rows(vec![evens.peekable(), odds.peekable()])
             .take(4)
             .map(|item| item.expect("the merged stream must not fail").ts_init())
             .map(|ts_init| ts_init.as_u64())
@@ -958,7 +1046,7 @@ mod tests {
                 .peekable(),
             vec![Ok(quote(2))].into_iter().peekable(),
         ];
-        let mut merged = merge_streams(streams);
+        let mut merged = merge_rows(streams);
 
         let first = merged.next().expect("the first item must be present");
         let second = merged.next().expect("the failure must be yielded");
@@ -973,6 +1061,185 @@ mod tests {
                 .to_string(),
             "injected stream failure"
         );
+    }
+
+    #[rstest]
+    fn merge_streams_reports_initial_failure_before_consumption() {
+        let streams = vec![vec![Err(stream_failure())].into_iter()];
+
+        let Err(failure) = merge_batches(streams) else {
+            panic!("initial source failure must be reported");
+        };
+
+        assert_eq!(failure.to_string(), "injected stream failure");
+    }
+
+    #[rstest]
+    fn merge_streams_keeps_config_order_across_typed_batch_refills() {
+        let batch = |times: &[u64]| {
+            let quotes = times
+                .iter()
+                .map(|&ts| QuoteTick {
+                    ts_init: UnixNanos::from(ts),
+                    ..QuoteTick::default()
+                })
+                .collect::<Vec<_>>();
+
+            Ok(ReplayBatch::Typed(DataBatch::Quote(quotes.into())))
+        };
+
+        let streams = vec![
+            vec![batch(&[1, 3]), batch(&[3, 4])].into_iter(),
+            vec![Ok(row_batch(&trade(2))), Ok(row_batch(&trade(3)))].into_iter(),
+        ];
+
+        let merged: Vec<_> = merge_batches(streams)
+            .unwrap()
+            .map(|item| {
+                let data = item.unwrap();
+                (data.ts_init().as_u64(), matches!(data, Data::Trade(_)))
+            })
+            .collect();
+
+        assert_eq!(
+            merged,
+            vec![
+                (1, false),
+                (2, true),
+                (3, false),
+                (3, false),
+                (3, true),
+                (4, false)
+            ]
+        );
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    fn merge_streams_orders_full_width_defi_positions_before_config_priority() {
+        let batch = |id: &str, block, transaction_index, log_index| {
+            let position =
+                BlockPosition::new(block, "0xabc".to_string(), transaction_index, log_index);
+
+            let snapshot = PoolSnapshot::new(
+                InstrumentId::from(id),
+                PoolState::default(),
+                Vec::new(),
+                Vec::new(),
+                PoolAnalytics::default(),
+                position,
+                UnixNanos::from(10),
+                UnixNanos::from(10),
+            );
+            let data = vec![DefiData::PoolSnapshot(snapshot)];
+            ReplayBatch::Typed(DataBatch::Defi(data.into()))
+        };
+
+        let streams = vec![
+            vec![Ok(batch("A.B", u64::MAX, u32::MAX, u32::MAX))].into_iter(),
+            vec![
+                Ok(batch("C.D", u64::MAX - 1, u32::MAX, u32::MAX)),
+                Ok(batch("C.D", u64::MAX, u32::MAX - 1, u32::MAX)),
+                Ok(batch("C.D", u64::MAX, u32::MAX, u32::MAX - 1)),
+            ]
+            .into_iter(),
+        ];
+
+        let merged: Vec<_> = merge_batches(streams)
+            .unwrap()
+            .map(|item| {
+                let data = item.unwrap();
+
+                let Data::Defi(defi) = data else {
+                    panic!("expected DeFi data");
+                };
+
+                (defi.instrument_id(), defi.ts_init(), defi.block_position())
+            })
+            .collect();
+
+        assert_eq!(
+            merged,
+            vec![
+                (
+                    InstrumentId::from("C.D"),
+                    UnixNanos::from(10),
+                    (u64::MAX - 1, u32::MAX, u32::MAX)
+                ),
+                (
+                    InstrumentId::from("C.D"),
+                    UnixNanos::from(10),
+                    (u64::MAX, u32::MAX - 1, u32::MAX)
+                ),
+                (
+                    InstrumentId::from("C.D"),
+                    UnixNanos::from(10),
+                    (u64::MAX, u32::MAX, u32::MAX - 1)
+                ),
+                (
+                    InstrumentId::from("A.B"),
+                    UnixNanos::from(10),
+                    (u64::MAX, u32::MAX, u32::MAX)
+                ),
+            ]
+        );
+    }
+
+    #[rstest]
+    fn merge_streams_returns_selected_row_before_a_refill_failure() {
+        let streams = vec![vec![Ok(row_batch(&quote(1))), Err(stream_failure())].into_iter()];
+        let mut merged = merge_batches(streams).unwrap();
+        let first = merged.next().unwrap().unwrap();
+        let failure = merged.next().unwrap().unwrap_err();
+
+        assert_eq!(first, quote(1));
+        assert_eq!(failure.to_string(), "injected stream failure");
+        assert!(merged.next().is_none());
+    }
+
+    #[rstest]
+    fn merge_streams_rejects_a_backward_source_before_emitting_other_streams() {
+        let streams = vec![
+            vec![Ok(row_batch(&quote(3))), Ok(row_batch(&quote(2)))].into_iter(),
+            vec![Ok(row_batch(&trade(4)))].into_iter(),
+        ];
+        let mut merged = merge_batches(streams).unwrap();
+        let first = merged.next().unwrap().unwrap();
+        let failure = merged.next().unwrap().unwrap_err();
+
+        assert_eq!(first, quote(3));
+        assert!(
+            failure
+                .to_string()
+                .contains("moved backward across batches")
+        );
+        assert!(merged.next().is_none());
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    fn merge_streams_reports_original_config_after_empty_sources(#[case] include_empty: bool) {
+        let mut streams = Vec::new();
+        if include_empty {
+            streams.push(("config 0 (TradeTick)".to_string(), Vec::new().into_iter()));
+        }
+
+        streams.push((
+            "config 3 (QuoteTick)".to_string(),
+            vec![Ok(row_batch(&quote(3))), Ok(row_batch(&quote(2)))].into_iter(),
+        ));
+        let mut merged = merge_streams(streams).unwrap();
+        let first = merged.next().unwrap().unwrap();
+        let failure = merged.next().unwrap().unwrap_err();
+
+        assert_eq!(first, quote(3));
+        assert!(
+            failure
+                .to_string()
+                .starts_with("Replay stream 'config 3 (QuoteTick)' moved backward across batches:")
+        );
+        assert!(merged.next().is_none());
     }
 
     #[rstest]

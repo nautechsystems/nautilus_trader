@@ -158,6 +158,7 @@ Released on TBD (UTC).
 - Improved Kraken margin entry average and net-short test coverage (#5214), thanks @zhaow-de
 - Improved Lighter report generation with HTTP collection on runtime workers (#5216)
 - Improved Lighter execution race coverage and grouped-order signer validation
+- Refined backtest replay with shared ordered batch consumption, thanks @faysou
 - Refined shared pointer cloning in data, infrastructure, CLI, and event store code (#5236, #5289), thanks @mirooon
 - Refined Hyperliquid unified account tests to use JSON fixtures (#5220), thanks @XBeg9
 - Optimized core string formatting, precision parsing, and API key masking allocations (#5225), thanks @sunlei
