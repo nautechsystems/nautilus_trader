@@ -99,6 +99,9 @@ for integrations excluded above.
 Before opening a PR for a new integration, contributors should first open a Request for Comments (RFC) issue.
 This allows discussion of suitability, alignment with the roadmap, and maintenance considerations before any code is written.
 
+In the RFC, disclose any ownership, employment, sponsorship, or other commercial relationship with a
+product, service, or organization it involves. State whether you are submitting it on their behalf.
+
 **Step 2 - Evaluation**
 
 The maintainers will review the RFC in light of factors such as stability, demand, technical fit, and available bandwidth.
