@@ -27,15 +27,18 @@ use arrow::{
     record_batch::RecordBatch,
 };
 use nautilus_model::{
-    data::greeks::{GreeksData, OptionGreekValues, PortfolioGreeks, YieldCurveData},
+    data::{
+        CustomData, CustomDataTrait, Data,
+        greeks::{GreeksData, OptionGreekValues, PortfolioGreeks, YieldCurve},
+    },
     identifiers::InstrumentId,
 };
 
 use super::{
-    ArrowSchemaProvider, DecodeTypedFromRecordBatch, EncodeToRecordBatch, EncodingError,
-    KEY_INSTRUMENT_ID, StringColumnRef, extract_column_by_name, extract_column_string,
-    identifier_array_from_display, metadata_with_type_name, record_batch_with_timestamps,
-    record_batch_with_u64_timestamps, timestamp_data_type,
+    ArrowSchemaProvider, DecodeDataFromRecordBatch, DecodeTypedFromRecordBatch,
+    EncodeToRecordBatch, EncodingError, KEY_INSTRUMENT_ID, StringColumnRef, extract_column_by_name,
+    extract_column_string, identifier_array_from_display, metadata_with_type_name,
+    record_batch_with_timestamps, record_batch_with_u64_timestamps, timestamp_data_type,
 };
 
 impl ArrowSchemaProvider for GreeksData {
@@ -273,7 +276,7 @@ impl DecodeTypedFromRecordBatch for PortfolioGreeks {
     }
 }
 
-impl ArrowSchemaProvider for YieldCurveData {
+impl ArrowSchemaProvider for YieldCurve {
     fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
         let fields = vec![
             Field::new("ts_init", timestamp_data_type(), false),
@@ -282,11 +285,14 @@ impl ArrowSchemaProvider for YieldCurveData {
             Field::new("tenors", float_list_data_type(), false),
             Field::new("interest_rates", float_list_data_type(), false),
         ];
-        Schema::new_with_metadata(fields, metadata_with_type_name("YieldCurveData", metadata))
+        Schema::new_with_metadata(
+            fields,
+            metadata_with_type_name(Self::type_name_static(), metadata),
+        )
     }
 }
 
-impl EncodeToRecordBatch for YieldCurveData {
+impl EncodeToRecordBatch for YieldCurve {
     fn encode_batch<T: Borrow<Self>>(
         metadata: &HashMap<String, String>,
         data: &[T],
@@ -313,11 +319,11 @@ impl EncodeToRecordBatch for YieldCurveData {
     }
 
     fn metadata(&self) -> HashMap<String, String> {
-        metadata_with_type_name("YieldCurveData", None)
+        metadata_with_type_name(Self::type_name_static(), None)
     }
 }
 
-impl DecodeTypedFromRecordBatch for YieldCurveData {
+impl DecodeTypedFromRecordBatch for YieldCurve {
     fn decode_typed_batch(
         _metadata: &HashMap<String, String>,
         batch: RecordBatch,
@@ -340,6 +346,18 @@ impl DecodeTypedFromRecordBatch for YieldCurveData {
                 })
             })
             .collect()
+    }
+}
+
+impl DecodeDataFromRecordBatch for YieldCurve {
+    fn decode_data_batch(
+        metadata: &HashMap<String, String>,
+        record_batch: RecordBatch,
+    ) -> Result<Vec<Data>, EncodingError> {
+        Ok(Self::decode_typed_batch(metadata, record_batch)?
+            .into_iter()
+            .map(|curve| Data::Custom(CustomData::from_arc(Arc::new(curve))))
+            .collect())
     }
 }
 
@@ -461,6 +479,7 @@ fn decode_float_list(
 
 #[cfg(test)]
 mod tests {
+    use nautilus_model::data::{decode_custom_from_arrow, encode_custom_to_arrow};
     use rstest::rstest;
 
     use super::*;
@@ -579,10 +598,41 @@ mod tests {
     }
 
     #[rstest]
+    fn test_yield_curve_registered_custom_data_round_trip() {
+        let curve = YieldCurve::new(
+            29.into(),
+            23.into(),
+            "USD-SOFR".to_string(),
+            vec![0.25, 1.0, 5.0],
+            vec![0.043, 0.041, 0.038],
+        );
+        let item: Arc<dyn CustomDataTrait> = Arc::new(curve.clone());
+
+        crate::ensure_custom_data_registered::<YieldCurve>();
+        let batch = encode_custom_to_arrow("YieldCurve", &[item])
+            .unwrap()
+            .unwrap();
+        let metadata = batch.schema().metadata().clone();
+        let decoded = decode_custom_from_arrow("YieldCurve", &metadata, batch)
+            .unwrap()
+            .unwrap();
+
+        let [Data::Custom(custom)] = decoded.as_slice() else {
+            panic!("expected one custom data row, was {decoded:?}");
+        };
+
+        assert_eq!(custom.data_type.type_name(), "YieldCurve");
+        assert_eq!(
+            custom.data.as_any().downcast_ref::<YieldCurve>(),
+            Some(&curve)
+        );
+    }
+
+    #[rstest]
     #[case(vec![0.25, 1.0, 5.0], vec![0.043, 0.041, 0.038])]
     #[case(vec![], vec![-0.0, f64::from_bits(0x3fe0_0000_0000_0001)])]
     fn test_yield_curve_round_trip(#[case] tenors: Vec<f64>, #[case] interest_rates: Vec<f64>) {
-        let curve = YieldCurveData::new(
+        let curve = YieldCurve::new(
             29.into(),
             23.into(),
             "USD-SOFR".to_string(),
@@ -590,8 +640,8 @@ mod tests {
             interest_rates,
         );
         let batch =
-            YieldCurveData::encode_batch(&curve.metadata(), std::slice::from_ref(&curve)).unwrap();
-        let decoded = YieldCurveData::decode_typed_batch(batch.schema().metadata(), batch).unwrap();
+            YieldCurve::encode_batch(&curve.metadata(), std::slice::from_ref(&curve)).unwrap();
+        let decoded = YieldCurve::decode_typed_batch(batch.schema().metadata(), batch).unwrap();
 
         assert_eq!(decoded.len(), 1);
         assert_eq!(decoded[0].ts_init, curve.ts_init);
@@ -631,7 +681,7 @@ mod tests {
         }
         assert_empty!(GreeksData);
         assert_empty!(PortfolioGreeks);
-        assert_empty!(YieldCurveData);
+        assert_empty!(YieldCurve);
     }
 
     #[rstest]
@@ -670,14 +720,14 @@ mod tests {
             datatypes::Int8Type,
         };
 
-        let value = YieldCurveData::new(
+        let value = YieldCurve::new(
             29.into(),
             23.into(),
             "USD-SOFR".to_string(),
             vec![0.25],
             vec![0.043],
         );
-        let batch = YieldCurveData::encode_batch(&value.metadata(), &[value]).unwrap();
+        let batch = YieldCurve::encode_batch(&value.metadata(), &[value]).unwrap();
         let index = batch.schema().index_of("curve_name").unwrap();
         let names = DictionaryArray::<Int8Type>::try_new(
             Int8Array::from(vec![0]),
@@ -689,7 +739,7 @@ mod tests {
         let mut columns = batch.columns().to_vec();
         columns[index] = Arc::new(names);
         let batch = RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).unwrap();
-        let decoded = YieldCurveData::decode_typed_batch(&HashMap::new(), batch);
+        let decoded = YieldCurve::decode_typed_batch(&HashMap::new(), batch);
 
         match name {
             Some(name) => assert_eq!(decoded.unwrap()[0].curve_name, name),
@@ -704,14 +754,14 @@ mod tests {
     #[case("tenors")]
     #[case("interest_rates")]
     fn test_yield_curve_rejects_null_values(#[case] name: &'static str) {
-        let value = YieldCurveData::new(
+        let value = YieldCurve::new(
             29.into(),
             23.into(),
             "USD-SOFR".to_string(),
             vec![0.25],
             vec![0.043],
         );
-        let batch = YieldCurveData::encode_batch(&value.metadata(), &[value]).unwrap();
+        let batch = YieldCurve::encode_batch(&value.metadata(), &[value]).unwrap();
         let index = batch.schema().index_of(name).unwrap();
         let mut fields = batch.schema().fields().to_vec();
         let mut columns = batch.columns().to_vec();
@@ -729,7 +779,7 @@ mod tests {
         };
 
         let batch = RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).unwrap();
-        let error = YieldCurveData::decode_typed_batch(&HashMap::new(), batch).unwrap_err();
+        let error = YieldCurve::decode_typed_batch(&HashMap::new(), batch).unwrap_err();
 
         assert!(
             matches!(error, EncodingError::ParseError(field, ref message)

@@ -1251,7 +1251,7 @@ mod tests {
     fn parquet_promotion_preserves_every_record_family(#[values(false, true)] automatic: bool) {
         use nautilus_core::UUID4;
         use nautilus_model::{
-            data::greeks::{GreeksData, OptionGreekValues, PortfolioGreeks, YieldCurveData},
+            data::greeks::{GreeksData, OptionGreekValues, PortfolioGreeks},
             enums::{
                 LiquiditySide, OrderSide, OrderStatus, OrderType, PositionAdjustmentType,
                 PositionSide, TimeInForce,
@@ -1336,17 +1336,6 @@ mod tests {
             automatic,
         ));
 
-        let curve = YieldCurveData::new(
-            29.into(),
-            23.into(),
-            "USD-SOFR".to_string(),
-            vec![0.25, 1.0, 5.0],
-            vec![0.043, 0.041, 0.038],
-        );
-        let mut second = curve.clone();
-        second.ts_init = 129.into();
-        second.curve_name = "EUR-ESTR".to_string();
-        families.insert(assert_native_record_promotion(&[curve, second], automatic));
         promote!(cash_account_state());
         promote!(OrderInitialized::test_default());
         promote!(OrderDenied::test_default());

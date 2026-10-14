@@ -46,7 +46,7 @@ use nautilus_model::{
     accounts::{AccountAny, CashAccount},
     data::{
         Bar, CustomData, DataType, FundingRateUpdate, InstrumentClose, QuoteTick, TradeTick,
-        greeks::{GreeksData, YieldCurveData},
+        greeks::{GreeksData, YieldCurve},
     },
     enums::{OmsType, OrderSide, OrderType},
     events::{
@@ -1436,7 +1436,7 @@ impl CacheDatabaseAdapter for StubCacheDatabase {
         Ok(())
     }
 
-    fn add_yield_curve(&self, _yield_curve: &YieldCurveData) -> anyhow::Result<()> {
+    fn add_yield_curve(&self, _yield_curve: &YieldCurve) -> anyhow::Result<()> {
         Ok(())
     }
 
