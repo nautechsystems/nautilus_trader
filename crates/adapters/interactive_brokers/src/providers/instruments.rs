@@ -47,6 +47,7 @@ use crate::{
         },
         symbology::{
             determine_venue_from_contract, exchange_to_mic_venue, possible_exchanges_for_venue,
+            symbol_mic_venue,
         },
     },
     config::{InteractiveBrokersInstrumentProviderConfig, SymbologyMethod},
@@ -378,6 +379,9 @@ impl InteractiveBrokersInstrumentProvider {
         contract_details: Option<&ibapi::contracts::ContractDetails>,
     ) -> Venue {
         if matches!(contract.security_type, SecurityType::Stock) {
+            if let Some(venue) = symbol_mic_venue(contract, &self.config.symbol_to_mic_venue) {
+                return Venue::from(venue.as_str());
+            }
             return Venue::from(self.resolve_stock_exchange_from_contract(contract).as_str());
         }
 
