@@ -343,7 +343,7 @@ The engine then creates fresh child commands for the selected client and its acc
 
 ```mermaid
 flowchart LR
-    call[Strategy.cancel_all_orders]
+    invoke[Strategy.cancel_all_orders]
     scope{strategy_only?}
     exact[Exact CancelOrder per matching strategy order]
     root[One root CancelAllOrders]
@@ -354,7 +354,7 @@ flowchart LR
     emulator[One emulator CancelAllOrders]
     algo[Exact CancelOrder per eligible algorithm order]
 
-    call --> scope
+    invoke --> scope
     scope -->|True| exact
     scope -->|False| root
     root --> external
