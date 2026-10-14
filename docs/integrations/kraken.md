@@ -54,9 +54,8 @@ definition.
 :::
 
 :::note
-**Single product type per client**: Each Kraken data or execution client is
-configured for a single `product_type` (`SPOT` or `FUTURES`); a single client
-does not span both markets.
+**Single product type per client**: Each Kraken data or execution client is configured for a single
+`product_type` (`SPOT` or `FUTURES`). A single client does not span both markets.
 :::
 
 ## Spot instrument fees
@@ -97,11 +96,10 @@ Kraken's [Spot WebSocket OHLC channel](https://docs.kraken.com/exchange/api-refe
 updates the current, incomplete bar on trade events. It does not provide a
 field that marks a bar as closed.
 
-During normal streaming, the adapter buffers the current bar and emits it after
-receiving an update with a new `interval_begin`. The delay therefore depends on
-the first trade in the next interval and is not bounded to one bar period when a
-market has no trades. When the WebSocket message handler stops, the adapter
-flushes its buffered bars, including a current bar that may still be incomplete.
+During normal streaming, the adapter buffers the current bar and emits it after receiving an update with a new
+`interval_begin`. Thus, the delay depends on the first trade in the next interval. For a market with no
+trades, it is not bounded to one bar period. When the WebSocket message handler stops, the adapter flushes its
+buffered bars, including a current bar that may still be incomplete.
 
 The adapter uses buffering instead of timer-based emission because:
 
@@ -126,12 +124,11 @@ The adapter uses different Bitcoin symbol conventions for Spot and Futures:
 | Futures | `XBT`         | `PI_XBTUSD.KRAKEN` | Instrument symbols keep Kraken's native XBT. |
 
 :::note
-Kraken's REST API can return `XBT` for Bitcoin, while its WebSocket v2 API
-requires `BTC`. The adapter normalizes Spot symbols to `BTC` when loading
-instruments, whether `XBT` appears as the base currency (for example, `XBT/USD`
-to `BTC/USD`) or quote currency (for example, `ETH/XBT` to `ETH/BTC`). Futures
-instrument symbols retain Kraken's native `XBT` format; Futures currency codes do
-not, and follow the same [currency mapping](#currency-codes) as Spot.
+Kraken's REST API can return `XBT` for Bitcoin, while its WebSocket v2 API requires `BTC`. The adapter
+normalizes Spot symbols to `BTC` when loading instruments, whether `XBT` appears as the base currency (for
+example, `XBT/USD` to `BTC/USD`) or quote currency (for example, `ETH/XBT` to `ETH/BTC`). Futures instrument
+symbols retain Kraken's native `XBT` format. Futures currency codes do not, and follow the same
+[currency mapping](#currency-codes) as Spot.
 :::
 
 Kraken also uses `XDG` for Dogecoin in some Spot responses. The adapter
@@ -146,9 +143,8 @@ instruments, balances, fees, and currency configuration:
 - `XXDG` and `XDG` become `DOGE`.
 - `ZEUR` becomes `EUR`, and `ZUSD` becomes `USD`.
 
-The mapping uses an explicit table, as Kraken's own CLI does, rather than stripping
-prefixes. `XTZ`, `XRP`, `XLM`, `XAUT`, `ZRX`, and `ZEC` are valid codes; an unlisted
-code passes through unchanged.
+The mapping uses an explicit table, as Kraken's own CLI does, rather than stripping prefixes. `XTZ`, `XRP`,
+`XLM`, `XAUT`, `ZRX`, and `ZEC` are valid codes. An unlisted code passes through unchanged.
 
 Configuration accepts either spelling. For example,
 `spot_positions_quote_currency="ZEUR"` and `"EUR"` both match a euro-quoted instrument.
@@ -172,18 +168,17 @@ The earlier mappings differed by source:
 - Spot balances and the margin summary asset lost one leading `X` or `Z`. This left
   `XBT` and `XDG` instead of `BTC` and `DOGE`, and `TZ`, `RX`, and `AUT` instead of
   `XTZ`, `ZRX`, and `XAUT`. `KFEE` becomes `FEE` under the explicit mapping.
-- Futures balances retained the wallet's spelling: cash and margin wallets use
-  `xbt`, while the flex wallet uses `XBT`. Both become `BTC`; `usd` becomes `USD`.
+- Futures balances retained the wallet's spelling: cash and margin wallets use `xbt`, while the flex wallet
+  uses `XBT`. Both become `BTC`. `usd` becomes `USD`.
 
 #### Futures wallet aggregation
 
-Futures balances with the same normalized code combine into one entry. Total and
-locked amounts sum across wallets. Each wallet's locked amount is bounded to
-`[0, total]` for a non-negative total; a negative total keeps its reported locked
-amount. The aggregate is not clamped. Free balance can therefore be negative when
+Futures balances with the same normalized code combine into one entry. Total and locked amounts sum across
+wallets. Each wallet's locked amount is bounded to `[0, total]` for a non-negative total. A negative total
+keeps its reported locked amount. The aggregate is not clamped. Free balance can therefore be negative when
 reservations exceed the combined holding, preserving the actual shortfall.
-Previously, separate wallet entries overwrote each other in the account, leaving
-only the last entry read.
+
+Previously, separate wallet entries overwrote each other in the account, leaving only the last entry read.
 
 #### Money precision
 
@@ -192,17 +187,16 @@ Previously, unknown codes such as `ZEUR` and `ZUSD` registered as crypto currenc
 with eight decimal places. Built-in `EUR` and `USD` use two, and `JPY` uses none.
 This affects instrument quote currencies, REST fill commissions, and derived PnL.
 
-Account balances retain eight decimal places because their parsers construct the
-currency directly rather than use the registry. The Futures flex `portfolioValue`
-entry and account-wide USD margin entries also use this eight-decimal currency;
-they previously used two-decimal `USD`, so their precision increases without loss.
+Account balances retain eight decimal places because their parsers construct the currency directly rather than
+use the registry. The Futures flex `portfolioValue` entry and account-wide USD margin entries also use this
+eight-decimal currency. They previously used two-decimal `USD`, so their precision increases without loss.
 
 ### Spot markets
 
 NautilusTrader uses normalized, slash-separated symbols for Kraken Spot
 instruments. The adapter translates them to Kraken's native format internally.
 
-**Instrument ID format:**
+**Instrument ID format**:
 
 ```python
 from nautilus_trader.model import InstrumentId
@@ -225,11 +219,12 @@ Kraken Futures symbols use contract prefixes:
 - `FI_`: Fixed-maturity inverse contracts (for example, `FI_XBTUSD_230929`).
 - `FF_`: Fixed-maturity linear contracts.
 
-Kraken's [ticker symbol reference](https://support.kraken.com/articles/360022835891-ticker-symbols-derivatives)
-lists the main contract prefixes. Use the returned instrument catalog to determine
-which contracts are available; example symbols can refer to expired or unlisted contracts.
+Kraken's
+[ticker symbol reference](https://support.kraken.com/articles/360022835891-ticker-symbols-derivatives) lists
+the main contract prefixes. Use the returned instrument catalog to determine which contracts are available.
+Example symbols can refer to expired or unlisted contracts.
 
-**Instrument ID format:**
+**Instrument ID format**:
 
 ```python
 from nautilus_trader.model import InstrumentId
@@ -290,9 +285,13 @@ that request, dropping frames from replaced subscriptions and superseded recover
 A snapshot changes the book only after it parses and applies successfully. A recovery
 request made before an accepted snapshot or reconnect sends nothing after that event.
 
-The adapter also emits a `Clear` delta when it drops a shadow book outside frame
-processing: on reconnect, confirmation of a new stream, rejection of the latest
-subscribe request, or detection of an unconfirmed latest request by the snapshot watchdog.
+The adapter also emits a `Clear` delta when it drops a shadow book outside frame processing. This occurs on
+these events:
+
+- Reconnect.
+- Confirmation of a new stream.
+- Rejection of the latest subscribe request.
+- Detection of an unconfirmed latest request by the snapshot watchdog.
 
 #### Missing snapshots and rejected subscriptions
 
@@ -301,10 +300,10 @@ with checksum validation disabled, because it also recovers streams that never
 receive a snapshot. Each replacement subscription starts a fresh wait rather than
 inheriting its predecessor's retry count.
 
-If no snapshot arrives within 10 seconds, the data client requests it again. It doubles
-the wait between requests (`10`, `20`, `40`, `80`, and `160` seconds), up to five requests.
-At the cap, it logs an error and stops retrying. The book stays cleared and updates are
-dropped until a snapshot arrives; a subscription change or reconnect starts recovery again.
+If no snapshot arrives within 10 seconds, the data client requests it again. It doubles the wait between
+requests (`10`, `20`, `40`, `80`, and `160` seconds), up to five requests. At the cap, it logs an error and
+stops retrying. The book stays cleared and updates are dropped until a snapshot arrives. A subscription change
+or reconnect starts recovery again.
 
 Kraken's rejection of the latest subscribe request clears any held book and logs the
 venue's reason and the next request time at error level. The rejection counts as one
@@ -391,9 +390,8 @@ config = KrakenDataClientConfig(
 `OrderBookDelta` carries `order_id: u64` in its Arrow schema, so `ParquetDataCatalog`
 stores L3 data with the same schema as L2. L3 produces more events per instrument.
 
-- Use a smaller query-session `chunk_size` (for example, `50_000`) to target smaller
-  streaming batches. Timestamp-aligned batches can exceed that target; the setting
-  does not control file size or parallel reads.
+- Use a smaller query-session `chunk_size` (for example, `50_000`) to target smaller streaming batches.
+  Timestamp-aligned batches can exceed that target. The setting does not control file size or parallel reads.
 - Set `compression="zstd"` in `DataCatalogConfig` to compress stored data.
 - The Parquet catalog partitions data by instrument by default.
 
@@ -461,19 +459,17 @@ time rather than silently coercing them.
 :::note
 **Cancel all orders**:
 
-- Spot selects the matching open and in-flight orders for the requested instrument
-  and cancels them by explicit order ID, with or without a side filter, so a
-  request never reaches another instrument. In-flight orders are included because
-  the venue can have accepted an order the cache still records as submitted.
+- Spot selects matching open and in-flight orders for the requested instrument, with or without a side filter.
+  It cancels them by explicit order ID. Thus, a request never reaches another instrument. In-flight orders are
+  included because the venue can have accepted an order the cache still records as submitted.
 - Futures uses the venue's symbol-scoped bulk cancellation when no side filter is
   given, and selects matching cached open and in-flight orders by explicit order ID
   when one is.
-- Selected IDs go through the batch-cancel endpoint and are auto-chunked into
-  batches of 50. Kraken keys the two identifier kinds separately, so venue order
-  IDs are sent as `orders` and client order IDs as `cl_ord_ids`; the batch limit
-  counts both together. Each cancel keeps the owning strategy of the order it targets,
-  and aggregate or ambiguous responses are left to reconciliation rather than
-  producing per-order outcomes.
+- Selected IDs go through the batch-cancel endpoint and are auto-chunked into batches of 50. Kraken keys the
+  two identifier kinds separately, so venue order IDs are sent as `orders` and client order IDs as
+  `cl_ord_ids`. The batch limit counts both together. Each cancel keeps the owning strategy of the order it
+  targets, and aggregate or ambiguous responses are left to reconciliation rather than producing per-order
+  outcomes.
 
 :::
 
@@ -514,17 +510,15 @@ total at or below the filled quantity.
 
 ### Maker Protection (Futures)
 
-Kraken Futures applies
-[Maker Protection](https://docs.kraken.com/exchange/guides/futures/maker-protection)
-on selected markets: placements and edits that could take liquidity are held
-for the market's configured window before reaching the matching engine. The
-classification is by order type, so a non-post-only limit placement is held
-even when it would have rested. Stop and take-profit trigger placements are not
-held; the orders they fire are held unless post-only. Post-only placements and
-all cancellations are never held, and no held-order state is exposed on any API.
-The venue applies the hold per market to every client; the adapter decodes
-the per-market window (`makerProtectionMillis`) on the raw venue instrument
-model and exposes no configuration for it.
+Kraken Futures applies [Maker Protection](https://docs.kraken.com/exchange/guides/futures/maker-protection) on
+selected markets: placements and edits that could take liquidity are held for the market's configured window
+before reaching the matching engine. The classification is by order type, so a non-post-only limit placement
+is held even when it would have rested. Stop and take-profit trigger placements are not held. The orders they
+fire are held unless post-only. Post-only placements and all cancellations are never held, and no held-order
+state is exposed on any API.
+
+The venue applies the hold per market to every client. The adapter decodes the per-market window
+(`makerProtectionMillis`) on the raw venue instrument model and exposes no configuration for it.
 
 Order-state handling accounts for the held-order semantics:
 
@@ -587,12 +581,11 @@ which request ran later: a closed state over an open one, then the later venue
 update, then the larger filled quantity. The naming rule above and
 the fill-price rule below apply to the report kept.
 
-In those runs the window carries no fill price, so a fully executed order is
-left out with a warning rather than having its executions inferred at the order
-price; a targeted single-order query prices it from recent fills instead, or
-fails so reconciliation defers it. Mass status marks the set incomplete when it
-leaves out a window report. A canceled order with executions is reported, since
-reconciliation waits for its fills rather than infer them.
+In those runs, the window carries no fill price. Thus, a fully executed order is left out with a warning. Its
+executions are not inferred at the order price. A targeted single-order query prices it from recent fills
+instead, or fails so reconciliation defers it. Mass status marks the set incomplete when it leaves out a
+window report. A canceled order with executions is reported, since reconciliation waits for its fills rather
+than infer them.
 
 A hold that fills after a cancel acknowledgement reconciles to its true
 terminal state with the venue's cumulative filled, not a premature cancellation.
@@ -671,9 +664,8 @@ When reconciliation supplies a lookback, both execution clients derive one cutof
 for every historical query and record it on the mass status through `set_report_window`.
 A moving cutoff could combine reports that never existed together at the venue.
 
-Declaring the cutoff enables the engine's bounded-history rules. An incomplete set
-still reconciles the reports received, with a warning; the completeness flag
-qualifies the set rather than blocking reconciliation.
+Declaring the cutoff enables the engine's bounded-history rules. An incomplete set still reconciles the
+reports received, with a warning. The completeness flag qualifies the set rather than blocking reconciliation.
 
 #### Scope and read failures
 
@@ -687,16 +679,14 @@ it, the read skips the order and its history rows with a warning and marks the s
 incomplete. A failed open-position read fails the order read too. A single-order status
 lookup for that trigger fails while it is skipped, so reconciliation defers it.
 
-Both clients return no rows for a query scoped to an instrument they do not hold.
-Spot and Futures share the `KRAKEN` venue, so either client can receive a query for an
-order it did not route. Single-order status lookups and `query_order` inspect only
-the command's instrument; unresolved or unparsable records on another instrument
-cannot fail that scoped read, though a lookup cannot rule out an order such a record
-may name.
+Both clients return no rows for a query scoped to an instrument they do not hold. Spot and Futures share the
+`KRAKEN` venue, so either client can receive a query for an order it did not route. Single-order status
+lookups and `query_order` inspect only the command's instrument. Unresolved or unparsable records on another
+instrument cannot fail that scoped read, though a lookup cannot rule out an order such a record may name.
 
-Other gaps mark the set incomplete: closed or historical orders and fills that
-cannot be parsed, or whose instruments cannot be resolved. Position records do not
-contribute to the completeness flag; in-scope position failures fail the read.
+Other gaps mark the set incomplete: closed or historical orders and fills that cannot be parsed, or whose
+instruments cannot be resolved. Position records do not contribute to the completeness flag. In-scope position
+failures fail the read.
 
 #### Single-order lookups
 
@@ -721,8 +711,8 @@ reconciliation defers the order:
   back a continuation token reaches back to its oldest event. A spot closed-order read
   stopped at its page cap rules out none.
 
-An order a read cannot rule out is deferred again on every open-order check; on Futures
-each such lookup draws one order-history token.
+An order a read cannot rule out is deferred again on every open-order check. On Futures each such lookup draws
+one order-history token.
 
 #### Spot pagination limits
 
@@ -746,15 +736,17 @@ page, with a cap of 500 pages per read. Reaching the cap logs a warning:
 - Startup mass status reads closed orders alongside open ones, so an order that reached a terminal
   state while the node was down is reconciled. The reconciliation lookback bounds the read, and a
   closed-order read cut short by the page cap leaves the mass status incomplete.
-- A report carries the order's own prices, not the row's top-level `price`, which is the average
-  fill price and reads zero on an unfilled order; the report's `avg_px` comes from `cost` and
-  `vol_exec`. The limit comes from `descr.price` for a limit order and `descr.price2` for a
-  stop-loss-limit or take-profit-limit order, or a trailing-stop-limit order once `misc` marks it
-  `stopped`. A trailing-stop-limit's `limitprice` holds the peak price, not its limit. A market,
-  settle-position, stop-loss, take-profit or trailing-stop order carries no limit. The trigger comes
-  from `stopprice`, which a stop-loss, take-profit, stop-loss-limit or take-profit-limit order fills
-  only once triggered, so `descr.price`, as AddOrder takes it, stands in before. A zero or relative
-  price reads as none.
+- A report carries the order's own prices, not the row's top-level `price`. That field is the average fill
+  price and reads zero on an unfilled order. The report's `avg_px` comes from `cost` and `vol_exec`.
+
+  The limit comes from `descr.price` for a limit order and `descr.price2` for a stop-loss-limit or
+  take-profit-limit order, or a trailing-stop-limit order once `misc` marks it `stopped`. A
+  trailing-stop-limit's `limitprice` holds the peak price, not its limit. A market, settle-position,
+  stop-loss, take-profit or trailing-stop order carries no limit.
+
+  The trigger comes from `stopprice`, which a stop-loss, take-profit, stop-loss-limit or take-profit-limit
+  order fills only once triggered, so `descr.price`, as AddOrder takes it, stands in before. A zero or
+  relative price reads as none.
 - An untriggered trailing-stop-limit order has no absolute limit, so its report carries no price,
   and an order the cache does not hold cannot be rebuilt from it until it triggers.
 - An executions frame states the order's price only when it carries `limit_price`, never at a
@@ -772,13 +764,12 @@ page, with a cap of 500 pages per read. Reaching the cap logs a warning:
   `raw_symbol`, and the altname (`XBTEUR`). `OpenPositions` returns the key, while `OpenOrders`
   and `TradesHistory` return the altname.
 - The adapter resolves both spellings, so an order or fill on a legacy-named pair is reported.
-- A read scoped to one instrument resolves each row and compares instrument IDs, rather than
-  comparing a cached `raw_symbol` against the venue's spelling, so a scoped read returns that
-  pair's own records whichever way Kraken spells it.
-- A read scoped to an instrument the client does not hold returns nothing. Spot and futures IDs
-  share the `KRAKEN` venue, so a futures ID can reach the spot client and the reverse; neither
-  falls back to returning every instrument's records. A single-order lookup on an unheld
-  instrument of the client's own product rules out no order.
+- A read scoped to one instrument resolves each row and compares instrument IDs instead of the cached
+  `raw_symbol` and venue spelling. Thus, it returns that pair's own records whichever way Kraken spells it.
+- A read scoped to an instrument the client does not hold returns nothing. Spot and futures IDs share the
+  `KRAKEN` venue, so a futures ID can reach the spot client and the reverse. Neither falls back to returning
+  every instrument's records. A single-order lookup on an unheld instrument of the client's own product rules
+  out no order.
 - A spot instrument whose altname differs from its `AssetPairs` key carries the altname in its
   `info` map, so a client whose instruments arrive through `cache_instrument` or
   `cache_instruments` resolves altname-spelled records without refetching `AssetPairs`.
@@ -825,34 +816,36 @@ With `spot_account_type=AccountType.MARGIN`:
 - No synthetic FLAT cleanup: `OpenPositions` reports leveraged positions only, so an
   unleveraged spot holding never appears there and its absence is not evidence that the
   position is closed. The bulk read reports only what the venue returns.
-- Margin balances: `POST /0/private/TradeBalance` is called alongside the
-  account-state refresh; used margin populates `MarginBalance.initial`, while
-  equity and free margin populate the summary balance (see Spot margin trading).
+- Margin balances: `POST /0/private/TradeBalance` is called alongside the account-state refresh. Used margin
+  populates `MarginBalance.initial`, while equity and free margin populate the summary balance (see Spot
+  margin trading).
 
 :::warning
 A leveraged position closed while the node was down is not recovered from its closing fill when
-`reconciliation_lookback_mins` is set. A fully closed lot is absent from `OpenPositions`, so the
-instrument carries no position report, and the engine projects that order's fill as order-only:
-the order reaches `FILLED`, while the cached position keeps both its quantity and its realized
-PnL, so the closing PnL is never recorded. This is the shared engine's documented behavior for an
-instrument with no in-scope position report, not a Kraken rule. See
-[Order-only fill projection](../concepts/execution/reconciliation.md#order-only-fill-projection).
-Removing the synthetic FLAT is what exposes Kraken spot margin to it, because the sweep previously
-supplied an explicit FLAT.
+`reconciliation_lookback_mins` is set. A fully closed lot is absent from `OpenPositions`, so the instrument
+carries no position report. Thus, the engine projects that order's fill as order-only. The order reaches
+`FILLED`, but the cached position keeps both its quantity and realized PnL. The closing PnL is never recorded.
+
+This is the shared engine's documented behavior for an instrument with no in-scope position report, not a
+Kraken rule. See
+[Order-only fill projection](../concepts/execution/reconciliation.md#order-only-fill-projection). Removing the
+synthetic FLAT is what exposes Kraken spot margin to it, because the sweep previously supplied an explicit
+FLAT.
 
 A periodic position check does not recover it either, since margin mode declares no bulk position
 coverage, and that skip is logged at debug level. The condition also persists across restarts: the
 closing order is then cached as `FILLED` and matches the venue exactly, so reconciliation treats it
 as already in sync.
 
-Leaving `reconciliation_lookback_mins` unset avoids the projection, and a closing order the cache
-already holds, such as a strategy exit submitted before the outage, then recovers into its
-position: the fill applies to the cached order and closes the position it belongs to. It is not a
-general remedy, because a closing order absent from the cache is attributed to the `EXTERNAL`
+Leaving `reconciliation_lookback_mins` unset avoids the projection. A closing order already in the cache, such
+as a strategy exit submitted before the outage, then recovers into its position. The fill applies to the
+cached order and closes its position.
+
+It is not a general remedy, because a closing order absent from the cache is attributed to the `EXTERNAL`
 strategy and keys a netting position by instrument and strategy. Unless the cached position is
-itself `EXTERNAL`-owned or the instrument is claimed through `external_order_claim`, that recovered
-fill opens a second, opposite position rather than closing the cached one: net exposure reaches
-zero, but the stale position and its realized PnL remain.
+`EXTERNAL`-owned or the instrument is claimed through `external_order_claim`, that recovered fill opens a
+second, opposite position. It does not close the cached one. Net exposure reaches zero, but the stale position
+and its realized PnL remain.
 
 Until this is addressed, reconcile a margin position closed during downtime manually, or run
 `spot_account_type=AccountType.CASH` with `use_spot_position_reports=True`, where the wallet read enumerates
@@ -869,22 +862,21 @@ filled orders. Historical reads have the limits below.
 #### Order history and pricing
 
 The adapter reads order lifecycle events from
-[`/api/history/v3/orders`](https://docs.kraken.com/api-reference/account-history/get-order-events).
-Each read takes one page: Kraken `/history` endpoints share a pool
-of 100 tokens, replenished at 100 every 10 minutes. An order-history page costs one
-token, so a page that hands back a continuation token, in the body or
-the `Next-Continuation-Token` header, logs a warning and leaves the set incomplete rather than
-reading further. A single-order status lookup can still report a cached order absent when it
-was placed after the page's oldest event by more than the clock skew allowance; see
-[Single-order lookups](#single-order-lookups).
+[`/api/history/v3/orders`](https://docs.kraken.com/api-reference/account-history/get-order-events). Each read
+takes one page: Kraken `/history` endpoints share a pool of 100 tokens, replenished at 100 every 10 minutes.
+An order-history page costs one token, so a page that hands back a continuation token, in the body or the
+`Next-Continuation-Token` header, logs a warning and leaves the set incomplete rather than reading further. A
+single-order status lookup can still report a cached order absent when it was placed after the page's oldest
+event by more than the clock skew allowance. See [Single-order lookups](#single-order-lookups).
 
-The history lists every lifecycle event, so the read hands back one report per
-order: the open-order snapshot when the venue still lists the order, else its latest history
-state; a closed order is not reopened by an open state stamped later, such as a refused edit
-logged after a cancel. The contract name is resolved as the venue spells it, exactly first and
-then case-insensitively. The history carries no trigger price, so a stop order is reported as the
-limit or market order it executes as once triggered, and venue-initiated orders (liquidation,
-assignment, hedge assignment, unwind, block, RFQ) are reported as market orders.
+The history lists every lifecycle event. The read returns one report per order: the open-order snapshot if the
+venue still lists it. Otherwise, it returns the latest history state. A closed order is not reopened by an
+open state stamped later, such as a refused edit logged after a cancel.
+
+The contract name is resolved as the venue spells it, exactly first and then case-insensitively. The history
+carries no trigger price. Thus, a stop order is reported as the limit or market order it executes as once
+triggered. Venue-initiated orders (liquidation, assignment, hedge assignment, unwind, block, RFQ) are reported
+as market orders.
 
 The adapter skips unrepresentable rows with a warning and marks the set incomplete:
 
@@ -914,10 +906,9 @@ as does a failed open-order read.
 
 #### Startup pricing safeguard
 
-Mass status applies the same exact fill-coverage requirement to terminal history
-orders with executions. It withholds an uncovered order with a warning naming it
-and marks the set incomplete. Later reads still request only the latest fills page;
-they cannot page back to recover an older missing execution.
+Mass status applies the same exact fill-coverage requirement to terminal history orders with executions. It
+withholds an uncovered order with a warning naming it and marks the set incomplete. Later reads still request
+only the latest fills page. They cannot page back to recover an older missing execution.
 
 A withheld order's page fills remain when the cache holds the order, because the
 engine can reconcile those fills against it without a report. An uncached order's
@@ -925,14 +916,15 @@ fills are withheld with the order.
 
 #### Flat instruments
 
-The position read returns open positions only, so an instrument with no
-position report is flat at the venue. The fills read is a single page, so a round trip whose
-opening fill is older than that page would leave its closing side alone, and with no
-`reconciliation_lookback_mins` the engine applies every kept fill to positions, opening a
-position the venue does not hold. To compensate, an unbounded startup read nets the fills of
-every order on the read pages that the cache does not hold on a flat instrument, open orders
-included. When they do not net to zero and a terminal history order is among them, the terminal
-orders are withheld with their fills, with a warning, and the set is marked incomplete.
+The position read returns open positions only, so an instrument with no position report is flat at the venue.
+The fills read is one page. A round trip with an opening fill older than that page leaves only its closing
+side. Without `reconciliation_lookback_mins`, the engine applies every kept fill to positions. This can open a
+position the venue does not hold.
+
+To compensate, an unbounded startup read nets the fills of every order on the read pages that the cache does
+not hold on a flat instrument, open orders included. When they do not net to zero and a terminal history order
+is among them, the terminal orders are withheld with their fills, with a warning, and the set is marked
+incomplete.
 
 Open orders stay, so an open order's fill can still open a position. An instrument
 with an open venue position is left to its position report. A bounded lookback leaves
@@ -940,9 +932,9 @@ terminal orders to the engine, which projects fills with no position report onto
 
 #### Fill reports
 
-- Fill history: Reads the latest [`/fills` page](https://docs.kraken.com/api-reference/historical-data/get-your-fills),
-  the last 100 fills across all futures contracts;
-  older executions are not returned.
+- Fill history: Reads the latest
+  [`/fills` page](https://docs.kraken.com/api-reference/historical-data/get-your-fills), the last 100 fills
+  across all futures contracts. Older executions are not returned.
 - Time filtering: Client-side filtering by start/end timestamps (parses
   RFC3339 timestamps).
 - All fill types: Maker and taker fills with fee information.
@@ -975,7 +967,7 @@ Set `use_spot_position_reports=True` in cash mode to report wallet balances as
 Spot positions. It defaults to `False`. Margin accounts use `OpenPositions`
 independently of this option (see [Spot margin trading](#spot-margin-trading)).
 
-**How it works:**
+**How it works**:
 
 - When enabled, wallet balances are converted to `PositionStatusReport` objects.
 - Positive balances are reported as `LONG` positions.
@@ -985,7 +977,7 @@ independently of this option (see [Spot margin trading](#spot-margin-trading)).
 - This prevents duplicate reports when the same asset is available with multiple
   quote currencies (e.g., BTC/USD, BTC/USDT, BTC/EUR).
 
-**Configuration:**
+**Configuration**:
 
 ```python
 from nautilus_trader.adapters.kraken import KrakenExecutionClientConfig
@@ -1116,12 +1108,11 @@ The adapter receives funding rate data from the
 WebSocket feed, which provides `relative_funding_rate` and
 `next_funding_rate_time` for perpetual futures.
 
-The adapter leaves `FundingRateUpdate.interval` as `None` because the ticker
-feed does not include a funding interval field. This does not mean the contract
-has no defined funding period: Kraken's
+The adapter leaves `FundingRateUpdate.interval` as `None` because the ticker feed does not include a funding
+interval field. This does not mean the contract has no defined funding period. Kraken's
 [linear multi-collateral contract specification](https://support.kraken.com/articles/4844359082772-linear-multi-collateral-derivatives-contract-specifications)
-defines hourly funding periods, with accrued funding settled at the end of the
-hour or when the net position changes.
+defines hourly funding periods. Accrued funding settles at the end of the hour or when the net position
+changes.
 
 ## Rate limiting
 

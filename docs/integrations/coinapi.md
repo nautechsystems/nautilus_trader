@@ -69,20 +69,19 @@ including retries and reconnects. It has no configuration override and carries n
 account data.
 
 To refer a new account to NautilusTrader, sign up through the
-[API Bricks console](https://console.apibricks.io/?ref=nautilus). Signup referrals and API request
-referrals are separate mechanisms; see the
+[API Bricks console](https://console.apibricks.io/?ref=nautilus). Signup referrals and API request referrals
+are separate mechanisms. See the
 [API Bricks referral documentation](https://www.apibricks.io/platform/docs/general/referral?ref=nautilus).
 
 ## Authentication and environments
 
-Set `api_key` in the data client config, or leave it unset to read `COINAPI_API_KEY`. Construction
-rejects missing keys and keys containing characters outside visible ASCII. REST requests and
-WebSocket upgrades authenticate with `X-CoinAPI-Key`; `hello` frames carry no credential.
-Credentials remain redacted in logs and errors. Importing the Python package neither reads
-credentials nor connects.
+Set `api_key` in the data client config, or leave it unset to read `COINAPI_API_KEY`. Construction rejects
+missing keys and keys containing characters outside visible ASCII. REST requests and WebSocket upgrades
+authenticate with `X-CoinAPI-Key`. `hello` frames carry no credential. Credentials remain redacted in logs and
+errors. Importing the Python package neither reads credentials nor connects.
 
-Production uses encrypted REST and WebSocket endpoints. Sandbox access is not verified.
-Use a production Market Data API key; no execution account configuration is required.
+Production uses encrypted REST and WebSocket endpoints. Sandbox access is not verified. Use a production
+Market Data API key. No execution account configuration is required.
 
 | Interface    | Production endpoint               | Role                        |
 | ------------ | --------------------------------- | --------------------------- |
@@ -92,17 +91,17 @@ Use a production Market Data API key; no execution account configuration is requ
 | REST         | `https://api-ncsa.coinapi.io/v1/` | Optional regional endpoint. |
 | WebSocket V1 | `wss://ws.coinapi.io/v1/`         | Primary streaming endpoint. |
 
-REST defaults to GeoDNS. Set `base_url_http` to select a regional endpoint; the adapter does not
-switch regions automatically. See CoinAPI's
+REST defaults to GeoDNS. Set `base_url_http` to select a regional endpoint. The adapter does not switch
+regions automatically. See CoinAPI's
 [REST availability guide](https://www.coinapi.io/products/market-data-api/docs/rest-api/rest-high-availability?ref=nautilus)
-and [WebSocket endpoints](https://www.coinapi.io/products/market-data-api/docs/websocket/endpoints?ref=nautilus).
+and
+[WebSocket endpoints](https://www.coinapi.io/products/market-data-api/docs/websocket/endpoints?ref=nautilus).
 
 ## Using CoinAPI with native adapters
 
-CoinAPI uses native venue instrument IDs, such as `BTCUSDT.BINANCE`, and the data client ID
-`COINAPI`. Use `client_id=COINAPI_CLIENT_ID` for CoinAPI requests and subscriptions when your node
-has multiple data clients. Requests without an explicit client ID use venue or default routing;
-CoinAPI can be the default data client.
+CoinAPI uses native venue instrument IDs, such as `BTCUSDT.BINANCE`, and the data client ID `COINAPI`. Use
+`client_id=COINAPI_CLIENT_ID` for CoinAPI requests and subscriptions when your node has multiple data clients.
+Requests without an explicit client ID use venue or default routing. CoinAPI can be the default data client.
 
 :::warning
 Each instrument must have one definition source per node. Configure CoinAPI and native adapters
@@ -111,9 +110,9 @@ unsupported even when definitions match. Separate client IDs do not isolate defi
 for the same instrument, and the adapter does not detect or resolve these conflicts automatically.
 :::
 
-Check native instrument-loading defaults before combining providers. For example, Binance defaults
-to `load_all=True`; set it to `False` and provide non-overlapping `load_ids`. Keep the native adapter's
-venue route for its other instruments.
+Check native instrument-loading defaults before combining providers. For example, Binance defaults to
+`load_all=True`. Set it to `False` and provide non-overlapping `load_ids`. Keep the native adapter's venue
+route for its other instruments.
 
 CoinAPI's price and size resolutions describe its data and can differ from venue trading increments.
 Ticks of `0.1` and `0.5` both use one decimal place but admit different prices. Native definitions
@@ -146,9 +145,9 @@ instrument classes can differ from a native adapter's definitions.
 
 ### Symbol mappings
 
-Use the native `InstrumentId` forms below when configuring selections. Inverse contracts settle
-in the base currency; linear contracts settle in the quote currency. The adapter determines these
-properties from the venue's product convention rather than CoinAPI's inverse flag.
+Use the native `InstrumentId` forms below when configuring selections. Inverse contracts settle in the base
+currency. Linear contracts settle in the quote currency. The adapter determines these properties from the
+venue's product convention rather than CoinAPI's inverse flag.
 
 | CoinAPI exchange | Symbol type | Exchange symbol form | Native `InstrumentId`          | Contract                     |
 | ---------------- | ----------- | -------------------- | ------------------------------ | ---------------------------- |
@@ -178,9 +177,9 @@ Other exchanges and symbol types are unsupported. This includes Binance COIN-M (
 CoinAPI reports a one-coin contract unit for `BTCUSD_PERP`, while the native Binance contract is
 100 USD.
 
-Kraken dated futures (`KRAKENFTS` `FUTURES`) are also unsupported. CoinAPI reports midnight UTC on
-the delivery date, while Kraken's last trading time varies by product, for example 08:00 UTC for
-`FF_` and 15:00 or 16:00 UTC for `FI_` contracts.
+Kraken dated futures (`KRAKENFTS` `FUTURES`) are also unsupported. CoinAPI reports midnight UTC on the
+delivery date. Kraken's last trading time varies by product: 08:00 UTC for `FF_`, for example. For `FI_`
+contracts, it is 15:00 or 16:00 UTC.
 
 Other rejected forms include Bybit USDC contracts, OKX USD-margined futures such as
 `BTC-USD_UM-261225`, and ambiguous Binance delivery IDs with a `USD` quote, such as
@@ -210,47 +209,50 @@ together with `UNKNOWN` and unrecognized values.
 
 ### Bars
 
-Bar subscriptions accept external last-price bar types whose period CoinAPI streams: 1, 2, 3, 4,
-5, 6, 10, 15, 20, or 30 seconds or minutes; 1, 2, 3, 4, 6, 8, or 12 hours; or one day. The client
-rejects internal aggregation and other specifications.
+Bar subscriptions accept external last-price bar types with these CoinAPI streaming periods:
 
-CoinAPI sends running OHLCV totals when it sees a timestamp in the next period and every five
-seconds while the period is being updated, without a closed flag. The client retains the latest
-update for each period and emits a bar when an update for a later period arrives. It discards
-retained periods on reconnect, since missed updates can leave them incomplete, and when a bar
-subscription starts.
+- 1, 2, 3, 4, 5, 6, 10, 15, 20, or 30 seconds or minutes.
+- 1, 2, 3, 4, 6, 8, or 12 hours.
+- One day.
+
+The client rejects internal aggregation and other specifications.
+
+CoinAPI sends running OHLCV totals when it sees a timestamp in the next period. It also sends them every five
+seconds during period updates. These totals carry no closed flag. The client retains the latest update for
+each period and emits a bar when an update for a later period arrives. It discards retained periods on
+reconnect, since missed updates can leave them incomplete, and when a bar subscription starts.
 
 ### Subscription changes
 
-Subscription changes apply in call order and share one WebSocket connection. CoinAPI does not
-acknowledge scope changes; the first matching data confirms that a subscription is active.
+Subscription changes apply in call order and share one WebSocket connection. CoinAPI does not acknowledge
+scope changes. The first matching data confirms that a subscription is active.
 
-Changes are paced at least two seconds apart to meet CoinAPI's subscription limits. Queued changes
-and book recovery can delay them further. Unsubscribing from all streams closes the connection;
-a later subscription opens a new one and retains this pacing.
+Changes are paced at least two seconds apart to meet CoinAPI's subscription limits. Queued changes and book
+recovery can delay them further. Unsubscribing from all streams closes the connection. A later subscription
+opens a new one and retains this pacing.
 
-A failed connection attempt retries after one second, doubling to at most 30 seconds until success
-or disconnect. Later subscription changes wait behind the pending batch. A transport reconnect
-restores subscriptions automatically. A CoinAPI `error` ends the streams without resubscribing;
-the next subscription opens a new connection.
+A failed connection attempt retries after one second, doubling to at most 30 seconds until success or
+disconnect. Later subscription changes wait behind the pending batch. A transport reconnect restores
+subscriptions automatically. A CoinAPI `error` ends the streams without resubscribing. The next subscription
+opens a new connection.
 
 ## Order books
 
 ### Channels and depths
 
-`L2_MBP` delta subscriptions stream CoinAPI `book` and `L3_MBO` subscriptions stream `book_l3`;
-`L1_MBP` is rejected. Both channels send the whole book, so a delta subscription ignores `depth`.
-Depth subscriptions accept only `L2_MBP` and use the smallest of `book5`, `book20`, and `book50`
-that covers the requested depth, 10 levels by default; a depth above 50 is rejected. Each depth
-message lists complete top levels, is flagged `F_SNAPSHOT`, and carries zero order counts, since
-CoinAPI reports none.
+`L2_MBP` delta subscriptions stream CoinAPI `book` and `L3_MBO` subscriptions stream `book_l3`. `L1_MBP` is
+rejected. Both channels send the whole book, so a delta subscription ignores `depth`.
+
+Depth subscriptions accept only `L2_MBP`. They use the smallest of `book5`, `book20`, and `book50` that covers
+the requested depth (default 10 levels). A depth above 50 is rejected. Each depth message lists complete top
+levels, is flagged `F_SNAPSHOT`, and carries zero order counts, since CoinAPI reports none.
 
 ### Channel conflicts
 
-CoinAPI allows one book type per connection, so every book subscription on a client must use the
-same channel. A second subscription that needs another channel, such as L3 deltas beside L2 deltas
-or depth 5 beside depth 20, fails, as does a second subscription for the same instrument with a
-different depth. Unsubscribe the active books first to switch channels.
+CoinAPI allows one book type per connection, so every book subscription on a client must use the same channel.
+A second subscription fails if it needs another channel, such as L3 beside L2 deltas or depth 5 beside depth
+20. A second subscription for the same instrument with a different depth also fails. Unsubscribe the active
+books first to switch channels.
 
 ### Snapshot and delta events
 
@@ -272,19 +274,19 @@ Recovery applies to delta subscriptions. A sequence gap, an update before the fi
 an invalid level stops book output until the client receives a valid replacement snapshot.
 Updates received while waiting for that snapshot are discarded.
 
-Depth subscriptions receive complete snapshots. An invalid depth message is dropped with a warning;
-the next valid message replaces it, without a recovery attempt or snapshot deadline.
+Depth subscriptions receive complete snapshots. The client drops an invalid depth message with a warning. The
+next valid message replaces it, without a recovery attempt or snapshot deadline.
 
 ### Snapshot deadlines and retry limits
 
-`book_snapshot_timeout_secs` sets the wait for a snapshot after subscribing, reconnecting, or
-starting recovery. It defaults to 10 seconds; `0` disables the deadline. A missing snapshot starts
-or retries recovery. Unsubscribing cancels recovery, and a CoinAPI `error` ends all book streams.
+`book_snapshot_timeout_secs` sets the wait for a snapshot after subscribing, reconnecting, or starting
+recovery. It defaults to 10 seconds. `0` disables the deadline. A missing snapshot starts or retries recovery.
+Unsubscribing cancels recovery, and a CoinAPI `error` ends all book streams.
 
-Book restarts are at least five seconds apart, and other subscription changes wait while a restart
-is pending. Recovery makes up to eight attempts within 180 seconds, with backoff and jitter, then
-continues at retry intervals that double from one minute to fifteen minutes until a snapshot is
-accepted. Reconnecting waits for fresh book snapshots before output resumes.
+Book restarts are at least five seconds apart, and other subscription changes wait while a restart is pending.
+Recovery makes up to eight attempts within 180 seconds, with backoff and jitter. It then retries until it
+accepts a snapshot. The retry interval doubles from one minute to fifteen minutes. Reconnecting waits for
+fresh book snapshots before output resumes.
 
 ### Effects on other streams
 
@@ -298,10 +300,9 @@ open without publishing an additional trade stream.
 
 ## Historical requests
 
-Historical requests require a connected client and a loaded instrument and use its stored
-`symbol_id`. Responses preserve the correlation ID, requested client ID, instrument or bar type,
-`start`, `end`, and `params`; an absent client ID defaults to the adapter's ID, and an absent `end`
-stays absent.
+Historical requests require a connected client and a loaded instrument and use its stored `symbol_id`.
+Responses preserve the correlation ID, requested client ID, instrument or bar type, `start`, `end`, and
+`params`. An absent client ID defaults to the adapter's ID. An absent `end` stays absent.
 
 | Request       | CoinAPI endpoint                  | Response       | `ts_event`        | `ts_init`         |
 | ------------- | --------------------------------- | -------------- | ----------------- | ----------------- |
@@ -332,9 +333,9 @@ endpoints.
 
 ### Closed bars
 
-Bar requests accept the same bar types as bar subscriptions. A response includes only periods
-that closed by `end` and by the time the response arrives; a period still in progress is never
-returned as a bar. `limit` counts CoinAPI periods before that exclusion.
+Bar requests accept the same bar types as bar subscriptions. A response includes only periods that closed by
+`end` and by the time the response arrives. A period still in progress is never returned as a bar. `limit`
+counts CoinAPI periods before that exclusion.
 
 ### Current book snapshots
 
@@ -353,19 +354,21 @@ CoinAPI data resolutions, which can lag the stream, so a value with more decimal
 with a warning rather than rounded. Trailing zeros do not count as decimal places. Historical
 responses apply the same rule to each record and log one warning with the dropped count.
 
-OHLCV volume has a bounded exception for small numeric tails. The client rounds it half to even at
-the instrument's size precision only when the adjustment is at most both `1e-15` times the reported
-volume and `1e-6` times one unit at that precision. For size precision 8, the absolute cap is
-`0.00000000000001`. Negative volumes and larger precision mismatches are rejected. Prices keep
-the exact-conversion rule.
+OHLCV volume has a bounded exception for small numeric tails. The client rounds it half to even at the
+instrument's size precision only if the adjustment meets both limits:
+
+- At most `1e-15` times the reported volume.
+- At most `1e-6` times one unit at that precision.
+
+For size precision 8, the absolute cap is `0.00000000000001`. Negative volumes and larger precision mismatches
+are rejected. Prices keep the exact-conversion rule.
 
 The absolute cap stays fixed as volume grows, so larger aggregate volumes can still be rejected
 even when their tails meet the relative bound.
 
-A book level finer than the configured precision rejects the whole message. A delta subscription
-starts recovery; a depth subscription drops the message. If CoinAPI's price resolution is too coarse
-for the feed, set a [price precision override](#price-precision-overrides). Size precision has no
-override.
+A book level finer than the configured precision rejects the whole message. A delta subscription starts
+recovery. A depth subscription drops the message. If CoinAPI's price resolution is too coarse for the feed,
+set a [price precision override](#price-precision-overrides). Size precision has no override.
 
 ### Price precision overrides
 
@@ -396,9 +399,8 @@ CoinAPI OHLCV prices can carry more decimal places than instrument metadata allo
 trade prices fit. For example, a BTC/USD OHLCV price of `84761.955` does not fit a `0.01` resolution.
 Set a suitable `price_precisions` override to avoid missing bars.
 
-Historical OHLCV volumes can also contain small numeric tails, such as `1.2582318399999999` for
-`1.25823184`. The client accepts them within the [bounded tolerance](#precision); larger mismatches
-still drop the bar.
+Historical OHLCV volumes can also contain small numeric tails, such as `1.2582318399999999` for `1.25823184`.
+The client accepts them within the [bounded tolerance](#precision). Larger mismatches still drop the bar.
 :::
 
 ## Connection lifecycle
@@ -412,10 +414,10 @@ work and drop the connection without waiting.
 
 ### Account limits
 
-REST usage is subject to concurrency limits and data credits; WebSocket usage is metered by data
-transfer. Check your account's entitlements, connection allowance, and
-[current pricing](https://www.coinapi.io/products/market-data-api/pricing?ref=nautilus) before choosing
-feeds. A plan's transfer allowance does not guarantee access to every channel or source.
+REST usage is subject to concurrency limits and data credits. WebSocket usage is metered by data transfer.
+Check your account's entitlements, connection allowance, and
+[current pricing](https://www.coinapi.io/products/market-data-api/pricing?ref=nautilus) before choosing feeds.
+A plan's transfer allowance does not guarantee access to every channel or source.
 
 The pricing page lists these daily allowances as of October 2026. Check the linked page for changes
 and overage charges.
@@ -428,7 +430,7 @@ and overage charges.
 | Pro           | 100,000      | 512 GiB         | 64 GiB          |
 | Enterprise    | Custom       | Custom          | Custom          |
 
-CoinAPI classifies trades, quotes, and L2 books as Tier 1, and OHLCV as Tier 2; see the
+CoinAPI classifies trades, quotes, and L2 books as Tier 1, and OHLCV as Tier 2. See the
 [usage FAQ](https://www.coinapi.io/products/market-data-api/faq?ref=nautilus). Its
 [L3 pricing guide](https://www.coinapi.io/blog/tier-1-vs-tier-2-market-data-level-3-order-book?ref=nautilus)
 classifies continuous L3 streams as Tier 2. Confirm billing and access for your chosen feeds.
@@ -446,18 +448,18 @@ pairs, but their transfer is still billable. Consider this when combining feeds 
 ### Local credit budget
 
 The data client's `credit_budget` caps the credits one client instance may spend and defaults to
-100. Each symbol-metadata attempt costs one local credit, regardless of response size; use
-`filter_symbol_id` to reduce transfer and parsing work. Allow for all historical requests: a range
-request stops at the budget and returns a truncated response. For bulk history, downloaded
-[flat files](#flat-files) avoid repeated REST requests; compare their transfer cost with REST credits.
+100. Each symbol-metadata attempt costs one local credit, regardless of response size. Use `filter_symbol_id`
+     to reduce transfer and parsing work. Allow for all historical requests: a range request stops at the
+     budget and returns a truncated response. For bulk history, downloaded [flat files](#flat-files) avoid
+     repeated REST requests. Compare their transfer cost with REST credits.
 
-`max_concurrent_requests` bounds simultaneous REST requests. The local credit budget applies
-throughout the client's lifetime and is separate from CoinAPI billing.
-Each attempt reserves `ceil(limit / 100)` credits for historical requests, or one credit for requests
-without a record limit. CoinAPI bills historical requests per 100 returned records, so a successful
-historical page refunds the unused reservation above `ceil(records / 100)`, with a minimum of one
-credit charged locally. Failed, retried, and canceled attempts are not refunded.
-The client backs off on HTTP 429 and fails promptly on HTTP 403. See the
+`max_concurrent_requests` bounds simultaneous REST requests. The local credit budget applies throughout the
+client's lifetime and is separate from CoinAPI billing. Each attempt reserves `ceil(limit / 100)` credits for
+historical requests, or one credit for requests without a record limit.
+
+CoinAPI bills historical requests per 100 returned records. Thus, a successful historical page refunds the
+unused reservation above `ceil(records / 100)`. The local minimum charge is one credit. Failed, retried, and
+canceled attempts are not refunded. The client backs off on HTTP 429 and fails promptly on HTTP 403. See the
 [API limits reference](https://www.coinapi.io/products/market-data-api/docs/api-limits-and-billing-metrics?ref=nautilus).
 
 ### Backfills
@@ -466,32 +468,32 @@ Set an explicit record limit and time window for historical requests. Without a 
 request can reserve the remaining credit budget for its first page and leave none for other
 requests. Each historical page has its own REST retry budget.
 
-For bulk history, compare REST credit costs with downloaded [flat files](#flat-files). Fewer HTTP
-calls do not necessarily mean fewer billable credits. Download files separately before loading them;
-the adapter does not list or download S3 objects.
+For bulk history, compare REST credit costs with downloaded [flat files](#flat-files). Fewer HTTP calls do not
+necessarily mean fewer billable credits. Download files separately before loading them. The adapter does not
+list or download S3 objects.
 
 ## Raw HTTP requests
 
-For direct Rust access, `CoinApiHttpClient` accepts a `SecretString` API key and `CoinApiHttpConfig`.
-The base URL includes `/v1/`. Authentication uses `X-CoinAPI-Key`; redirects are rejected. The client
-ignores system proxy environment variables and connects directly unless `proxy_url` is set.
+For direct Rust access, `CoinApiHttpClient` accepts a `SecretString` API key and `CoinApiHttpConfig`. The base
+URL includes `/v1/`. Authentication uses `X-CoinAPI-Key`. Redirects are rejected. The client ignores system
+proxy environment variables and connects directly unless `proxy_url` is set.
 
-The raw client exposes exchange and active-symbol metadata, historical trades, quotes, and OHLCV,
-and single-symbol current L2 and L3 books. Financial values retain their exact decimal representation;
-values outside `Decimal` precision fail parsing instead of rounding.
+The raw client exposes exchange and active-symbol metadata, historical trades, quotes, and OHLCV, and
+single-symbol current L2 and L3 books. Financial values retain their exact decimal representation. Values
+outside `Decimal` precision fail parsing instead of rounding.
 
 ### Single pages and ranges
 
-The `get_trades`, `get_quotes`, and `get_ohlcv` methods return one page for an explicit time window
-and record limit in `[1, 100000]`, and a full page does not mean the window is complete. The
-`get_trades_range`, `get_quotes_range`, and `get_ohlcv_range` methods page through a whole
-`HistoryRange`, whose optional limit caps the total records and can exceed 100,000.
+The `get_trades`, `get_quotes`, and `get_ohlcv` methods return one page for an explicit time window and record
+limit in `[1, 100000]`. A full page does not mean the window is complete. The `get_trades_range`,
+`get_quotes_range`, and `get_ohlcv_range` methods page through a whole `HistoryRange`, whose optional limit
+caps the total records and can exceed 100,000.
 
 ### Time boundaries
 
-Trade and quote ranges select `[time_start, time_end)` by exchange time. OHLCV ranges select periods
-by their start time; the data client also excludes periods that have not closed. Records outside
-the requested window are filtered out.
+Trade and quote ranges select `[time_start, time_end)` by exchange time. OHLCV ranges select periods by their
+start time. The data client also excludes periods that have not closed. Records outside the requested window
+are filtered out.
 
 ### Pagination
 
@@ -515,10 +517,10 @@ date when the window has no trades, and a page holding only such periods complet
 
 #### Credit exhaustion and concurrent ranges
 
-When the credit budget cannot fund the next page, including after a failed attempt kept its
-reservation, the result carries the records gathered so far and is marked truncated. Without
-affordable credit for the first page, the request fails. Range requests on one client run one at
-a time, so each sizes its pages after earlier ranges have settled their credits.
+If the credit budget cannot fund the next page, the result carries the records gathered so far and sets
+`is_truncated=true`. The budget can be insufficient after a failed attempt keeps its reservation. Without
+affordable credit for the first page, the request fails. Range requests on one client run one at a time, so
+each sizes its pages after earlier ranges have settled their credits.
 
 ## Raw WebSocket streams
 
@@ -526,36 +528,34 @@ For direct Rust access, `CoinApiWebSocketClient` takes an API key and `CoinApiWe
 returns a message receiver. Its default endpoint is `wss://ws.coinapi.io/v1/`. A `Subscription`
 names a data type, an exact full CoinAPI `symbol_id`, and an OHLCV period where required.
 
-The client decodes `trade`, `quote`, `book`, `book5`, `book20`, `book50`, `book_l3`, and `ohlcv`.
-It preserves decimal values, logs and drops malformed frames, and ignores metadata feeds.
-Subscription changes return when queued; receiving matching data confirms the subscription.
-The [subscription pacing](#subscription-changes), [book channel limits](#channel-conflicts), and
-[billable combined scope](#account-limits) apply to this client too.
+The client decodes `trade`, `quote`, `book`, `book5`, `book20`, `book50`, `book_l3`, and `ohlcv`. It preserves
+decimal values, logs and drops malformed frames, and ignores metadata feeds. Subscription changes return when
+queued. Receiving matching data confirms the subscription. The [subscription pacing](#subscription-changes),
+[book channel limits](#channel-conflicts), and [billable combined scope](#account-limits) apply to this client
+too.
 
 ### Reconnects and errors
 
-Five seconds without a message triggers a reconnect. The first attempt is immediate; later
-attempts back off from one second to 30 seconds, doubling with up to 500 milliseconds of jitter.
-On an account with one connection slot, reconnects can receive HTTP 429 until CoinAPI releases the
-old connection.
+Five seconds without a message triggers a reconnect. The first attempt is immediate. Later attempts back off
+from one second to 30 seconds, doubling with up to 500 milliseconds of jitter. On an account with one
+connection slot, reconnects can receive HTTP 429 until CoinAPI releases the old connection.
 
 Reconnection restores the scope and emits `CoinApiWsMessage::Reconnected`. Raw book sequences
 restart per connection, so clear your book state after reconnecting. The data client handles book
 state and sequence continuity automatically.
 
-A server `reconnect` notice does not interrupt streaming; the client reconnects when the server
-closes. A CoinAPI `error` emits `CoinApiWsMessage::Error`, clears all subscriptions, and ends the
-connection without reconnecting. The next subscription opens a new connection. Authentication
-errors can arrive after a successful WebSocket upgrade. Closing or dropping the client closes its
-connection.
+A server `reconnect` notice does not interrupt streaming. The client reconnects when the server closes. A
+CoinAPI `error` emits `CoinApiWsMessage::Error`, clears all subscriptions, and ends the connection without
+reconnecting. The next subscription opens a new connection. Authentication errors can arrive after a
+successful WebSocket upgrade. Closing or dropping the client closes its connection.
 
 ## Flat files
 
 CoinAPI [Flat Files](https://www.coinapi.io/products/flat-files?ref=nautilus) are daily or hourly `.csv.gz`
-exports served over an S3-compatible API. The adapter loads downloaded files into Nautilus data; it
-does not list or download them. The loaders follow the Tardis CSV loaders: each `load_*` function
-returns a whole file, each `stream_*` function yields it in chunks, and both take optional price
-and size precisions and a record `limit`.
+exports served over an S3-compatible API. The adapter loads downloaded files into Nautilus data. It does not
+list or download them. The loaders follow the Tardis CSV loaders. Each `load_*` function returns a whole file,
+and each `stream_*` function yields it in chunks. Both take optional price and size precisions and a record
+`limit`.
 
 | Schema                        | Load                           | Stream                  | Output           |
 | ----------------------------- | ------------------------------ | ----------------------- | ---------------- |
@@ -622,9 +622,9 @@ for chunk in stream_coinapi_deltas(
 
 ### Bars example
 
-`CoinApiOhlcvLoader` maps numeric `symbol_id` values to instruments; `27576` is the REST
-`symbol_id_int` of `COINBASE_SPOT_BTC_USD`. It reads the period from `TP-1MIN` and skips unmapped
-symbols. Rust also provides `CoinApiOhlcvLoader::from_symbols` to build the map from metadata.
+`CoinApiOhlcvLoader` maps numeric `symbol_id` values to instruments. `27576` is the REST `symbol_id_int` of
+`COINBASE_SPOT_BTC_USD`. It reads the period from `TP-1MIN` and skips unmapped symbols. Rust also provides
+`CoinApiOhlcvLoader::from_symbols` to build the map from metadata.
 
 ```rust tab="Rust"
 use nautilus_coinapi::csv::CoinApiOhlcvLoader;
@@ -655,10 +655,10 @@ hold one symbol under
 `T-{SCHEMA}/D-{YYYYMMDD|YYYYMMDDHH}/E-{EXCHANGE}/IDDI-{ID}+SC-{SYMBOL_ID}+S-{EXCHANGE_SYMBOL}.csv.gz`.
 Pass an explicit `instrument_id` for each file.
 
-CoinAPI also documents export variants with comma delimiters, full date-time book timestamps, or
-numeric book update types. These loaders require semicolon delimiters, time-of-day book timestamps,
-and named book updates such as `SNAPSHOT`, `ADD`, and `SET`. Convert other layouts before loading
-them; see the [full-book dataset guide](https://www.coinapi.io/products/flat-files/docs/datasets/limitbook?ref=nautilus).
+CoinAPI also documents export variants with comma delimiters, full date-time book timestamps, or numeric book
+update types. These loaders require semicolon delimiters, time-of-day book timestamps, and named book updates
+such as `SNAPSHOT`, `ADD`, and `SET`. Convert other layouts before loading them. See the
+[full-book dataset guide](https://www.coinapi.io/products/flat-files/docs/datasets/limitbook?ref=nautilus).
 
 #### Buckets and retention
 
@@ -672,56 +672,55 @@ archive and contains no OHLCV. See the
 
 The [OHLCV dataset guide](https://www.coinapi.io/products/flat-files/docs/datasets/ohlcv?ref=nautilus)
 documents exchange-wide daily files in the `coinapi` bucket under
-`T-OHLCV_ACTIVE_CONSOLIDATED/D-{YYYYMMDD}/E-{EXCHANGE}/TP-{PERIOD}.csv.gz`, one file per period of
-`1SEC`, `1MIN`, `1HRS`, or `1DAY`. Each row's numeric `symbol_id` is the REST `symbol_id_int`.
-The loader maps it to an instrument, skips unmapped rows, and reads the period from `TP-` unless
-`period_id` is given. The general file-structure page also lists hourly OHLCV paths; confirm
-available objects when downloading. The loader reads the timestamps from the rows for either layout.
+`T-OHLCV_ACTIVE_CONSOLIDATED/D-{YYYYMMDD}/E-{EXCHANGE}/TP-{PERIOD}.csv.gz`, one file per period of `1SEC`,
+`1MIN`, `1HRS`, or `1DAY`. Each row's numeric `symbol_id` is the REST `symbol_id_int`. The loader maps it to
+an instrument, skips unmapped rows, and reads the period from `TP-` unless `period_id` is given. The general
+file-structure page also lists hourly OHLCV paths. Confirm available objects when downloading. The loader
+reads the timestamps from the rows for either layout.
 
 ### Order book data
 
-Book files with order IDs produce L3 market-by-order deltas; files without them produce L2
-market-by-price deltas. For example, Coinbase spot files contain order IDs, while Binance spot
-files describe price levels. Use the corresponding `BookType` when applying the deltas.
+Book files with order IDs produce L3 market-by-order deltas. Files without them produce L2 market-by-price
+deltas. For example, Coinbase spot files contain order IDs, while Binance spot files describe price levels.
+Use the corresponding `BookType` when applying the deltas.
 
-The initial snapshot emits a `Clear` followed by `Add` deltas, all flagged `F_SNAPSHOT`. Subsequent
-updates at one exchange timestamp form one event ending in `F_LAST`. Streaming chunks normally end
-at event boundaries and can exceed `chunk_size`. A record `limit` can cut the final event short; its
-last delta still carries `F_LAST`, so a limited load can leave an incomplete book.
+The initial snapshot emits a `Clear` followed by `Add` deltas, all flagged `F_SNAPSHOT`. Subsequent updates at
+one exchange timestamp form one event ending in `F_LAST`. Streaming chunks normally end at event boundaries
+and can exceed `chunk_size`. A record `limit` can cut the final event short. Its last delta still carries
+`F_LAST`, so a limited load can leave an incomplete book.
 
 L3 fill updates reduce an order's remaining size and remove it at zero. A later add can reuse an
 order ID after deletion. Updates to unknown orders, other than deletes, are logged and skipped.
 
 ### Timestamps
 
-Trade, quote, and OHLCV rows carry zone-less UTC date-times such as
-`2025-09-01T00:00:00.1780000`. Book rows carry only a time of day such as `00:00:00.0140000`, so
-the book loaders date each row from the file's `D-` partition, or from `date` when the file sits
-outside one. A snapshot stamped later than the first update carries the previous day's closing
-time and moves back one day. A `time_coinapi` more than half a day below its `time_exchange` falls
-after midnight and moves forward one day.
+Trade, quote, and OHLCV rows carry zone-less UTC date-times such as `2025-09-01T00:00:00.1780000`. Book rows
+carry only a time of day, such as `00:00:00.0140000`. Thus, the book loaders date each row from the file's
+`D-` partition. For a file outside a `D-` partition, they use `date`. A snapshot stamped later than the first
+update carries the previous day's closing time and moves back one day. A `time_coinapi` more than half a day
+below its `time_exchange` falls after midnight and moves forward one day.
 
 `ts_event` is `time_exchange` and `ts_init` is `time_coinapi`. Bars take `time_period_end` for
 both.
 
 ### Precision
 
-Prices and sizes convert exactly from text. `load_*` infers unspecified precisions from all rows
-read, stopping at `limit` if set. `stream_*` samples the first 10,000 rows and raises if a later
-value needs rounding; pass explicit precisions when the file's precision is unknown. The OHLCV
-loader infers precisions per instrument, with the volume exception below.
+Prices and sizes convert exactly from text. `load_*` infers unspecified precisions from all rows read,
+stopping at `limit` if set. `stream_*` samples the first 10,000 rows and raises if a later value needs
+rounding. Pass explicit precisions when the file's precision is unknown. The OHLCV loader infers precisions
+per instrument, with the volume exception below.
 
-CoinAPI uses [high-precision mode](../getting_started/installation.md#precision-mode) by default:
-16 decimal places rather than 9, to fit cryptocurrency sizes and CoinAPI volumes. OHLCV `sx_sum`
-can carry numeric tails consistent with floating-point noise, such as `689.5507347100003`.
-The loader rounds volumes half to even at the build's maximum precision, changing only values that
-exceed it, such as this example in a standard-precision build. It rejects negative source volumes
-and positive volumes that round to zero; zero source volumes remain valid.
+CoinAPI uses [high-precision mode](../getting_started/installation.md#precision-mode) by default: 16 decimal
+places rather than 9, to fit cryptocurrency sizes and CoinAPI volumes. OHLCV `sx_sum` can carry numeric tails
+consistent with floating-point noise, such as `689.5507347100003`. The loader rounds volumes half to even at
+the build's maximum precision, changing only values that exceed it, such as this example in a
+standard-precision build. It rejects negative source volumes and positive volumes that round to zero. Zero
+source volumes remain valid.
 
 ## Configuration
 
-Register `CoinApiDataClientFactory` and `CoinApiDataClientConfig` with the node builder. The default
-client ID is `COINAPI`; a custom client name becomes its client ID.
+Register `CoinApiDataClientFactory` and `CoinApiDataClientConfig` with the node builder. The default client ID
+is `COINAPI`. A custom client name becomes its client ID.
 
 | Field                        | Default   | Purpose                                                     |
 | ---------------------------- | --------- | ----------------------------------------------------------- |
@@ -741,29 +740,28 @@ client ID is `COINAPI`; a custom client name becomes its client ID.
 | `book_snapshot_timeout_secs` | `10`      | Seconds to wait for a book snapshot; `0` disables.          |
 | `price_precisions`           | Empty     | Price precision overrides by instrument ID.                 |
 
-Configuration rejects unknown fields. Unset URL overrides use the production endpoints. Sockudo
-is the default WebSocket backend; set `transport_backend=TransportBackend.TUNGSTENITE` to use
-Tungstenite instead, importing `TransportBackend` from `nautilus_trader.network`.
+Configuration rejects unknown fields. Unset URL overrides use the production endpoints. Sockudo is the default
+WebSocket backend. Set `transport_backend=TransportBackend.TUNGSTENITE` to use Tungstenite instead, importing
+`TransportBackend` from `nautilus_trader.network`.
 
-`proxy_url` routes both transports through an explicit HTTP(S) proxy; ambient system proxies remain
-disabled. The URL must include `http://` or `https://`; SOCKS URLs fail at client construction.
-Proxy credentials stay redacted in Rust debug output and are not exposed by Python getters.
-The Python `has_proxy_url` property reports whether an explicit proxy is configured.
-`credit_budget`, `max_concurrent_requests`, `retry_max_elapsed_ms`, and `http_timeout_secs` must be
-positive. Each historical page has its own REST retry budget. The initial retry delay must be
-positive, and the maximum must be at least the initial delay; invalid backoff settings fail at
-client construction.
-The per-attempt timeout includes waiting for concurrency admission and does not include retry
-delays; the total elapsed budget includes both.
+`proxy_url` routes both transports through an explicit HTTP(S) proxy. Ambient system proxies remain disabled.
+The URL must include `http://` or `https://`. SOCKS URLs fail at client construction. Proxy credentials stay
+redacted in Rust debug output and are not exposed by Python getters. The Python `has_proxy_url` property
+reports whether an explicit proxy is configured.
+
+`credit_budget`, `max_concurrent_requests`, `retry_max_elapsed_ms`, and `http_timeout_secs` must be positive.
+Each historical page has its own REST retry budget. The initial retry delay must be positive, and the maximum
+must be at least the initial delay. Invalid backoff settings fail at client construction. The per-attempt
+timeout includes waiting for concurrency admission and does not include retry delays. The total elapsed budget
+includes both.
 
 ### Python configuration
 
 The `nautilus_trader.adapters.coinapi` package exports `CoinApiDataClientConfig`,
-`CoinApiInstrumentSelection`, `CoinApiDataClientFactory`, and the `COINAPI` and `COINAPI_CLIENT_ID`
-constants. The config takes the fields above as keyword arguments and exposes each one except
-`api_key` and `proxy_url` as a read-only property; its representation omits every value. A selection
-takes the exchange, the instrument IDs, and the optional `filter_symbol_id` and `filter_asset_id`
-filters.
+`CoinApiInstrumentSelection`, `CoinApiDataClientFactory`, and the `COINAPI` and `COINAPI_CLIENT_ID` constants.
+The config takes the fields above as keyword arguments. It exposes each field except `api_key` and `proxy_url`
+as a read-only property. Its representation omits every value. A selection takes the exchange, the instrument
+IDs, and the optional `filter_symbol_id` and `filter_asset_id` filters.
 
 ```python
 from nautilus_trader.adapters.coinapi import CoinApiDataClientConfig
@@ -794,20 +792,18 @@ node = (
 )
 ```
 
-The factory creates the client during `build`, where invalid credentials, endpoint or proxy URLs,
-zero concurrency, elapsed budgets, or attempt timeouts, and invalid retry backoff settings raise an
-error.
-The example reads its key from `COINAPI_API_KEY`. It overrides BTC/USD price precision to admit
-three-decimal OHLCV prices; see [Precision](#precision). For general node setup, see
+The factory creates the client during `build`, where invalid credentials, endpoint or proxy URLs, zero
+concurrency, elapsed budgets, or attempt timeouts, and invalid retry backoff settings raise an error. The
+example reads its key from `COINAPI_API_KEY`. It overrides BTC/USD price precision to admit three-decimal
+OHLCV prices. See [Precision](#precision). For general node setup, see
 [Configure live trading](../how_to/configure_live_trading.md).
 
 ### Instrument selections
 
-Each `CoinApiInstrumentSelection` names a CoinAPI exchange, the native instrument IDs to load,
-and optional `filter_symbol_id` and `filter_asset_id` metadata filters. Construction rejects empty
-ID lists, IDs mapped to another CoinAPI exchange, and IDs selected more than once. Use
-`filter_symbol_id` to limit metadata transfer and parsing; each request attempt costs one local
-credit regardless of response size.
+Each `CoinApiInstrumentSelection` names a CoinAPI exchange, the native instrument IDs to load, and optional
+`filter_symbol_id` and `filter_asset_id` metadata filters. Construction rejects empty ID lists, IDs mapped to
+another CoinAPI exchange, and IDs selected more than once. Use `filter_symbol_id` to limit metadata transfer
+and parsing. Each request attempt costs one local credit regardless of response size.
 
 Connecting loads each selection once and fails if any selected instrument is missing. Only selected
 instruments are published. Use explicit selections to keep CoinAPI and native adapters
@@ -819,8 +815,9 @@ including after a transport reconnect. Disconnect and reconnect the data client 
 IDs for subscriptions.
 
 - `request_instrument` accepts only a configured ID and returns an error for any other.
-- `request_instruments` returns the configured instruments for the requested venue, or all of
-  them when the request names no venue; such a response carries the `COINAPI` venue.
+- `request_instruments` returns the configured instruments for the requested venue. If the request names no
+  venue, it returns all configured instruments. A response without a requested venue carries the `COINAPI`
+  venue.
 - A request for a venue without configured instruments returns an empty response without a REST
   call.
 

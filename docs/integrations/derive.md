@@ -5,11 +5,10 @@ and cash-settled perpetual swaps, and one of the largest on-chain options market
 runs against subaccounts owned by the user's EOA or multisig, so collateral stays in the
 user's custody while orders match through the venue's orderbook.
 
-The v3 API batches operations for settlement on Ethereum. Orders match off chain and
-settle on chain, pairing orderbook execution with self-custody. Orders are authorized with
-EIP-712 typed-data signatures from a session key scoped to a subaccount, which keeps the
-signing key separate from the wallet owner and lets users rotate or revoke access without
-moving funds.
+The v3 API batches operations for settlement on Ethereum. Orders match off chain and settle on chain, pairing
+orderbook execution with self-custody. Orders use EIP-712 typed-data signatures from a session key scoped to a
+subaccount. This keeps the signing key separate from the wallet owner. Users can rotate or revoke access
+without moving funds.
 
 ## Overview
 
@@ -51,11 +50,11 @@ announces completion of the v3 migration on October 6, 2026. The
 down Derive Chain afterward. These sources do not specify an exact v2 API retirement date
 or establish that v2 remains available as a fallback.
 
-Verify the migrated owner, funded subaccount, and session-key permissions before starting execution.
-V3 uses the ultimate owner EOA or Ethereum multisig as `wallet_address`, replacing the intermediate
-Derive Wallet. The migration proposal splits standard-margin subaccounts by risk universe, so
-confirm the v3 `subaccount_id` instead of assuming the v2 ID selects the intended balances and
-positions. Portfolio-margin subaccounts migrate one to one.
+Verify the migrated owner, funded subaccount, and session-key permissions before starting execution. V3 uses
+the ultimate owner EOA or Ethereum multisig as `wallet_address`, replacing the intermediate Derive Wallet. The
+migration proposal splits standard-margin subaccounts by risk universe. Thus, confirm the v3 `subaccount_id`.
+Do not assume the v2 ID selects the intended balances and positions. Portfolio-margin subaccounts migrate one
+to one.
 
 Migrated v2 admin keys receive trading, same-owner transfer, withdrawal, and liquidation scopes,
 with expiry capped to 28 days after genesis, the v3 launch state. They do not receive `admin`,
@@ -91,11 +90,10 @@ With `include_expired`, the provider merges live and expired option listings by 
 It keeps the live definition when both listings contain the same option near expiry. Perpetual
 and spot listings ignore this setting.
 
-The adapter routes on the venue `instrument_type` (`perp`, `option`, `erc20`), not on the symbol
-suffix, so spot pairs need no special symbology parsing. Spot reuses the same Trade-module
-signing path as perps and options; the in-repo fixtures under
-`crates/adapters/derive/test_data/spot/` capture the spot instrument, order book, ticker, and
-trade field shapes the parser and execution paths are pinned to.
+The adapter routes on the venue `instrument_type` (`perp`, `option`, `erc20`), not on the symbol suffix. Thus,
+spot pairs need no special symbology parsing. Spot reuses the same Trade-module signing path as perps and
+options. Fixtures under `crates/adapters/derive/test_data/spot/` capture spot instrument, order book, ticker,
+and trade field shapes. These fixtures pin the parser and execution paths to those shapes.
 
 ### Spot behavior
 
@@ -106,13 +104,12 @@ was exercised manually before the v3 migration. The current `ETH-USDC` minimum a
 An empty spot book does not provide a bounded way to close a minimum-size fill.
 :::
 
-- **Sparse trades:** public spot trade channels (`trades.erc20.ETH`, `trades.ETH-USDC`) subscribe
+- **Sparse trades**: public spot trade channels (`trades.erc20.ETH`, `trades.ETH-USDC`) subscribe
   successfully but can be low-volume, so expect sparse trade frames.
-- **Empty books:** the venue still broadcasts ticker and order book frames with a zeroed top of
-  book. The adapter emits no quote when either side has zero price or size; see [Quotes](#quotes).
-  Trade frames are match-driven and independent of book state, so a trade that empties the book
-  still emits an event.
-- **Standard Margin:** spot orders are margined by initial margin fraction, not full notional.
+- **Empty books**: the venue still broadcasts ticker and order book frames with a zeroed top of book. The
+  adapter emits no quote when either side has zero price or size. See [Quotes](#quotes). Trade frames are
+  match-driven and independent of book state, so a trade that empties the book still emits an event.
+- **Standard Margin**: spot orders are margined by initial margin fraction, not full notional.
 
 ## Environments
 
@@ -134,18 +131,17 @@ When upgrading from v2, replace the old Derive Wallet address in `wallet_address
 environment variable with the owner's EOA or multisig address. See
 [V3 deployment and migration](#v3-deployment-and-migration).
 
-The EIP-712 domain separators, Action typehash, and Trade module addresses for both networks
-are shipped in `crates/adapters/derive/src/common/consts.rs` and tracked against Derive's
-[v3 action-signing reference](https://docs.derive.xyz/authentication/action-signing).
-Mainnet uses Ethereum chain 1, and testnet uses Sepolia chain 11155111. Both use the same Trade
-module address. The owner is the EOA or multisig; the session key supplies the signer address.
-`DeriveExecutionClientConfig::domain_separator`, `action_typehash`, and `trade_module_address`
-accept per-instance overrides that take precedence over the shipped values.
+The EIP-712 domain separators, Action typehash, and Trade module addresses for both networks are shipped in
+`crates/adapters/derive/src/common/consts.rs` and tracked against Derive's
+[v3 action-signing reference](https://docs.derive.xyz/authentication/action-signing). Mainnet uses Ethereum
+chain 1, and testnet uses Sepolia chain 11155111. Both use the same Trade module address. The owner is the EOA
+or multisig. The session key supplies the signer address. `DeriveExecutionClientConfig::domain_separator`,
+`action_typehash`, and `trade_module_address` accept per-instance overrides that take precedence over the
+shipped values.
 
 Order, trigger-order, and replace requests sign the seven-word Trade ABI with 1e18 fixed-point scaling.
-Financial inputs must fit 12 fractional digits, including trailing zeros; excess precision raises
-an error instead of truncating the signed value. The request sends the same decimal values used to
-build the signature.
+Financial inputs must fit 12 fractional digits, including trailing zeros. Excess precision raises an error
+instead of truncating the signed value. The request sends the same decimal values used to build the signature.
 
 Action nonces use UNIX nanoseconds and travel as decimal strings in requests and responses.
 The allocator shares a monotonic stream per wallet and subaccount across client instances in the
@@ -178,19 +174,21 @@ Steps to reach a position where the execution client can submit a signed order:
 
 1. **Sign in to the testnet dashboard.** Open
    [testnet.app.derive.xyz](https://testnet.app.derive.xyz/) and connect the owner EOA or multisig.
-1. **Copy the owner wallet address.** Use your EOA or multisig address as `wallet_address`
-   so the client sends it in the `X-DeriveWallet` header. V3 has no separate Derive Wallet address.
+1. **Copy the owner wallet address.** Use your EOA or multisig address as `wallet_address`. The client sends
+   it in the `X-DeriveWallet` header. V3 has no separate Derive Wallet address.
 1. **Fund a subaccount.** Follow Derive's [deposit guide](https://docs.derive.xyz/getting-started/depositing)
-   to mint test collateral and deposit on Sepolia. The first deposit creates the account and
-   subaccounts. Copy the funded subaccount's integer ID as `subaccount_id`; orders require enough
-   collateral to cover their margin.
-1. **Generate a session key.** Follow Derive's [session-key guide](https://docs.derive.xyz/authentication/session-keys)
-   to register a key with protocol scope `trade:orderbook:all`, or narrower product scopes,
-   restricted to the funded subaccount. The separate off-chain `account_info` capability does
-   not grant trading. Choose an expiry and verify the record through `private/session_keys`.
-   Copy the raw secp256k1 private key as `session_key`; it stays local and is redacted from `Debug` output.
-   To retire a key, re-register it with a past or zero expiry. Revocation has a minimum cooldown
-   of [5, 15] minutes; it does not take effect immediately.
+   to mint test collateral and deposit on Sepolia. The first deposit creates the account and subaccounts. Copy
+   the funded subaccount's integer ID as `subaccount_id`. Orders require enough collateral to cover their
+   margin.
+1. **Generate a session key.** Follow Derive's
+   [session-key guide](https://docs.derive.xyz/authentication/session-keys) to register a key with protocol
+   scope `trade:orderbook:all`, or narrower product scopes, restricted to the funded subaccount. The separate
+   off-chain `account_info` capability does not grant trading. Choose an expiry and verify the record through
+   `private/session_keys`. Copy the raw secp256k1 private key as `session_key`. It stays local and is redacted
+   from `Debug` output.
+
+   To retire a key, re-register it with a past or zero expiry. Revocation has a minimum cooldown of [5, 15]
+   minutes. It does not take effect immediately.
 1. **Set the environment variables.** Export the three values the client reads in testnet
    mode (or pass them on `DeriveExecutionClientConfig`, where the config field wins):
 
@@ -211,16 +209,16 @@ Funding must cover the venue's initial-margin requirement and pending-order rese
 Order acceptance also depends on the venue's price, quantity, and execution rules.
 Use the venue's margin figures to size funding for the smallest viable test:
 
-- **Smoke test (submit and cancel, no fills):** fund enough to cover the margin required
+- **Smoke test (submit and cancel, no fills)**: fund enough to cover the margin required
   for a passive order at the instrument's `minimum_amount`.
-- **Options:** size the deposit to cover the venue's margin requirement for the passive order.
+- **Options**: size the deposit to cover the venue's margin requirement for the passive order.
   `public/get_instrument` provides contract details but does not report initial-margin requirements.
 
-For a fill round-trip, cover the venue's margin requirement, fees, and a bounded price move.
-Use current executable quotes, the smallest viable quantity, `max_fee_per_contract`, and a limit
-price or bounded `market_order_slippage_bps`. Close observed perpetual or option exposure with a
-reduce-only market or `IOC`/`FOK` order; close spot exposure with an opposite-side order.
-Confirm no open orders or positions remain.
+For a fill round-trip, cover the venue's margin requirement, fees, and a bounded price move. Use current
+executable quotes, the smallest viable quantity, `max_fee_per_contract`, and a limit price or bounded
+`market_order_slippage_bps`. Close observed perpetual or option exposure with a reduce-only market or
+`IOC`/`FOK` order. Close spot exposure with an opposite-side order. Confirm no open orders or positions
+remain.
 
 For order-size limits and taker exceptions, see [Instrument loading](#instrument-loading).
 
@@ -235,12 +233,11 @@ and position mark-to-market value after the venue's risk charges:
 | `initial_margin`     | Signed net initial-margin health     | Venue rejects risk-increasing orders that would make this value negative. |
 | `maintenance_margin` | Signed net maintenance-margin health | Subaccount is exposed to liquidation.                                     |
 
-The adapter's `query_account` command emits this snapshot as an `AccountState` event so the
-strategy layer can inspect current health. These net-health values exclude pending open-order
-reservations; a positive value alone does not prove that another order can be accepted.
-The venue's `private/order_quote` returns pre/post initial-margin health for a proposed order;
-actual order acceptance remains authoritative.
-See [Account state](#account-state) for the mapping.
+The adapter's `query_account` command emits this snapshot as an `AccountState` event so the strategy layer can
+inspect current health. These net-health values exclude pending open-order reservations. A positive value
+alone does not prove that another order can be accepted. The venue's `private/order_quote` returns pre/post
+initial-margin health for a proposed order. Actual order acceptance remains authoritative. See
+[Account state](#account-state) for the mapping.
 
 ## Mainnet onboarding
 
@@ -248,23 +245,26 @@ Mainnet onboarding mirrors testnet against the production dashboard. Use real fu
 
 1. **Sign in to the mainnet dashboard.** Open [app.derive.xyz](https://app.derive.xyz/) and connect
    the owner's EOA or multisig wallet.
-1. **Copy the owner wallet address.** Use the EOA or multisig address as `wallet_address`;
-   the client uses it for authentication and as the signed action's owner.
-1. **Fund or pick a subaccount.** Follow Derive's [deposit guide](https://docs.derive.xyz/getting-started/depositing)
-   to deposit USDC or supported collateral on Ethereum. A first deposit creates the account
-   and subaccounts; copy the funded subaccount's integer ID as `subaccount_id`.
-   Confirm via `private/get_subaccount` that the deposit appears in the collateral balances;
-   the adapter's `query_account` exposes modeled rows in `AccountState.info.collaterals`.
-   Check `net_initial_margin` and `net_maintenance_margin` in the emitted metadata as described
-   in [Check account health](#check-account-health). Positive net health alone does not prove
-   that an order can be accepted.
-1. **Generate a mainnet session key.** Follow Derive's [session-key guide](https://docs.derive.xyz/authentication/session-keys)
-   to register a key with protocol scope `trade:orderbook:all`, or narrower product scopes,
-   restricted to the subaccount. Verify its scopes and expiry through `private/session_keys`.
-   Contract owners use the on-chain registration described in [Testnet onboarding](#testnet-onboarding),
-   on Ethereum for mainnet. Copy the raw secp256k1 private key. Prefer short-lived keys
-   for exploratory tester runs. To retire a key, re-register it with a past or zero expiry.
-   Revocation has a minimum cooldown of [5, 15] minutes; it does not take effect immediately.
+1. **Copy the owner wallet address.** Use the EOA or multisig address as `wallet_address`. The client uses it
+   for authentication and as the signed action's owner.
+1. **Fund or pick a subaccount.** Follow Derive's
+   [deposit guide](https://docs.derive.xyz/getting-started/depositing) to deposit USDC or supported collateral
+   on Ethereum. A first deposit creates the account and subaccounts. Copy the funded subaccount's integer ID
+   as `subaccount_id`. Confirm via `private/get_subaccount` that the deposit appears in the collateral
+   balances. The adapter's `query_account` exposes modeled rows in `AccountState.info.collaterals`.
+
+   Check `net_initial_margin` and `net_maintenance_margin` in the emitted metadata as described in
+   [Check account health](#check-account-health). Positive net health alone does not prove that an order can
+   be accepted.
+1. **Generate a mainnet session key.** Follow Derive's
+   [session-key guide](https://docs.derive.xyz/authentication/session-keys) to register a key with protocol
+   scope `trade:orderbook:all`, or narrower product scopes, restricted to the subaccount. Verify its scopes
+   and expiry through `private/session_keys`. Contract owners use the on-chain registration described in
+   [Testnet onboarding](#testnet-onboarding), on Ethereum for mainnet. Copy the raw secp256k1 private key.
+   Prefer short-lived keys for exploratory tester runs.
+
+   To retire a key, re-register it with a past or zero expiry. Revocation has a minimum cooldown of [5, 15]
+   minutes. It does not take effect immediately.
 1. **Set the environment variables.** Export the three mainnet values (or pass them on
    `DeriveExecutionClientConfig`, where the config field wins):
 
@@ -277,10 +277,9 @@ Mainnet onboarding mirrors testnet against the production dashboard. Use real fu
 ### Select the example network
 
 :::warning
-Each Rust example (`node_data_tester`, `node_exec_tester`, `node_delta_neutral`) pins the network
-with a `const DERIVE_ENVIRONMENT: DeriveEnvironment` literal near the top of the file.
-**Check that constant before every run** and edit it to switch networks; the examples do not
-read the network from the environment.
+Each Rust example (`node_data_tester`, `node_exec_tester`, `node_delta_neutral`) pins the network with a
+`const DERIVE_ENVIRONMENT: DeriveEnvironment` literal near the top of the file. **Check that constant before
+every run** and edit it to switch networks. The examples do not read the network from the environment.
 :::
 
 Production deployments select the network via `DeriveDataClientConfig::environment` /
@@ -353,11 +352,10 @@ Derive can fill taker orders below `minimum_amount`, while orders that would res
 can be rejected with `11012: Invalid amount`. **Derive decides whether a sub-minimum order is valid.**
 :::
 
-Instrument loading treats venue error `12001` as an empty result for the affected product type,
-so a currency without a perp, option, or spot listing does not block its other products. Rows that
-fail to parse into domain instruments are logged and skipped while valid rows continue to load.
-Malformed response fields fail that currency's fetch. A fetch error during initial loading
-also fails the connection.
+Instrument loading treats venue error `12001` as an empty result for the affected product type. Thus, a
+missing perp, option, or spot listing for a currency does not block its other products. Rows that fail to
+parse into domain instruments are logged and skipped while valid rows continue to load. Malformed response
+fields fail that currency's fetch. A fetch error during initial loading also fails the connection.
 
 #### Historical data
 
@@ -376,17 +374,17 @@ Live v3 maker WebSocket row mapping remains unverified.
 For rows with an absent or unrecognized `liquidity_role`, the adapter treats `direction` as
 the taker's side.
 
-Historical trade requests emit one `TradeTick` per trade ID within the request. The live feed
-suppresses paired rows and reconnect replays while their IDs remain in a cache of the latest
-4,096 trades. Automatic reconnect retains this cache; explicit disconnect or reset clears it.
+Historical trade requests emit one `TradeTick` per trade ID within the request. The live feed suppresses
+paired rows and reconnect replays while their IDs remain in a cache of the latest 4,096 trades. Automatic
+reconnect retains this cache. Explicit disconnect or reset clears it.
 
 ##### Bar requirements and time bounds
 
-- **Aggregation and price:** bars require `EXTERNAL` aggregation and `PriceType::Last`, since
+- **Aggregation and price**: bars require `EXTERNAL` aggregation and `PriceType::Last`, since
   Derive candles are trade-based.
-- **Periods:** the venue supports 1, 5, 15, and 30 minute, 1, 4, and 8 hour, 1 day, and 1 week
+- **Periods**: the venue supports 1, 5, 15, and 30 minute, 1, 4, and 8 hour, 1 day, and 1 week
   steps. Any other bar specification is rejected before the request goes out.
-- **Time bounds:** the bar `end` bound selects buckets by their start time at the venue. Responses
+- **Time bounds**: the bar `end` bound selects buckets by their start time at the venue. Responses
   omit any bucket whose close is after the request time, including the still-forming bucket
   returned by the venue.
 
@@ -419,15 +417,16 @@ Derive uses the configured session key for authenticated execution:
 
 #### Fills and settlement
 
-The adapter ingests live and historical fills using `trade_id` and `order_id` as execution
-identities. Quantity, price, and fee decode as `Decimal`; commission rounds to USDC's Nautilus
-precision. Order status and private fill reports use the optional order label as `client_order_id`
-when it is a valid Nautilus identifier. The adapter omits unrepresentable labels with a warning and retains venue identities
-and financial values; reconciliation can resolve these fills by venue order ID.
-Null, empty, or missing required financial values fail decoding. Private trade arrays skip
-malformed rows with a warning. Invalid financial wire values reject a public WebSocket frame or
-public REST page. Unrepresentable required trade or order IDs fail per-row parsing; the adapter
-warns and continues with the remaining rows.
+The adapter ingests live and historical fills using `trade_id` and `order_id` as execution identities.
+Quantity, price, and fee decode as `Decimal`. Commission rounds to USDC's Nautilus precision.
+
+Order status and private fill reports use the optional order label as `client_order_id` when it is a valid
+Nautilus identifier. The adapter omits unrepresentable labels with a warning and retains venue identities and
+financial values. Reconciliation can resolve these fills by venue order ID.
+
+Null, empty, or missing required financial values fail decoding. Private trade arrays skip malformed rows with
+a warning. Invalid financial wire values reject a public WebSocket frame or public REST page. Unrepresentable
+required trade or order IDs fail per-row parsing. The adapter warns and continues with the remaining rows.
 
 Settlement metadata does not gate a fill. `batch_status` and the Ethereum L1 batch `tx_hash`
 can be null when execution first arrives. The adapter also accepts absent `op_uuid` metadata,
@@ -447,12 +446,13 @@ already in the live emitted-trade cache and deduplicate repeated IDs within a pa
 pages of the same query. Querying a trade does not record it as emitted. Core reconciliation uses
 persisted order trade IDs to reject repeated fill application after replay or restart.
 
-Live dispatch constructs the fill report and commission before changing order state. A commission
-conversion failure leaves the trade unprocessed so a replay can retry it. The adapter records the
-trade ID as emitted only after delivery succeeds; failed delivery retains the native trade record.
-For a tracked order, a native fill can establish its first venue binding before an acknowledgement
-arrives. The adapter emits `OrderAccepted` before `OrderFilled`. A fill whose side conflicts with
-the tracked order remains deferred, including after that order reaches a terminal state.
+Live dispatch constructs the fill report and commission before changing order state. A commission conversion
+failure leaves the trade unprocessed so a replay can retry it. The adapter records the trade ID as emitted
+only after delivery succeeds. Failed delivery retains the native trade record.
+
+For a tracked order, a native fill can establish its first venue binding before an acknowledgement arrives.
+The adapter emits `OrderAccepted` before `OrderFilled`. A fill whose side conflicts with the tracked order
+remains deferred, including after that order reaches a terminal state.
 
 Private trade updates can arrive before REST history or position reads reflect them.
 Settlement progress does not trigger extra history polling in the adapter.
@@ -494,14 +494,15 @@ averages are available, and the earliest native creation timestamp as the accept
 
 #### Startup reconciliation
 
-Before private streaming starts, the execution client publishes account state, loads instrument
-definitions required by the native portfolio and cached active orders, and waits for the engine
-cache to observe them. It restores owned active order context from cached order events, including
-known venue IDs and processed trade IDs, then verifies active orders against native open orders
-and history for their instruments. Historical metadata gaps do not prevent this binding check.
-After private subscription confirmation, it refreshes account state and required
-instrument definitions again before processing stream updates. This closes the interval between
-the initial portfolio snapshot and subscription confirmation.
+Before private streaming starts, the execution client publishes account state. It loads instrument definitions
+required by the native portfolio and cached active orders. It waits for the engine cache to observe those
+definitions before private streaming starts. It restores owned active order context from cached order events,
+including known venue IDs and processed trade IDs, then verifies active orders against native open orders and
+history for their instruments. Historical metadata gaps do not prevent this binding check.
+
+After private subscription confirmation, it refreshes account state and required instrument definitions again
+before processing stream updates. This closes the interval between the initial portfolio snapshot and
+subscription confirmation.
 
 When `private/get_order` returns `11006` for a known venue ID, the adapter searches paginated
 `private/get_order_history` for that exact ID. It does not infer an unproved replacement binding
@@ -518,44 +519,44 @@ An absent successor does not prove that the replacement failed. After a process 
 If an unresolved replacement prevents startup:
 
 1. Stop the trading node and preserve its cache and order event history.
-1. Inspect the subaccount's native orders, trades, and positions through the venue's account tools.
-   Match owned orders by their native IDs and replacement ancestry; a matching label alone does
-   not establish ownership of a successor.
-1. Resolve the outstanding venue orders and reconcile the cached order state against confirmed
-   native records before resuming trading. The adapter provides no automatic cache repair for
-   this case; clearing `PendingUpdate` alone does not establish the replacement's outcome.
+1. Inspect the subaccount's native orders, trades, and positions through the venue's account tools. Match
+   owned orders by their native IDs and replacement ancestry. A matching label alone does not establish
+   ownership of a successor.
+1. Resolve the outstanding venue orders and reconcile the cached order state against confirmed native records
+   before resuming trading. The adapter provides no automatic cache repair for this case. Clearing
+   `PendingUpdate` alone does not establish the replacement's outcome.
 
-Mass status retains native replacement legs and fills. For an uncached replacement chain, startup reconciliation
-restores the proven live successor with cumulative fills and native venue order IDs. Recovered replacement
-successors support queries, modification, and cancellation. Reconnect snapshots leave uncached
-replacement reports native; they do not reconstruct these chains.
+Mass status retains native replacement legs and fills. For an uncached replacement chain, startup
+reconciliation restores the proven live successor with cumulative fills and native venue order IDs. Recovered
+replacement successors support queries, modification, and cancellation. Reconnect snapshots leave uncached
+replacement reports native. They do not reconstruct these chains.
 
 When an uncached replacement chain starts before a bounded lookback, mass status extends the full history
 window to its first leg.
 Mass status fetches fill companions absent from history and open orders by exact venue ID, including uncached
 orders, and retains them outside the lookback window.
 
-Cached legs retain identity and replacement checks. Uncached orders and fills with reused labels outside
-one replacement chain omit client order IDs; this check uses history and open-order ancestry. Active
-open orders keep their IDs.
+Cached legs retain identity and replacement checks. Uncached orders and fills with reused labels outside one
+replacement chain omit client order IDs. This check uses history and open-order ancestry. Active open orders
+keep their IDs.
 
 **Recovery limits**:
 
-- Startup validates all labeled uncached replacement chains on the subaccount before engine filters
-  apply, including other bots' chains. Invalid chains can prevent startup; long chains extend history
-  reads and can exceed the reconciliation timeout.
-- Do not let another process replace orders adopted by this node. Startup registers all adopted open
-  orders for tracking; an external replacement without a local pending modify leaves the binding
-  unresolved and blocks reports and commands until the native state is reconciled and the node restarts.
+- Startup validates all labeled uncached replacement chains on the subaccount before engine filters apply,
+  including other bots' chains. Invalid chains can prevent startup. Long chains extend history reads and can
+  exceed the reconciliation timeout.
+- Do not let another process replace orders adopted by this node. Startup registers all adopted open orders
+  for tracking. An external replacement without a local pending modify leaves the binding unresolved. It
+  blocks reports and commands until the native state is reconciled and the node restarts.
 - Bounded snapshots mark coverage incomplete if history fails or an uncached companion remains missing
   after fallback. Failed history skips companion lookups.
-- Startup recovery of an uncached replacement chain requires complete order, fill, and position sources, with native fills
-  matching each previous leg and the cumulative filled quantity; otherwise the request fails.
+- Startup recovery of an uncached replacement chain requires complete order, fill, and position sources, with
+  native fills matching each previous leg and the cumulative filled quantity. Otherwise the request fails.
 - Contradictory identities or invalid replacement ancestry fail requests, including bounded snapshots.
   With history available, unavailable cached companions or lookup errors other than `11006` also fail requests.
 
 Open-only requests return active orders. Requests for known replaced legs return the current logical order.
-Single-order and bulk queries return native reports for uncached replacement chains; startup reconciliation
+Single-order and bulk queries return native reports for uncached replacement chains. Startup reconciliation
 restores the chain.
 
 Unbounded reconnect snapshots fail if a source fails, records are lost, or a fill has no matching
@@ -566,11 +567,11 @@ at most twice. Further count changes fail the request.
 
 #### Margin model selection
 
-Set `DeriveExecutionClientConfig.subaccount_id` to an existing Standard Margin (`SM`) or Portfolio
-Margin (`PM2`) subaccount. Each subaccount is bound to the manager chosen at creation and its
-risk universe; the adapter reads those identities from `private/get_subaccount`. The same account
-query, order, position-report, and reconnect paths serve both models. Configure data-client
-currencies for the products supported by that manager.
+Set `DeriveExecutionClientConfig.subaccount_id` to an existing Standard Margin (`SM`) or Portfolio Margin
+(`PM2`) subaccount. Each subaccount is bound to the manager chosen at creation and its risk universe. The
+adapter reads those identities from `private/get_subaccount`. The same account query, order, position-report,
+and reconnect paths serve both models. Configure data-client currencies for the products supported by that
+manager.
 
 Create or fund subaccounts through the venue's account tools before connecting. The adapter does
 not change their margin model or reproduce the venue's portfolio risk engine. See Derive's
@@ -591,7 +592,7 @@ margin requirements, and net account health.
 ##### Collateral balances
 
 - `total` is the collateral `amount` (for example USDC or ETH), rounded to the registered currency precision.
-- `locked` is zero; the adapter keeps pending vault-deposit holds in metadata.
+- `locked` is zero. The adapter keeps pending vault-deposit holds in metadata.
 - `free` equals the rounded `total`.
 - `AccountState.info.collaterals` preserves a subset of each collateral row, with exact decimal strings.
 - `collaterals[].initial_margin` is USD credit contributed by that collateral, not locked funds.
@@ -611,16 +612,15 @@ requirement. `open_orders_margin` is a signed deduction for pending order reserv
 increases the extracted initial requirement. The adapter uses subaccount aggregates, which
 retain venue portfolio offsets, and emits no per-instrument margin balances.
 
-The emitted requirements round to native USD precision (two decimal places, with ties rounded
-to even). The subaccount's `currency` array does not determine their denomination. Modeled
-source values remain in `AccountState.info`; the adapter does not calculate collateral haircuts
-or apply another adjustment for `mm_credits`.
+The emitted requirements round to native USD precision (two decimal places, with ties rounded to even). The
+subaccount's `currency` array does not determine their denomination. Modeled source values remain in
+`AccountState.info`. The adapter does not calculate collateral haircuts or apply another adjustment for
+`mm_credits`.
 
 :::warning
-`net_initial_margin` and `net_maintenance_margin` in `AccountState.info` report current net health,
-including position mark-to-market value. They exclude pending open-order reservations. Use the
-venue's order quote for pre/post initial-margin health; actual order acceptance determines
-whether an additional order can execute.
+`net_initial_margin` and `net_maintenance_margin` in `AccountState.info` report current net health, including
+position mark-to-market value. They exclude pending open-order reservations. Use the venue's order quote for
+pre/post initial-margin health. Actual order acceptance determines whether an additional order can execute.
 :::
 
 ##### Account metadata
@@ -631,7 +631,7 @@ whether an additional order can execute.
 - `positions_value` carries the aggregate position mark-to-market value.
 - `positions_initial_margin` and `positions_maintenance_margin` carry signed position-health contributions.
 - `open_orders_margin` carries the signed initial-health deduction for pending order reservations.
-- `margin_type` and `manager_id` identify the margin model; `risk_universe_id` identifies its risk universe.
+- `margin_type` and `manager_id` identify the margin model. `risk_universe_id` identifies its risk universe.
 - `currency` preserves the venue's currency array.
 - `collaterals` preserves a subset of each collateral row, with exact decimal strings.
 - `mm_credits` carries maintenance-margin credits from risk-universe loss socialization.
@@ -640,26 +640,26 @@ whether an additional order can execute.
 - `vault_deposit_holds` preserves pending reservations, including native amounts and target vault IDs.
 - `is_under_liquidation` carries liquidation status.
 
-Modeled decimals are JSON strings, exact within `Decimal` range and its maximum scale of 28;
-source values beyond that scale round during decoding. Native balances can also round amounts
-smaller than their currency's precision to zero; use the collateral metadata when that precision
-matters. The venue does not specify whether pending vault holds are included in collateral
-amounts, so the adapter neither subtracts them from nor adds them to balances.
+Modeled decimals are JSON strings, exact within `Decimal` range and its maximum scale of 28. Source values
+beyond that scale round during decoding. Native balances can also round amounts smaller than their currency's
+precision to zero. Use the collateral metadata when that precision matters. The venue does not specify whether
+pending vault holds are included in collateral amounts, so the adapter neither subtracts them from nor adds
+them to balances.
 
-A snapshot marked `failed_to_fetch` or missing required fields emits no `AccountState`, fails
-initial connection, and skips post-reconnect mass status. Invalid nested rows, including
-positions outside native `Quantity` precision or range, fail the whole account snapshot.
-Position-report requests additionally require amounts to fit the cached instrument's size precision.
-A position conversion failure rejects the whole mass status, including its order and fill reports,
-preserving cached positions instead of treating a missing position report as flat.
+A snapshot marked `failed_to_fetch` or missing required fields emits no `AccountState`, fails initial
+connection, and skips post-reconnect mass status. Invalid nested rows, including positions outside native
+`Quantity` precision or range, fail the whole account snapshot. Position-report requests additionally require
+amounts to fit the cached instrument's size precision. A position conversion failure rejects the whole mass
+status, including its order and fill reports. This preserves cached positions instead of treating a missing
+position report as flat.
 
-Position reports preserve the venue's average entry price. For perpetuals, this price includes
-opening fees and can differ from the average reconstructed from real fill prices. The adapter
-uses [`AvgPxReconciliation::OpeningOnly`](../concepts/execution/reconciliation.md#reported-entry-averages)
-for perpetuals: a matching position quantity does not require
-the fill-derived average to equal the reported average. Real fill prices, quantities, and
-commissions remain intact; Nautilus keeps commissions out of the position's average entry price
-and deducts them from realized PnL. Other instrument types retain the default average-price reconciliation.
+Position reports preserve the venue's average entry price. For perpetuals, this price includes opening fees
+and can differ from the average reconstructed from real fill prices. The adapter uses
+[`AvgPxReconciliation::OpeningOnly`](../concepts/execution/reconciliation.md#reported-entry-averages) for
+perpetuals: a matching position quantity does not require the fill-derived average to equal the reported
+average. Real fill prices, quantities, and commissions remain intact. Nautilus keeps commissions out of the
+position's average entry price and deducts them from realized PnL. Other instrument types retain the default
+average-price reconciliation.
 
 When fill history is absent, recovery opens a synthetic position at the reported average,
 rounded to the instrument's price precision. With partial history, synthetic recovery can
@@ -678,11 +678,10 @@ unverified. A successful reconnect or restart does not establish those cases.
 
 ##### Signature expiry
 
-API v3 accepts order signatures with lifetimes in [10 seconds, 120 days]; MMP orders have a
-15-minute maximum. The adapter leaves MMP disabled and signs trigger orders with a fixed 31-day
-expiry. `signature_expiry_secs` controls ordinary orders and replacements, and must exceed
-10 seconds to allow signing latency, with a maximum of 120 days.
-See [action signing](https://docs.derive.xyz/authentication/action-signing).
+API v3 accepts order signatures with lifetimes in [10 seconds, 120 days]. MMP orders have a 15-minute maximum.
+The adapter leaves MMP disabled and signs trigger orders with a fixed 31-day expiry. `signature_expiry_secs`
+controls ordinary orders and replacements, and must exceed 10 seconds to allow signing latency, with a maximum
+of 120 days. See [action signing](https://docs.derive.xyz/authentication/action-signing).
 
 ##### Supported types
 
@@ -697,22 +696,21 @@ See [action signing](https://docs.derive.xyz/authentication/action-signing).
 | TWAP / algo / RFQ   | -         | -                   | -                     | *Not exposed by this adapter*. |
 
 The adapter maps Nautilus `TriggerType::Default` and `TriggerType::MarkPrice` to Derive
-`trigger_price_type=mark`. Derive's current error-code reference states that index and
-last-trade trigger price types are not supported yet, so `IndexPrice`, `LastPrice`, `BidAsk`,
-and other trigger price types are denied locally with `OrderDenied` before submission.
+`trigger_price_type=mark`. Derive's error-code reference states that index and last-trade trigger price types
+are unsupported. Thus, the adapter denies `IndexPrice`, `LastPrice`, `BidAsk`, and other trigger price types
+locally with `OrderDenied` before submission.
 
 ##### Updating a trigger
 
-Derive error `11054` states that trigger orders cannot replace or be replaced. The adapter
-therefore rejects Nautilus modify requests for trigger orders with an `OrderModifyRejected`
-event; cancel and resubmit for trigger updates.
+Derive error `11054` states that trigger orders cannot replace or be replaced. The adapter therefore rejects
+Nautilus modify requests for trigger orders with an `OrderModifyRejected` event. Cancel and resubmit for
+trigger updates.
 
 ##### Trigger price offsets
 
-Derive validates the trigger price side and rejects a trigger that does not sit beyond the
-current price in the expected direction with error `11051`. The trigger price is fixed when the
-order is signed, so a tight offset on a fast-moving or high-priced instrument can drift onto the
-wrong side before the venue receives the order.
+Derive validates the trigger price side and rejects a trigger that does not sit beyond the current price in
+the expected direction with error `11051`. The trigger price is fixed when the order is signed. Thus, a tight
+offset on a fast-moving or high-priced instrument can drift onto the wrong side before venue receipt.
 
 :::warning
 Size the trigger offset to comfortably exceed expected price movement during submission
@@ -733,36 +731,36 @@ Derive supports both multi-order cancellation methods exposed by `Strategy`.
 
 The Derive execution client applies these methods as follows:
 
-- **Explicit orders:** `cancel_orders` cancels each requested regular or trigger order individually.
-- **Strategy-only:** `cancel_all_orders` with `strategy_only=True` expands cached matches into
+- **Explicit orders**: `cancel_orders` cancels each requested regular or trigger order individually.
+- **Strategy-only**: `cancel_all_orders` with `strategy_only=True` expands cached matches into
   individual cancels.
-- **Side-filtered:** `cancel_all_orders` with `strategy_only=False` and a Buy or Sell filter selects
+- **Side-filtered**: `cancel_all_orders` with `strategy_only=False` and a Buy or Sell filter selects
   open regular and trigger orders from the cache for the configured execution client, account,
   exact instrument, and side, then cancels each match. It never widens to both sides.
-- **Both sides:** `cancel_all_orders` with `strategy_only=False` and no side filter selects matching
+- **Both sides**: `cancel_all_orders` with `strategy_only=False` and no side filter selects matching
   open triggers from the same execution client, account, and instrument scope and cancels them
   individually, then sends `private/cancel_by_instrument` for regular orders. It never sends
   `private/cancel_all`.
 
-`cancel_all_orders` selects eligible orders from the cache without refreshing venue state.
-For each selected order, the execution client's current venue binding takes precedence over the
-cached ID. Pending triggers use `private/cancel_trigger_order`. Individual cancellation of an
-activated trigger uses `private/cancel`; both-sides mode leaves already activated triggers to
-`private/cancel_by_instrument`. The client checks activation again after pacing and routes a trigger
-that activated during the wait through `private/cancel` before enqueueing the request.
+`cancel_all_orders` selects eligible orders from the cache without refreshing venue state. For each selected
+order, the execution client's current venue binding takes precedence over the cached ID. Pending triggers use
+`private/cancel_trigger_order`. Individual cancellation of an activated trigger uses `private/cancel`.
+Both-sides mode leaves already activated triggers to `private/cancel_by_instrument`. The client checks
+activation again after pacing and routes a trigger that activated during the wait through `private/cancel`
+before enqueueing the request.
 
 ##### Failure handling
 
-If an order selected by `cancel_all_orders` with `strategy_only=False` has neither a current binding
-nor a cached venue order ID, the whole command fails closed, logs a warning, sends no cancellation
-request, and emits no order event.
+With `strategy_only=False`, `cancel_all_orders` fails closed if a selected order has neither a current binding
+nor a cached venue order ID. The whole command logs a warning, sends no cancellation request, and emits no
+order event.
 
 `private/cancel_by_instrument` cancels regular open orders only. A successful request with
 `cancelled_orders == 0` is an expected no-op and logs at debug level.
 
-A failed trigger cancellation logs a warning but does not suppress the regular instrument
-cancellation. A failed bulk request has no per-order outcome to emit; private channel updates and
-later reconciliation remain responsible for observed order state.
+A failed trigger cancellation logs a warning but does not suppress the regular instrument cancellation. A
+failed bulk request has no per-order outcome to emit. Private channel updates and later reconciliation remain
+responsible for observed order state.
 
 #### Execution instructions
 
@@ -789,10 +787,10 @@ exposes post-only as a `time_in_force` value, so `post_only` cannot combine with
 
 #### Spot reduce-only orders
 
-Derive spot has no position concept, so a reduce-only spot order can never reduce anything.
-The venue always rejects it with error `11025`; the adapter avoids that round-trip when it
-knows the instrument is spot. Cached spot instruments are denied with `OrderDenied`; lazily
-resolved spot instruments are rejected with `OrderRejected` during submit.
+Derive spot has no position concept, so a reduce-only spot order can never reduce anything. The venue always
+rejects it with error `11025`. The adapter avoids that round-trip when it knows the instrument is spot. Cached
+spot instruments are denied with `OrderDenied`. Lazily resolved spot instruments are rejected with
+`OrderRejected` during submit.
 
 Reduce-only orders for perpetuals and options still reach the venue, where the outcome
 depends on the subaccount's position state. The `derive-flatten` bin closes derivative
@@ -831,19 +829,17 @@ The adapter emits a terminal rejection event (`OrderRejected`, `OrderModifyRejec
 - A successful `private/cancel_by_label` response with `cancelled_orders == 0`, which means
   no open order matched the client order ID label.
 
-An unscoped `private/cancel_by_label` response with `cancelled_orders == -1` acknowledges the
-request. Positive counts also wait for private order updates; neither response produces an
-`OrderCanceled` event without confirmed order state. `query_order` uses the shared order-status
-lookup for reconciliation.
+An unscoped `private/cancel_by_label` response with `cancelled_orders == -1` acknowledges the request.
+Positive counts also wait for private order updates. Neither response produces an `OrderCanceled` event
+without confirmed order state. `query_order` uses the shared order-status lookup for reconciliation.
 
 ##### Post-only classification
 
-For post-only orders that reach the venue, Derive rejects a crossing order with JSON-RPC
-`11008` and message `Post only order cannot cross the market`. The adapter marks that
-terminal rejection with `due_post_only=true`; if a WebSocket/order-report rejection carries
-the same reason, the tracked order path applies the same classification. Local denials
-for unsupported post-only IOC/FOK combinations are `OrderDenied` events without
-`due_post_only`, because they do not represent a venue crossing rejection.
+For post-only orders that reach the venue, Derive rejects a crossing order with JSON-RPC `11008` and message
+`Post only order cannot cross the market`. The adapter marks that terminal rejection with
+`due_post_only=true`. If a WebSocket/order-report rejection carries the same reason, the tracked order path
+applies the same classification. Local denials for unsupported post-only IOC/FOK combinations are
+`OrderDenied` events without `due_post_only`, because they do not represent a venue crossing rejection.
 
 Strategy-facing rejection reasons strip markup and control characters, normalize whitespace,
 and contain at most 256 characters. JSON-RPC reasons retain the native error code and message
@@ -858,42 +854,41 @@ narrow:
 - `-32603`, a generic JSON-RPC internal error.
 - `9000` and `9001`, confirmation timeouts that require querying order state before resubmission.
 - A response that cannot be decoded (the action may have been processed).
-- A successful response whose venue order ID cannot be represented. The adapter retains the known
-  command identity and pending replacement state for reconciliation. If that ID remains unrepresentable,
-  status and fill reports cannot track the venue order; inspect venue state using the logged command identity.
+- A successful response whose venue order ID cannot be represented. The adapter retains the known command
+  identity and pending replacement state for reconciliation. If that ID remains unrepresentable, status and
+  fill reports cannot track the venue order. Inspect venue state using the logged command identity.
 - Request timeouts, dropped responses on reconnect, and transport errors.
 
-This distinction protects both sides of the order lifecycle. A false terminal rejection can
-make the engine treat a live order as rejected; a false ambiguous outcome can leave an
-unplaced order hanging in `Submitted` forever because no WebSocket frame will arrive.
+This distinction protects both sides of the order lifecycle. A false terminal rejection can make the engine
+treat a live order as rejected. A false ambiguous outcome can leave an unplaced order hanging in `Submitted`
+forever because no WebSocket frame will arrive.
 
 ## Rate limiting
 
 ### Budget scopes and refill
 
-Derive v3 applies [two tiers of rate limits](https://docs.derive.xyz/rate-limits). Request budgets
-use fixed five-second windows. Instrument order budgets refill continuously, with capacity equal
-to five seconds of their configured refill rate. An exhausted instrument bucket gains one token
-after one second at the default rate; a window boundary does not replenish its entire capacity.
+Derive v3 applies [two tiers of rate limits](https://docs.derive.xyz/rate-limits). Request budgets use fixed
+five-second windows. Instrument order budgets refill continuously, with capacity equal to five seconds of
+their configured refill rate. An exhausted instrument bucket gains one token after one second at the default
+rate. A window boundary does not replenish its entire capacity.
 
-Authenticated HTTP and WebSocket clients on the same API host share wallet budgets across session
-keys and subaccounts. Public requests, including WebSocket login, share a separate process-local
-budget per API host. This conservatively assumes one source IP; clients behind separate proxies
-still share that allowance. Clients in separate processes must coordinate their combined traffic.
-Custom URLs with different API hosts use separate limiter state.
+Authenticated HTTP and WebSocket clients on the same API host share wallet budgets across session keys and
+subaccounts. Public requests, including WebSocket login, share a separate process-local budget per API host.
+This conservatively assumes one source IP. Clients behind separate proxies still share that allowance. Clients
+in separate processes must coordinate their combined traffic. Custom URLs with different API hosts use
+separate limiter state.
 
-Request windows align to the creation of the shared limiter because the venue's window phase is
-not observable. Bursts on either side of a local boundary can arrive within one venue window,
-especially when transport queues delay departure. The venue rejects excess traffic with
-`-32000 Rate limit exceeded`; the adapter surfaces this as a definitive rejection (see
-[order rejection semantics](#order-rejection-semantics)).
+Request windows align to the creation of the shared limiter because the venue's window phase is not
+observable. Bursts on either side of a local boundary can arrive within one venue window, especially when
+transport queues delay departure. The venue rejects excess traffic with `-32000 Rate limit exceeded`. The
+adapter surfaces this as a definitive rejection (see [order rejection semantics](#order-rejection-semantics)).
 
 ### Request buckets
 
-The table gives reference defaults and the adapter's label-cancel allowance. Deployment values
-and negotiated allowances can differ. Read live request budgets with `public/getRateLimits`;
-the endpoint does not report instrument budgets. On testnet, the HTTP endpoint reports the public
-IP allowance even with authentication headers, while an authenticated WebSocket reports wallet allowances.
+The table gives reference defaults and the adapter's label-cancel allowance. Deployment values and negotiated
+allowances can differ. Read live request budgets with `public/getRateLimits`. The endpoint does not report
+instrument budgets. On testnet, the HTTP endpoint reports the public IP allowance even with authentication
+headers, while an authenticated WebSocket reports wallet allowances.
 
 | Bucket                             | Scope                 | Reference allowance             |
 | ---------------------------------- | --------------------- | ------------------------------- |
@@ -908,9 +903,9 @@ IP allowance even with authentication headers, while an authenticated WebSocket 
 The venue also limits concurrent WebSocket connections per IP. Its published reference is four
 connections, but deployment values differ.
 
-The [integrator reference](https://docs.derive.xyz/integrators/trading/rate-limits) publishes 10 TPS
-for unscoped label cancellation. The canonical reference does not give a numeric endpoint allowance;
-the adapter retains 10 TPS for its label-cancel endpoint budget.
+The [integrator reference](https://docs.derive.xyz/integrators/trading/rate-limits) publishes 10 TPS for
+unscoped label cancellation. The canonical reference does not give a numeric endpoint allowance. The adapter
+retains 10 TPS for its label-cancel endpoint budget.
 
 #### Matching write allocation
 
@@ -918,11 +913,11 @@ Order, replace, cancel, cancel-by-nonce, and cancel-by-instrument requests consu
 request budget and the supplied instrument's token bucket. The per-instrument configuration
 applies to perpetuals, spot, and options and stays independent of the wallet matching allowance.
 
-The adapter paces `cancel_by_label` against both matching and endpoint budgets, following the
-canonical rate-limit reference. Raw HTTP requests whose body includes `instrument_name` also
-consume instrument credit; the typed label-cancel parameters currently support unscoped calls only.
-Testnet currently charges the matching budget for scoped label cancels only. The adapter retains
-the stricter documented rule for unscoped calls. `cancel_all` uses its endpoint budget alone.
+The adapter paces `cancel_by_label` against both matching and endpoint budgets, following the canonical
+rate-limit reference. Raw HTTP requests whose body includes `instrument_name` also consume instrument credit.
+The typed label-cancel parameters currently support unscoped calls only. Testnet currently charges the
+matching budget for scoped label cancels only. The adapter retains the stricter documented rule for unscoped
+calls. `cancel_all` uses its endpoint budget alone.
 
 `cancel_trigger_order` and trigger-order reads use the non-matching budget. Trigger creation
 uses `private/order` and reserves matching quota before signing.
@@ -945,24 +940,24 @@ definitive local throttling error before enqueueing the write. Instrument credit
 HTTP order methods and direct WebSocket signed-order methods accept already-signed bodies.
 Callers must account for pacing delays within those signatures' validity periods.
 
-Venue throttling remains a definitive rejection. Transport failures, timeouts, and ambiguous
-write outcomes require reconciliation; the adapter does not blindly retry signed writes.
+Venue throttling remains a definitive rejection. Transport failures, timeouts, and ambiguous write outcomes
+require reconciliation. The adapter does not blindly retry signed writes.
 
 ## WebSocket recovery
 
-The data and execution clients reconnect automatically after a peer close, transport error, or
-heartbeat timeout. The adapter sends protocol Ping frames every 30 seconds and treats 60 seconds
-without any inbound frame as a dead connection; the selected transport can report a missed Pong
-sooner. The transport retries connections with exponential backoff and jitter.
+The data and execution clients reconnect automatically after a peer close, transport error, or heartbeat
+timeout. The adapter sends protocol Ping frames every 30 seconds and treats 60 seconds without any inbound
+frame as a dead connection. The selected transport can report a missed Pong sooner. The transport retries
+connections with exponential backoff and jitter.
 
 Recovery completes in this order:
 
 1. The transport reconnects. If another disconnect occurs, recovery follows the latest connection.
 1. Credentialed sessions log in again, then every session replays its confirmed and pending subscriptions
    in channel order. Pending and acknowledged unsubscriptions are not replayed.
-1. The execution client captures current owned order context on the runner thread, refreshes account
-   state, then generates mass status for orders, fills, and positions. A rejected account snapshot
-   skips mass status; a position conversion failure rejects the whole mass status.
+1. The execution client captures current owned order context on the runner thread, refreshes account state,
+   then generates mass status for orders, fills, and positions. A rejected account snapshot skips mass status.
+   A position conversion failure rejects the whole mass status.
 
 Custom hosts must process the runner's time-event messages to refresh cached order context on
 reconnect. The refresh uses the configured `ws_timeout_secs` deadline. Without a time-event sender,
@@ -983,7 +978,7 @@ Order books recover independently of session recovery. Recovery starts after:
 - `book_stale_threshold_secs` (default `120` seconds) without receiving an advancing snapshot.
 
 Set either option to `0` to disable that timer. Choose the stale threshold for the expected update frequency:
-duplicate timestamps do not refresh freshness; advancing empty snapshots do.
+duplicate timestamps do not refresh freshness. Advancing empty snapshots do.
 
 Null or empty required prices or amounts cause decoding to fail and start recovery. These snapshots
 publish no deltas or depth, do not refresh freshness or advance the accepted timestamp, and cannot
@@ -1026,12 +1021,12 @@ CARGO_BUILD_JOBS=4 bash scripts/strip-adapter-env.bash \
 | `disabled`   | `--timeout 0` | Quiet books across forced reconnects with both timers disabled.                                       |
 | `edges`      | `--timeout 1` | Exhausted eight-attempt budget, late snapshot acceptance, and retry after permanent rejection.        |
 
-- `--timeout` sets the snapshot timeout in seconds; `0` disables deadlines. The stale threshold is
-  four seconds except in `disabled`, which disables both timers.
-- `--rounds` sets churn or disabled rounds (default `20`); `edges` runs once.
+- `--timeout` sets the snapshot timeout in seconds. `0` disables deadlines. The stale threshold is four
+  seconds except in `disabled`, which disables both timers.
+- `--rounds` sets churn or disabled rounds (default `20`). `edges` runs once.
 
-Every scenario checks bounded shutdown; all except `disabled` start shutdown during recovery.
-See [Stress harnesses](../developer_guide/spec_data_testing.md#stress-harnesses) for shared flags and output.
+Every scenario checks bounded shutdown. All except `disabled` start shutdown during recovery. See
+[Stress harnesses](../developer_guide/spec_data_testing.md#stress-harnesses) for shared flags and output.
 
 ## Deterministic simulation testing
 
@@ -1039,16 +1034,19 @@ The Rust adapter supports `simulation` with `cfg(madsim)` through the shared clo
 and transport seams. Configure controlled `http://` and `ws://` endpoints and select
 `TransportBackend::Tungstenite`. Fixed synthetic credentials support private local-peer tests.
 
-The audited runtime slices cover public single-instrument lookup (`public/get_instrument`) through
-domain construction, public ticker subscriptions through complete quote construction, book and
-trade subscription requests, private login and cancel requests, reconnect subscription replay,
-command/frame scheduling, and shutdown. The integration tests in
-`crates/adapters/derive/tests/integration/dst.rs` pin wire bytes,
-login signatures, and domain fields, including the ticker interval. They emit `DST_TRACE` and
-`DST_DOMAIN` records for downstream comparison across fresh processes with equal seeds,
-configuration, and peer scripts. `cargo-test-sim` runs the in-repository assertions; fresh-process
-comparison stays in the downstream DST harness, as specified by the
-[adapter DST contract](../concepts/dst.md#adapter-dst-contract).
+The audited runtime slices cover these paths:
+
+- Public single-instrument lookup (`public/get_instrument`) through domain construction.
+- Public ticker subscriptions through complete quote construction.
+- Book and trade subscription requests.
+- Private login and cancel requests.
+- Reconnect subscription replay, command/frame scheduling, and shutdown.
+
+The integration tests in `crates/adapters/derive/tests/integration/dst.rs` pin wire bytes, login signatures,
+and domain fields, including the ticker interval. They emit `DST_TRACE` and `DST_DOMAIN` records for
+downstream comparison across fresh processes with equal seeds, configuration, and peer scripts.
+`cargo-test-sim` runs the in-repository assertions. Fresh-process comparison stays in the downstream DST
+harness, as specified by the [adapter DST contract](../concepts/dst.md#adapter-dst-contract).
 
 The static gate covers these production paths under `crates/adapters/derive/src/`:
 
@@ -1060,13 +1058,13 @@ The static gate covers these production paths under `crates/adapters/derive/src/
 - `websocket/client.rs`, `websocket/dispatch.rs`, `websocket/handler.rs`, `websocket/messages.rs`,
   and `websocket/parse.rs`.
 
-Constants, enums, errors, endpoint defaults, module declarations, construction-only factories,
-retry classifiers, credential and signing-context resolution, and the WebSocket context container
-stay outside the static path list. These files introduce no independent async, clock, or randomness
-boundary; credential resolution uses supplied configuration or declared environment inputs.
-Python and FFI, TLS, live venue state, full data/execution-client lifecycles, signed order
-submission and replacement, trigger firing, and other unaudited runtime slices remain outside this
-simulation claim. Static coverage does not establish runtime proof for those slices.
+Constants, enums, errors, endpoint defaults, module declarations, construction-only factories, retry
+classifiers, credential and signing-context resolution, and the WebSocket context container stay outside the
+static path list. These files introduce no independent async, clock, or randomness boundary. Credential
+resolution uses supplied configuration or declared environment inputs. Python and FFI, TLS, live venue state,
+full data/execution-client lifecycles, signed order submission and replacement, trigger firing, and other
+unaudited runtime slices remain outside this simulation claim. Static coverage does not establish runtime
+proof for those slices.
 
 ## Subscription parameters
 
@@ -1114,11 +1112,11 @@ feeds work on either:
 
 #### Instrument class restrictions
 
-Funding rates are only meaningful for perpetuals, and option greeks only for options.
-Subscribing the wrong feed for an instrument's class (e.g. funding rates for an option) is
-accepted and the WebSocket subscription opens, but the parser returns no events for that feed
-because the venue payload omits the funding rate field for non-perps and `option_pricing` for
-non-options. Verify the instrument class before subscribing to derivative-specific feeds.
+Funding rates are only meaningful for perpetuals, and option greeks only for options. The adapter accepts a
+subscription to the wrong feed for an instrument's class (e.g. funding rates for an option). The WebSocket
+subscription opens, but the parser returns no events for that feed. The venue payload omits the funding rate
+field for non-perps and `option_pricing` for non-options. Verify the instrument class before subscribing to
+derivative-specific feeds.
 
 ## Configuration
 
@@ -1304,12 +1302,11 @@ let config = DeriveExecutionClientConfig {
 
 ## Known limitations
 
-- `request_instruments` requires at least one configured currency in
-  `DeriveDataClientConfig::currencies`; the adapter filters `public/get_all_instruments`
-  by each configured currency and does not enumerate the currency universe.
-- The venue does not push instrument status, instrument close, or candle subscriptions; the
-  instrument definition carries `is_active` and the scheduled activation/deactivation
-  timestamps, and bars are REST-only.
+- `request_instruments` requires at least one configured currency in `DeriveDataClientConfig::currencies`. The
+  adapter filters `public/get_all_instruments` by each configured currency and does not enumerate the currency
+  universe.
+- The venue does not push instrument status, instrument close, or candle subscriptions. The instrument
+  definition carries `is_active` and the scheduled activation/deactivation timestamps, and bars are REST-only.
 - The book snapshot REST endpoint and historical book deltas / historical quote endpoints
   are not exposed by the venue. See the capabilities table above.
 - Derive's official REST docs mark `public/get_ticker` as deprecated in favor of

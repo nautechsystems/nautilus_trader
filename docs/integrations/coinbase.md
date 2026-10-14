@@ -1,11 +1,9 @@
 # Coinbase
 
-Founded in 2012, Coinbase is one of the largest US-regulated cryptocurrency
-exchanges, offering trading across spot, perpetual swaps, and dated futures via
-the Advanced Trade API. This adapter supports live market data ingest and
-order execution on both spot (Cash) and CFM derivatives (Margin) accounts
-through a shared execution client, with the account type selected by the
-factory (see [Execution scope](#execution-scope)).
+Coinbase was founded in 2012 and is one of the largest US-regulated cryptocurrency exchanges. Its Advanced
+Trade API offers spot, perpetual swap, and dated futures trading. This adapter supports live market data
+ingest and order execution on both spot (Cash) and CFM derivatives (Margin) accounts through a shared
+execution client, with the account type selected by the factory (see [Execution scope](#execution-scope)).
 
 ## Overview
 
@@ -21,7 +19,8 @@ Components:
 - `CoinbaseDataClient`: Market data feed manager.
 - `CoinbaseDataClientFactory`: Data client factory.
 - `CoinbaseExecutionClient`: Execution client (spot or CFM derivatives; REST orders + WS streams).
-- `CoinbaseExecutionClientFactory`: Execution client factory; spot vs CFM derivatives is selected by `account_type` on the config.
+- `CoinbaseExecutionClientFactory`: Execution client factory. Spot vs CFM derivatives is selected by
+  `account_type` on the config.
 
 Python surface available from `nautilus_trader.adapters.coinbase`:
 
@@ -45,13 +44,12 @@ Coinbase provides documentation for the Advanced Trade API:
 - [API key authentication](https://docs.cdp.coinbase.com/coinbase-app/authentication-authorization/api-key-authentication)
 - [Rate limiting](https://docs.cdp.coinbase.com/coinbase-app/api-architecture/rate-limiting)
 
-It's recommended you also refer to the Coinbase documentation in conjunction
-with this NautilusTrader integration guide.
+Read the Coinbase documentation with this NautilusTrader integration guide.
 
 :::info
 This adapter targets the Coinbase Advanced Trade API. The separate
-[Coinbase International Exchange (INTX)](https://international.coinbase.com)
-venue is not covered; its adapter was removed in NautilusTrader 1.224.0.
+[Coinbase International Exchange (INTX)](https://international.coinbase.com) venue is not covered. Its adapter
+was removed in NautilusTrader 1.224.0.
 :::
 
 ## Products
@@ -83,9 +81,8 @@ are classified as `CryptoPerpetual` based on the presence of an ongoing
 funding rate. Dated futures are classified as `CryptoFuture`.
 
 The adapter resolves the product type structurally from API metadata
-(`future_product_details.contract_expiry_type` and, when that is
-`EXPIRING`, the presence of a non-empty `future_product_details.funding_rate`
-as a perpetual-only structural signal); the fallback heuristic checks
+(`future_product_details.contract_expiry_type` and, when that is `EXPIRING`, the presence of a non-empty
+`future_product_details.funding_rate` as a perpetual-only structural signal). The fallback heuristic checks
 `display_name` for `PERP` or `Perpetual` substrings.
 
 Examples of full Nautilus instrument IDs:
@@ -97,9 +94,8 @@ Examples of full Nautilus instrument IDs:
 
 ### Aliased products (USDC and USD)
 
-Coinbase consolidates USDC- and USD-quoted versions of the same pair into a
-single matching-engine book and exposes the relationship in `GET /products`
-via the `alias` and `alias_to` fields:
+Coinbase consolidates USDC- and USD-quoted versions of the same pair into one matching-engine book.
+`GET /products` exposes this relationship through `alias` and `alias_to`:
 
 ```text
 BTC-USD :  alias=""        alias_to=["BTC-USDC"]   # canonical
@@ -114,10 +110,9 @@ transparently on both sides:
 - Data subscriptions go out on the canonical id. The data WebSocket client
   holds the reverse mapping and re-keys inbound messages back to the
   caller-supplied id before parsing.
-- Orders are submitted on the caller's `product_id`. The execution client
-  records that id under the `client_order_id` and re-keys the canonical id
-  the user channel echoes back, so an alias-side order is never reported
-  against the canonical instrument.
+- Orders are submitted on the caller's `product_id`. The execution client records that ID under the
+  `client_order_id` and re-keys the canonical ID echoed by the user channel. Thus, an alias-side order is
+  never reported against the canonical instrument.
 
 A strategy holding only USDC can therefore trade `BTC-USDC.COINBASE` end to
 end without referencing the canonical `BTC-USD`. Settlement currency is
@@ -161,21 +156,19 @@ config = CoinbaseExecutionClientConfig(
 )
 ```
 
-The sandbox venue does not enforce authentication, but
-`CoinbaseExecutionClient::new` still requires both fields (or the matching
-environment variables) to be present in order to construct.
+The sandbox venue does not enforce authentication. But `CoinbaseExecutionClient::new` requires both fields (or
+the matching environment variables) for construction.
 
 :::warning
-**Sandbox is not a parallel trading venue:**
+**Sandbox is not a parallel trading venue**:
 
-- All responses are static and pre-defined; there is no live market or
-  dynamic pricing.
-- Only Accounts and Orders endpoints are available; other resources are not.
+- All responses are static and pre-defined. There is no live market or dynamic pricing.
+- Only Accounts and Orders endpoints are available. Other resources are not.
 - Authentication is not required (and not enforced).
 - A custom `X-Sandbox` request header can trigger predefined error scenarios.
 
-Use sandbox to wire up your client and verify request/response shape; use
-production (with real funds and care) for any realistic behavior testing.
+Use sandbox to wire up your client and verify request/response shape. Use production (with real funds and
+care) for any realistic behavior testing.
 :::
 
 ## Authentication
@@ -223,8 +216,8 @@ retrieve the private key afterward.
 :::
 
 :::info
-Do not use expired legacy Coinbase App API keys. Create a CDP API key and select the ECDSA
-algorithm; the adapter signs requests with ES256. See Coinbase's
+Do not use expired legacy Coinbase App API keys. Create a CDP API key and select the ECDSA algorithm. The
+adapter signs requests with ES256. See Coinbase's
 [legacy key migration guide](https://docs.cdp.coinbase.com/coinbase-app/authentication-authorization/legacy-keys).
 :::
 
@@ -253,17 +246,15 @@ We recommend using environment variables to manage your credentials.
 
 Coinbase JWTs expire after 120 seconds. Per the
 [WebSocket overview](https://docs.cdp.coinbase.com/coinbase-app/advanced-trade-apis/websocket/websocket-overview),
-a different JWT must be generated for each authenticated WebSocket message
-(i.e. for each subscribe). The adapter regenerates a fresh JWT for every
-signed REST request and for every authenticated subscribe message; no
-manual rotation is required.
+a different JWT must be generated for each authenticated WebSocket message (i.e. for each subscribe). The
+adapter regenerates a fresh JWT for every signed REST request and for every authenticated subscribe message.
+No manual rotation is required.
 
 ## Portfolios
 
-A Coinbase account holds one or more **portfolios**. Each portfolio has its
-own wallets (USD, USDC, BTC, etc.), balances, and order scope. Every account
-has a `DEFAULT` portfolio; users can create additional `CONSUMER` portfolios
-to segregate strategies, risk, or tax lots.
+A Coinbase account holds one or more **portfolios**. Each portfolio has its own wallets (USD, USDC, BTC,
+etc.), balances, and order scope. Every account has a `DEFAULT` portfolio. Users can create additional
+`CONSUMER` portfolios to segregate strategies, risk, or tax lots.
 
 A CDP API key is **bound to a single portfolio at creation time**. Every
 authenticated request (account lookup, order submission, cancel) operates
@@ -271,13 +262,17 @@ against that portfolio unless a different one is explicitly specified.
 
 ### Finding your portfolio UUIDs
 
-Run the adapter's authenticated probe binary; it prints the portfolios
-visible to your CDP key, the account balances in the bound portfolio, and
-a few reference REST calls:
+Run the adapter's authenticated probe binary:
 
 ```bash
 cargo run --bin coinbase-http-private --package nautilus-coinbase
 ```
+
+It prints:
+
+- The portfolios visible to your CDP key.
+- The account balances in the bound portfolio.
+- A few reference REST calls.
 
 Sample output:
 
@@ -320,10 +315,8 @@ default routing does not match your account layout.
 
 ### Creating a new portfolio
 
-Most users will not need to create a new portfolio; the account's default
-works out of the box. Create one on
-[coinbase.com/portfolios](https://www.coinbase.com/portfolios) only if you
-want to:
+Most users do not need to create a portfolio. The account's default works without additional setup. Create one
+on [coinbase.com/portfolios](https://www.coinbase.com/portfolios) only if you want to:
 
 - Segregate API-driven trading from manual retail activity.
 - Isolate risk or P&L between strategies.
@@ -335,8 +328,8 @@ returns `account is not available` for the quote currency.
 
 ### Troubleshooting `account is not available`
 
-The venue returns this error for several distinct reasons; diagnose by
-running the probe binary above and inspecting the portfolio wallet list.
+The venue returns this error for several distinct reasons. Diagnose by running the probe binary above and
+inspecting the portfolio wallet list.
 
 | Symptom                                                              | Likely cause                                                                                                                                                                                  | Fix                                                                                                                                                                                                                                                                                      |
 | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -374,12 +367,11 @@ adapter maps: 1m, 5m, 15m, 30m, 1h, 2h, 6h, and 1d. Any other step or
 aggregation is rejected. Coinbase's `/products/{id}/candles` endpoint also
 accepts `FOUR_HOUR`, which the adapter does not currently map.
 
-Live bar subscriptions are different: the WebSocket `candles` channel takes
-no granularity parameter and publishes five-minute buckets only. The adapter
-stamps each received candle with the `BarType` registered for that product,
-so subscribing at any other bar specification yields five-minute bars labeled
-with the requested type. Request a `5-MINUTE-LAST-EXTERNAL` bar type for live
-subscriptions, and use historical requests for the other granularities.
+Live bar subscriptions are different: the WebSocket `candles` channel takes no granularity parameter and
+publishes five-minute buckets only. The adapter stamps each received candle with the `BarType` registered for
+that product. Thus, other subscription specifications yield five-minute bars labeled with the requested type.
+Request a `5-MINUTE-LAST-EXTERNAL` bar type for live subscriptions, and use historical requests for the other
+granularities.
 
 ### Funding rates
 
@@ -396,14 +388,16 @@ Historical funding rate requests are not implemented.
 
 ### Instrument status
 
-`subscribe_instrument_status` joins the Coinbase WebSocket `status` channel
-on first subscription (the venue publishes one status feed for all
-products), filters incoming events to the subscribed instruments, and emits
-`InstrumentStatus` events with `MarketStatusAction::Trading` for `online`,
-`Halt` for `offline`, and `Close` for `delisted`. Products reporting an
-unset status (futures) or a status the adapter does not model carry no
-information for the data engine and are skipped. The channel subscription is
-dropped when the last instrument unsubscribes.
+`subscribe_instrument_status` joins the Coinbase WebSocket `status` channel on first subscription (the venue
+publishes one status feed for all products). It filters incoming events to the subscribed instruments. It
+emits `InstrumentStatus` events with these actions:
+
+- `MarketStatusAction::Trading` for `online`.
+- `Halt` for `offline`.
+- `Close` for `delisted`.
+
+Products reporting an unset status (futures) or a status the adapter does not model carry no information for
+the data engine and are skipped. The channel subscription is dropped when the last instrument unsubscribes.
 
 ## Orders capability
 
@@ -429,19 +423,17 @@ Other account types are rejected at factory creation. OMS is always
 
 To prevent cross-account bleed-through:
 
-1. Connect-time instrument bootstrap is limited to the configured product
-   family; the other family's products never enter the in-process cache.
+1. Connect-time instrument bootstrap is limited to the configured product family. The other family's products
+   never enter the in-process cache.
 2. `submit_order` denies any order whose instrument is outside that cache.
-3. `generate_order_status_report(s)` and `generate_fill_reports` post-filter
-   their output through the same cache, so a Coinbase account that holds
-   both spot and derivative activity will not surface the other scope's
-   reports through a single client.
+3. `generate_order_status_report(s)` and `generate_fill_reports` post-filter their output through the same
+   cache. Thus, a single client never exposes the other scope's reports, even for an account with both spot
+   and derivative activity.
 
-Run one execution client per scope; if you need both spot and CFM activity
-on the same trader, instantiate two clients with distinct `account_type`
-values (and distinct `account_id`s). Configure an explicit `COINBASE` venue route or a default client
-as described in [Execution client routing](../concepts/live.md#execution-client-routing), and pass
-the intended `client_id` when submitting orders.
+Run one execution client per scope. For both spot and CFM activity on the same trader, create two clients with
+distinct `account_type` values and `account_id`s. Configure an explicit `COINBASE` venue route or a default
+client (see [Execution client routing](../concepts/live.md#execution-client-routing)). When submitting orders,
+pass the intended `client_id`.
 
 ### Order types
 
@@ -470,8 +462,8 @@ and noted there as *Not currently implemented* by the adapter.
 
 ### Time in force
 
-The adapter accepts the values in this matrix; combinations not listed are
-rejected at submit time with `"Unsupported TIF {tif} for {order_type}"`.
+The adapter accepts the values in this matrix. Combinations not listed are rejected at submit time with
+`"Unsupported TIF {tif} for {order_type}"`.
 
 | Order type   | GTC | GTD | IOC | FOK | Notes                                                                                                                                           |
 | ------------ | --- | --- | --- | --- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -522,33 +514,31 @@ for the underlying venue specification.
 
 ### Spot trading limitations
 
-- MARKET FOK is not accepted on spot; Coinbase documents `market_market_fok`
-  as perpetuals-only and rejects it with `UNSUPPORTED_ORDER_CONFIGURATION`.
-- Quote-denominated MARKET orders are supported; LIMIT orders are sized in
-  base units.
+- MARKET FOK is not accepted on spot. Coinbase documents `market_market_fok` as perpetuals-only and rejects it
+  with `UNSUPPORTED_ORDER_CONFIGURATION`.
+- Quote-denominated MARKET orders are supported. LIMIT orders are sized in base units.
 
 ### Derivatives trading
 
-Coinbase derivatives trade through the FCM (Futures Commission Merchant)
-venue. The exec client submits orders through the same `POST /orders`
-endpoint used for spot; per-order `leverage` and `margin_type` (`CROSS` or
-`ISOLATED`) defaults come from `CoinbaseExecutionClientConfig.default_leverage`
-and `default_margin_type`. Margin balances update from both the REST
-`cfm/balance_summary` endpoint (connect-time snapshot, `query_account`,
-and on WebSocket reconnect) and the authenticated `futures_balance_summary`
-WebSocket channel. Position reports come from the REST `cfm/positions`
-endpoints.
+Coinbase derivatives trade through the FCM (Futures Commission Merchant) venue. The exec client submits orders
+through the same `POST /orders` endpoint used for spot. Per-order `leverage` and `margin_type` (`CROSS` or
+`ISOLATED`) defaults come from `CoinbaseExecutionClientConfig.default_leverage` and `default_margin_type`.
+Margin balances update from both the REST `cfm/balance_summary` endpoint (connect-time snapshot,
+`query_account`, and on WebSocket reconnect) and the authenticated `futures_balance_summary` WebSocket
+channel. Position reports come from the REST `cfm/positions` endpoints.
 
 Coinbase's Advanced Trade API does not document a `reduce_only` field on the create-order schema.
 The execution client rejects reduce-only orders before transport instead of submitting them without
 the instruction.
 
-The adapter logs a warning when a REST order status report describes a
-forced-close order, and when the CFM balance summary reports a liquidation
-buffer below 20% of the liquidation threshold. Coinbase does not flag
-auto-deleveraging separately from liquidation, so both surface through the
-same warning. The user channel carries no equivalent warning, so forced
-closes are visible from reconciliation rather than from the live stream.
+The adapter logs a warning for these conditions:
+
+- A REST order status report describes a forced-close order.
+- The CFM balance summary reports a liquidation buffer below 20% of the liquidation threshold.
+
+Coinbase does not flag auto-deleveraging separately from liquidation, so both surface through the same
+warning. The user channel carries no equivalent warning, so forced closes are visible from reconciliation
+rather than from the live stream.
 
 ## Execution client behavior
 
@@ -560,11 +550,10 @@ order commands and Coinbase venue events into Nautilus execution events.
 `submit_order` builds the Coinbase `order_configuration` shape directly from
 Nautilus order fields:
 
-- `MARKET` IOC and GTC (the Nautilus default) -> `market_market_ioc`; FOK ->
-  `market_market_fok`. `Day` and `Gtd` are rejected before the HTTP call so
-  callers do not silently receive IOC semantics. A `MARKET` order built with
-  `Gtc` executes as IOC at the venue; strategies that require strict
-  backtest/live parity should construct `MarketOrder` with `Ioc` explicitly.
+- `MARKET` IOC and GTC (the Nautilus default) -> `market_market_ioc`. FOK -> `market_market_fok`. `Day` and
+  `Gtd` are rejected before the HTTP call so callers do not silently receive IOC semantics. A `MARKET` order
+  built with `Gtc` executes as IOC at the venue. Strategies that require strict backtest/live parity should
+  construct `MarketOrder` with `Ioc` explicitly.
 - `LIMIT` GTC -> `limit_limit_gtc`, GTD -> `limit_limit_gtd` (requires
   `expire_time`), FOK -> `limit_limit_fok`.
 - `STOP_LIMIT` GTC -> `stop_limit_stop_limit_gtc`, GTD ->
@@ -590,13 +579,11 @@ Coinbase supports edits on open GTC variants only, and rejects edits on
 futures-venue orders with `CANNOT_EDIT_FUTURES_ORDER`, so modification is
 effectively spot-only. Other order types must use cancel-replace.
 
-Coinbase's `/orders/edit` requires both `price` and `size` even when only one
-is changing; an omitted `size` is read as 0 and rejected with
-`INVALID_EDITED_SIZE` or `CANNOT_EDIT_TO_BELOW_FILLED_SIZE`. The exec client
-auto-fills missing fields from the cached order, so strategies can call
-`modify_order(price=X)` without repeating the current quantity. Values from
-the `ModifyOrder` command win; otherwise the cached order's current `price`
-and `quantity` are used.
+Coinbase's `/orders/edit` requires both `price` and `size` even when only one changes. It reads an omitted
+`size` as 0 and rejects it with `INVALID_EDITED_SIZE` or `CANNOT_EDIT_TO_BELOW_FILLED_SIZE`. The exec client
+auto-fills missing fields from the cached order, so strategies can call `modify_order(price=X)` without
+repeating the current quantity. Values from the `ModifyOrder` command win. Otherwise the cached order's
+current `price` and `quantity` are used.
 
 Venue edit failures emit `OrderModifyRejected` with the typed `EditOrderResponse`
 reason (preferring `edit_failure_reason`, falling back to `preview_failure_reason`).
@@ -605,32 +592,26 @@ an update, query result, or reconciliation resolves it.
 
 ### Cancellation
 
-- `cancel_order` posts a single-id `batch_cancel`. An explicit per-order venue
-  failure surfaces as `OrderCancelRejected`; a whole-request transport failure
-  with unknown venue outcome leaves the order in `PENDING_CANCEL` for
-  reconciliation.
-- `cancel_all_orders` lists open orders via REST without the `OPEN`-only
-  filter (because Coinbase's `OPEN` filter excludes `PENDING` and `QUEUED`
-  orders that are still cancelable), filters locally to
-  `{Accepted, Triggered, PendingUpdate, PartiallyFilled}` and the requested
-  side, then chunks `batch_cancel` calls in groups of 100.
-  Per-order venue failures emit `OrderCancelRejected`; whole-request failures
-  with unknown venue outcome leave affected orders pending reconciliation.
+- `cancel_order` posts a single-id `batch_cancel`. An explicit per-order venue failure surfaces as
+  `OrderCancelRejected`. A whole-request transport failure with unknown venue outcome leaves the order in
+  `PENDING_CANCEL` for reconciliation.
+- `cancel_all_orders` lists open orders via REST without the `OPEN`-only filter (because Coinbase's `OPEN`
+  filter excludes `PENDING` and `QUEUED` orders that are still cancelable), filters locally to
+  `{Accepted, Triggered, PendingUpdate, PartiallyFilled}` and the requested side, then chunks `batch_cancel`
+  calls in groups of 100. Per-order venue failures emit `OrderCancelRejected`. Whole-request failures with
+  unknown venue outcome leave affected orders pending reconciliation.
 - `batch_cancel_orders` chunks the same way and surfaces explicit per-order
   venue failures as `OrderCancelRejected`. Transport failures with unknown
   venue outcome leave affected orders pending reconciliation.
 
 ### User WebSocket channel
 
-`CoinbaseExecutionClient` subscribes to the `user` channel with no
-`product_ids` filter and a fresh JWT, parses each event into an
-`OrderStatusReport`, and feeds it to the execution event stream. Coinbase
-reports cumulative state per order rather than per-trade fills, so the exec
-client synthesizes a `FillReport` from the cumulative delta. The per-fill
-price is derived as `(avg_now * qty_now - avg_prev * qty_prev) / delta_qty`
-so multi-fill orders carry the correct trade price, not the cumulative
-weighted average. The original quantity is restored on terminal updates
-(`CANCELLED`, `EXPIRED`, `FAILED`) where the venue zeroes `leaves_quantity`.
+`CoinbaseExecutionClient` subscribes to the `user` channel with no `product_ids` filter and a fresh JWT. It
+parses each event into an `OrderStatusReport` and sends it to the execution event stream. Coinbase reports
+cumulative state per order rather than per-trade fills, so the exec client synthesizes a `FillReport` from the
+cumulative delta. The per-fill price is derived as `(avg_now * qty_now - avg_prev * qty_prev) / delta_qty` so
+multi-fill orders carry the correct trade price, not the cumulative weighted average. The original quantity is
+restored on terminal updates (`CANCELLED`, `EXPIRED`, `FAILED`) where the venue zeroes `leaves_quantity`.
 
 The user channel does not echo `price`, `stop_price`, `trigger_type`, or
 maker/taker classification. The exec client caches these at submit time
@@ -652,15 +633,12 @@ across reconnects so synthesized fill deltas remain correct.
 
 ### Fill deduplication
 
-The user-channel WebSocket can replay events on reconnect. The execution
-client maintains a 10,000-entry FIFO dedup keyed on
-`(venue_order_id, trade_id)` and drops any fill whose synthesized trade ID
-matches a recently-seen one. The cumulative-state map is bounded with the
-same capacity to protect against orders that never receive a terminal
-event in this client's lifetime. After very long disconnections (beyond
-the in-memory dedup window) replayed fills may emit duplicate
-`FillReport` values; strategies should rely on REST reconciliation to
-recover canonical state in that case.
+The user-channel WebSocket can replay events on reconnect. The execution client maintains a 10,000-entry FIFO
+dedup keyed on `(venue_order_id, trade_id)` and drops any fill whose synthesized trade ID matches a
+recently-seen one. The cumulative-state map is bounded with the same capacity to protect against orders that
+never receive a terminal event in this client's lifetime. After very long disconnections (beyond the in-memory
+dedup window) replayed fills may emit duplicate `FillReport` values. Strategies should rely on REST
+reconciliation to recover canonical state in that case.
 
 ### Position reconciliation
 
@@ -697,9 +675,8 @@ When the REST limit is exceeded, Coinbase returns HTTP `429` with this body:
 }
 ```
 
-The adapter additionally throttles all REST traffic client-side at 30 requests
-per second, and subscribe and unsubscribe messages at 8 per second, so bursts
-are shaped before they reach the venue.
+The adapter also throttles all REST traffic client-side at 30 requests per second. It limits subscribe and
+unsubscribe messages to 8 per second. Thus, it shapes bursts before they reach the venue.
 
 :::info
 Coinbase's current Advanced Trade documentation publishes WebSocket limits but
@@ -713,27 +690,22 @@ documented value. References:
 
 ## Reconnect and resubscribe
 
-The WebSocket client uses exponential backoff with a base of 250ms and a cap
-of 30s on reconnect. Retained subscriptions are replayed automatically after
-the handshake completes. Coinbase disconnects a client that has not sent a
-subscribe message within 5 seconds of connecting, so the replay always
-includes the `heartbeats` topic, which is marked before the first replay and
-kept for the client's lifetime.
+The WebSocket client uses exponential backoff with a base of 250ms and a cap of 30s on reconnect. Retained
+subscriptions are replayed automatically after the handshake completes. Coinbase disconnects a client that
+sends no subscribe message within 5 seconds of connecting. Thus, replay always includes `heartbeats`. The
+client marks this topic before the first replay and keeps it for its lifetime.
 
-For authenticated channels (`user`, and `futures_balance_summary` on
-Margin clients), the adapter generates a fresh JWT for every subscribe
-message, as Coinbase requires a different JWT for each authenticated
-WebSocket message. A topic that requires authentication is skipped rather
-than sent unsigned when no credentials are configured or the JWT cannot be
-built, and the failure surfaces as an error on the client's message stream.
-Once a subscription is accepted the data flow continues for the lifetime of
-the WebSocket connection without further authentication.
+For authenticated channels (`user`, and `futures_balance_summary` on Margin clients), the adapter generates a
+fresh JWT for every subscribe message, as Coinbase requires a different JWT for each authenticated WebSocket
+message. If credentials are absent or JWT construction fails, the adapter skips topics that require
+authentication instead of sending them unsigned. The failure appears as an error on the client's message
+stream. Once a subscription is accepted the data flow continues for the lifetime of the WebSocket connection
+without further authentication.
 
-If the execution client is connected again while a prior user WebSocket is
-still active or reconnecting, it tears that connection down and rebuilds the
-inner client rather than reusing the existing state machine. This guarantees
-a fresh command channel, output channel, and shutdown signal even when the
-previous session's `Disconnect` command lost a race with the shutdown signal.
+If a prior user WebSocket is still active or reconnecting when the execution client connects again, it closes
+that connection. It rebuilds the inner client instead of reusing the existing state machine. This guarantees a
+fresh command channel, output channel, and shutdown signal even when the previous session's `Disconnect`
+command lost a race with the shutdown signal.
 
 ## Configuration
 
@@ -803,21 +775,19 @@ The current Python examples show how to pair these configs with
 
 ### Venue-side
 
-- Order modification is restricted to open GTC orders and is rejected on
-  futures-venue orders with `CANNOT_EDIT_FUTURES_ORDER`; everything else must
-  use cancel-replace.
+- Order modification is restricted to open GTC orders and is rejected on futures-venue orders with
+  `CANNOT_EDIT_FUTURES_ORDER`. Everything else must use cancel-replace.
 - OCO orders are not exposed as a distinct order type.
 - Trailing stop, MARKET_IF_TOUCHED, LIMIT_IF_TOUCHED, and iceberg orders are
   not supported by Coinbase.
 - Mark prices are not published on REST or WebSocket, so mark price
   subscriptions are rejected.
-- Batch submit and batch modify are not available; only batch cancel is.
+- Batch submit and batch modify are not available. Only batch cancel is.
 - Sandbox is a static-mock environment (Accounts and Orders endpoints only,
   pre-defined responses, no real market data).
-- The user-channel WebSocket reports cumulative per-order state, not
-  per-trade fills. The exec client derives per-fill quantity, price, and
-  commission from the cumulative delta; per-trade `trade_id`s are
-  synthesized from `(venue_order_id, cumulative_quantity)`.
+- The user-channel WebSocket reports cumulative per-order state, not per-trade fills. The exec client derives
+  per-fill quantity, price, and commission from the cumulative delta. Per-trade `trade_id`s are synthesized
+  from `(venue_order_id, cumulative_quantity)`.
 
 ### Adapter-side
 
@@ -834,27 +804,20 @@ The current Python examples show how to pair these configs with
 - **Position reports are always empty for Cash accounts.** Coinbase spot has
   no positions. Derivatives (CFM) position reports come from `cfm/positions`
   and appear only on Margin clients.
-- **User-channel updates omit `price`, `stop_price`, and `trigger_type`.**
-  For orders this client submitted, the missing fields are patched from a
-  cache populated at `submit_order` time. For external orders (submitted by
-  another process or via the Coinbase UI), the user-channel handler
-  enriches the report on first sight by fetching
-  `/orders/historical/{venue_order_id}` and caching the result. The REST
-  call adds latency to the first user-channel update for an external
-  order; subsequent updates use the cached enrichment.
-- **Cancel-all and batch-cancel REST list failures are logged only.** If the
-  list-open-orders REST call fails, no per-order `OrderCancelRejected` is
-  emitted; orders remain in `PendingCancel` until the next reconciliation
-  recovers them. Mirrors the Bybit adapter pattern.
-- **Newly listed products require a reconnect to be tradeable.** The
-  instrument cache is populated on connect; products listed after that
-  are not in the cache and `submit_order` will deny them.
-- **MARKET orders default to IOC.** A `MarketOrder` constructed with the
-  Nautilus default `TimeInForce::Gtc` is mapped to `market_market_ioc` at
-  the venue. Explicit `TimeInForce::Ioc` is honored; `TimeInForce::Fok`
-  routes to `market_market_fok`, which Coinbase documents as perpetuals-only
-  and rejects at runtime on spot with `UNSUPPORTED_ORDER_CONFIGURATION`.
-  `Day` and `Gtd` are rejected at submit time.
+- **User-channel updates omit `price`, `stop_price`, and `trigger_type`.** For orders this client submitted,
+  the missing fields are patched from a cache populated at `submit_order` time. For external orders (submitted
+  by another process or via the Coinbase UI), the user-channel handler enriches the report on first sight by
+  fetching `/orders/historical/{venue_order_id}` and caching the result. The REST call adds latency to the
+  first user-channel update for an external order. Subsequent updates use the cached enrichment.
+- **Cancel-all and batch-cancel REST list failures are logged only.** If the list-open-orders REST call fails,
+  no per-order `OrderCancelRejected` is emitted. Orders remain in `PendingCancel` until the next
+  reconciliation recovers them. Mirrors the Bybit adapter pattern.
+- **Newly listed products require a reconnect to be tradeable.** The instrument cache is populated on connect.
+  Products listed after that are not in the cache and `submit_order` will deny them.
+- **MARKET orders default to IOC.** A `MarketOrder` constructed with the Nautilus default `TimeInForce::Gtc`
+  is mapped to `market_market_ioc` at the venue. Explicit `TimeInForce::Ioc` is honored. `TimeInForce::Fok`
+  routes to `market_market_fok`, which Coinbase documents as perpetuals-only and rejects at runtime on spot
+  with `UNSUPPORTED_ORDER_CONFIGURATION`. `Day` and `Gtd` are rejected at submit time.
 - **Historical funding rate requests are not implemented.** Funding rates
   are available only as live updates from the derivatives REST poll.
 - **Live bar subscriptions ignore the requested granularity.** The venue's

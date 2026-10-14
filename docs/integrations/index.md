@@ -1,6 +1,7 @@
 # Integrations
 
-NautilusTrader uses modular *adapters* to connect to trading venues and data providers, translating raw APIs into a unified interface and normalized domain model.
+NautilusTrader uses modular *adapters* to connect to trading venues and data providers. The adapters translate
+raw APIs into a unified interface and normalized domain model.
 
 The following integrations are available or planned:
 
@@ -39,13 +40,13 @@ shared Lighter factory keeps `LIGHTER` as its compatibility default.
 - `planned`: Planned for future development.
 - `building`: Under construction and likely not in a usable state.
 - `beta`: Completed to a minimally working state and in a 'beta' testing phase.
-- `stable`: Stabilized feature set and API, the integration has been tested by both developers and users to a reasonable level (some bugs may still remain).
+- `stable`: Stable feature set and API. Developers and users have tested the integration to a reasonable
+  level, but some bugs can remain.
 
 ## Implementation goals
 
-The primary goal of NautilusTrader is to provide a unified trading system for
-use with a variety of integrations. To support the widest range of trading
-strategies, priority will be given to *standard* functionality:
+NautilusTrader aims to provide a unified trading system for a variety of integrations. To support the widest
+range of trading strategies, development gives priority to *standard* functionality:
 
 - Requesting historical market data.
 - Streaming live market data.
@@ -58,7 +59,8 @@ The implementation of each integration aims to meet the following criteria:
 
 - Low-level client components should match the exchange API as closely as possible.
 - The full range of an exchange's functionality (where applicable to NautilusTrader) should *eventually* be supported.
-- Exchange specific data types will be added to support the functionality and return types which are reasonably expected by a user.
+- Exchange-specific data types will support the functionality and return types that users can reasonably
+  expect.
 - Actions unsupported by an exchange or NautilusTrader will be logged as a warning or error when invoked.
 
 ::::warning[Trace logging and credentials]

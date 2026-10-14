@@ -66,9 +66,8 @@ address:
 - Orders from a wallet that has never approved a builder fee are rejected with the reason
   `Builder fee has not been approved` (any prior approval, including at a 0% rate, satisfies
   the check).
-- The approval must be signed by the master wallet's private key, which the adapter does not
-  hold in agent (API) wallet setups, so it runs as a one-time script rather than at execution
-  client startup.
+- The approval requires the master wallet's private key. The adapter does not hold this key in agent (API)
+  wallet setups. Thus, approval runs as a one-time script rather than at execution client startup.
 - The 0% max fee rate permits attribution only: no builder fee is ever charged, and raising
   the rate would require a new approval signed by you.
 
@@ -89,9 +88,9 @@ builder_fee_approve()
 
 ### Revoking the approval
 
-Use revocation to cap a previously approved builder fee at 0% (for example, an approval from a
-version that charged builder fees). Revocation caps the fee; it does not remove the approval
-record, so attribution continues unless `include_builder_attribution` is disabled.
+Use revocation to cap a previously approved builder fee at 0% (for example, an approval from a version that
+charged builder fees). Revocation caps the fee. It does not remove the approval record, so attribution
+continues unless `include_builder_attribution` is disabled.
 
 ```bash
 cargo run -p nautilus-hyperliquid --bin hyperliquid-builder-fee-revoke
@@ -105,10 +104,9 @@ from nautilus_trader.adapters.hyperliquid import builder_fee_revoke
 builder_fee_revoke()
 ```
 
-The Rust scripts print a summary of the action and pause for an Enter keypress before signing;
-abort with `Ctrl+C` if anything in the summary looks wrong, or append `-- --yes` to the
-`cargo run` command to skip the prompt. The Python bindings do not prompt, so make sure to
-review the active environment variables before calling.
+The Rust scripts print an action summary. They wait for an Enter keypress before signing. If anything in the
+summary looks wrong, abort with `Ctrl+C`. To skip the prompt, append `-- --yes` to the `cargo run` command.
+The Python bindings do not prompt, so make sure to review the active environment variables before calling.
 
 ## Testnet setup
 
@@ -144,7 +142,7 @@ then connect the extension to testnet.
 
 To use your testnet account with NautilusTrader, you need to export your wallet's private key:
 
-**MetaMask:**
+**MetaMask**:
 
 1. Click the three dots menu next to your account.
 2. Select "Account details".
@@ -152,8 +150,8 @@ To use your testnet account with NautilusTrader, you need to export your wallet'
 4. Enter your password and copy the private key.
 
 :::warning
-**Never share your private keys.**
-Store private keys securely using environment variables; never commit them to version control.
+**Never share your private keys.** Store private keys securely using environment variables. Never commit them
+to version control.
 :::
 
 ### Setting environment variables
@@ -190,7 +188,7 @@ spot markets, and HIP-4 binary outcome markets.
 | HIP-3 Perpetuals  | ✓         | ✓       | Builder-deployed perps with per-dex collateral.  |
 | HIP-4 Outcomes    | ✓         | ✓       | Fully-collateralized binary outcome side tokens. |
 
-All four product types load automatically at connect; no per-product opt-in is required.
+All four product types load automatically at connect. No per-product opt-in is required.
 
 :::note
 Standard Hyperliquid perpetuals are settled in USDC. HIP-3 dexes may settle in
@@ -283,11 +281,10 @@ is the `outcome` field from `outcomeMeta` and the middle segment names the
 binary side. The `-OUTCOME` suffix is symmetric with `-PERP` / `-SPOT`.
 
 [HIP-4](https://hyperliquid.gitbook.io/hyperliquid-docs/hyperliquid-improvement-proposals-hips/hip-4-outcome-markets)
-side tokens are binary contracts that settle in the market's quote token at `0`
-(loser) or `1` (winner). The Nautilus symbol uses the human-readable form above; the wire
-`raw_symbol` uses the venue coin form `#{encoding}` (where
-`encoding = 10 * outcome_index + side`, `side` is `0` for Yes / `1` for No),
-which is what `l2Book` and `allMids` accept.
+side tokens are binary contracts that settle in the market's quote token at `0` (loser) or `1` (winner). The
+Nautilus symbol uses the human-readable form above. The wire `raw_symbol` uses the venue coin form
+`#{encoding}` (where `encoding = 10 * outcome_index + side`, `side` is `0` for Yes / `1` for No), which is
+what `l2Book` and `allMids` accept.
 
 Examples (outcome 25):
 
@@ -329,10 +326,10 @@ allows qualified deployers to launch permissionless perp dexes on Hyperliquid. T
 include equities (TSLA, NVDA, AAPL), commodities (gold, crude oil), indices (S&P 500), and
 pre-IPO tokens (SpaceX, OpenAI).
 
-In a `LiveNode`, HIP-3 perpetuals load automatically alongside standard perpetuals at
-connect: the adapter fetches every perp dex (standard and builder-deployed) from `allPerpMetas`,
-so no additional client configuration is required. The data client exposes no per-dex filter;
-strategies select the markets they trade by `instrument_id`.
+In a `LiveNode`, HIP-3 perpetuals load automatically alongside standard perpetuals at connect: the adapter
+fetches every perp dex (standard and builder-deployed) from `allPerpMetas`, so no additional client
+configuration is required. The data client exposes no per-dex filter. Strategies select the markets they trade
+by `instrument_id`.
 
 For direct `HyperliquidHttpClient` usage, the HIP-3 perp dexes are excluded unless you opt in
 through `load_instrument_definitions`:
@@ -363,24 +360,27 @@ and each unique HIP-3 dex named by the wallet's recent historical orders or fill
   orders or positions.
 - Position reconciliation also includes spot holdings.
 
-The returned mass status records its own coverage under the [mass-status history contract](../concepts/execution/reconciliation.md#mass-status-history-contract):
-when a lookback is configured, `lookback_start` carries its lower bound (with no configured lookback
-the snapshot is unbounded), and `reports_complete` is `false` when a history response reached its
-record limit (and may be truncated) or when a venue row needed for the snapshot could not be decoded,
-resolved to an instrument, or converted into a report. Valid rows remain in the report set. A
-snapshot whose venue responses decoded cleanly within the record limits is authoritative, including
-an empty one.
+The returned mass status records its coverage under the
+[mass-status history contract](../concepts/execution/reconciliation.md#mass-status-history-contract). With a
+configured lookback, `lookback_start` carries its lower bound. Without one, the snapshot is unbounded.
+`reports_complete` is `false` for either of these conditions:
+
+- A history response reached its record limit and may be truncated.
+- A required venue row could not be decoded, resolved to an instrument, or converted into a report.
+
+Valid rows remain in the report set. A snapshot whose venue responses decoded cleanly within the record limits
+is authoritative, including an empty one.
 
 #### Reduce-only fill quantity
 
-Hyperliquid can report a reduce-only order as `filled` with nothing remaining once it closes a
-position smaller than the order. During startup mass status, and when it looks up a single order
-by venue order ID, the adapter clamps such an order to the total of its fills, so it closes
-`Filled` at a quantity smaller than the size originally submitted. The clamp applies only when the
-`userFills` history is complete and under its 2,000-record limit. Otherwise the adapter keeps the
-venue's quantity, and reconciliation can infer the missing fill. For this clamp, a single-order
-lookup fetches `userFills` only for a reduce-only order reported `Filled`. `QueryOrder` also reads
-fill history for [eligible ordinary filled orders](#order-fill-recovery).
+Hyperliquid can report a reduce-only order as `filled` with nothing remaining once it closes a position
+smaller than the order. During startup mass status or a single-order lookup by venue order ID, the adapter
+clamps such an order to its total fills. Thus, it closes `Filled` at a quantity smaller than the submitted
+size. The clamp applies only when the `userFills` history is complete and under its 2,000-record limit.
+Otherwise the adapter keeps the venue's quantity, and reconciliation can infer the missing fill.
+
+For this clamp, a single-order lookup fetches `userFills` only for a reduce-only order reported `Filled`.
+`QueryOrder` also reads fill history for [eligible ordinary filled orders](#order-fill-recovery).
 
 #### Command and direct requests
 
@@ -392,18 +392,18 @@ cached perpetual instruments:
   queries only that dex.
 - A standard perpetual filter queries only the default dex.
 - Spot and outcome position filters keep their existing spot-only routing.
-- If any required request fails, or a venue row cannot be decoded, resolved to an instrument, or
-  converted into a report, the request returns an error rather than a partial snapshot; fill and
+- If a required request fails, the request returns an error instead of a partial snapshot. The same applies if
+  a venue row cannot be decoded, resolved to an instrument, or converted into a report. Fill and
   historical-order report requests fail the same way.
-- A targeted order-status lookup on the HTTP client that matches a venue row it cannot use returns
-  an error instead of reporting the order as missing, and the `GenerateOrderStatusReport` command
-  does the same once no venue order ID fallback remains.
+- If a targeted HTTP order-status lookup matches an unusable venue row, it returns an error instead of
+  reporting the order as missing. The `GenerateOrderStatusReport` command does the same once no venue order ID
+  fallback remains.
 
 #### Inferred-fill commissions
 
-Fills inferred during reconciliation carry no commission: the adapter does not calculate fees for
-inferred fills, so the generated `OrderFilled` event has `commission` set to `None`. Quantity and
-price still reconcile; only realized PnL for those fills excludes trading fees.
+Fills inferred during reconciliation carry no commission: the adapter does not calculate fees for inferred
+fills, so the generated `OrderFilled` event has `commission` set to `None`. Quantity and price still
+reconcile. Only realized PnL for those fills excludes trading fees.
 
 ### Differences from standard perpetuals
 
@@ -445,11 +445,9 @@ to strategies as:
 InstrumentId.from_str("dex:STREAMABCDxxxx-USD-PERP.HYPERLIQUID")
 ```
 
-The substitution applies only to the Nautilus-internal symbol used in topics,
-caches, logs, and config. The venue-official name is preserved on the
-instrument's `raw_symbol` field for HTTP and WebSocket wire calls, and order
-submissions reference the numeric asset index, so the round-trip with
-Hyperliquid is unaffected.
+The substitution applies only to the Nautilus-internal symbol used in topics, caches, logs, and config. The
+instrument's `raw_symbol` preserves the venue-official name for HTTP and WebSocket calls. Order submissions
+reference the numeric asset index. Thus, the round-trip with Hyperliquid is unaffected.
 
 When subscribing to a HIP-3 instrument with wildcard bytes in its venue name,
 use the sanitized form. Symbols without `*` or `?` are passed through
@@ -461,13 +459,12 @@ the first-write-wins behavior described in [Instrument loading](#instrument-load
 
 ## HIP-4 outcome markets
 
-[HIP-4](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/asset-ids#outcomes)
-markets are fully-collateralized binary contracts. Each market has two side
-tokens (Yes / No) that settle to `1` (winner) or `0` (loser) quote tokens on the
-resolution date. The venue publishes outcome metadata through the `outcomeMeta`
-info endpoint. The adapter treats that payload as best-effort and skips HIP-4
-instruments when the venue does not return it, so a venue that drops or renames
-the endpoint degrades to perps and spot rather than failing instrument loading.
+[HIP-4](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/asset-ids#outcomes) markets are
+fully-collateralized binary contracts. Each market has two side tokens (Yes / No) that settle to `1` (winner)
+or `0` (loser) quote tokens on the resolution date. The venue publishes outcome metadata through the
+`outcomeMeta` info endpoint. The adapter treats that payload as best-effort. If the venue does not return it,
+the adapter skips HIP-4 instruments. Thus, a dropped or renamed endpoint leaves perps and spot available
+instead of failing instrument loading.
 
 ### Loading outcome instruments
 
@@ -489,17 +486,14 @@ instruments = await client.load_instrument_definitions(
 )
 ```
 
-Loading emits two `BinaryOption` instruments per outcome (one per side).
-Symbols use the form `{outcome_index}-{YES|NO}-OUTCOME.HYPERLIQUID`.
-`expiration_ns` is parsed from the venue description (`expiry:YYYYMMDD-HHMM`,
-UTC). Standalone binaries carry their own expiry; named and fallback outcomes
-inherit from their parent question. Prices tick in steps of `0.00001` and sizes are whole
-tokens, matching the venue.
+Loading emits two `BinaryOption` instruments per outcome (one per side). Symbols use the form
+`{outcome_index}-{YES|NO}-OUTCOME.HYPERLIQUID`. `expiration_ns` is parsed from the venue description
+(`expiry:YYYYMMDD-HHMM`, UTC). Standalone binaries carry their own expiry. Named and fallback outcomes inherit
+from their parent question. Prices tick in steps of `0.00001` and sizes are whole tokens, matching the venue.
 
-Each instrument's `BinaryOption.info` carries the parsed venue metadata as a
-key/value map (consumed via `info["key"]` in Python or `Params.get_str(...)`
-in Rust). Derived identifiers are always populated; description-derived
-fields appear when the venue includes them.
+Each instrument's `BinaryOption.info` carries the parsed venue metadata as a key/value map (consumed via
+`info["key"]` in Python or `Params.get_str(...)` in Rust). Derived identifiers are always populated.
+Description-derived fields appear when the venue includes them.
 
 | Field              | Source                         | Notes                                             |
 | ------------------ | ------------------------------ | ------------------------------------------------- |
@@ -521,11 +515,10 @@ fields appear when the venue includes them.
 | `question_name`    | parent question                | question label                                    |
 | `question_*`       | parent question description    | every parsed question field, `question_` prefixed |
 
-Description keys are lowered from venue camelCase to snake_case
-(`targetPrice` -> `target_price`, `priceThresholds` -> `price_thresholds`).
-Values are kept as strings to preserve wire fidelity; numeric identifiers
-(`outcome_index`, `outcome_side`, `encoding`, `asset_id`, `question`,
-`named_index`) are stored as JSON numbers.
+Description keys are lowered from venue camelCase to snake_case (`targetPrice` -> `target_price`,
+`priceThresholds` -> `price_thresholds`). Values are kept as strings to preserve wire fidelity. Numeric
+identifiers (`outcome_index`, `outcome_side`, `encoding`, `asset_id`, `question`, `named_index`) are stored as
+JSON numbers.
 
 ### Settlement currency
 
@@ -550,14 +543,12 @@ carries USDH alongside USDC and any other non-zero spot holdings.
 
 ### Trading flow
 
-Outcome side tokens (`{outcome_index}-{YES|NO}-OUTCOME.HYPERLIQUID`) trade
-through the standard order path. Submit `SubmitOrder` as you would for any
-perp or spot instrument; the execution client routes it through the same
-`Order` action against the venue's `#{encoding}` orderbook (where
-`encoding = 10 * outcome_index + outcome_side`). No HIP-4-specific call is
-needed.
+Outcome side tokens (`{outcome_index}-{YES|NO}-OUTCOME.HYPERLIQUID`) trade through the standard order path.
+Submit `SubmitOrder` as you would for any perp or spot instrument. The execution client routes it through the
+same `Order` action against the venue's `#{encoding}` orderbook (where
+`encoding = 10 * outcome_index + outcome_side`). No HIP-4-specific call is needed.
 
-Settlement is venue-driven; see [Settlement dispatch](#settlement-dispatch).
+Settlement is venue-driven. See [Settlement dispatch](#settlement-dispatch).
 
 #### Advanced workflows
 
@@ -590,22 +581,20 @@ await client.submit_negate_outcome(9, 52, Decimal("1.0"))
 | `submit_merge_question` | Close a full multi-outcome basket back to quote atomically                           |
 | `submit_negate_outcome` | Convert No shares of one outcome into Yes shares of every other in the same question |
 
-For directional bets the ordinary `SubmitOrder` path is sufficient; the
-methods above are only needed when you want to create or destroy side-token
-inventory off-book.
+For directional bets the ordinary `SubmitOrder` path is sufficient. The methods above are only needed when you
+want to create or destroy side-token inventory off-book.
 
 ### Order constraints
 
-Outcome side tokens behave like spot tokens (no margin, no funding, no
-liquidation). The execution client rejects features that don't apply:
+Outcome side tokens behave like spot tokens (no margin, no funding, no liquidation). The execution client
+rejects features that do not apply:
 
 - `reduce_only` orders.
 - Trigger order types (`StopMarket`, `StopLimit`, `MarketIfTouched`,
   `LimitIfTouched`, trailing stops).
 
-`Limit` and `Market` orders with `GTC`, `IOC`, or `ALO` time-in-force are
-supported. The venue minimum is 10 quote tokens of notional; size `order_qty`
-in whole tokens so that `order_qty * limit_price >= 10`.
+`Limit` and `Market` orders with `GTC`, `IOC`, or `ALO` time-in-force are supported. The venue minimum is 10
+quote tokens of notional. Size `order_qty` in whole tokens so that `order_qty * limit_price >= 10`.
 
 ### Settlement dispatch
 
@@ -654,36 +643,33 @@ HIP-4 side tokens arrive on `spotClearinghouseState` with `coin` set to the
 
 ### Multi-outcome (priceBucket) markets
 
-The venue exposes multi-outcome markets via the top-level `questions` array in
-`outcomeMeta`. Each question references a fallback outcome plus a sequence of
-named outcomes whose individual descriptions point back at the question via
-`index:N`. Each side token is modeled as an independent `BinaryOption`
-instrument; the `submit_merge_question` and `submit_negate_outcome` actions
-on `HyperliquidHttpClient` operate at the question level for basket close
-and cross-outcome rotation.
+The venue exposes multi-outcome markets via the top-level `questions` array in `outcomeMeta`. Each question
+references a fallback outcome plus a sequence of named outcomes whose individual descriptions point back at
+the question via `index:N`. Each side token is modeled as an independent `BinaryOption` instrument. The
+`submit_merge_question` and `submit_negate_outcome` actions on `HyperliquidHttpClient` operate at the question
+level for basket close and cross-outcome rotation.
 
 ## Instrument loading
 
-The data client loads the full Hyperliquid universe at connect. One pass covers spot
-markets, standard perpetuals, every HIP-3 builder-deployed perp dex, and HIP-4 outcome side
-tokens; the client config exposes no per-product or per-symbol filter. Strategies select the
-instruments they trade through their own `instrument_id` configuration.
+The data client loads the full Hyperliquid universe at connect. One pass covers spot markets, standard
+perpetuals, every HIP-3 builder-deployed perp dex, and HIP-4 outcome side tokens. The client config exposes no
+per-product or per-symbol filter. Strategies select the instruments they trade through their own
+`instrument_id` configuration.
 
-The loader includes every pair in `spotMeta.universe`, including non-canonical pairs. When several
-pairs share a base token, it caches the canonical pair first so balances and fills that identify the
-asset by its base token resolve to the canonical Nautilus instrument. Any later definition whose
-Nautilus symbol collides with an earlier definition is dropped with a warning and cannot be traded.
+The loader includes every pair in `spotMeta.universe`, including non-canonical pairs. When several pairs share
+a base token, the loader caches the canonical pair first. Thus, balances and fills identified by base token
+resolve to the canonical Nautilus instrument. Any later definition whose Nautilus symbol collides with an
+earlier definition is dropped with a warning and cannot be traded.
 
 The data client then refetches the universe every `update_instruments_interval_mins` minutes:
 
-- It publishes the definitions that are new or materially changed; unchanged definitions are not
-  republished.
+- It publishes the definitions that are new or materially changed. Unchanged definitions are not republished.
 - The execution client receives those updates and registers each instrument's asset index, so a
   market listed after startup becomes tradable without a process restart.
 - A `RequestInstrument` or `RequestInstruments` also refetches the whole universe and publishes
   new or changed definitions the same way.
-- Set `update_instruments_interval_mins` to `0` to disable the periodic refresh; requests and a
-  data client reconnect still refetch the universe on demand.
+- Set `update_instruments_interval_mins` to `0` to disable the periodic refresh. Requests and a data client
+  reconnect still refetch the universe on demand.
 
 Submitting for a symbol the execution client has never loaded is denied with
 `INSTRUMENT_NOT_FOUND`.
@@ -747,10 +733,9 @@ response. Real-time trades remain available via the WebSocket `trades` channel.
 
 ### Order book precision controls
 
-The `l2Book` subscription accepts optional `nSigFigs` and `mantissa` parameters
-that thin the venue-side book aggregation. Pass them as `n_sig_figs` and
-`mantissa` in the `params` dict on `subscribe_book_deltas` or
-`subscribe_book_depth`, and the adapter forwards them to the venue.
+The `l2Book` subscription accepts optional `nSigFigs` and `mantissa` parameters that thin the venue-side book
+aggregation. Pass them as `n_sig_figs` and `mantissa` in `params` on `subscribe_book_deltas` or
+`subscribe_book_depth`. The adapter forwards them to the venue.
 
 Hyperliquid accepts `nSigFigs` values `2`, `3`, `4`, `5`, or omitted for full
 precision. `mantissa` is only valid when `nSigFigs=5` and accepts `1`, `2`, or
@@ -1000,19 +985,16 @@ the data. This aggregate is live-only and JSON-backed rather than
 Arrow-backed, so unlike the other three types it is not written to a Parquet
 catalog.
 
-The adapter does not invent `dex` values. It bootstraps the ordered dex
-universe from Hyperliquid `meta` / `allPerpMetas` and resolves builder dex
-identifiers from the live `perpDexs` info endpoint. The empty string `""`
-represents Hyperliquid's default perp dex; non-empty values such as `xyz`,
-`flx`, or `vntl` are venue-defined builder dex identifiers.
+The adapter does not invent `dex` values. It bootstraps the ordered dex universe from Hyperliquid `meta` /
+`allPerpMetas` and resolves builder dex identifiers from the live `perpDexs` info endpoint. The empty string
+`""` represents Hyperliquid's default perp dex. Non-empty values such as `xyz`, `flx`, or `vntl` are
+venue-defined builder dex identifiers.
 
-The mapping is rebuilt from the cached instruments at connect, on every
-instrument refresh, and on every instrument request, and the feed is positional
-(no per-entry coin name), so perps listed later appear after the next rebuild.
-When `allPerpMetas` is unavailable the rebuild covers only the default dex and
-keeps the existing mapping for every builder dex. A context-count mismatch for a
-dex logs a warning until the next rebuild; entries stay aligned positionally,
-which is correct for appended listings.
+The mapping is rebuilt from cached instruments at connect, on every instrument refresh, and on every
+instrument request. The feed is positional (no per-entry coin name). Thus, later-listed perps appear after the
+next rebuild. When `allPerpMetas` is unavailable the rebuild covers only the default dex and keeps the
+existing mapping for every builder dex. A context-count mismatch for a dex logs a warning until the next
+rebuild. Entries stay aligned positionally, which is correct for appended listings.
 
 ```python
 from decimal import Decimal
@@ -1101,11 +1083,10 @@ to trade with market orders.
 
 ### Quote-denominated quantities
 
-Hyperliquid has no native quote-quantity order: the exchange endpoint takes a base `s` for
-every order. Orders with a quote-denominated quantity (`quote_quantity=True` on the order
-factory) are converted to a base size at submission, using the cached quote's best ask
-(for buys) or best bid (for sells) as the reference price, rounded to the instrument's size
-increment. Consequences of the conversion:
+Hyperliquid has no native quote-quantity order: the exchange endpoint takes a base `s` for every order. At
+submission, the adapter converts quote-denominated quantities (`quote_quantity=True` on the order factory) to
+base size. It uses the cached quote's best ask for buys or best bid for sells as the reference price. It
+rounds the base size to the instrument's size increment. Consequences of the conversion:
 
 - The converted size is an estimate at the reference price: the venue executes the base size
   it receives, so the filled notional can differ slightly from the requested quote amount.
@@ -1155,11 +1136,11 @@ def round_to_sig_figs(price: Decimal, sig_figs: int = 5) -> Decimal:
     return round(price, shift)
 ```
 
-When normalization is disabled, the adapter validates each outgoing limit and trigger price
-against the instrument's decimal limit and denies the order locally when the price carries more
-decimal places. The venue parses prices into its canonical form before verifying the request
-signature, so an over-precise price fails signature verification and the venue answers with a
-misleading "user or API wallet does not exist" error instead of an order validation error.
+When normalization is disabled, the adapter validates each outgoing limit and trigger price against the
+instrument's decimal limit and denies the order locally when the price carries more decimal places. The venue
+parses prices into its canonical form before it verifies the request signature. Thus, an over-precise price
+fails signature verification. The venue returns a misleading "user or API wallet does not exist" error instead
+of an order validation error.
 
 :::
 
@@ -1215,15 +1196,15 @@ ALO (Add-Liquidity-Only) lane.
 | Batch cancel      | ✓          | ✓    | Batched `cancelByCloid` for the provided list. |
 
 :::info
-Cancels prefer `cancelByCloid` and fall back to `cancel` by numeric OID when no CLOID is cached;
-fast and standard cancels dispatch as separate batched actions, so one cancel request can produce
-more than one venue call.
+Cancels prefer `cancelByCloid` and fall back to `cancel` by numeric OID when no CLOID is cached. Fast and
+standard cancels dispatch as separate batched actions. Thus, one cancel request can produce more than one
+venue call.
 
-Definite local cancel failures and authoritative venue rejections emit `OrderCancelRejected` for
-each affected order. Per-order errors in a batch response leave the other cancels intact; an
-explicit whole-request rejection applies to every cancel in that dispatched action. Rejection
-events preserve the venue's error message. After dispatch, transport failures and responses that
-leave the venue outcome unknown keep orders available for reconciliation.
+Definite local cancel failures and authoritative venue rejections emit `OrderCancelRejected` for each affected
+order. Per-order errors in a batch response leave the other cancels intact. An explicit whole-request
+rejection applies to every cancel in that dispatched action. Rejection events preserve the venue's error
+message. After dispatch, transport failures and responses that leave the venue outcome unknown keep orders
+available for reconciliation.
 :::
 
 :::info
@@ -1278,14 +1259,13 @@ original leg.
 
 `HyperliquidExecutionClient` runs detection, deduplication, and event promotion through the
 [`WsDispatchState`](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/adapters/hyperliquid/src/websocket/dispatch.rs)
-it owns, so strategies never see the replacement as a new order. On submission the client
-registers an `OrderContext` keyed by `client_order_id`, using its strategy, instrument, side,
-type, quantity, and last-known price. Each inbound
-status report or fill is routed through the dispatch: tracked orders emit typed
-`OrderEventAny::*` events via `ExecutionEventEmitter::send_order_event`; external orders fall
-back to the raw `OrderStatusReport` / `FillReport` so the engine can reconcile. The dispatch
-compares the report's `venue_order_id` against the last cached value for the `cloid`; when
-they differ it promotes the `ACCEPTED` to `OrderUpdated` and suppresses the paired stale cancel:
+it owns, so strategies never see the replacement as a new order. On submission the client registers an
+`OrderContext` keyed by `client_order_id`, using its strategy, instrument, side, type, quantity, and
+last-known price. Each inbound status report or fill is routed through the dispatch: tracked orders emit typed
+`OrderEventAny::*` events via `ExecutionEventEmitter::send_order_event`. External orders fall back to the raw
+`OrderStatusReport` / `FillReport` so the engine can reconcile. The dispatch compares the report's
+`venue_order_id` against the last cached value for the `cloid`. When they differ it promotes the `ACCEPTED` to
+`OrderUpdated` and suppresses the paired stale cancel:
 
 ```mermaid
 sequenceDiagram
@@ -1313,16 +1293,16 @@ paired cancel of the old leg never reaches it.
 
 #### Early cancel before the replacement
 
-If Hyperliquid delivers `CANCELED(old_oid)` before `ACCEPTED(new_oid)` for an in-flight modify,
-a pending-modify intent lets the dispatch hold the old leg's cancel and still route the
-subsequent `ACCEPTED` through the `OrderUpdated` path, which discards the held cancel. The intent
-is queued before the HTTP call, so an early cancel is held even while the request is still in
-flight. If the request fails before dispatch, or the venue rejects it, the adapter emits
-`OrderModifyRejected` and clears its own intent. A failure after dispatch with an unknown venue
-outcome keeps the intent, so a modify that reaches the venue despite a client-side timeout still
-holds the early `CANCELED(old_oid)` and promotes the eventual `ACCEPTED(new_oid)` to
-`OrderUpdated` (detection otherwise falls back to the cached `venue_order_id`, which the late
-`ACCEPTED` no longer matches). See
+If `CANCELED(old_oid)` precedes `ACCEPTED(new_oid)` for an in-flight modify, the pending-modify intent lets
+the dispatch hold the old leg's cancel. It still routes the subsequent `ACCEPTED` through the `OrderUpdated`
+path. That path discards the held cancel. The intent is queued before the HTTP call, so an early cancel is
+held even while the request is still in flight.
+
+If the request fails before dispatch, or the venue rejects it, the adapter emits `OrderModifyRejected` and
+clears its own intent. A failure after dispatch with an unknown venue outcome keeps the intent. Thus, a modify
+that reaches the venue despite a client-side timeout still holds the early `CANCELED(old_oid)`. It promotes
+the eventual `ACCEPTED(new_oid)` to `OrderUpdated`. Otherwise, detection falls back to the cached
+`venue_order_id`, which the late `ACCEPTED` no longer matches. See
 [GH-3827](https://github.com/nautechsystems/nautilus_trader/issues/3827).
 
 A cancel from elsewhere, such as a user cancel or a reduce-only cancel by the venue, arrives the
@@ -1358,14 +1338,12 @@ available for recovery.
 
 #### Dropped replacement acceptance
 
-The inflight query and single-order reconcile paths also promote the replacement. Hyperliquid
-lists the replacement under the same `cloid`
-with a new `oid` in `frontendOpenOrders`, so when the replacement `ACCEPTED(new_oid)` was dropped
-on the WebSocket and no fill has arrived, the query resolves it by `cloid` and promotes it to
-`OrderUpdated` directly (rebinding the `cloid` to `new_oid` and advancing the modify chain).
-The order is therefore not left bound to the canceled leg, and subsequent modifies and
-cancels target the live replacement. See
-[GH-4270](https://github.com/nautechsystems/nautilus_trader/issues/4270).
+The inflight query and single-order reconcile paths also promote the replacement. Hyperliquid lists the
+replacement under the same `cloid` with a new `oid` in `frontendOpenOrders`. If the WebSocket dropped
+`ACCEPTED(new_oid)` and no fill has arrived, the query resolves the replacement by `cloid`. It promotes it
+directly to `OrderUpdated` (rebinding the `cloid` to `new_oid` and advancing the modify chain). The order is
+therefore not left bound to the canceled leg, and subsequent modifies and cancels target the live replacement.
+See [GH-4270](https://github.com/nautechsystems/nautilus_trader/issues/4270).
 
 #### Fills racing the replacement
 
@@ -1419,11 +1397,11 @@ A rejected subscription delivers no snapshot, so its snapshot deadline starts re
 subscription the client rejects before sending, such as one beyond the 1,000-subscription limit,
 starts no recovery, and its book emits nothing.
 
-Each recovery makes up to eight attempts within 180 seconds, with exponential backoff, then
-continues at an interval that doubles from one minute to fifteen minutes until a snapshot is
-accepted. A running recovery continues across reconnects with its remaining budget, and
-unsubscribe or shutdown cancels it. A recovery waiting between attempts after its budget retries at
-once on the new connection. Recovery never ends in a failed state.
+Each recovery makes up to eight attempts within 180 seconds, with exponential backoff. It then retries until
+it accepts a snapshot. The retry interval doubles from one minute to fifteen minutes. A running recovery
+continues across reconnects with its remaining budget, and unsubscribe or shutdown cancels it. A recovery
+waiting between attempts after its budget retries at once on the new connection. Recovery never ends in a
+failed state.
 
 Deltas and depth for an instrument share one `l2Book` stream, so recovering the delta book also
 refreshes depth snapshots. Subscribing to deltas while depth already holds the stream replaces the
@@ -1432,17 +1410,20 @@ stream, so the book starts from a fresh snapshot. A depth-only stream emits no d
 The client does not correlate subscription acknowledgements with recovery attempts. A snapshot
 queued before a replacement can complete recovery once the replacement write finishes.
 
-Setting `book_snapshot_timeout_secs` to `0` disables snapshot deadlines. Recovery then starts only
-from a failed initial write, an invalid frame, or a stale-stream report. Within the retry budget,
-a replacement that delivers no snapshot leaves its attempt waiting until a snapshot is accepted, an
-invalid frame fails it, recovery is cancelled, or the 180-second initial budget ends.
+Setting `book_snapshot_timeout_secs` to `0` disables snapshot deadlines. Recovery then starts only from a
+failed initial write, an invalid frame, or a stale-stream report. Within the retry budget, a replacement that
+delivers no snapshot waits until one of these events:
+
+- The client accepts a snapshot.
+- An invalid frame fails the attempt.
+- Recovery is cancelled.
+- The 180-second initial budget ends.
 
 ### Live recovery validation
 
-The `hyperliquid-book-stress` harness is a development tool for changes to book synchronization and
-recovery. It uses Hyperliquid mainnet public market data, submits no orders, and checks six
-perpetual books against the book stream contract and against the book in each raw `l2Book` frame
-the harness relays, best 20 levels per side.
+The `hyperliquid-book-stress` harness is a development tool for changes to book synchronization and recovery.
+It uses Hyperliquid mainnet public market data and submits no orders. It checks six perpetual books against
+the book stream contract. It also compares the best 20 levels per side with each relayed raw `l2Book` frame.
 
 From the repository root, run:
 
@@ -1480,27 +1461,24 @@ Unified and portfolio margin accounts report every balance and hold in
 `spotClearinghouseState`, so balances come from spot alone and spot USDC `hold` is the
 account-wide margin.
 
-In the other modes, perp margin and cross-margin usage come from `clearinghouseState`,
-and non-zero spot tokens (USDC, USDH, HYPE, vault tokens, HIP-4 outcome side tokens, etc.)
-come from `spotClearinghouseState`. USDC comes from the perp summary when it reflects
-non-zero collateral, margin, or withdrawable balance; when the perp summary is absent or
-zeroed, spot USDC is used instead. A mode the adapter does not recognize is logged as a
-warning and handled the same way.
+In the other modes, perp margin and cross-margin usage come from `clearinghouseState`, and non-zero spot
+tokens (USDC, USDH, HYPE, vault tokens, HIP-4 outcome side tokens, etc.) come from `spotClearinghouseState`.
+USDC comes from the perp summary when it reflects non-zero collateral, margin, or withdrawable balance. When
+the perp summary is absent or zeroed, spot USDC is used instead. A mode the adapter does not recognize is
+logged as a warning and handled the same way.
 
-Spot tokens that `spotClearinghouseState` lists at zero are reported at zero, so a sold-out or
-withdrawn token clears its previous balance. USDC is reported at zero when the account has no USDC
-balance. Outside unified and portfolio margin both need a perp summary in the response; without one
-the previous balances are kept.
+Spot tokens that `spotClearinghouseState` lists at zero are reported at zero, so a sold-out or withdrawn token
+clears its previous balance. USDC is reported at zero when the account has no USDC balance. Outside unified
+and portfolio margin both need a perp summary in the response. Without one the previous balances are kept.
 
 If the account mode cannot be fetched or read, the account state request fails, and so
 does connect.
 
-Standard perps default to cross margin; HIP-3 perps default to isolated. On
-connect, the execution client reconciles orders, fills, and positions against
-Hyperliquid's clearinghouse state. Spot positions are reconstructed from held
-balances (long-only); HIP-4 side tokens reconcile against their matching
-`BinaryOption` instruments. See [HIP-3 reconciliation](#open-order-and-position-reconciliation) for
-per-dex open-order and position fan-out.
+Standard perps default to cross margin. HIP-3 perps default to isolated. On connect, the execution client
+reconciles orders, fills, and positions against Hyperliquid's clearinghouse state. Spot positions are
+reconstructed from held balances (long-only). HIP-4 side tokens reconcile against their matching
+`BinaryOption` instruments. See [HIP-3 reconciliation](#open-order-and-position-reconciliation) for per-dex
+open-order and position fan-out.
 
 :::note
 Leverage is managed directly through the Hyperliquid web UI or API, not through the adapter.
@@ -1527,11 +1505,9 @@ Hyperliquid signals venue-initiated closures through three surfaces on the
   direction alone and logs it at warning level with the instrument, order ID,
   price, and size.
 
-The adapter emits the standard `FillReport` for each of these fills. The
-liquidation or deleveraging detail is logged alongside the fill so you can
-correlate closures to venue-side events. No strategy-side changes are required;
-existing risk and reconciliation logic runs over these fills as for any other
-TAKER fill.
+The adapter emits the standard `FillReport` for each of these fills. The liquidation or deleveraging detail is
+logged alongside the fill so you can correlate closures to venue-side events. No strategy-side changes are
+required. Existing risk and reconciliation logic runs over these fills as for any other TAKER fill.
 
 Upstream references:
 
@@ -1555,25 +1531,25 @@ Recovery requires all of these conditions:
 
 ### Recovery and fallback
 
-After the status lookup, the adapter reads `userFills` once with `aggregateByTime=false`. It validates
-fill identities and complete unique trade coverage, rejecting matching fills whose quantity, price,
-or fee loses precision in its domain type. Identical records count once; conflicting records for a
-trade ID reject recovery. Complete coverage allows recovery even at the 2,000-fill response cap.
+After the status lookup, the adapter reads `userFills` once with `aggregateByTime=false`. It validates fill
+identities and complete unique trade coverage, rejecting matching fills whose quantity, price, or fee loses
+precision in its domain type. Identical records count once. Conflicting records for a trade ID reject
+recovery. Complete coverage allows recovery even at the 2,000-fill response cap.
 
 The adapter emits validated fills in chronological order, then the ordinary status report. It discards them
 if the binding or order terms change during the history read, or a modify is pending afterward.
 Engine deduplication handles live fills arriving during the request.
 
-Unavailable history, incomplete coverage, or any row that cannot be decoded, resolved to an
-instrument, or converted into a report yields no recovery fills. This validation includes other
-orders' fills. Ordinary status reconciliation continues; any inferred fill has no commission
-(see [Inferred-fill commissions](#inferred-fill-commissions)).
+Unavailable history, incomplete coverage, or any row that cannot be decoded, resolved to an instrument, or
+converted into a report yields no recovery fills. This validation includes other orders' fills. Ordinary
+status reconciliation continues. Any inferred fill has no commission (see
+[Inferred-fill commissions](#inferred-fill-commissions)).
 
 ### Fees
 
-Recovery preserves zero fees, negative rebates, and supported fee currencies. `fee` includes
-`builderFee`. Zero fees in unregistered or outcome side tokens use the instrument's quote currency;
-nonzero fees in either reject recovery.
+Recovery preserves zero fees, negative rebates, and supported fee currencies. `fee` includes `builderFee`.
+Zero fees in unregistered or outcome side tokens use the instrument's quote currency. Nonzero fees in either
+reject recovery.
 
 ### Limits
 
@@ -1581,9 +1557,9 @@ nonzero fees in either reject recovery.
 cover partial or canceled orders, replacement chains, unknown external orders, or orders reloaded
 after a restart.
 
-Status and history reads are separate venue requests. Recovery cannot replace an execution inferred
-by another reconciliation before recovered fills apply, or repair its commission. It adds no
-pagination or retry loop; existing HTTP timeouts, retries, and rate-limit waits apply.
+Status and history reads are separate venue requests. Recovery cannot replace an execution inferred by another
+reconciliation before recovered fills apply, or repair its commission. It adds no pagination or retry loop.
+Existing HTTP timeouts, retries, and rate-limit waits apply.
 
 ## Connection management
 
@@ -1604,21 +1580,22 @@ target them without cycling the containing client.
 
 ### Execution recovery after reconnect
 
-Hyperliquid sends no snapshot when the execution client resubscribes to `orderUpdates` and
-`userEvents`, so fills and order updates that occur while the socket is down never arrive on the
-stream. After a reconnect, the execution client waits for the venue to confirm both
-subscriptions, then reads the account's `historicalOrders` and then its `userFills` over REST. It
-processes the fills and the latest status of each venue order from the venue time of the last
-report the stream delivered (the stream start before any report), less a 30-second margin, oldest
-first and through the same path as stream updates. Stream updates that arrive after the reconnect
-wait until this recovery finishes, so recovered events apply before any newer update.
+Hyperliquid sends no snapshot when the execution client resubscribes to `orderUpdates` and `userEvents`. Thus,
+fills and order updates from the outage never arrive on the stream. After a reconnect, the execution client
+waits for the venue to confirm both subscriptions, then reads the account's `historicalOrders` and then its
+`userFills` over REST.
 
-The history endpoints can lag the venue's live state by several seconds, so an event shortly
-before the reconnect can be missing from that first read. Five seconds after it, the client reads
-the history again over the same window and processes it the same way, applying what the first read
-missed and skipping what it already applied. Stream updates do not wait for this second read, so
-it can apply an event after a newer stream update for the same order. A fill it finds for an order
-that a newer update has already closed reaches reconciliation as an external fill report.
+The recovery window starts at the venue time of the last report delivered by the stream, less a 30-second
+margin. Before any report, it uses the stream start with the same margin. It processes fills and the latest
+status of each venue order oldest first, through the same path as stream updates. Stream updates that arrive
+after the reconnect wait until this recovery finishes, so recovered events apply before any newer update.
+
+The history endpoints can lag the venue's live state by several seconds, so an event shortly before the
+reconnect can be missing from that first read. Five seconds after the first read, the client reads the same
+history window again and processes it the same way. It applies events missed by the first read and skips
+events already applied. Stream updates do not wait for this second read, so it can apply an event after a
+newer stream update for the same order. A fill it finds for an order that a newer update has already closed
+reaches reconciliation as an external fill report.
 
 - The client skips fills it already emitted and status-only `filled` updates, whose state the
   recovered fills carry. The engine deduplicates any other fill it already applied by trade ID.
