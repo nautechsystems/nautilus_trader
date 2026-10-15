@@ -131,7 +131,7 @@ pub fn expiry_timestring_to_unix_nanos(
         let (time, timezone) = read_time_and_zone(
             last_trade_time.split_whitespace(),
             contract_timezone,
-            expiry,
+            last_trade_time,
         )?;
         (expiry, time.to_string(), timezone)
     } else if expiry.len() == 8 {
@@ -176,16 +176,17 @@ pub fn expiry_timestring_to_unix_nanos(
     Ok(UnixNanos::new(nanos))
 }
 
-// Reads `HH:MM:SS [zone]`, the zone defaulting to `default_timezone`
+// Reads `HH:MM:SS [zone]` from the `parts` of `value`, the zone defaulting to
+// `default_timezone`
 fn read_time_and_zone<'a>(
     mut parts: std::str::SplitWhitespace<'a>,
     default_timezone: &'a str,
-    expiry: &str,
+    value: &str,
 ) -> anyhow::Result<(&'a str, &'a str)> {
     let time = parts.next().context("Expiry timestamp is missing a time")?;
     let timezone = parts.next().unwrap_or(default_timezone);
     if parts.next().is_some() {
-        anyhow::bail!("Invalid expiry format: {expiry}");
+        anyhow::bail!("Invalid expiry format: {value}");
     }
 
     Ok((time, timezone))
@@ -689,6 +690,21 @@ mod tests {
     }
 
     #[rstest]
+    fn test_expiry_rejects_last_trade_time_with_extra_token() {
+        let details = ContractDetails {
+            last_trade_time: String::from("08:30:00 US/Central extra"),
+            ..Default::default()
+        };
+
+        let result = expiry_timestring_to_unix_nanos("20261218", Some(&details));
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Invalid expiry format: 08:30:00 US/Central extra"
+        );
+    }
+
+    #[rstest]
     fn test_split_last_trade_date_moves_time_and_zone_out_of_expiry() {
         let mut details = es_future_details("20261218 08:30:00 US/Central");
 
@@ -738,7 +754,7 @@ mod tests {
     #[case::same_contract_timezone("US/Central", "")]
     #[case::no_contract_timezone("", "")]
     #[case::other_contract_timezone("America/New_York", "")]
-    #[case::other_last_trade_time("America/New_York", "09:30:00")]
+    #[case::other_last_trade_time("America/New_York", "10:00:00")]
     fn test_parse_future_after_split_keeps_expiry_and_stores_date(
         #[case] time_zone_id: &str,
         #[case] last_trade_time: &str,
