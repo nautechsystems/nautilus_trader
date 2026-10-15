@@ -46,6 +46,9 @@ audit-as-crates-io = false
 [policy.nautilus-cli]
 audit-as-crates-io = false
 
+[policy.nautilus-coinapi]
+audit-as-crates-io = false
+
 [policy.nautilus-coinbase]
 audit-as-crates-io = false
 

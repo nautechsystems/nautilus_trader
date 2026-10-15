@@ -1539,7 +1539,7 @@ def run_compare(args: argparse.Namespace) -> None:
             artifact=Path(args.v2_artifact),
             source_root=Path(args.v2_source),
             commit=args.v2_commit,
-            version="2.0.0rc7",
+            version="2.0.0rc8",
             backend="pyo3",
         ),
     }

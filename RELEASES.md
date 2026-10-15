@@ -1,3 +1,36 @@
+# NautilusTrader 2.0.0rc8
+
+Released on TBD (UTC).
+
+### Enhancements
+
+### Breaking Changes
+
+### Security
+
+### Fixes
+
+### Internal Improvements
+
+- Upgraded OSV Scanner to v2.7.0
+- Upgraded Socket CLI to v1.8.1
+- Upgraded `uv` to v0.13.0
+- Upgraded `inventory` crate to v0.3.25
+- Upgraded `serde_json` crate to v1.0.154
+- Upgraded `smallvec` crate to v1.16.3
+- Upgraded `syn` crate to v3.0.9
+- Upgraded `toml` crate to v1.1.8
+- Upgraded `uuid` crate to v1.28.0
+- Upgraded `proptest` crate to v1.12.0
+- Upgraded `kaleido` package to v1.5.0
+- Upgraded `ty` package (dev) to v0.0.85
+
+### Documentation Updates
+
+### Deprecations
+
+---
+
 # NautilusTrader 2.0.0rc7
 
 Released on 15th October 2026 (UTC).
