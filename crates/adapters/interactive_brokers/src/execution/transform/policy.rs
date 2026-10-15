@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Interactive Brokers order transformation policies.
+
 use ibapi::orders::{Order as IBOrder, TimeInForce};
 use nautilus_model::{
     enums::{OrderSide, OrderType as NautilusOrderType, TrailingOffsetType},
@@ -21,19 +23,15 @@ use nautilus_model::{
 };
 
 use super::{convert_price, format_ib_datetime, trigger_type_to_ib_trigger_method};
-use crate::providers::instruments::InteractiveBrokersInstrumentProvider;
+use crate::{
+    common::enums::IbOrderType, providers::instruments::InteractiveBrokersInstrumentProvider,
+};
 
 pub(super) fn apply_expire_time_policy(ib_order: &mut IBOrder, order: &OrderAny) {
-    if matches!(ib_order.tif, TimeInForce::GoodTilDate)
+    if matches!(ib_order.tif, TimeInForce::GoodTillDate)
         && let Some(expire) = order.expire_time()
     {
         ib_order.good_till_date = format_ib_datetime(expire);
-    }
-}
-
-pub(super) fn apply_account_policy(ib_order: &mut IBOrder, order: &OrderAny) {
-    if let Some(account_id) = order.account_id() {
-        ib_order.account = account_id.to_string();
     }
 }
 
@@ -42,21 +40,45 @@ pub(super) fn apply_quantity_policy(
     order: &OrderAny,
     instrument_provider: &InteractiveBrokersInstrumentProvider,
 ) -> anyhow::Result<()> {
-    if let Some(instrument) = instrument_provider.find(&order.instrument_id())
-        && instrument.is_inverse()
-        && order.is_quote_quantity()
-    {
-        // IBKR accepts a cash quantity (`cash_qty`) only for BUY orders on these instruments
-        // (e.g. PAXOS crypto); a SELL must use the base/coin quantity (`total_quantity`).
-        if order.order_side() != OrderSide::Buy {
-            anyhow::bail!(
-                "Interactive Brokers only accepts a quote quantity (`cash_qty`) for BUY orders; \
-                 a SELL must use the base quantity"
-            );
-        }
-        ib_order.cash_qty = Some(order.quantity().as_f64());
-        ib_order.total_quantity = 0.0;
+    if !order.is_quote_quantity() {
+        return Ok(());
     }
+
+    let instrument_id = order.instrument_id();
+    if !instrument_provider
+        .find(&instrument_id)
+        .is_some_and(|instrument| instrument.is_inverse())
+    {
+        anyhow::bail!(
+            "Interactive Brokers only accepts a quote quantity (`cash_qty`) for inverse \
+             instruments; {instrument_id} must use the base quantity"
+        );
+    }
+
+    // IBKR accepts a cash quantity (`cash_qty`) only for BUY orders on these instruments;
+    // a SELL must use the base quantity (`total_quantity`)
+    if order.order_side() != OrderSide::Buy {
+        anyhow::bail!(
+            "Interactive Brokers only accepts a quote quantity (`cash_qty`) for BUY orders; \
+             a SELL must use the base quantity"
+        );
+    }
+
+    // IBKR rejects a cash quantity on any order type other than MKT with error 10244
+    // ("Cash Quantity cannot be used for this order"), so deny it before submission. The final
+    // IB type decides: a MARKET order with AT_THE_CLOSE is sent as MOC.
+    if ib_order.order_type != IbOrderType::Market.as_str() {
+        anyhow::bail!(
+            "Interactive Brokers only accepts a quote quantity (`cash_qty`) for MARKET orders \
+             (IB error 10244 for {} sent as {}); use the base quantity",
+            order.order_type(),
+            ib_order.order_type,
+        );
+    }
+
+    ib_order.cash_qty = Some(order.quantity().as_f64());
+    ib_order.total_quantity = 0.0;
+
     Ok(())
 }
 
@@ -84,7 +106,7 @@ pub(super) fn apply_trailing_order_policy(
             Some(TrailingOffsetType::Price) | None => {
                 ib_order.aux_price = Some(trailing_offset_f64);
             }
-            Some(other) => anyhow::bail!("`TrailingOffsetType` {:?} is not supported", other),
+            Some(other) => anyhow::bail!("`TrailingOffsetType` {other:?} is not supported"),
         }
     }
 
@@ -104,9 +126,4 @@ pub(super) fn apply_display_quantity_policy(ib_order: &mut IBOrder, order: &Orde
     if let Some(display_qty) = order.display_qty() {
         ib_order.display_size = Some(display_qty.as_f64() as i32);
     }
-}
-
-pub(super) fn apply_order_list_policy(_ib_order: &mut IBOrder, _order: &OrderAny) {
-    // Order lists only control parent/transmit behavior at the execution client layer.
-    // IB OCA groups must be requested explicitly through IB order tags.
 }

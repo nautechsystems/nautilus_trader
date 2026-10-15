@@ -109,10 +109,9 @@ pub const DEFAULT_AUTH_TOKEN_TTL_SECS: i64 = 7 * 60 * 60;
 ///
 /// # Errors
 ///
-/// Returns the underlying [`crate::common::credential::Credential::private_key`]
-/// failure if the secret cannot be decoded, or any [`build_auth_token`]
-/// failure (clock-before-epoch or, hypothetically, a breach caused by its own
-/// deadline validation).
+/// Returns an error if the secret cannot be decoded by
+/// [`crate::common::credential::Credential::private_key`], or if [`build_auth_token`] fails
+/// (clock-before-epoch or, hypothetically, a breach caused by its own deadline validation).
 pub fn build_auth_token_for(
     credential: &crate::common::credential::Credential,
 ) -> anyhow::Result<SecretString> {
@@ -157,10 +156,8 @@ pub fn fresh_k() -> Scalar {
 ///
 /// # Errors
 ///
-/// Returns [`AuthTokenError::DeadlineNotInFuture`] if `deadline_unix_secs <=
-/// now`, [`AuthTokenError::TtlTooLarge`] if it exceeds the venue cap, or
-/// [`AuthTokenError::ClockBeforeEpoch`] if the system clock predates the
-/// UNIX epoch.
+/// Returns an error if `deadline_unix_secs <= now`, if it exceeds the venue cap, or if the system
+/// clock predates the UNIX epoch.
 pub fn build_auth_token(
     deadline_unix_secs: i64,
     account_index: i64,
@@ -191,7 +188,7 @@ pub fn build_auth_token(
 ///
 /// # Errors
 ///
-/// See [`build_auth_token`].
+/// Returns an error if [`build_auth_token`] fails.
 pub fn build_auth_token_at(
     now_unix_secs: i64,
     deadline_unix_secs: i64,
@@ -229,10 +226,9 @@ pub fn build_auth_token_at(
 ///
 /// # Errors
 ///
-/// Returns [`AuthTokenError::MessageEncoding`] if the rendered message contains
-/// an 8-byte chunk that does not decode as a canonical Goldilocks element. The
-/// auth-token format keeps every byte ASCII, so this case is unreachable for
-/// the production callers.
+/// Returns an error if the rendered message contains an 8-byte chunk that does not decode as a
+/// canonical Goldilocks element. The auth-token format keeps every byte ASCII, so this case is
+/// unreachable for the production callers.
 pub fn build_auth_token_unchecked(
     deadline_unix_secs: i64,
     account_index: i64,
@@ -268,11 +264,10 @@ pub fn auth_token_message(
 ///
 /// # Errors
 ///
-/// Returns [`AuthTokenError::MessageEncoding`] if any 8-byte chunk decodes to
-/// a non-canonical Goldilocks element. The auth-token format is ASCII
-/// (`'0'..='9'` and `':'`), so every byte sits in `0..=0x3A` and the case is
-/// unreachable for tokens emitted by [`auth_token_message`]; the error path
-/// exists for callers that pass arbitrary preimages.
+/// Returns an error if any 8-byte chunk decodes to a non-canonical Goldilocks element. The
+/// auth-token format is ASCII (`'0'..='9'` and `':'`), so every byte sits in `0..=0x3A` and the
+/// case is unreachable for tokens emitted by [`auth_token_message`]; the error path exists for
+/// callers that pass arbitrary preimages.
 pub fn hash_auth_message(message: &str) -> Result<[u8; 40], AuthTokenError> {
     let elems = ascii_to_fp_limbs(message.as_bytes())?;
     Ok(hash_to_quintic_extension(&elems).to_le_bytes())

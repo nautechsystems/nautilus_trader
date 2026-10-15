@@ -849,8 +849,8 @@ impl BlockchainExecutionClient {
     ///
     /// # Errors
     ///
-    /// Returns an error for inconsistent storage state, missing keys, or any payload which cannot
-    /// be opened and authenticated against its durable intent.
+    /// Returns an error if storage state is inconsistent, keys are missing, or a payload cannot be
+    /// opened and authenticated against its durable intent.
     pub async fn check_payload_storage(
         &self,
         batch_size: usize,
@@ -14055,6 +14055,7 @@ mod tests {
             return;
         };
         client.config.unlimited_approval = true;
+        client.transaction_limits.receipt_timeout_secs = TEST_TIMEOUT.as_secs();
 
         let tx_hash = client
             .approve(WETH_ADDRESS, U256::ZERO, ROUTER_ADDRESS)

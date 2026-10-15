@@ -80,7 +80,7 @@
 pub mod common;
 pub mod config;
 pub mod data;
-pub mod error;
+pub mod data_types;
 pub mod execution;
 pub mod factories;
 pub mod gateway;
@@ -89,3 +89,6 @@ pub mod providers;
 
 #[cfg(feature = "python")]
 pub mod python;
+
+#[cfg(test)]
+mod stubs;

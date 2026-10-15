@@ -1228,7 +1228,7 @@ impl BybitHttpClient {
     ///
     /// # Errors
     ///
-    /// This function returns an error if the request fails.
+    /// Returns an error if the request fails.
     ///
     /// # References
     ///
@@ -1267,12 +1267,20 @@ impl BybitHttpClient {
 
     /// Fetches position information for the account and returns a list of `PositionStatusReport`s.
     ///
-    /// Positions for instruments not currently loaded in cache will be skipped.
+    /// Derivative position reports fail as a set if any row cannot be resolved or parsed.
+    /// When SPOT position reports are enabled, an uncached instrument yields no report.
     ///
     /// # Errors
     ///
-    /// This function returns an error if the request fails, or if SPOT position reports are enabled
-    /// and no instrument is specified, because wallet balances carry no pair identity.
+    /// Returns an error if:
+    /// - The request fails.
+    /// - The instrument ID is invalid.
+    /// - Pagination cannot advance.
+    /// - A derivative position row has no symbol.
+    /// - A derivative position's instrument is not cached.
+    /// - A derivative position row cannot be parsed.
+    /// - SPOT position reports are enabled and no instrument is specified, because wallet balances
+    ///   carry no pair identity.
     ///
     /// # References
     ///

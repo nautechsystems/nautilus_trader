@@ -1,9 +1,9 @@
 # Adapters
 
-Adapters connect data providers and trading venues to NautilusTrader. They translate
-venue-specific protocols into the domain objects and events used by the data and execution engines.
-Official Python adapters are available from `nautilus_trader.adapters`; the
-[integration guides](../integrations/index.md) document their supported capabilities.
+Adapters connect data providers and trading venues to NautilusTrader. They translate venue-specific protocols
+into the domain objects and events used by the data and execution engines. Official Python adapters are
+available from `nautilus_trader.adapters`. The [integration guides](../integrations/index.md) document their
+supported capabilities.
 
 An adapter typically comprises these components:
 
@@ -59,22 +59,24 @@ the data and execution engines use the venue and default routes configured by th
 
 ## Custom adapters
 
-You can develop an adapter as a separate Python package without rebuilding NautilusTrader. Custom
-adapters implement the same data and execution responsibilities as built-in adapters, and can run
-alongside them in one `LiveNode`. Strategies continue to use the standard request, subscription, and
-order APIs; the node routes those operations to the registered clients.
+You can develop an adapter as a separate Python package without rebuilding NautilusTrader. Custom adapters
+implement the same data and execution responsibilities as built-in adapters, and can run alongside them in one
+`LiveNode`. Strategies continue to use the standard request, subscription, and order APIs. The node routes
+those operations to the registered clients.
 
-A custom package can implement its clients in Python or delegate venue operations to its own
-Rust/PyO3 extension. Both use the [Python client interface](../developer_guide/python_adapters.md).
-An independent extension exchanges Python objects from the installed NautilusTrader wheel through
-PyO3 and the GIL. It does not require a shared Rust ABI or a second copy of the Nautilus model types.
-Choose a package version tested against your installed NautilusTrader release.
+A custom package can implement its clients in Python or delegate venue operations to its own Rust/PyO3
+extension. Both use the [Python client interface](../developer_guide/python_adapters.md).
 
-Register the package's factories and configs with the node under distinct client names. Custom
-configs can retain venue-specific fields, and importable configs support loading factories from
-package paths. Set venue and default routes as you would for built-in clients, or select a client
-explicitly from a strategy. The [deterministic Python template](../../examples/live/_template/README.md)
-demonstrates data delivery, execution reconciliation, and an order fill without a venue connection.
+An independent extension exchanges Python objects from the installed NautilusTrader wheel through PyO3 and the
+GIL. It does not require a shared Rust ABI or a second copy of the Nautilus model types. Choose a package
+version tested against your installed NautilusTrader release.
+
+Register the package's factories and configs with the node under distinct client names. Custom configs can
+keep venue-specific fields, and importable configs support loading factories from package paths. Set venue and
+default routes as you would for built-in clients, or select a client explicitly from a strategy.
+
+The [deterministic Python template](../../examples/live/_template/README.md) demonstrates data delivery,
+execution reconciliation, and an order fill without a venue connection.
 
 ### Cache and state ownership
 
@@ -82,11 +84,12 @@ Custom clients receive a read-only cache view. They can inspect instruments, quo
 accounts, and positions, but cannot mutate the core cache. Returned objects are snapshots: changing
 a snapshot does not change the state seen by strategies or engines.
 
-Adapters operate outside the synchronous core boundary. They submit typed data, responses, and
-execution events for the core to process, so an adapter's output call does not mean the corresponding
-cache update has already occurred. This keeps cache mutation and engine state transitions under
-core ownership. Cache access and output remain bound to the owning node's thread and lifetime;
-holding the GIL alone does not permit access from another thread or after disposal.
+Adapters operate outside the synchronous core boundary. They submit typed data, responses, and execution
+events for the core to process. Thus, an adapter's output call does not mean that the corresponding cache
+update has already occurred. This keeps cache mutation and engine state transitions under core ownership.
+
+Cache access and output stay bound to the owning node's thread and lifetime. The GIL alone does not permit
+access from another thread or after disposal.
 
 ### Running and stopping
 
@@ -99,16 +102,17 @@ Commands and subscription changes execute in admission order for each custom cli
 requests and reconciliation can progress separately. A slow command delays later commands for that
 client, and a full command queue rejects new work rather than silently dropping it.
 
-Await shutdown before closing a host event loop. Disconnection stops admission and asks adapter
-work to terminate; requesting cancellation does not prove that work has finished. Incomplete
-cleanup is reported. Client instances belong to one node run and must not be reused for another.
+Await shutdown before closing a host event loop. Disconnection stops admission and asks adapter work to
+terminate. Requesting cancellation does not prove that work has finished. Incomplete cleanup is reported.
+Client instances belong to one node run and must not be reused for another.
 
-Redis/PostgreSQL cache backing is unsupported with custom clients in either launch mode. The
-interface also requires migration of v1 Cython adapters rather than accepting their source
-unchanged. See the [migration details and remaining limitations](../developer_guide/python_adapters.md#migration-from-v1)
-for historical request completion, revised bars, custom publication/subscription, and networking
-API differences. For independent extensions, see
-[package construction and installed-wheel validation](../developer_guide/python_adapters.md#independent-rustpyo3-packages).
+Redis/PostgreSQL cache backing is unsupported with custom clients in either launch mode. The interface also
+requires migration of v1 Cython adapters rather than accepting their source unchanged.
+
+See the [migration details and remaining limitations](../developer_guide/python_adapters.md#migration-from-v1)
+for historical request completion, revised bars, custom publication/subscription, and networking API
+differences. For independent extensions, see [package construction and installed-wheel
+validation](../developer_guide/python_adapters.md#independent-rustpyo3-packages).
 
 ## Instrument providers
 
@@ -194,7 +198,7 @@ and normalize incoming data into Nautilus types.
 
 ### Requesting data
 
-Actors and strategies can request data using built-in methods. Data returns via callbacks:
+Actors and strategies can request data using built-in methods. Data returns through callbacks:
 
 ```python
 from collections.abc import Sequence
@@ -263,22 +267,25 @@ Responsibilities:
 - Reconcile order state with the venue.
 - Handle account and position updates.
 
-Execution clients can declare the lower time limit applied to historical reconciliation and whether
-the required order, fill, and position sources completed. When an adapter supplies this contract,
-the engine can recover authoritative order state without applying historical position or portfolio
-economics that the available evidence cannot support. See
+Execution clients can declare the lower time limit applied to historical reconciliation and whether the
+required order, fill, and position sources completed. When an adapter supplies this contract, the engine can
+recover authoritative order state. It does not apply historical position or portfolio economics that the
+available evidence cannot support. See
 [Bounded history safety](execution/reconciliation.md#bounded-history-safety).
 
 ### Reduce-only execution contract
 
-An execution client **must never silently discard** `reduce_only=true`. It must either send a
-documented venue instruction that enforces the same intent or reject the order before transport.
-The venue can still reject an encoded instruction when the product does not support it, the order
-would not reduce an open position, or another venue rule makes the combination invalid.
+An execution client **must never silently discard** `reduce_only=true`. It must either send a documented venue
+instruction that enforces the same intent or reject the order before transport. The venue can still reject an
+encoded instruction for these reasons:
 
-An equivalent enforcing instruction can replace the literal venue flag. For example, a Binance
-Futures close-all conditional order retains `reduce_only=true` in the Nautilus order, but the
-adapter sends `closePosition=true` without Binance's incompatible `reduceOnly` field. See
+- The product does not support the instruction.
+- The order would not reduce an open position.
+- Another venue rule makes the combination invalid.
+
+An equivalent enforcing instruction can replace the literal venue flag. For example, a Binance Futures
+close-all conditional order keeps `reduce_only=true` in the Nautilus order, but the adapter sends
+`closePosition=true` without Binance's incompatible `reduceOnly` field. See
 [Binance Futures close-position orders](../integrations/binance.md#close-position).
 
 Backtest and sandbox matching engines enforce reduce-only when `use_reduce_only` is enabled and

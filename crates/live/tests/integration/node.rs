@@ -39,7 +39,7 @@ use nautilus_common::{
     component::Component,
     enums::Environment,
     factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
-    live::{dst, runner::get_exec_event_sender},
+    live::{LiveClock, dst, runner::get_exec_event_sender},
     logging::{logger::LoggerConfig, logging_sync_to_disk, writer::FileWriterConfig},
     messages::{
         ExecutionEvent,
@@ -51,13 +51,16 @@ use nautilus_common::{
     },
     msgbus::{self, MessagingSwitchboard, ShareableMessageHandler, switchboard},
     nautilus_actor,
+    runner::{TimeEventMessage, TimeEventSender, get_time_event_sender},
     testing::{wait_until, wait_until_async},
+    timer::{TimeEvent, TimeEventCallback},
 };
 use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_live::{
     builder::LiveNodeBuilder,
     config::{LiveExecutionEngineConfig, LiveNodeConfig},
     node::{LiveNode, LiveNodeHandle, NodeRunMode, NodeState},
+    runner::{AsyncRunner, AsyncTimeEventSender},
 };
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
@@ -2103,6 +2106,82 @@ pub(crate) mod serial_tests {
     }
 
     #[rstest]
+    #[case::direct(false)]
+    #[case::builder(true)]
+    fn test_dispose_suppresses_retained_time_sender_error(#[case] builder: bool) {
+        let directory =
+            std::env::temp_dir().join(format!("nautilus-timer-shutdown-{}", UUID4::new()));
+
+        let config = LiveNodeConfig {
+            logging: LoggerConfig {
+                fileout_level: log::LevelFilter::Error,
+                file_config: Some(FileWriterConfig {
+                    directory: Some(directory.to_str().unwrap().to_string()),
+                    file_name: Some("timer-shutdown".to_string()),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let runner = AsyncRunner::new();
+        runner.bind_senders();
+        drop(runner);
+
+        let retained = Rc::new(RefCell::new(None));
+        let captured = retained.clone();
+
+        let mut node = if builder {
+            LiveNodeBuilder::from_config(config)
+                .unwrap()
+                .with_clock_factory(move || {
+                    *captured.borrow_mut() = Some(get_time_event_sender());
+                    Rc::new(RefCell::new(LiveClock::default()))
+                })
+                .build()
+                .unwrap()
+        } else {
+            LiveNode::build("TimerShutdownNode".to_string(), Some(config)).unwrap()
+        };
+
+        let sender = if builder {
+            retained.borrow_mut().take().unwrap()
+        } else {
+            get_time_event_sender()
+        };
+
+        let received = Arc::new(AtomicUsize::new(0));
+        let observed = received.clone();
+        let callback = TimeEventCallback::from(move |_| {
+            observed.fetch_add(1, Ordering::SeqCst);
+        });
+
+        let event = TimeEvent::new("shutdown-timer".into(), UUID4::new(), 17.into(), 23.into());
+
+        node.dispose();
+        sender.send(TimeEventMessage::new(event.clone(), callback.clone()));
+
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        drop(rx);
+        AsyncTimeEventSender::new(tx).send(TimeEventMessage::new(event, callback));
+        logging_sync_to_disk().unwrap();
+        let output = std::fs::read_to_string(directory.join("timer-shutdown.log")).unwrap();
+        let state = node.state();
+        drop(node);
+        std::fs::remove_dir_all(directory).unwrap();
+
+        assert_eq!(state, NodeState::Stopped);
+        assert_eq!(received.load(Ordering::SeqCst), 0);
+        assert_eq!(
+            output
+                .matches("Failed to send time event message: channel closed")
+                .count(),
+            1,
+        );
+    }
+
+    #[rstest]
     fn test_add_actor() {
         let mut node = LiveNode::build("TestNode".to_string(), None).unwrap();
 
@@ -2897,6 +2976,22 @@ pub(crate) mod serial_tests {
     #[case::priced_short(
         Some(PositionSide::Short),
         Some(Decimal::from(3000)),
+        false,
+        false,
+        true,
+        false
+    )]
+    #[case::off_tick_long(
+        Some(PositionSide::Long),
+        Some(Decimal::new(24564, 4)),
+        false,
+        false,
+        true,
+        false
+    )]
+    #[case::off_tick_short(
+        Some(PositionSide::Short),
+        Some(Decimal::new(24564, 4)),
         false,
         false,
         true,
@@ -3747,10 +3842,9 @@ pub(crate) mod serial_tests {
             .expect_err("data client disconnect should fail");
         node.dispose();
 
-        assert!(
-            err.to_string()
-                .contains("simulated data client disconnect failure"),
-            "unexpected error: {err:#}"
+        assert_eq!(
+            err.to_string(),
+            "Failed to disconnect data clients: FAILING-DISCONNECT-DATA"
         );
         assert!(data_state.disconnect_attempted.load(Ordering::Relaxed));
         assert!(exec_state.disconnect_attempted.load(Ordering::Relaxed));

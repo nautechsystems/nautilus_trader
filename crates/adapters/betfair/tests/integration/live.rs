@@ -2426,3 +2426,285 @@ async fn reports_reflect_replacement_history(
         0
     );
 }
+
+#[rstest]
+#[case::reconnect_before_reduction(false)]
+#[case::reconnect_after_reduction(true)]
+#[tokio::test]
+async fn non_reopened_void_survives_modify_and_reconnect(#[case] reduce_before_reconnect: bool) {
+    let mut h = harness::Harness::build().await;
+    let order = harness::sell_limit_order(&h.instrument_id(), "O-1");
+    let original_id = VenueOrderId::from("228302937743");
+    let successor_id = VenueOrderId::from("240808766933");
+
+    h.submit_via_risk(&order);
+    assert!(
+        h.pump_until(DEADLINE, |cache| order_reached(
+            cache,
+            &order,
+            OrderStatus::Accepted
+        ))
+        .await
+    );
+    h.feeder.feed("stream/ocm_harness_fill_six.json");
+    assert!(
+        h.pump_until(DEADLINE, |cache| cache
+            .order(&order.client_order_id())
+            .unwrap()
+            .filled_qty()
+            == Quantity::from("6"))
+            .await
+    );
+    h.feeder.feed("stream/ocm_harness_partial_void.json");
+    assert!(
+        h.pump_until(DEADLINE, |cache| cache
+            .order(&order.client_order_id())
+            .unwrap()
+            .non_reopened_voided_qty()
+            == Quantity::from("2"))
+            .await
+    );
+    assert_non_reopened_void_state(&h, &order, "10", "4", original_id, "3");
+    let economic_events =
+        order_economic_events(&h.cache().borrow().order(&order.client_order_id()).unwrap());
+    h.feeder.feed("stream/ocm_harness_partial_void.json");
+
+    let mut replacement =
+        load_json_fixture("rest/betting_replace_orders_success.json")["result"].clone();
+    replacement["marketId"] = Value::from("1");
+    let report = &mut replacement["instructionReports"][0];
+    report["cancelInstructionReport"]["instruction"]["betId"] = Value::from(original_id.as_str());
+    report["cancelInstructionReport"]["sizeCancelled"] = Value::from(4);
+    report["placeInstructionReport"]["instruction"]["selectionId"] = Value::from(123456789);
+    report["placeInstructionReport"]["instruction"]["limitOrder"]["size"] = Value::from(4);
+    report["placeInstructionReport"]["instruction"]["limitOrder"]["price"] = Value::from(5);
+    h.mock_state
+        .betting_overrides
+        .lock()
+        .insert(METHOD_REPLACE_ORDERS.to_string(), replacement);
+    h.modify_via_risk(&order, Some(Price::from("5")), None);
+    assert!(
+        h.pump_until(DEADLINE, |cache| cache
+            .order(&order.client_order_id())
+            .unwrap()
+            .venue_order_id()
+            == Some(successor_id))
+            .await
+    );
+    assert_non_reopened_void_state(&h, &order, "10", "4", successor_id, "5");
+    h.feeder.feed("stream/ocm_harness_replace_after_void.json");
+    h.pump_for(Duration::from_millis(200)).await;
+    harness::invariants::assert_tracked_used_events(h.routed());
+    assert_non_reopened_void_state(&h, &order, "10", "4", successor_id, "5");
+
+    if reduce_before_reconnect {
+        reduce_voided_replacement(&mut h, &order).await;
+    }
+
+    set_voided_replacement_snapshot(&h, if reduce_before_reconnect { 2 } else { 4 });
+    reconnect_and_route_recovery(&mut h).await;
+    assert_non_reopened_void_state(
+        &h,
+        &order,
+        if reduce_before_reconnect { "8" } else { "10" },
+        if reduce_before_reconnect { "2" } else { "4" },
+        successor_id,
+        "5",
+    );
+
+    if !reduce_before_reconnect {
+        reduce_voided_replacement(&mut h, &order).await;
+        set_voided_replacement_snapshot(&h, 2);
+    }
+
+    reconnect_and_route_recovery(&mut h).await;
+    assert_non_reopened_void_state(&h, &order, "8", "2", successor_id, "5");
+
+    let cache = h.cache().borrow();
+    let actual = cache.order(&order.client_order_id()).unwrap();
+    assert_eq!(order_economic_events(&actual), economic_events);
+    assert_eq!(
+        actual
+            .venue_order_ids()
+            .into_iter()
+            .copied()
+            .collect::<Vec<_>>(),
+        vec![original_id, successor_id]
+    );
+    assert_eq!(
+        event_count(&actual, |event| matches!(event, OrderEventAny::Updated(_))),
+        2
+    );
+    assert_eq!(
+        event_count(&actual, |event| matches!(
+            event,
+            OrderEventAny::Canceled(_) | OrderEventAny::ModifyRejected(_)
+        )),
+        0
+    );
+    let requests = h.mock_state.betting_request_params.lock();
+    let replace = requests
+        .iter()
+        .find(|(method, _)| method == METHOD_REPLACE_ORDERS)
+        .unwrap();
+    assert_eq!(replace.1["instructions"][0]["betId"], original_id.as_str());
+    assert_eq!(replace.1["instructions"][0]["newPrice"], "5");
+    let reduction = requests
+        .iter()
+        .find(|(method, _)| method == METHOD_CANCEL_ORDERS)
+        .unwrap();
+    assert_eq!(
+        reduction.1["instructions"][0]["betId"],
+        successor_id.as_str()
+    );
+    assert_eq!(
+        serde_json::from_value::<Decimal>(reduction.1["instructions"][0]["sizeReduction"].clone())
+            .unwrap(),
+        Decimal::from(2),
+    );
+}
+
+fn order_economic_events(order: &OrderAny) -> Vec<OrderEventAny> {
+    order
+        .events()
+        .into_iter()
+        .filter(|event| {
+            matches!(
+                event,
+                OrderEventAny::Filled(_) | OrderEventAny::FillVoided(_)
+            )
+        })
+        .cloned()
+        .collect()
+}
+
+fn assert_non_reopened_void_state(
+    h: &harness::Harness,
+    order: &OrderAny,
+    quantity: &str,
+    leaves: &str,
+    venue_order_id: VenueOrderId,
+    price: &str,
+) {
+    let cache = h.cache().borrow();
+    let actual = cache.order(&order.client_order_id()).unwrap();
+    assert_eq!(actual.quantity(), Quantity::from(quantity));
+    assert_eq!(actual.filled_qty(), Quantity::from("4"));
+    assert_eq!(actual.voided_qty(), Quantity::from("2"));
+    assert_eq!(actual.non_reopened_voided_qty(), Quantity::from("2"));
+    assert_eq!(actual.leaves_qty(), Quantity::from(leaves));
+    assert_eq!(actual.venue_order_id(), Some(venue_order_id));
+    assert_eq!(actual.price(), Some(Price::from(price)));
+    assert_eq!(actual.status(), OrderStatus::PartiallyFilled);
+    let events = actual.events();
+
+    let fills = events
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    let voids = events
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::FillVoided(voided) => Some(voided),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(fills.len(), 1);
+    assert_eq!(fills[0].last_qty, Quantity::from("6"));
+    assert_eq!(voids.len(), 1);
+    assert_eq!(voids[0].trade_id, fills[0].trade_id);
+    assert_eq!(voids[0].venue_order_id, VenueOrderId::from("228302937743"));
+    assert_eq!(voids[0].voided_qty, Quantity::from("2"));
+    assert_eq!(voids[0].last_px, Price::from("3"));
+    assert!(!voids[0].is_reopened);
+    let positions = cache.positions_open(None, Some(&h.instrument_id()), None, None, None);
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].side, PositionSide::Short);
+    assert_eq!(positions[0].quantity, Quantity::from("4"));
+    assert_eq!(positions[0].avg_px_open, 3.0);
+    harness::invariants::assert_own_book_consistent(&cache, &h.instrument_id());
+}
+
+async fn reduce_voided_replacement(h: &mut harness::Harness, order: &OrderAny) {
+    let mut reduction =
+        load_json_fixture("rest/betting_cancel_orders_size_reduction.json")["result"].clone();
+    reduction["marketId"] = Value::from("1");
+    reduction["instructionReports"][0]["instruction"]["betId"] = Value::from("240808766933");
+    reduction["instructionReports"][0]["sizeCancelled"] = Value::from(2);
+    h.mock_state
+        .betting_overrides
+        .lock()
+        .insert(METHOD_CANCEL_ORDERS.to_string(), reduction);
+    h.modify_via_risk(order, None, Some(Quantity::from("8")));
+    assert!(
+        h.pump_until(DEADLINE, |cache| cache
+            .order(&order.client_order_id())
+            .unwrap()
+            .quantity()
+            == Quantity::from("8"))
+            .await
+    );
+    assert_non_reopened_void_state(h, order, "8", "2", VenueOrderId::from("240808766933"), "5");
+}
+
+fn set_voided_replacement_snapshot(h: &harness::Harness, remaining: i64) {
+    let mut old =
+        load_json_fixture("rest/list_current_orders_harness_open.json")["result"]["currentOrders"]
+            [0]
+        .clone();
+    old["status"] = Value::from("EXECUTION_COMPLETE");
+    old["sizeMatched"] = Value::from(4);
+    old["sizeRemaining"] = Value::from(0);
+    old["sizeCancelled"] = Value::from(4);
+    old["sizeVoided"] = Value::from(2);
+    old["averagePriceMatched"] = Value::from(3);
+
+    // Keep the old leg inside reconnect's fill lookback so recovery also exercises deduplication
+    old["matchedDate"] = Value::from(jiff::Timestamp::now().to_string());
+    let mut successor = old.clone();
+    successor["betId"] = Value::from("240808766933");
+    successor["status"] = Value::from("EXECUTABLE");
+    successor["priceSize"]["price"] = Value::from(5);
+    successor["priceSize"]["size"] = Value::from(4);
+    successor["sizeMatched"] = Value::from(0);
+    successor["sizeRemaining"] = Value::from(remaining);
+    successor["sizeCancelled"] = Value::from(4 - remaining);
+    successor["sizeVoided"] = Value::from(0);
+    successor["averagePriceMatched"] = Value::from(0);
+    successor.as_object_mut().unwrap().remove("matchedDate");
+    *h.mock_state.betting_current_orders.lock() = Some(vec![old, successor]);
+}
+
+async fn reconnect_and_route_recovery(h: &mut harness::Harness) {
+    // Tracked updates use order events; only reconnect recovery emits reports in this scenario
+    let reports_before = h
+        .routed()
+        .iter()
+        .filter(|kind| **kind == harness::RoutedKind::Report)
+        .count();
+    h.feeder.reconnect().await;
+    tokio::time::timeout(DEADLINE, async {
+        loop {
+            h.pump_for(Duration::from_millis(50)).await;
+            let reports = h
+                .routed()
+                .iter()
+                .filter(|kind| **kind == harness::RoutedKind::Report)
+                .count();
+
+            if reports > reports_before {
+                assert_eq!(reports, reports_before + 1);
+                return;
+            }
+        }
+    })
+    .await
+    .expect("reconnect mass status did not reach the execution engine");
+
+    h.assert_engine_ready();
+}

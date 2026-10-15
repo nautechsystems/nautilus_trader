@@ -582,8 +582,8 @@ pub fn adjust_market_buy_amount(
 ///
 /// # Errors
 ///
-/// Returns an error for negative rates or sizes, an exponent that is not a whole number,
-/// prices outside `[0, 1]`, or a calculation that cannot be represented.
+/// Returns an error if rates or sizes are negative, the exponent is not a whole number, prices fall
+/// outside `[0, 1]`, or a calculation cannot be represented.
 ///
 /// # References
 /// <https://docs.polymarket.com/trading/fees>

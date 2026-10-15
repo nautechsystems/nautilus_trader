@@ -610,7 +610,7 @@ pub(crate) fn extract_token_id(instrument_id: &InstrumentId) -> anyhow::Result<S
 ///
 /// # Errors
 ///
-/// Returns an error for unknown keys, malformed values, or invalid filter combinations.
+/// Returns an error if keys are unknown, values are malformed, or filter combinations are invalid.
 pub fn build_gamma_params_from_hashmap(
     map: &HashMap<String, String>,
 ) -> anyhow::Result<GetGammaMarketsParams> {
@@ -824,7 +824,7 @@ pub fn build_gamma_params_from_hashmap(
 ///
 /// # Errors
 ///
-/// Returns an error for unknown keys, malformed values, or invalid filter combinations.
+/// Returns an error if keys are unknown, values are malformed, or filter combinations are invalid.
 pub fn build_gamma_event_params_from_hashmap(
     map: &HashMap<String, String>,
 ) -> anyhow::Result<GetGammaEventsParams> {

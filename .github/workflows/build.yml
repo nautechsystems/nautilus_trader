@@ -150,7 +150,7 @@ jobs:
 
       - name: Install uv
         # https://github.com/astral-sh/setup-uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           version: ${{ steps.uv-version.outputs.uv_version }}
           enable-cache: false
@@ -173,11 +173,13 @@ jobs:
 
       - name: Set up Rust toolchain
         # https://github.com/actions-rust-lang/setup-rust-toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
+        uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
         with:
           toolchain: ${{ env.TOOLCHAIN }}
           cache: false
           override: true
+          rustflags: -D warnings
+          build-warnings: ""
 
       - name: Check jiff features
         run: make check-jiff-features
@@ -258,7 +260,7 @@ jobs:
 
       - name: Install lychee
         # https://github.com/taiki-e/install-action
-        uses: taiki-e/install-action@1ed6d7be6168f6c9046541087ff549b6bc581fdf # v2.87.2
+        uses: taiki-e/install-action@94c31af3204a9f15ab40b35ad084410b905bbc73 # v2.87.17
         with:
           tool: lychee@${{ env.LYCHEE_VERSION }}
         env:
@@ -272,7 +274,7 @@ jobs:
 
       - name: Install cargo-machete
         # https://github.com/taiki-e/install-action
-        uses: taiki-e/install-action@1ed6d7be6168f6c9046541087ff549b6bc581fdf # v2.87.2
+        uses: taiki-e/install-action@94c31af3204a9f15ab40b35ad084410b905bbc73 # v2.87.17
         with:
           tool: cargo-machete@${{ env.CARGO_MACHETE_VERSION }}
 
@@ -283,8 +285,8 @@ jobs:
         run: make check-capnp-schemas
 
   build:
-    if: github.ref != 'refs/heads/test-pre-commit' && needs.plan.outputs.run-tests == 'true'
-    needs:
+    if: &python-build-condition github.ref != 'refs/heads/test-pre-commit' && needs.plan.outputs.run-tests == 'true'
+    needs: &python-build-needs
       - plan
       - pre-commit
       - test-scripts
@@ -292,23 +294,21 @@ jobs:
       fail-fast: false
       matrix:
         python-version:
-          - "3.12"
           - "3.13"
-          - "3.14"
     name: build - python ${{ matrix.python-version }} (ubuntu-22.04)
-    runs-on: >-
+    runs-on: &python-build-runner >-
       ${{ github.event_name == 'pull_request'
       && needs.plan.outputs.untrusted_pr != 'false'
       && 'ubuntu-22.04'
       || fromJson('["self-hosted", "Linux", "X64", "build"]') }}
-    permissions:
+    permissions: &python-build-permissions
       contents: read
       actions: read
       packages: read # Required for pulling service images from GHCR
-    defaults:
+    defaults: &python-build-defaults
       run:
         shell: bash
-    env:
+    env: &python-build-env
       CARGO_CI_PROFILE: >-
         ${{ github.event_name == 'pull_request'
         && needs.plan.outputs.untrusted_pr != 'false'
@@ -328,7 +328,7 @@ jobs:
         && format('{0}/target', github.workspace)
         || format('/home/runner/.cache/cargo-target/py{0}', matrix.python-version) }}
     # yamllint disable rule:line-length
-    services:
+    services: &python-build-services
       redis:
         image: ghcr.io/nautechsystems/redis:7.4.5-alpine3.21@sha256:0302cccee2b2043e61b497c8f4075467c5f7ba27a9f38be7e092634f2734baed
         credentials:
@@ -355,9 +355,10 @@ jobs:
         options: --health-cmd "pg_isready -U postgres -d nautilus" --health-interval 10s --health-timeout 5s --health-retries
           5
     # yamllint enable rule:line-length
-    steps:
-      # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+    steps: &python-build-steps
+      - name: Harden runner
+        # https://github.com/step-security/harden-runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: >-
             ${{ env.AUDIT_PR == 'true' && 'audit'
@@ -375,6 +376,9 @@ jobs:
 
       - name: Verify immutable CI inputs (post-checkout)
         run: bash scripts/ci/verify-ci-inputs.sh post-checkout
+
+      - name: Remove obsolete Python 3.12 build cache
+        run: rm -rf /home/runner/.cache/cargo-target/py3.12
 
       - name: Common setup
         uses: $/.github/actions/common-setup
@@ -442,6 +446,58 @@ jobs:
         uses: $/.github/actions/upload-artifact-wheel
         with:
           retention-days: ${{ github.ref_name == 'master' && '7' || '1' }}
+
+  build-python314:
+    if: *python-build-condition
+    needs: *python-build-needs
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version:
+          - "3.14"
+    name: build - python ${{ matrix.python-version }} (ubuntu-22.04)
+    runs-on: *python-build-runner
+    permissions: *python-build-permissions
+    defaults: *python-build-defaults
+    env: *python-build-env
+    services: *python-build-services
+    steps: *python-build-steps
+
+  python-checks:
+    name: python checks
+    if: always() && github.ref != 'refs/heads/test-pre-commit'
+    needs:
+      - plan
+      - pre-commit
+      - test-scripts
+      - build
+    runs-on: ubuntu-22.04
+    env:
+      PLAN_RESULT: ${{ needs.plan.result }}
+      PRE_COMMIT_RESULT: ${{ needs.pre-commit.result }}
+      SCRIPT_TESTS_RESULT: ${{ needs.test-scripts.result }}
+      RUN_TESTS: ${{ needs.plan.outputs.run-tests }}
+      BUILD_RESULT: ${{ needs.build.result }}
+    steps:
+      # https://github.com/step-security/harden-runner
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: >-
+            ${{ env.AUDIT_PR == 'true' && 'audit'
+            || vars.STEP_SECURITY_EGRESS_POLICY
+            || 'block' }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.CI_ALLOWED_ENDPOINTS }}
+
+      - name: Checkout repository
+        # https://github.com/actions/checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Require the planned Python result
+        run: bash scripts/ci/check-python-result.bash
 
   rust-tests-linux-x86:
     if: >
@@ -593,7 +649,6 @@ jobs:
       fail-fast: false
       matrix:
         python-version:
-          - "3.12"
           - "3.13"
           - "3.14"
     runs-on: depot-ubuntu-22.04-arm-8
@@ -665,7 +720,6 @@ jobs:
       fail-fast: false
       matrix:
         python-version:
-          - "3.12"
           - "3.13"
           - "3.14"
     runs-on: macos-latest
@@ -699,6 +753,10 @@ jobs:
           rust-cache-key: build-macos
           rust-cache-workspaces: . -> target/build-macos
           rust-cache-save-if: ${{ github.event_name == 'push' }}
+
+      - name: Run check-all-targets
+        if: matrix.python-version == '3.13'
+        run: make check-all-targets
 
       - name: Update version in pyproject.toml
         if: ${{ github.ref != 'refs/heads/master' }}
@@ -735,7 +793,6 @@ jobs:
       fail-fast: false
       matrix:
         python-version:
-          - "3.12"
           - "3.13"
           - "3.14"
     runs-on: depot-windows-2022-8
@@ -800,6 +857,7 @@ jobs:
       result: ${{ steps.result.outputs.result }}
     needs:
       - build
+      - build-python314
       - build-linux-arm
       - build-macos
       - build-windows
@@ -837,7 +895,7 @@ jobs:
         id: osv-scan
         continue-on-error: true
         # https://github.com/google/osv-scanner-action
-        uses: google/osv-scanner-action/osv-scanner-action@6e4298ebc4db23e847df9b2e2de2939d6f066c67 # v2.5.1
+        uses: google/osv-scanner-action/osv-scanner-action@a345acffa64b0eaede81a3d9aae6141214d9c8fc # v2.6.0
         with:
           scan-args: |-
             --config=osv-scanner.toml
@@ -872,6 +930,7 @@ jobs:
     needs:
       - plan
       - build
+      - build-python314
       - build-linux-arm
       - build-macos
       - build-windows
@@ -886,6 +945,7 @@ jobs:
     if: >
       !cancelled() &&
       needs.build.result == 'success' &&
+      needs.build-python314.result == 'success' &&
       needs.build-linux-arm.result != 'failure' &&
       needs.build-macos.result != 'failure' &&
       needs.build-windows.result != 'failure' &&
@@ -956,7 +1016,7 @@ jobs:
 
       - name: Install uv
         # https://github.com/astral-sh/setup-uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           version: ${{ steps.uv-version.outputs.uv_version }}
           prune-cache: true
@@ -1135,12 +1195,12 @@ jobs:
 
       - name: Install cargo-hack
         # https://github.com/taiki-e/install-action
-        uses: taiki-e/install-action@1ed6d7be6168f6c9046541087ff549b6bc581fdf # v2.87.2
+        uses: taiki-e/install-action@94c31af3204a9f15ab40b35ad084410b905bbc73 # v2.87.17
         with:
           tool: cargo-hack
 
-      - name: Run docsrs-check
-        run: make docsrs-check
+      - name: Run check-docsrs
+        run: make check-docsrs
 
       - name: Run check-features
         run: make check-features
@@ -1151,6 +1211,7 @@ jobs:
   tag-release:
     needs:
       - build
+      - build-python314
       - build-linux-arm
       - build-macos
       - build-windows
@@ -1336,6 +1397,7 @@ jobs:
       contents: write # Required for uploading release assets
     needs:
       - build
+      - build-python314
       - build-linux-arm
       - build-macos
       - build-windows
@@ -1378,7 +1440,7 @@ jobs:
 
       - name: Install uv
         # https://github.com/astral-sh/setup-uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           version: ${{ steps.uv-version.outputs.uv_version }}
           prune-cache: true
@@ -1444,7 +1506,7 @@ jobs:
 
       - name: Install uv
         # https://github.com/astral-sh/setup-uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           version: ${{ env.UV_VERSION }}
           enable-cache: false
@@ -1600,7 +1662,7 @@ jobs:
 
       - name: Install uv
         # https://github.com/astral-sh/setup-uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           version: ${{ env.UV_VERSION }}
           enable-cache: false
@@ -1694,7 +1756,7 @@ jobs:
 
       - name: Install uv
         # https://github.com/astral-sh/setup-uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           version: ${{ env.UV_VERSION }}
           enable-cache: false

@@ -95,7 +95,7 @@ impl OrderSubmitter {
     ///
     /// # Errors
     ///
-    /// Returns error if wallet creation from private key fails.
+    /// Returns an error if wallet creation from private key fails.
     #[expect(clippy::too_many_arguments)]
     pub fn new(
         grpc_client: DydxGrpcClient,
@@ -190,7 +190,7 @@ impl OrderSubmitter {
     ///
     /// # Errors
     ///
-    /// Returns `DydxError` if gRPC submission fails.
+    /// Returns an error if gRPC submission fails.
     pub async fn submit_market_order(
         &self,
         instrument_id: InstrumentId,
@@ -236,7 +236,7 @@ impl OrderSubmitter {
     ///
     /// # Errors
     ///
-    /// Returns `DydxError` if gRPC submission fails.
+    /// Returns an error if gRPC submission fails.
     #[expect(clippy::too_many_arguments)]
     pub async fn submit_limit_order(
         &self,
@@ -311,7 +311,7 @@ impl OrderSubmitter {
     ///
     /// # Errors
     ///
-    /// Returns `DydxError` if any submission fails.
+    /// Returns an error if any submission fails.
     pub async fn submit_limit_orders_batch(
         &self,
         orders: Vec<LimitOrderParams>,
@@ -393,7 +393,7 @@ impl OrderSubmitter {
     ///
     /// # Errors
     ///
-    /// Returns `DydxError` if gRPC cancellation fails or market params not found.
+    /// Returns an error if gRPC cancellation fails or market params not found.
     pub async fn cancel_order(
         &self,
         instrument_id: InstrumentId,
@@ -450,7 +450,7 @@ impl OrderSubmitter {
     ///
     /// # Errors
     ///
-    /// Returns `DydxError` if transaction broadcast fails or market params not found.
+    /// Returns an error if transaction broadcast fails or market params not found.
     pub async fn cancel_orders_batch(
         &self,
         orders: &[(
@@ -534,7 +534,7 @@ impl OrderSubmitter {
     ///
     /// # Errors
     ///
-    /// Returns `DydxError` if gRPC submission fails.
+    /// Returns an error if gRPC submission fails.
     #[expect(clippy::too_many_arguments)]
     pub async fn submit_stop_market_order(
         &self,
@@ -585,7 +585,7 @@ impl OrderSubmitter {
     ///
     /// # Errors
     ///
-    /// Returns `DydxError` if gRPC submission fails.
+    /// Returns an error if gRPC submission fails.
     #[expect(clippy::too_many_arguments)]
     pub async fn submit_stop_limit_order(
         &self,
@@ -642,7 +642,7 @@ impl OrderSubmitter {
     ///
     /// # Errors
     ///
-    /// Returns `DydxError` if gRPC submission fails.
+    /// Returns an error if gRPC submission fails.
     #[expect(clippy::too_many_arguments)]
     pub async fn submit_take_profit_market_order(
         &self,
@@ -693,7 +693,7 @@ impl OrderSubmitter {
     ///
     /// # Errors
     ///
-    /// Returns `DydxError` if gRPC submission fails.
+    /// Returns an error if gRPC submission fails.
     #[expect(clippy::too_many_arguments)]
     pub async fn submit_take_profit_limit_order(
         &self,
@@ -750,7 +750,7 @@ impl OrderSubmitter {
     ///
     /// # Errors
     ///
-    /// Returns `DydxError` if gRPC submission fails or `limit_price` is missing for limit orders.
+    /// Returns an error if gRPC submission fails or `limit_price` is missing for limit orders.
     #[expect(clippy::too_many_arguments)]
     pub async fn submit_conditional_order(
         &self,

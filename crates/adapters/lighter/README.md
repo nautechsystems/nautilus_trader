@@ -48,19 +48,19 @@ trait surface.
 
 ## Integrator attribution
 
-On Lighter Mainnet, submitted create and modify order transactions from Plus and Premium accounts
-carry the NautilusTrader integrator account index in Lighter's `L2TxAttributes`. This helps us gauge
-real usage of the integration and prioritize ongoing maintenance. Maker and taker integrator fees
-are set to zero, so attribution adds no trading cost. All other account tiers, sessions without an
-account snapshot, Lighter Testnet, and both Robinhood environments leave `L2TxAttributes` empty.
+NautilusTrader participates in [Lighter's partner program](https://apidocs.lighter.xyz/docs/partner-integration).
+On Lighter Mainnet, create and modify order transactions from the execution client carry the
+NautilusTrader integrator account index in `L2TxAttributes` across all account tiers, including
+Standard. Maker and taker integrator fees are zero. Lighter Testnet and both Robinhood environments
+leave `L2TxAttributes` empty.
 
 Lighter requires an `ApproveIntegrator` approval before these attributes can be attached to orders.
 During startup, the Lighter Mainnet execution client submits the required **zero-fee** approval for
-a configured Plus or Premium L2 account. Other Lighter account tiers, sessions without an account
-snapshot, Lighter Testnet, and Robinhood clients do not submit an approval.
+a configured L2 account with a non-maker-only API key. Lighter Testnet and both Robinhood
+environments do not submit an approval.
 
 Robinhood Mainnet uses separate account-level referral attribution. During startup, the
-execution client applies the `NAUTILUS` code to the account's public L1 address. Selecting the
+execution client applies the `NAUTILUS` code to the account's public L1 address. Selecting
 Robinhood Mainnet opts the account into this attribution. Application failures log a
 warning and do not block trading. Robinhood Testnet does not apply a referral.
 
@@ -73,7 +73,7 @@ On Lighter Mainnet, Lighter restricts maker-only API keys to the 0ms speed-bump 
 orders, modifies on ALO orders, and cancels), so they cannot submit `ApproveIntegrator` themselves.
 The execution client detects maker-only keys at startup via `getMakerOnlyApiKeys` and skips the
 approval with a WARN log. Approval is account-scoped: a single `ApproveIntegrator` from any
-non-maker-only key on the same account permanently unlocks orders for every key on that account,
+non-maker-only key on the same account unlocks orders for every key on that account,
 including maker-only ones. Lighter Testnet and both Robinhood environments do not query
 `getMakerOnlyApiKeys` for integrator approval.
 

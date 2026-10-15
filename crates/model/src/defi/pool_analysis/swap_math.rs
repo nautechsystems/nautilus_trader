@@ -45,7 +45,7 @@ pub const MAX_FEE: U256 = U256::from_limbs([1_000_000, 0, 0, 0]);
 ///
 /// # Errors
 ///
-/// This function returns an error if:
+/// Returns an error if:
 /// - Fee adjustment calculations overflow or encounter division by zero.
 /// - Amount or price delta calculations overflow the supported numeric range.
 pub fn compute_swap_step(

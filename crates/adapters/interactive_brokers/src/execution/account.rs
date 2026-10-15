@@ -15,18 +15,23 @@
 
 //! Account management for Interactive Brokers execution client.
 
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use anyhow::Context;
+use futures_util::Stream;
 use ibapi::{
     accounts::{
-        AccountSummary, AccountSummaryResult, AccountSummaryTags,
+        AccountSummary, AccountSummaryResult, AccountSummaryTags, AccountUpdate, AccountValue,
         types::{AccountGroup, AccountId as IbAccountId},
     },
     client::Client,
+    contracts::Contract,
+    orders::ExecutionSide,
     prelude::{StreamExt, SubscriptionItemStreamExt},
+    subscriptions::{FilterDataStream, Subscription},
 };
 use nautilus_common::{
+    cache::fifo::FifoCache,
     live::runner::get_exec_event_sender,
     messages::{ExecutionEvent, ExecutionReport},
 };
@@ -40,25 +45,115 @@ use nautilus_model::{
     types::{AccountBalance, Currency, MarginBalance, Money, Quantity},
 };
 use rust_decimal::{Decimal, prelude::ToPrimitive};
+use ustr::Ustr;
 
-pub(crate) fn raw_ib_account_code(account_id: &AccountId) -> String {
-    account_id
-        .to_string()
-        .strip_prefix("IB-")
-        .unwrap_or(account_id.as_str())
-        .to_string()
+/// Derives the raw IB account code sent to TWS from the configured `account_id`.
+///
+/// A configured bare code such as `DU123456` is used as is. A configured composite Nautilus
+/// account ID such as `IB-DU123456`, or no configured value, falls back to the segment of
+/// `account_id` after its last hyphen, because IB account codes contain no hyphen while client
+/// names such as `IB-TEST` may.
+pub(crate) fn ib_account_code(configured: Option<&str>, account_id: AccountId) -> Ustr {
+    match configured {
+        Some(code) if !code.contains('-') => Ustr::from(code),
+        _ => Ustr::from(
+            account_id
+                .as_str()
+                .rsplit_once('-')
+                .map_or(account_id.as_str(), |(_, code)| code),
+        ),
+    }
+}
+
+// Rows of one IB refresh batch arrive within milliseconds of each other.
+const ACCOUNT_SUMMARY_QUIET: Duration = Duration::from_secs(1);
+
+pub type AccountSnapshot = (Vec<AccountBalance>, Vec<MarginBalance>, Option<Params>);
+
+type AccountSummaryStream = FilterDataStream<Subscription<AccountSummaryResult>>;
+
+#[derive(Default)]
+struct AccountSummaryAccumulator {
+    balances: Vec<AccountSummaryBalance>,
+    margins: Vec<MarginBalance>,
+    info: Params,
 }
 
 /// Subscribe to account summary and parse to balances and margins.
 ///
+/// The returned `info` also carries one `reqAccountUpdates` snapshot, because IB serves
+/// values such as `PostExpirationExcess` only on that stream and not as summary tags.
+///
 /// # Errors
 ///
-/// Returns an error if subscription fails.
+/// Returns an error if the account summary subscription fails.
 pub async fn subscribe_account_summary(
     client: &Arc<Client>,
-    account_id: AccountId,
-) -> anyhow::Result<(Vec<AccountBalance>, Vec<MarginBalance>, Option<Params>)> {
-    let raw_account_id = raw_ib_account_code(&account_id);
+    ib_account: Ustr,
+) -> anyhow::Result<AccountSnapshot> {
+    let mut subscription = open_account_summary(client, ib_account).await?;
+    let mut accumulator = AccountSummaryAccumulator::default();
+    read_account_summary_cycle(&mut subscription, ib_account, &mut accumulator, None).await;
+    account_snapshot(client, ib_account, &accumulator).await
+}
+
+/// Subscribe to account summary, deliver the first snapshot, and keep the subscription open.
+///
+/// IB repeats the summary about every 3 minutes on a live `reqAccountSummary` subscription. A
+/// session task delivers one further snapshot per refresh cycle through `on_snapshot` until
+/// the subscription ends.
+///
+/// # Errors
+///
+/// Returns an error if the subscription fails or the first snapshot cannot be built.
+pub async fn stream_account_summary<F>(
+    client: &Arc<Client>,
+    ib_account: Ustr,
+    session_tasks: &TaskGroup,
+    on_snapshot: F,
+) -> anyhow::Result<()>
+where
+    F: Fn(AccountSnapshot) + Send + 'static,
+{
+    let mut subscription = open_account_summary(client, ib_account).await?;
+    let mut accumulator = AccountSummaryAccumulator::default();
+    read_account_summary_cycle(&mut subscription, ib_account, &mut accumulator, None).await;
+    on_snapshot(account_snapshot(client, ib_account, &accumulator).await?);
+
+    let client = Arc::clone(client);
+
+    let future = async move {
+        while read_account_summary_cycle(
+            &mut subscription,
+            ib_account,
+            &mut accumulator,
+            Some(ACCOUNT_SUMMARY_QUIET),
+        )
+        .await
+        {
+            match account_snapshot(&client, ib_account, &accumulator).await {
+                Ok(snapshot) => on_snapshot(snapshot),
+                Err(e) => tracing::warn!("Failed to build account snapshot: {}", e),
+            }
+        }
+
+        tracing::warn!(
+            "IB account summary stream ended for account: {}",
+            ib_account
+        );
+    };
+
+    session_tasks
+        .spawn(future)
+        .context("Failed to register IB account summary task")?;
+
+    Ok(())
+}
+
+async fn open_account_summary(
+    client: &Arc<Client>,
+    ib_account: Ustr,
+) -> anyhow::Result<AccountSummaryStream> {
     // Request key account summary tags (includes TotalCashValue to match Python account summary info dict).
     let tags = &[
         AccountSummaryTags::NET_LIQUIDATION,
@@ -78,71 +173,90 @@ pub async fn subscribe_account_summary(
         .account_summary(&group, tags)
         .await
         .context("Failed to subscribe to account summary")?;
-    let mut subscription = subscription.filter_data();
 
-    tracing::debug!("Subscribed to account summary for account: {}", account_id);
+    tracing::debug!("Subscribed to account summary for account: {}", ib_account);
 
-    // Process initial account summary snapshot
-    // We collect all summary items until the API sends AccountSummaryResult::End, so the
-    // returned balances/margins are complete (matches Python behavior of waiting for all tags).
-    let mut balances: Vec<AccountBalance> = Vec::new();
-    let mut margins: Vec<MarginBalance> = Vec::new();
-    let mut info = Params::new();
+    Ok(subscription.filter_data())
+}
 
-    while let Some(result) = subscription.next().await {
-        match result {
-            Ok(AccountSummaryResult::Summary(summary)) => {
+// Folds summary rows into the accumulator until the API sends AccountSummaryResult::End, so
+// each snapshot is complete (matches Python behavior of waiting for all tags). After the
+// initial snapshot IB pushes changed values without a further End, so a refresh passes
+// `quiet` and completes once rows stop arriving for that long. Returns false when the stream
+// closes before a snapshot completes.
+async fn read_account_summary_cycle<S>(
+    subscription: &mut S,
+    ib_account: Ustr,
+    accumulator: &mut AccountSummaryAccumulator,
+    quiet: Option<Duration>,
+) -> bool
+where
+    S: Stream<Item = Result<AccountSummaryResult, ibapi::Error>> + Unpin,
+{
+    let raw_account_id = ib_account.as_str();
+    let mut received_rows = false;
+
+    loop {
+        let next = match quiet {
+            Some(quiet) if received_rows => {
+                match tokio::time::timeout(quiet, subscription.next()).await {
+                    Ok(next) => next,
+                    Err(_) => return true,
+                }
+            }
+            _ => subscription.next().await,
+        };
+
+        match next {
+            Some(Ok(AccountSummaryResult::Summary(summary))) => {
                 // Filter for the specific account
                 if summary.account != raw_account_id {
                     continue;
                 }
 
+                received_rows = true;
+
                 // Record the raw summary tag so the account state carries the
                 // venue-reported values (for example TotalCashValue) that do not
                 // map to the typed balances and margins.
-                info.insert(
-                    summary.tag.to_string(),
+                accumulator.info.insert(
+                    summary.tag.clone(),
                     serde_json::Value::from(summary.value.as_str()),
                 );
 
-                match parse_account_summary_to_balance(&summary) {
-                    Ok(balance) => {
-                        // Check if balance already exists for this currency
-                        if let Some(existing) = balances
-                            .iter_mut()
-                            .find(|b| b.total.currency == balance.total.currency)
-                        {
-                            if let Some(merged) = merge_account_summary_balance(
-                                existing,
-                                summary.tag.as_str(),
-                                &summary.value,
-                                &summary.currency,
-                            )? {
-                                *existing = merged;
-                            }
-                        } else {
-                            balances.push(balance);
-                        }
-                    }
-                    Err(e) => {
-                        tracing::warn!("Failed to parse account summary: {}", e);
-                    }
+                if let Err(e) = merge_account_summary_balance(&mut accumulator.balances, &summary) {
+                    tracing::warn!("Failed to parse account summary: {}", e);
                 }
 
                 // Accumulate margin requirements by currency. IB reports INIT_MARGIN_REQ
                 // and MAINT_MARGIN_REQ as separate summary entries; merge them into one
                 // `MarginBalance` per currency so neither half overwrites the other when
                 // the account-wide margin store keys by `Currency`.
-                merge_account_summary_margin(&mut margins, &summary);
+                merge_account_summary_margin(&mut accumulator.margins, &summary);
             }
-            Ok(AccountSummaryResult::End) => {
-                break;
-            }
-            Err(e) => {
+            Some(Ok(AccountSummaryResult::End)) => return true,
+            Some(Err(e)) => {
                 tracing::warn!("Error receiving account summary: {}", e);
             }
+            None => return false,
         }
     }
+}
+
+async fn account_snapshot(
+    client: &Arc<Client>,
+    ib_account: Ustr,
+    accumulator: &AccountSummaryAccumulator,
+) -> anyhow::Result<AccountSnapshot> {
+    let mut info = accumulator.info.clone();
+
+    if let Err(e) = merge_account_updates_snapshot(client, ib_account.as_str(), &mut info).await {
+        tracing::warn!("Failed to collect account updates: {}", e);
+    }
+
+    let balances = finalize_account_summary_balances(accumulator.balances.clone())?;
+    let mut margins = accumulator.margins.clone();
+    margins.sort_by(|a, b| a.currency.code.as_str().cmp(b.currency.code.as_str()));
 
     tracing::debug!(
         "Received account summary: {} balances, {} margins",
@@ -157,7 +271,61 @@ pub async fn subscribe_account_summary(
     ))
 }
 
+// Drains one `reqAccountUpdates` snapshot into `info`, keyed by the raw IB key like the
+// summary tags. Dropping the subscription sends the cancel, so no stream stays open.
+async fn merge_account_updates_snapshot(
+    client: &Arc<Client>,
+    raw_account_id: &str,
+    info: &mut Params,
+) -> anyhow::Result<()> {
+    let account = IbAccountId(raw_account_id.to_string());
+    let subscription = client
+        .account_updates(&account)
+        .await
+        .context("Failed to subscribe to account updates")?;
+    let mut subscription = subscription.filter_data();
+
+    while let Some(result) = subscription.next().await {
+        match result {
+            Ok(AccountUpdate::AccountValue(value)) => {
+                merge_account_value(info, raw_account_id, &value);
+            }
+            Ok(AccountUpdate::End) => break,
+            Ok(AccountUpdate::PortfolioValue(_) | AccountUpdate::UpdateTime(_)) => {}
+            Err(e) => {
+                tracing::warn!("Error receiving account updates: {}", e);
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn merge_account_value(info: &mut Params, raw_account_id: &str, value: &AccountValue) {
+    if value
+        .account
+        .as_deref()
+        .is_some_and(|account| account != raw_account_id)
+    {
+        return;
+    }
+
+    info.insert(
+        value.key.clone(),
+        serde_json::Value::from(value.value.as_str()),
+    );
+}
+
 fn merge_account_summary_margin(margins: &mut Vec<MarginBalance>, summary: &AccountSummary) {
+    let relevant = matches!(
+        summary.tag.as_str(),
+        AccountSummaryTags::INIT_MARGIN_REQ | AccountSummaryTags::MAINT_MARGIN_REQ
+    );
+
+    if !relevant {
+        return;
+    }
+
     let currency = match parse_currency(&summary.currency) {
         Ok(currency) => currency,
         Err(e) => {
@@ -165,6 +333,7 @@ fn merge_account_summary_margin(margins: &mut Vec<MarginBalance>, summary: &Acco
             return;
         }
     };
+
     let value = match parse_balance_decimal(&summary.value)
         .and_then(|d| Money::from_decimal(d, currency).map_err(|e| anyhow::anyhow!(e.to_string())))
     {
@@ -188,37 +357,110 @@ fn merge_account_summary_margin(margins: &mut Vec<MarginBalance>, summary: &Acco
             Some(margin) => margin.maintenance = value,
             None => margins.push(MarginBalance::new(Money::zero(currency), value, None)),
         },
-        _ => {}
+        _ => unreachable!("relevant account summary tag was checked above"),
+    }
+}
+
+#[derive(Clone)]
+struct AccountSummaryBalance {
+    currency: Currency,
+    net_liquidation: Option<Decimal>,
+    settled_cash: Option<Decimal>,
+    total_cash_value: Option<Decimal>,
+    available_funds: Option<Decimal>,
+    buying_power: Option<Decimal>,
+}
+
+impl AccountSummaryBalance {
+    fn new(currency: Currency) -> Self {
+        Self {
+            currency,
+            net_liquidation: None,
+            settled_cash: None,
+            total_cash_value: None,
+            available_funds: None,
+            buying_power: None,
+        }
+    }
+
+    fn into_balance(self) -> anyhow::Result<Option<AccountBalance>> {
+        let Some(total) = self
+            .net_liquidation
+            .or(self.settled_cash)
+            .or(self.total_cash_value)
+            .or(self.available_funds)
+            .or(self.buying_power)
+        else {
+            return Ok(None);
+        };
+
+        let free = self
+            .available_funds
+            .or(self.buying_power)
+            .or(self.settled_cash)
+            .or(self.total_cash_value)
+            .unwrap_or(total);
+
+        Ok(Some(AccountBalance::from_total_and_free(
+            total,
+            free,
+            self.currency,
+        )?))
     }
 }
 
 fn merge_account_summary_balance(
-    existing: &AccountBalance,
-    tag: &str,
-    value: &str,
-    currency_code: &str,
-) -> anyhow::Result<Option<AccountBalance>> {
-    let currency = parse_currency(currency_code)?;
+    balances: &mut Vec<AccountSummaryBalance>,
+    summary: &AccountSummary,
+) -> anyhow::Result<()> {
+    let relevant = matches!(
+        summary.tag.as_str(),
+        AccountSummaryTags::NET_LIQUIDATION
+            | AccountSummaryTags::SETTLED_CASH
+            | AccountSummaryTags::TOTAL_CASH_VALUE
+            | AccountSummaryTags::AVAILABLE_FUNDS
+            | AccountSummaryTags::BUYING_POWER
+    );
 
-    match tag {
-        AccountSummaryTags::SETTLED_CASH => {
-            let settled_cash = parse_balance_decimal(value)?;
-            Ok(Some(AccountBalance::from_total_and_locked(
-                settled_cash,
-                Decimal::ZERO,
-                currency,
-            )?))
-        }
-        AccountSummaryTags::NET_LIQUIDATION => {
-            let net_liq = parse_balance_decimal(value)?;
-            Ok(Some(AccountBalance::from_total_and_free(
-                net_liq,
-                existing.free.as_decimal(),
-                currency,
-            )?))
-        }
-        _ => Ok(None),
+    if !relevant {
+        return Ok(());
     }
+
+    let currency = parse_currency(&summary.currency)?;
+    let value = parse_balance_decimal(&summary.value)?;
+
+    let balance = match balances.iter_mut().find(|b| b.currency == currency) {
+        Some(balance) => balance,
+        None => {
+            balances.push(AccountSummaryBalance::new(currency));
+            balances.last_mut().expect("balance was just inserted")
+        }
+    };
+
+    match summary.tag.as_str() {
+        AccountSummaryTags::NET_LIQUIDATION => balance.net_liquidation = Some(value),
+        AccountSummaryTags::SETTLED_CASH => balance.settled_cash = Some(value),
+        AccountSummaryTags::TOTAL_CASH_VALUE => balance.total_cash_value = Some(value),
+        AccountSummaryTags::AVAILABLE_FUNDS => balance.available_funds = Some(value),
+        AccountSummaryTags::BUYING_POWER => balance.buying_power = Some(value),
+        _ => unreachable!("relevant account summary tag was checked above"),
+    }
+
+    Ok(())
+}
+
+fn finalize_account_summary_balances(
+    summaries: Vec<AccountSummaryBalance>,
+) -> anyhow::Result<Vec<AccountBalance>> {
+    let mut balances = summaries
+        .into_iter()
+        .map(AccountSummaryBalance::into_balance)
+        .collect::<anyhow::Result<Vec<_>>>()?
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+    balances.sort_by(|a, b| a.currency.code.as_str().cmp(b.currency.code.as_str()));
+    Ok(balances)
 }
 
 /// Subscribe to PnL updates for the account.
@@ -230,17 +472,17 @@ fn merge_account_summary_balance(
 /// Returns an error if subscription fails.
 pub async fn subscribe_pnl(
     client: &Arc<Client>,
-    account_id: AccountId,
+    ib_account: Ustr,
     session_tasks: &TaskGroup,
 ) -> anyhow::Result<()> {
-    let account = IbAccountId(raw_ib_account_code(&account_id));
+    let account = IbAccountId(ib_account.to_string());
     let subscription = client
         .pnl(&account, None)
         .await
         .context("Failed to subscribe to PnL")?;
     let mut subscription = subscription.filter_data();
 
-    tracing::debug!("Subscribed to PnL updates for account: {}", account_id);
+    tracing::debug!("Subscribed to PnL updates for account: {}", ib_account);
 
     // Process PnL updates in background task
     let future = async move {
@@ -263,6 +505,7 @@ pub async fn subscribe_pnl(
             }
         }
     };
+
     session_tasks
         .spawn(future)
         .context("Failed to register IB PnL task")?;
@@ -270,12 +513,53 @@ pub async fn subscribe_pnl(
     Ok(())
 }
 
+#[derive(Debug)]
+pub struct PositionTrackerState {
+    positions: HashMap<i32, Decimal>,
+    own_fill_ids: FifoCache<String, 10_000>,
+}
+
 /// Track known positions for detecting external changes (e.g., option exercises).
-pub type PositionTracker = Arc<tokio::sync::Mutex<HashMap<i32, Decimal>>>;
+pub type PositionTracker = Arc<tokio::sync::Mutex<PositionTrackerState>>;
 
 /// Create a new position tracker.
 pub fn create_position_tracker() -> PositionTracker {
-    Arc::new(tokio::sync::Mutex::new(HashMap::new()))
+    Arc::new(tokio::sync::Mutex::new(PositionTrackerState {
+        positions: HashMap::new(),
+        own_fill_ids: FifoCache::new(),
+    }))
+}
+
+pub async fn record_own_fill(
+    position_tracker: &PositionTracker,
+    execution_id: &str,
+    contract_id: i32,
+    side: ExecutionSide,
+    quantity: f64,
+) -> anyhow::Result<bool> {
+    let quantity = Decimal::from_f64_retain(quantity)
+        .context("Failed to convert own fill quantity to Decimal")?;
+
+    let signed_quantity = match side {
+        ExecutionSide::Bought => quantity,
+        ExecutionSide::Sold => -quantity,
+    };
+
+    let mut tracker = position_tracker.lock().await;
+    if !tracker.own_fill_ids.insert(execution_id.to_string()) {
+        return Ok(false);
+    }
+
+    let position = tracker
+        .positions
+        .entry(contract_id)
+        .or_insert(Decimal::ZERO);
+    *position += signed_quantity;
+    if position.is_zero() {
+        tracker.positions.remove(&contract_id);
+    }
+
+    Ok(true)
 }
 
 /// Check if a position update represents an external change (e.g., option exercise).
@@ -285,7 +569,11 @@ pub async fn check_external_position_change(
     new_quantity: Decimal,
 ) -> Option<(bool, Decimal)> {
     let mut tracker = position_tracker.lock().await;
-    let known_quantity = tracker.get(&contract_id).copied().unwrap_or(Decimal::ZERO);
+    let known_quantity = tracker
+        .positions
+        .get(&contract_id)
+        .copied()
+        .unwrap_or(Decimal::ZERO);
 
     if new_quantity.is_zero() {
         return (!known_quantity.is_zero()).then_some((true, known_quantity));
@@ -300,7 +588,7 @@ pub async fn check_external_position_change(
     // This is a change - determine if it's external
     // External changes occur when position changes without a corresponding execution
     // Update tracked position
-    tracker.insert(contract_id, new_quantity);
+    tracker.positions.insert(contract_id, new_quantity);
 
     // If we had a known position and it changed, it's likely external
     if known_quantity != Decimal::ZERO && known_quantity != new_quantity {
@@ -314,33 +602,33 @@ pub async fn check_external_position_change(
 /// Initialize position tracking with existing positions.
 ///
 /// This fetches all current positions and initializes the position tracker
-/// to avoid processing duplicates from execDetails.
+/// to avoid processing duplicates from execDetails. Returns the contracts of the
+/// tracked positions so their instruments can be published before reconciliation.
 ///
 /// # Errors
 ///
 /// Returns an error if position request fails.
 pub async fn initialize_position_tracking(
     client: &Arc<Client>,
-    account_id: AccountId,
+    ib_account: Ustr,
     position_tracker: PositionTracker,
-) -> anyhow::Result<()> {
-    let raw_account_id = raw_ib_account_code(&account_id);
+) -> anyhow::Result<Vec<Contract>> {
     let subscription = client
         .positions()
         .await
         .context("Failed to request positions")?;
     let mut subscription = subscription.filter_data();
 
-    tracing::debug!("Initializing position tracking for account: {}", account_id);
+    tracing::debug!("Initializing position tracking for account: {}", ib_account);
 
-    let mut position_count = 0;
+    let mut contracts = Vec::new();
     let mut tracker = position_tracker.lock().await;
 
     while let Some(result) = subscription.next().await {
         match result {
             Ok(ibapi::accounts::PositionUpdate::Position(position)) => {
                 // Filter for the specific account
-                if position.account != raw_account_id {
+                if position.account != ib_account.as_str() {
                     continue;
                 }
 
@@ -349,8 +637,8 @@ pub async fn initialize_position_tracking(
 
                 // Only track non-zero positions
                 if !quantity.is_zero() {
-                    tracker.insert(contract_id, quantity);
-                    position_count += 1;
+                    tracker.positions.insert(contract_id, quantity);
+                    contracts.push(position.contract);
                 }
             }
             Ok(ibapi::accounts::PositionUpdate::PositionEnd) => {
@@ -364,10 +652,10 @@ pub async fn initialize_position_tracking(
 
     tracing::debug!(
         "Initialized tracking for {} existing positions",
-        position_count
+        contracts.len()
     );
 
-    Ok(())
+    Ok(contracts)
 }
 
 /// Subscribe to real-time position updates for detecting external position changes (e.g., option exercises).
@@ -381,18 +669,18 @@ pub async fn initialize_position_tracking(
 pub async fn subscribe_positions(
     client: &Arc<Client>,
     account_id: AccountId,
+    ib_account: Ustr,
     position_tracker: PositionTracker,
     instrument_provider: Arc<crate::providers::instruments::InteractiveBrokersInstrumentProvider>,
     session_tasks: &TaskGroup,
 ) -> anyhow::Result<()> {
-    let raw_account_id = raw_ib_account_code(&account_id);
     let subscription = client
         .positions()
         .await
         .context("Failed to subscribe to positions")?;
     let mut subscription = subscription.filter_data();
 
-    tracing::debug!("Subscribed to position updates for account: {}", account_id);
+    tracing::debug!("Subscribed to position updates for account: {}", ib_account);
 
     let exec_sender = get_exec_event_sender();
     let clock = get_atomic_clock_realtime();
@@ -403,7 +691,7 @@ pub async fn subscribe_positions(
         while let Some(result) = subscription.next().await {
             match result {
                 Ok(ibapi::accounts::PositionUpdate::Position(position)) => {
-                    if position.account != raw_account_id {
+                    if position.account != ib_account.as_str() {
                         continue;
                     }
 
@@ -431,6 +719,7 @@ pub async fn subscribe_positions(
                         {
                             Ok(Some(instrument)) => {
                                 let instrument_id = instrument.id();
+
                                 let position_side = if new_quantity.is_zero() {
                                     PositionSide::Flat
                                 } else if new_quantity > Decimal::ZERO {
@@ -484,7 +773,11 @@ pub async fn subscribe_positions(
                                     );
                                 } else {
                                     if new_quantity.is_zero() {
-                                        position_tracker.lock().await.remove(&contract_id);
+                                        position_tracker
+                                            .lock()
+                                            .await
+                                            .positions
+                                            .remove(&contract_id);
                                     }
 
                                     tracing::info!(
@@ -509,7 +802,7 @@ pub async fn subscribe_positions(
                     }
                 }
                 Ok(ibapi::accounts::PositionUpdate::PositionEnd) => {
-                    break;
+                    tracing::debug!("Received end of initial IB position snapshot");
                 }
                 Err(e) => {
                     tracing::warn!("Error receiving position update: {}", e);
@@ -517,6 +810,7 @@ pub async fn subscribe_positions(
             }
         }
     };
+
     session_tasks
         .spawn(future)
         .context("Failed to register IB position task")?;
@@ -524,39 +818,10 @@ pub async fn subscribe_positions(
     Ok(())
 }
 
-/// Parse IB account summary to Nautilus AccountBalance.
-fn parse_account_summary_to_balance(summary: &AccountSummary) -> anyhow::Result<AccountBalance> {
-    let currency = parse_currency(&summary.currency)?;
-    let balance = parse_balance_decimal(&summary.value)?;
-
-    match summary.tag.as_str() {
-        AccountSummaryTags::SETTLED_CASH | AccountSummaryTags::TOTAL_CASH_VALUE => {
-            // Cash balance - free equals total for settled cash
-            AccountBalance::from_total_and_locked(balance, Decimal::ZERO, currency)
-                .map_err(Into::into)
-        }
-        AccountSummaryTags::NET_LIQUIDATION => {
-            // Net liquidation - represents total equity
-            // Free would be calculated from available funds
-            AccountBalance::from_total_and_locked(balance, Decimal::ZERO, currency)
-                .map_err(Into::into)
-        }
-        AccountSummaryTags::BUYING_POWER | AccountSummaryTags::AVAILABLE_FUNDS => {
-            // Available funds - this is the free amount
-            AccountBalance::from_total_and_free(balance, balance, currency).map_err(Into::into)
-        }
-        _ => {
-            // Default: treat as total balance
-            AccountBalance::from_total_and_locked(balance, Decimal::ZERO, currency)
-                .map_err(Into::into)
-        }
-    }
-}
-
 fn parse_balance_decimal(value: &str) -> anyhow::Result<Decimal> {
     value
         .parse::<Decimal>()
-        .context(format!("Failed to parse balance value: {}", value))
+        .context(format!("Failed to parse balance value: {value}"))
 }
 
 fn parse_currency(currency: &str) -> anyhow::Result<Currency> {
@@ -566,14 +831,26 @@ fn parse_currency(currency: &str) -> anyhow::Result<Currency> {
 
 #[cfg(test)]
 mod tests {
-    use ibapi::accounts::AccountSummary;
-    use nautilus_model::types::{AccountBalance, Currency, MarginBalance, Money};
+    use std::time::Duration;
+
+    use futures_util::{StreamExt, stream};
+    use ibapi::{
+        accounts::{AccountSummary, AccountSummaryResult, AccountValue},
+        orders::ExecutionSide,
+    };
+    use nautilus_core::Params;
+    use nautilus_model::{
+        identifiers::AccountId,
+        types::{AccountBalance, Currency, MarginBalance, Money},
+    };
     use rstest::rstest;
     use rust_decimal::Decimal;
 
     use super::{
-        AccountSummaryTags, check_external_position_change, create_position_tracker,
-        merge_account_summary_balance, merge_account_summary_margin, parse_currency,
+        AccountSummaryAccumulator, AccountSummaryTags, check_external_position_change,
+        create_position_tracker, finalize_account_summary_balances, ib_account_code,
+        merge_account_summary_balance, merge_account_summary_margin, merge_account_value,
+        parse_currency, read_account_summary_cycle, record_own_fill,
     };
 
     fn margin_summary(tag: &str, value: &str, currency: &str) -> AccountSummary {
@@ -583,6 +860,40 @@ mod tests {
             value: value.to_string(),
             currency: currency.to_string(),
         }
+    }
+
+    fn account_value(account: Option<&str>, key: &str, value: &str) -> AccountValue {
+        AccountValue {
+            key: key.to_string(),
+            value: value.to_string(),
+            currency: "USD".to_string(),
+            account: account.map(str::to_string),
+        }
+    }
+
+    fn balances_from_summaries(summaries: &[AccountSummary]) -> Vec<AccountBalance> {
+        let mut balances = Vec::new();
+        for summary in summaries {
+            merge_account_summary_balance(&mut balances, summary).unwrap();
+        }
+
+        finalize_account_summary_balances(balances).unwrap()
+    }
+
+    #[rstest]
+    #[case(Some("U7654321"), "IB-TEST-U7654321", "U7654321")]
+    #[case(Some("IB_LIVE-U1234567"), "IB_LIVE-U1234567", "U1234567")]
+    #[case(Some("IB-TEST-U7654321"), "IB-TEST-U7654321", "U7654321")]
+    #[case(None, "IB-TEST-001", "001")]
+    #[case(None, "IB-001", "001")]
+    fn test_ib_account_code_prefers_configured_bare_code(
+        #[case] configured: Option<&str>,
+        #[case] account_id: &str,
+        #[case] expected: &str,
+    ) {
+        let code = ib_account_code(configured, AccountId::from(account_id));
+
+        assert_eq!(code.as_str(), expected);
     }
 
     /// Verifies the IB avg cost to Nautilus price conversion formula used in position parsing.
@@ -616,38 +927,220 @@ mod tests {
     #[tokio::test]
     async fn test_external_position_change_reports_tracked_zero_close() {
         let tracker = create_position_tracker();
-        tracker.lock().await.insert(42, Decimal::new(5, 0));
+        tracker
+            .lock()
+            .await
+            .positions
+            .insert(42, Decimal::new(5, 0));
 
         let change = check_external_position_change(&tracker, 42, Decimal::ZERO).await;
 
         assert_eq!(change, Some((true, Decimal::new(5, 0))));
         assert_eq!(
-            tracker.lock().await.get(&42).copied(),
+            tracker.lock().await.positions.get(&42).copied(),
             Some(Decimal::new(5, 0))
         );
     }
 
     #[rstest]
-    fn test_net_liquidation_merge_clamps_free_to_total() {
-        let existing = AccountBalance::from_total_and_free(
-            "120.00".parse().unwrap(),
-            "120.00".parse().unwrap(),
-            Currency::USD(),
-        )
-        .unwrap();
+    #[tokio::test]
+    async fn test_own_fill_position_change_is_not_external() {
+        let tracker = create_position_tracker();
+        tracker
+            .lock()
+            .await
+            .positions
+            .insert(42, Decimal::new(5, 0));
 
-        let merged = merge_account_summary_balance(
-            &existing,
-            AccountSummaryTags::NET_LIQUIDATION,
-            "100.00",
-            "USD",
-        )
-        .unwrap()
-        .unwrap();
+        assert!(
+            record_own_fill(&tracker, "EXEC-1", 42, ExecutionSide::Bought, 2.0)
+                .await
+                .unwrap()
+        );
+        let change = check_external_position_change(&tracker, 42, Decimal::new(7, 0)).await;
+
+        assert_eq!(change, None);
+        assert_eq!(
+            tracker.lock().await.positions.get(&42).copied(),
+            Some(Decimal::new(7, 0))
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_replayed_own_fill_does_not_advance_position_twice() {
+        let tracker = create_position_tracker();
+
+        assert!(
+            record_own_fill(&tracker, "EXEC-1", 42, ExecutionSide::Sold, 2.0)
+                .await
+                .unwrap()
+        );
+        assert!(
+            !record_own_fill(&tracker, "EXEC-1", 42, ExecutionSide::Sold, 2.0)
+                .await
+                .unwrap()
+        );
+
+        assert_eq!(
+            tracker.lock().await.positions.get(&42).copied(),
+            Some(Decimal::new(-2, 0))
+        );
+    }
+
+    #[rstest]
+    fn test_net_liquidation_merge_clamps_free_to_total() {
+        let merged = balances_from_summaries(&[
+            margin_summary(AccountSummaryTags::AVAILABLE_FUNDS, "120.00", "USD"),
+            margin_summary(AccountSummaryTags::NET_LIQUIDATION, "100.00", "USD"),
+        ])
+        .remove(0);
 
         assert_eq!(merged.total.as_decimal(), "100.00".parse().unwrap());
         assert_eq!(merged.locked.as_decimal(), "0.00".parse().unwrap());
         assert_eq!(merged.free.as_decimal(), "100.00".parse().unwrap());
+    }
+
+    fn net_liquidation_summary(value: &str) -> AccountSummaryResult {
+        AccountSummaryResult::Summary(margin_summary("NetLiquidation", value, "USD"))
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_read_account_summary_cycle_refreshes_on_each_end() {
+        let mut subscription = stream::iter([
+            Ok(net_liquidation_summary("1000.50")),
+            Ok(AccountSummaryResult::End),
+            Ok(net_liquidation_summary("1100.25")),
+            Ok(AccountSummaryResult::End),
+        ]);
+        let ib_account = ustr::Ustr::from("DU123");
+        let mut accumulator = AccountSummaryAccumulator::default();
+
+        let first =
+            read_account_summary_cycle(&mut subscription, ib_account, &mut accumulator, None).await;
+        let first_balances =
+            finalize_account_summary_balances(accumulator.balances.clone()).unwrap();
+        let second =
+            read_account_summary_cycle(&mut subscription, ib_account, &mut accumulator, None).await;
+        let second_balances =
+            finalize_account_summary_balances(accumulator.balances.clone()).unwrap();
+        let closed =
+            read_account_summary_cycle(&mut subscription, ib_account, &mut accumulator, None).await;
+
+        assert!(first);
+        assert_eq!(
+            first_balances,
+            vec![
+                AccountBalance::from_total_and_free(
+                    Decimal::new(100050, 2),
+                    Decimal::new(100050, 2),
+                    Currency::USD()
+                )
+                .unwrap()
+            ]
+        );
+        assert!(second);
+        assert_eq!(
+            second_balances,
+            vec![
+                AccountBalance::from_total_and_free(
+                    Decimal::new(110025, 2),
+                    Decimal::new(110025, 2),
+                    Currency::USD()
+                )
+                .unwrap()
+            ]
+        );
+        assert!(!closed);
+    }
+
+    #[rstest]
+    #[tokio::test(start_paused = true)]
+    async fn test_read_account_summary_cycle_flushes_refresh_without_end() {
+        let mut subscription = stream::iter([
+            Ok(net_liquidation_summary("1000.50")),
+            Ok(net_liquidation_summary("1100.25")),
+        ])
+        .chain(stream::pending());
+        let ib_account = ustr::Ustr::from("DU123");
+        let mut accumulator = AccountSummaryAccumulator::default();
+
+        let flushed = read_account_summary_cycle(
+            &mut subscription,
+            ib_account,
+            &mut accumulator,
+            Some(Duration::from_secs(1)),
+        )
+        .await;
+        let balances = finalize_account_summary_balances(accumulator.balances.clone()).unwrap();
+
+        assert!(flushed);
+        assert_eq!(
+            balances,
+            vec![
+                AccountBalance::from_total_and_free(
+                    Decimal::new(110025, 2),
+                    Decimal::new(110025, 2),
+                    Currency::USD()
+                )
+                .unwrap()
+            ]
+        );
+    }
+
+    #[rstest]
+    fn test_account_summary_balance_merge_is_order_independent() {
+        let summaries = [
+            margin_summary(AccountSummaryTags::TOTAL_CASH_VALUE, "80.00", "USD"),
+            margin_summary(AccountSummaryTags::SETTLED_CASH, "75.00", "USD"),
+            margin_summary(AccountSummaryTags::AVAILABLE_FUNDS, "60.00", "USD"),
+            margin_summary(AccountSummaryTags::BUYING_POWER, "120.00", "USD"),
+            margin_summary(AccountSummaryTags::NET_LIQUIDATION, "100.00", "USD"),
+        ];
+        let reversed = [
+            margin_summary(AccountSummaryTags::NET_LIQUIDATION, "100.00", "USD"),
+            margin_summary(AccountSummaryTags::BUYING_POWER, "120.00", "USD"),
+            margin_summary(AccountSummaryTags::AVAILABLE_FUNDS, "60.00", "USD"),
+            margin_summary(AccountSummaryTags::SETTLED_CASH, "75.00", "USD"),
+            margin_summary(AccountSummaryTags::TOTAL_CASH_VALUE, "80.00", "USD"),
+        ];
+
+        let forward = balances_from_summaries(&summaries);
+        let reverse = balances_from_summaries(&reversed);
+
+        assert_eq!(forward, reverse);
+        assert_eq!(forward.len(), 1);
+        assert_eq!(forward[0].total, Money::from("100.00 USD"));
+        assert_eq!(forward[0].locked, Money::from("40.00 USD"));
+        assert_eq!(forward[0].free, Money::from("60.00 USD"));
+    }
+
+    #[rstest]
+    fn test_account_summary_rows_without_currency_are_ignored() {
+        // IB reports ratio tags such as `Cushion` with an empty currency. Neither merge may
+        // treat that as a parse failure; the account is built from the currency-bearing rows.
+        let cushion = margin_summary(AccountSummaryTags::CUSHION, "0.95", "");
+        let mut margins: Vec<MarginBalance> = Vec::new();
+
+        merge_account_summary_margin(&mut margins, &cushion);
+        let balances = balances_from_summaries(&[
+            cushion,
+            margin_summary(AccountSummaryTags::NET_LIQUIDATION, "1000.00", "EUR"),
+        ]);
+
+        assert!(margins.is_empty());
+        assert_eq!(
+            balances,
+            vec![
+                AccountBalance::from_total_and_locked(
+                    Decimal::new(100_000, 2),
+                    Decimal::ZERO,
+                    Currency::EUR(),
+                )
+                .unwrap()
+            ]
+        );
     }
 
     #[rstest]
@@ -719,5 +1212,55 @@ mod tests {
             .unwrap();
         assert_eq!(usd.initial, Money::from("500.00 USD"));
         assert_eq!(eur.initial, Money::from("400.00 EUR"));
+    }
+
+    #[rstest]
+    #[case(Some("DU123"), true)]
+    #[case(None, true)]
+    #[case(Some("DU999"), false)]
+    fn test_merge_account_value_filters_by_account(
+        #[case] account: Option<&str>,
+        #[case] expected_inserted: bool,
+    ) {
+        let mut info = Params::new();
+
+        merge_account_value(
+            &mut info,
+            "DU123",
+            &account_value(account, "PostExpirationExcess", "-326492.00"),
+        );
+
+        assert_eq!(
+            info.get_str("PostExpirationExcess"),
+            expected_inserted.then_some("-326492.00"),
+        );
+    }
+
+    #[rstest]
+    fn test_merge_account_value_keeps_summary_tags_and_overwrites_same_key() {
+        let mut info = Params::new();
+        info.insert(
+            AccountSummaryTags::TOTAL_CASH_VALUE.to_string(),
+            serde_json::Value::from("1000.00"),
+        );
+
+        merge_account_value(
+            &mut info,
+            "DU123",
+            &account_value(Some("DU123"), "PostExpirationMargin", "391668.36"),
+        );
+        merge_account_value(
+            &mut info,
+            "DU123",
+            &account_value(
+                Some("DU123"),
+                AccountSummaryTags::TOTAL_CASH_VALUE,
+                "1250.50",
+            ),
+        );
+
+        assert_eq!(info.len(), 2);
+        assert_eq!(info.get_str("TotalCashValue"), Some("1250.50"));
+        assert_eq!(info.get_str("PostExpirationMargin"), Some("391668.36"));
     }
 }

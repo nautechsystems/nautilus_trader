@@ -383,8 +383,7 @@ impl OwnOrderBook {
     ///
     /// # Errors
     ///
-    /// Returns `BookViewError.OppositeInstrumentMatch` if `self` and `opposite` have the
-    /// same instrument ID.
+    /// Returns an error if `self` and `opposite` have the same instrument ID.
     #[pyo3(name = "combined_with_opposite")]
     fn py_combined_with_opposite(&self, opposite: &Self) -> PyResult<Self> {
         self.combined_with_opposite(opposite)

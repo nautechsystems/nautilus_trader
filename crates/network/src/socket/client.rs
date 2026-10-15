@@ -218,7 +218,7 @@ impl SocketClientInner {
         let read_fence = ReadSessionFence::new();
 
         let read_task = Self::spawn_read_task(
-            connection_mode.clone(),
+            Arc::clone(&connection_mode),
             read_fence.clone(),
             reader,
             config.message_handler.clone(),
@@ -231,8 +231,8 @@ impl SocketClientInner {
         );
 
         let write_task = Self::spawn_write_task(
-            connection_mode.clone(),
-            state_notify.clone(),
+            Arc::clone(&connection_mode),
+            Arc::clone(&state_notify),
             writer,
             writer_rx,
             config.suffix.clone(),
@@ -241,7 +241,7 @@ impl SocketClientInner {
 
         let heartbeat_task = config.heartbeat.as_ref().map(|heartbeat| {
             Self::spawn_heartbeat_task(
-                connection_mode.clone(),
+                Arc::clone(&connection_mode),
                 heartbeat.interval_secs,
                 heartbeat.payload.clone(),
                 writer_tx.clone(),
@@ -467,7 +467,7 @@ impl SocketClientInner {
         // Spawn new read task
         self.read_fence = ReadSessionFence::new();
         self.read_task = Self::spawn_read_task(
-            self.connection_mode.clone(),
+            Arc::clone(&self.connection_mode),
             self.read_fence.clone(),
             reader,
             self.config.message_handler.clone(),
@@ -1083,7 +1083,7 @@ impl SocketClient {
     ///
     /// # Errors
     ///
-    /// Returns any error connecting to the server.
+    /// Returns an error if connecting to the server fails.
     #[builder(finish_fn = connect)]
     pub async fn builder(
         config: SocketConfig,
@@ -1093,16 +1093,16 @@ impl SocketClient {
     ) -> anyhow::Result<Self> {
         let inner = SocketClientInner::connect_url(config, state_sink).await?;
         let writer_tx = inner.writer_tx.clone();
-        let connection_mode = inner.connection_mode.clone();
-        let state_notify = inner.state_notify.clone();
+        let connection_mode = Arc::clone(&inner.connection_mode);
+        let state_notify = Arc::clone(&inner.state_notify);
         let connect_timeout = inner.connect_timeout;
         let state_sink = inner.state_sink.clone();
         let controller_lifecycle = Arc::new(ControllerLifecycle::new());
         let controller_notify = Arc::new(tokio::sync::Notify::new());
         let controller_task = Self::spawn_controller_task(
             inner,
-            connection_mode.clone(),
-            state_notify.clone(),
+            Arc::clone(&connection_mode),
+            Arc::clone(&state_notify),
             Arc::clone(&controller_lifecycle),
             Arc::clone(&controller_notify),
             post_reconnection,
@@ -1296,8 +1296,7 @@ impl SocketClient {
     ///
     /// # Errors
     ///
-    /// Returns [`SendError::BufferFull`] if the writer capacity is exhausted, or an error
-    /// if the client cannot send.
+    /// Returns an error if the writer capacity is exhausted, or if the client cannot send.
     pub async fn send_bytes(&self, data: Vec<u8>) -> Result<(), SendError> {
         self.check_not_terminal()?;
         self.wait_for_active().await?;
@@ -2010,7 +2009,7 @@ mod tests {
     async fn test_heartbeat() {
         let (port, listener) = bind_test_server().await;
         let received = Arc::new(Mutex::new(Vec::new()));
-        let received2 = received.clone();
+        let received2 = Arc::clone(&received);
 
         let server_task = task::spawn(async move {
             let (socket, _) = listener.accept().await.unwrap();

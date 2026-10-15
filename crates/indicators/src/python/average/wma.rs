@@ -13,12 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::python::to_pyvalue_err;
+use nautilus_core::python::{to_pytype_err, to_pyvalue_err};
 use nautilus_model::{
     data::{Bar, QuoteTick, TradeTick},
     enums::PriceType,
 };
-use pyo3::prelude::*;
+use pyo3::{ffi, prelude::*, types::PyString};
 
 use crate::{
     average::wma::WeightedMovingAverage,
@@ -34,11 +34,39 @@ impl WeightedMovingAverage {
     #[pyo3(signature = (period, weights=None, price_type=None))]
     pub fn py_new(
         period: usize,
-        weights: Option<Vec<f64>>,
+        #[gen_stub(override_type(type_repr = "typing.Sequence[float] | None"))] weights: Option<
+            &Bound<'_, PyAny>,
+        >,
         price_type: Option<PriceType>,
     ) -> PyResult<Self> {
+        Self::check_period(period).map_err(to_pyvalue_err)?;
+
         match weights {
-            Some(weights) => Self::with_weights_checked(period, weights, price_type),
+            Some(weights) => {
+                if weights.is_instance_of::<PyString>() {
+                    return Err(to_pytype_err("Can't extract `str` to `Vec`"));
+                }
+
+                #[allow(
+                    unsafe_code,
+                    reason = "preserve PyO3 Vec extraction's sequence predicate for custom Python sequences"
+                )]
+                // SAFETY: weights is a live Python object bound to the interpreter
+                let is_sequence = unsafe { ffi::PySequence_Check(weights.as_ptr()) } != 0;
+                if !is_sequence {
+                    return Err(to_pytype_err("weights must be a sequence"));
+                }
+
+                let mut values = Vec::new();
+
+                // Python length hints are untrusted; consume at most one past the valid window
+                for item in weights.try_iter()?.take(period + 1) {
+                    values.try_reserve(1).map_err(to_pyvalue_err)?;
+                    values.push(item?.extract::<f64>()?);
+                }
+
+                Self::with_weights_checked(period, values, price_type)
+            }
             None => Self::new_checked(period, price_type),
         }
         .map_err(to_pyvalue_err)

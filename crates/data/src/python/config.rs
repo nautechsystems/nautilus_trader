@@ -17,7 +17,7 @@
 
 use std::{collections::HashMap, time::Duration};
 
-use nautilus_core::python::to_pyvalue_err;
+use nautilus_core::{datetime::get_timezone, python::to_pyvalue_err};
 use nautilus_model::{
     enums::{BarAggregation, BarIntervalType},
     identifiers::ClientId,
@@ -70,6 +70,7 @@ impl DataEngineConfig {
         external_clients = None,
         debug = None,
         disable_historical_cache = None,
+        time_bars_time_zone = None,
     ))]
     fn py_new(
         time_bars_build_with_no_updates: Option<bool>,
@@ -85,7 +86,12 @@ impl DataEngineConfig {
         external_clients: Option<Vec<ClientId>>,
         debug: Option<bool>,
         disable_historical_cache: Option<bool>,
+        time_bars_time_zone: Option<String>,
     ) -> PyResult<Self> {
+        if let Some(name) = &time_bars_time_zone {
+            get_timezone(name).map_err(to_pyvalue_err)?;
+        }
+
         let time_bars_interval_type = match time_bars_interval_type {
             Some(value) => Some(coerce_bar_interval_type(&value)?),
             None => None,
@@ -107,6 +113,7 @@ impl DataEngineConfig {
             .maybe_emit_quotes_from_book(emit_quotes_from_book)
             .maybe_emit_quotes_from_book_depths(emit_quotes_from_book_depths)
             .maybe_disable_historical_cache(disable_historical_cache)
+            .maybe_time_bars_time_zone(time_bars_time_zone)
             .maybe_external_clients(external_clients)
             .maybe_debug(debug)
             .build())
@@ -199,5 +206,10 @@ impl DataEngineConfig {
 
     fn __str__(&self) -> String {
         format!("{self:?}")
+    }
+    #[getter]
+    #[pyo3(name = "time_bars_time_zone")]
+    fn py_time_bars_time_zone(&self) -> Option<String> {
+        self.time_bars_time_zone.clone()
     }
 }

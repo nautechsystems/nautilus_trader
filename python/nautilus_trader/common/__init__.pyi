@@ -295,6 +295,7 @@ class Cache:
     def get(self, key: str) -> list[int] | None: ...
     def add(self, key: str, value: typing.Sequence[int]) -> None: ...
     def add_instrument_close(self, close: model.InstrumentClose) -> None: ...
+    def add_yield_curve(self, yield_curve: model.YieldCurve) -> None: ...
     def quote(
         self, instrument_id: model.InstrumentId, index: int = 0
     ) -> model.QuoteTick | None: ...
@@ -665,6 +666,16 @@ class Clock:
         interval_ns: int,
         start_time_ns: int | None = None,
         stop_time_ns: int | None = None,
+        callback: typing.Any | None = None,
+        allow_past: bool | None = None,
+        fire_immediately: bool | None = None,
+    ) -> None: ...
+    def set_timer_zoned(
+        self,
+        name: str,
+        interval: str,
+        start_time: datetime.datetime,
+        stop_time: datetime.datetime | None = None,
         callback: typing.Any | None = None,
         allow_past: bool | None = None,
         fire_immediately: bool | None = None,

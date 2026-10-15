@@ -1,29 +1,33 @@
 # Integrations
 
-NautilusTrader uses modular *adapters* to connect to trading venues and data providers, translating raw APIs into a unified interface and normalized domain model.
+NautilusTrader uses modular *adapters* to connect to trading venues and data providers. The adapters translate
+raw APIs into a unified interface and normalized domain model.
 
-The following integrations are currently supported:
+The following integrations are available or planned:
 
-| Name                                                       | ID                    | Type                    | Status                                               | Docs                            |
-| :--------------------------------------------------------- | :-------------------- | :---------------------- | :--------------------------------------------------- | :------------------------------ |
-| [AX Exchange](https://architect.exchange)                  | `AX`                  | Derivatives Exchange    | ![status](https://img.shields.io/badge/stable-green) | [Guide](architect_ax.md)        |
-| [Betfair](https://betfair.com)                             | `BETFAIR`             | Sports Betting Exchange | ![status](https://img.shields.io/badge/stable-green) | [Guide](betfair.md)             |
-| [Binance](https://binance.com)                             | `BINANCE`             | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green) | [Guide](binance.md)             |
-| [Coinbase](https://coinbase.com)                           | `COINBASE`            | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green) | [Guide](coinbase.md)            |
-| [Blockchain](blockchain.md)                                | `BLOCKCHAIN`          | DeFi Data Provider      | ![status](https://img.shields.io/badge/stable-green) | [Guide](blockchain.md)          |
-| [Bybit](https://www.bybit.com)                             | `BYBIT`               | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green) | [Guide](bybit.md)               |
-| [Databento](https://databento.com)                         | `DATABENTO`           | Data Provider           | ![status](https://img.shields.io/badge/stable-green) | [Guide](databento.md)           |
-| [Deribit](https://www.deribit.com)                         | `DERIBIT`             | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green) | [Guide](deribit.md)             |
-| [Derive](https://www.derive.xyz)                           | `DERIVE`              | Crypto Exchange (DEX)   | ![status](https://img.shields.io/badge/stable-green) | [Guide](derive.md)              |
-| [dYdX](https://dydx.trade)                                 | `DYDX`                | Crypto Exchange (DEX)   | ![status](https://img.shields.io/badge/stable-green) | [Guide](dydx.md)                |
-| [Hyperliquid](https://hyperliquid.xyz)                     | `HYPERLIQUID`         | Crypto Exchange (DEX)   | ![status](https://img.shields.io/badge/stable-green) | [Guide](hyperliquid.md)         |
-| [Interactive Brokers](https://www.interactivebrokers.com)  | `INTERACTIVE_BROKERS` | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/stable-green) | [Guide](interactive_brokers.md) |
-| [Kraken](https://kraken.com)                               | `KRAKEN`              | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green) | [Guide](kraken.md)              |
-| [Lighter](https://lighter.xyz)                             | `LIGHTER`             | Crypto Exchange (DEX)   | ![status](https://img.shields.io/badge/stable-green) | [Guide](lighter.md)             |
-| [Lighter on Robinhood](https://robinhoodchain.lighter.xyz) | `LIGHTER_ROBINHOOD`   | Crypto Exchange (DEX)   | ![status](https://img.shields.io/badge/stable-green) | [Guide](lighter.md)             |
-| [OKX](https://okx.com)                                     | `OKX`                 | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green) | [Guide](okx.md)                 |
-| [Polymarket](https://polymarket.com)                       | `POLYMARKET`          | Prediction Market (DEX) | ![status](https://img.shields.io/badge/stable-green) | [Guide](polymarket.md)          |
-| [Tardis](https://tardis.dev)                               | `TARDIS`              | Crypto Data Provider    | ![status](https://img.shields.io/badge/stable-green) | [Guide](tardis.md)              |
+| Name                                                       | ID                    | Type                    | Status                                                    | Docs                            |
+| :--------------------------------------------------------- | :-------------------- | :---------------------- | :-------------------------------------------------------- | :------------------------------ |
+| [AX Exchange](https://architect.exchange)                  | `AX`                  | Derivatives Exchange    | ![status](https://img.shields.io/badge/stable-green)      | [Guide](architect_ax.md)        |
+| [Betfair](https://betfair.com)                             | `BETFAIR`             | Sports Betting Exchange | ![status](https://img.shields.io/badge/stable-green)      | [Guide](betfair.md)             |
+| [Binance](https://binance.com)                             | `BINANCE`             | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)      | [Guide](binance.md)             |
+| [CoinAPI](https://www.coinapi.io/?ref=nautilus)            | `COINAPI`             | Data Provider           | ![status](https://img.shields.io/badge/beta-yellow)       | [Guide](coinapi.md)             |
+| [Coinbase](https://coinbase.com)                           | `COINBASE`            | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)      | [Guide](coinbase.md)            |
+| [Blockchain](blockchain.md)                                | `BLOCKCHAIN`          | DeFi Data Provider      | ![status](https://img.shields.io/badge/stable-green)      | [Guide](blockchain.md)          |
+| [Bybit](https://www.bybit.com)                             | `BYBIT`               | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)      | [Guide](bybit.md)               |
+| [Databento](https://databento.com)                         | `DATABENTO`           | Data Provider           | ![status](https://img.shields.io/badge/stable-green)      | [Guide](databento.md)           |
+| [Deribit](https://www.deribit.com)                         | `DERIBIT`             | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)      | [Guide](deribit.md)             |
+| [Derive](https://www.derive.xyz)                           | `DERIVE`              | Crypto Exchange (DEX)   | ![status](https://img.shields.io/badge/stable-green)      | [Guide](derive.md)              |
+| [dYdX](https://dydx.trade)                                 | `DYDX`                | Crypto Exchange (DEX)   | ![status](https://img.shields.io/badge/stable-green)      | [Guide](dydx.md)                |
+| [FinFeed](https://www.finfeedapi.com/?ref=nautilus)        | `FINFEED`             | Data Provider           | ![status](https://img.shields.io/badge/planned-lightgrey) | -                               |
+| [Hyperliquid](https://hyperliquid.xyz)                     | `HYPERLIQUID`         | Crypto Exchange (DEX)   | ![status](https://img.shields.io/badge/stable-green)      | [Guide](hyperliquid.md)         |
+| [Interactive Brokers](https://www.interactivebrokers.com)  | `INTERACTIVE_BROKERS` | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/stable-green)      | [Guide](interactive_brokers.md) |
+| [Kalshi](https://kalshi.com)                               | `KALSHI`              | Prediction Market (CEX) | ![status](https://img.shields.io/badge/planned-lightgrey) | -                               |
+| [Kraken](https://kraken.com)                               | `KRAKEN`              | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)      | [Guide](kraken.md)              |
+| [Lighter](https://lighter.xyz)                             | `LIGHTER`             | Crypto Exchange (DEX)   | ![status](https://img.shields.io/badge/stable-green)      | [Guide](lighter.md)             |
+| [Lighter on Robinhood](https://robinhoodchain.lighter.xyz) | `LIGHTER_ROBINHOOD`   | Crypto Exchange (DEX)   | ![status](https://img.shields.io/badge/stable-green)      | [Guide](lighter.md)             |
+| [OKX](https://okx.com)                                     | `OKX`                 | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)      | [Guide](okx.md)                 |
+| [Polymarket](https://polymarket.com)                       | `POLYMARKET`          | Prediction Market (DEX) | ![status](https://img.shields.io/badge/stable-green)      | [Guide](polymarket.md)          |
+| [Tardis](https://tardis.dev)                               | `TARDIS`              | Crypto Data Provider    | ![status](https://img.shields.io/badge/stable-green)      | [Guide](tardis.md)              |
 
 - **ID**: The default client ID for the integrations adapter clients.
 - **Type**: The type of integration (often the venue type).
@@ -36,13 +40,13 @@ shared Lighter factory keeps `LIGHTER` as its compatibility default.
 - `planned`: Planned for future development.
 - `building`: Under construction and likely not in a usable state.
 - `beta`: Completed to a minimally working state and in a 'beta' testing phase.
-- `stable`: Stabilized feature set and API, the integration has been tested by both developers and users to a reasonable level (some bugs may still remain).
+- `stable`: Stable feature set and API. Developers and users have tested the integration to a reasonable
+  level, but some bugs can remain.
 
 ## Implementation goals
 
-The primary goal of NautilusTrader is to provide a unified trading system for
-use with a variety of integrations. To support the widest range of trading
-strategies, priority will be given to *standard* functionality:
+NautilusTrader aims to provide a unified trading system for a variety of integrations. To support the widest
+range of trading strategies, development gives priority to *standard* functionality:
 
 - Requesting historical market data.
 - Streaming live market data.
@@ -55,7 +59,8 @@ The implementation of each integration aims to meet the following criteria:
 
 - Low-level client components should match the exchange API as closely as possible.
 - The full range of an exchange's functionality (where applicable to NautilusTrader) should *eventually* be supported.
-- Exchange specific data types will be added to support the functionality and return types which are reasonably expected by a user.
+- Exchange-specific data types will support the functionality and return types that users can reasonably
+  expect.
 - Actions unsupported by an exchange or NautilusTrader will be logged as a warning or error when invoked.
 
 ::::warning[Trace logging and credentials]

@@ -160,9 +160,9 @@ pub fn extract_server_timestamp(us_out: Option<u64>) -> anyhow::Result<UnixNanos
 /// # Errors
 ///
 /// Returns an error if:
-/// - Required fields are missing (e.g., strike price for options)
-/// - Timestamp conversion fails
-/// - Decimal conversion fails for fees
+/// - Required fields are missing (e.g., strike price for options).
+/// - Timestamp conversion fails.
+/// - Decimal conversion fails for fees.
 pub fn parse_deribit_instrument_any(
     instrument: &DeribitInstrument,
     ts_init: UnixNanos,
@@ -551,8 +551,8 @@ fn deribit_amount_quantity_multiplier() -> Quantity {
 /// # Errors
 ///
 /// Returns an error if:
-/// - Money conversion fails for any balance field
-/// - Decimal conversion fails for margin values
+/// - Money conversion fails for any balance field.
+/// - Decimal conversion fails for margin values.
 pub fn parse_account_state(
     summaries: &[DeribitAccountSummary],
     account_id: AccountId,
@@ -748,8 +748,8 @@ pub fn build_public_trade_id(
 /// # Errors
 ///
 /// Returns an error if:
-/// - The direction is not "buy" or "sell"
-/// - Decimal conversion fails for price or size
+/// - The direction is not "buy" or "sell".
+/// - Decimal conversion fails for price or size.
 pub fn parse_trade_tick(
     trade: &DeribitPublicTrade,
     instrument_id: InstrumentId,
@@ -816,9 +816,9 @@ pub fn use_cost_for_bar_volume(instrument: &InstrumentAny) -> bool {
 /// # Errors
 ///
 /// Returns an error if:
-/// - The status is not "ok"
-/// - Array lengths are inconsistent
-/// - No data points are present
+/// - The status is not "ok".
+/// - Array lengths are inconsistent.
+/// - No data points are present.
 pub fn parse_bars(
     chart_data: &DeribitTradingViewChartData,
     bar_type: BarType,

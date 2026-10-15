@@ -33,6 +33,7 @@ from nautilus_trader.model import CurrencyPair
 from nautilus_trader.model import CustomData
 from nautilus_trader.model import DataType
 from nautilus_trader.model import FundingRateUpdate
+from nautilus_trader.model import GreeksData
 from nautilus_trader.model import InstrumentClose
 from nautilus_trader.model import InstrumentCloseType
 from nautilus_trader.model import InstrumentId
@@ -43,12 +44,16 @@ from nautilus_trader.model import NautilusRecordType
 from nautilus_trader.model import Price
 from nautilus_trader.model import Symbol
 from nautilus_trader.model import Venue
+from nautilus_trader.model import YieldCurve
 from nautilus_trader.model import register_custom_data_class
 from nautilus_trader.persistence import ParquetDataCatalog
 from nautilus_trader.persistence import RustTestCustomData
 from nautilus_trader.persistence import RustTestPriceMapCustomData
 from nautilus_trader.persistence import StreamingFeatherWriter
 from nautilus_trader.persistence.catalog_to_df import ArrowCStream
+from nautilus_trader.serialization import get_arrow_schema_bytes
+from nautilus_trader.serialization import get_arrow_schema_map
+from nautilus_trader.serialization import pyobjects_to_arrow_record_batch_bytes
 
 
 def _catalog(tmp_path: Path, backend: str) -> Any:
@@ -659,3 +664,119 @@ def test_parquet_catalog_files_are_open_to_external_arrow_and_json_readers(
 
     assert quote_table.column("ts_init").cast(pa.int64())[0].as_py() == timestamp
     assert custom_table.column("ts_init").cast(pa.int64())[0].as_py() == timestamp + 1
+
+
+@pytest.mark.parametrize("portfolio", [False, True])
+def test_calculated_greeks_native_record_round_trip(tmp_path: Path, portfolio: bool) -> None:
+    """
+    Preserve Python Greeks objects through native Feather and catalog recording.
+    """
+    greeks = GreeksData.from_delta(InstrumentId.from_str("ES.GLBX"), 1.25, 8.0, 11)
+    value = greeks.to_portfolio_greeks() if portfolio else greeks
+    name = type(value).__name__
+    selector = getattr(NautilusRecordType, name)
+    encoded = pyobjects_to_arrow_record_batch_bytes([value])
+    table = _read_arrow_bytes(encoded)
+    schema = pa.ipc.open_stream(pa.py_buffer(get_arrow_schema_bytes(type(value)))).schema
+    expected = {field: getattr(value, field) for field in table.column_names}
+    if not portfolio:
+        expected["instrument_id"] = str(value.instrument_id)
+    scalar_table = table.cast(
+        pa.schema(
+            [
+                pa.field(
+                    field.name,
+                    pa.int64() if field.name in {"ts_event", "ts_init"} else field.type,
+                )
+                for field in table.schema
+            ],
+        ),
+    )
+
+    assert table.schema == schema
+    assert set(get_arrow_schema_map(type(value))) == set(table.column_names)
+    assert scalar_table.to_pylist() == [expected]
+    assert selector == NautilusRecordType(name)
+
+    staging = tmp_path / "staging"
+    writer = StreamingFeatherWriter(path=str(staging), cache=Cache(), clock=Clock.new_test())
+    writer.write(value)
+    writer.close()
+    [feather_path] = staging.rglob("*.feather")
+    staged = _read_arrow_bytes(feather_path.read_bytes())
+    assert staged.select(table.column_names).to_pylist() == table.to_pylist()
+
+    catalog = _catalog(tmp_path, "parquet")
+    catalog.write_record_arrow_bytes(selector, encoded)
+    actual = _read_arrow_bytes(catalog.query_record_arrow_bytes(selector, display=False))
+    assert actual.to_pylist() == table.to_pylist()
+
+
+def test_yield_curve_custom_data_round_trip(tmp_path: Path) -> None:
+    """
+    Preserve yield curves as custom data through the catalog and JSON.
+    """
+    catalog = _catalog(tmp_path, "parquet")
+    data_type = DataType("YieldCurve", {"curve_name": "USD-SOFR"})
+    curve = YieldCurve("USD-SOFR", [0.25, 1.0, 5.0], [0.043, 0.041, 0.038], 23, 29)
+
+    catalog.write_custom_data([CustomData(data_type, curve)])
+    [item] = catalog.query_custom_data(NautilusDataType.Custom("YieldCurve"))
+    restored = CustomData.from_json_bytes(item.to_json_bytes())
+
+    for value in (item, restored):
+        assert value.data_type == data_type
+        assert isinstance(value.data, YieldCurve)
+        assert value.data.curve_name == "USD-SOFR"
+        assert value.data.tenors == [0.25, 1.0, 5.0]
+        assert value.data.interest_rates == [0.043, 0.041, 0.038]
+        assert value.ts_event == 23
+        assert value.ts_init == 29
+    assert not hasattr(NautilusRecordType, "YieldCurve")
+
+
+def test_cache_rejects_yield_curve_decoded_without_points() -> None:
+    """
+    Reject a decoded curve the Greeks calculator cannot evaluate.
+    """
+    data_type = DataType("YieldCurve", {"curve_name": "USD"})
+    curve = YieldCurve("USD", [0.0], [0.04], 1, 2)
+    envelope = json.loads(CustomData(data_type, curve).to_json_bytes())
+    envelope["payload"]["tenors"] = []
+    envelope["payload"]["interest_rates"] = []
+    decoded = CustomData.from_json_bytes(json.dumps(envelope).encode())
+    cache = Cache()
+
+    with pytest.raises(ValueError, match="one rate or at least three points"):
+        cache.add_yield_curve(decoded.data)
+
+
+def test_calculated_greeks_reject_mixed_object_types() -> None:
+    """
+    Reject a portfolio result inside an instrument Greeks batch.
+    """
+    greeks = GreeksData.from_delta(InstrumentId.from_str("ES.GLBX"), 1.25, 8.0, 11)
+
+    with pytest.raises(TypeError, match="GreeksData"):
+        pyobjects_to_arrow_record_batch_bytes([greeks, greeks.to_portfolio_greeks()])
+
+
+def test_calculated_greeks_reject_mixed_instruments() -> None:
+    """
+    Reject instrument Greeks that cannot share one batch's metadata.
+    """
+    first = GreeksData.from_delta(InstrumentId.from_str("ES.GLBX"), 1.25, 8.0, 11)
+    second = GreeksData.from_delta(InstrumentId.from_str("NQ.GLBX"), -0.75, 7.0, 13)
+
+    with pytest.raises(ValueError, match="Mixed metadata at row 1"):
+        pyobjects_to_arrow_record_batch_bytes([first, second])
+
+
+def test_calculated_greeks_reject_timestamp_overflow() -> None:
+    """
+    Reject timestamps outside Arrow's signed nanosecond range.
+    """
+    greeks = GreeksData.from_delta(InstrumentId.from_str("ES.GLBX"), 1.25, 8.0, 1 << 63)
+
+    with pytest.raises(ValueError, match="exceeds Arrow's signed timestamp range"):
+        pyobjects_to_arrow_record_batch_bytes([greeks])

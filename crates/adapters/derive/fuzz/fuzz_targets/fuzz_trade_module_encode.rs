@@ -1,7 +1,9 @@
 #![no_main]
 
 use alloy_primitives::{Address, U256};
-use nautilus_derive::signing::modules::trade::TradeModuleData;
+use nautilus_derive::{
+    common::consts::DECIMAL_PRECISION, signing::modules::trade::TradeModuleData,
+};
 use nautilus_live::fuzz::fuzz_target;
 use rust_decimal::Decimal;
 
@@ -24,9 +26,35 @@ fuzz_target!(|data: &[u8]| {
         is_bid: data[87] & 1 == 1,
     };
 
-    let Ok(encoded) = trade.encode() else {
+    let result = trade.encode();
+    let rejected = trade.limit_price.scale() > DECIMAL_PRECISION
+        || trade.amount.scale() > DECIMAL_PRECISION
+        || trade.max_fee.scale() > DECIMAL_PRECISION
+        || trade.max_fee.is_sign_negative();
+    if rejected {
+        assert!(result.is_err(), "invalid financial input must be rejected");
         return;
-    };
+    }
+    let encoded = result.expect("representable decimals with accepted precision must encode");
+
+    for (index, value) in [
+        (2, trade.limit_price),
+        (3, trade.amount),
+        (4, trade.max_fee),
+    ] {
+        let value = value.normalize();
+        let magnitude = U256::from(value.mantissa().unsigned_abs())
+            * U256::from(10_u128.pow(18 - value.scale()));
+        let expected = if value.is_sign_negative() && magnitude != U256::ZERO {
+            U256::MAX - magnitude + U256::from(1)
+        } else {
+            magnitude
+        };
+        assert_eq!(
+            U256::from_be_slice(&encoded[index * 32..(index + 1) * 32]),
+            expected
+        );
+    }
 
     assert_eq!(
         encoded.len(),
@@ -53,6 +81,7 @@ fn decimal(data: &[u8], offset: usize) -> Decimal {
     if data[offset + 12] & 1 == 1 {
         value = -value;
     }
+
     let scale = (data[offset + 16] % 29) as u32;
     Decimal::from_i128_with_scale(value, scale)
 }

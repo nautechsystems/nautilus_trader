@@ -153,10 +153,6 @@ pub fn parse_funding_rate(
 /// # Errors
 ///
 /// Returns an error if any required field cannot be parsed or is invalid.
-///
-/// # Panics
-///
-/// Panics if the constructed perpetual instrument fails validation.
 pub fn parse_instrument(
     definition: &AxInstrument,
     ts_event: UnixNanos,
@@ -347,6 +343,7 @@ pub fn parse_instrument(
         .quote_currency(quote_currency)
         .settlement_currency(settlement_currency)
         .is_inverse(false)
+        .multiplier(decimal_to_quantity(definition.multiplier, "multiplier")?)
         .price_precision(price_increment.precision)
         .size_precision(size_increment.precision)
         .price_increment(price_increment)
@@ -359,7 +356,7 @@ pub fn parse_instrument(
         .ts_event(ts_event)
         .ts_init(ts_init)
         .build()
-        .unwrap();
+        .context("failed to construct AX perpetual contract")?;
 
     Ok(InstrumentAny::PerpetualContract(instrument))
 }
@@ -1731,6 +1728,30 @@ mod tests {
         assert_eq!(future.lot_size.as_decimal(), Decimal::ONE);
         assert_eq!(future.min_quantity.unwrap().as_decimal(), dec!(5));
         assert_eq!(future.multiplier.as_decimal(), dec!(2.5));
+    }
+
+    #[rstest]
+    fn test_parse_perpetual_instrument_preserves_multiplier() {
+        let mut definition = create_eurusd_instrument();
+        definition.multiplier = dec!(2.5);
+        let instrument =
+            parse_instrument(&definition, UnixNanos::default(), UnixNanos::default()).unwrap();
+
+        assert_eq!(instrument.multiplier().as_decimal(), dec!(2.5));
+        assert_eq!(instrument.size_increment().as_decimal(), Decimal::ONE);
+    }
+
+    #[rstest]
+    fn test_parse_perpetual_instrument_rejects_zero_multiplier() {
+        let mut definition = create_eurusd_instrument();
+        definition.multiplier = Decimal::ZERO;
+        let error =
+            parse_instrument(&definition, UnixNanos::default(), UnixNanos::default()).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "failed to construct AX perpetual contract"
+        );
     }
 
     #[rstest]

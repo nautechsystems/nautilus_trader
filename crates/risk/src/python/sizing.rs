@@ -83,7 +83,7 @@ impl PositionSizer {
     ///
     /// # Errors
     ///
-    /// Always returns `NotImplementedError`; subclasses override this method.
+    /// Returns an error if called. Subclasses override this method.
     #[pyo3(signature = (
         entry,
         stop_loss,

@@ -120,8 +120,8 @@ pub trait Encode: Send + Sync {
     ///
     /// # Errors
     ///
-    /// Returns [`EncodeError::TypeMismatch`] when `message` does not match the encoder's
-    /// expected type, and [`EncodeError::Serialize`] for any encoder-internal failure.
+    /// Returns an error if `message` does not match the encoder's expected type, or if the encoder
+    /// fails internally.
     fn encode(&self, message: &dyn Any) -> Result<EncodedPayload, EncodeError>;
 }
 

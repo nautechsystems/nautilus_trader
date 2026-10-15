@@ -1067,7 +1067,7 @@ impl HyperliquidProductType {
     ///
     /// # Errors
     ///
-    /// Returns error if symbol doesn't match any expected format.
+    /// Returns an error if symbol doesn't match any expected format.
     pub fn from_symbol(symbol: &str) -> anyhow::Result<Self> {
         if symbol.ends_with("-PERP") {
             Ok(Self::Perp)

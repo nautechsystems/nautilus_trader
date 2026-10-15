@@ -31,7 +31,11 @@ use nautilus_derive::{
 };
 use nautilus_model::identifiers::{AccountId, ClientId, TraderId};
 use nautilus_system::get_global_pyo3_registry;
-use pyo3::{Py, Python, types::PyModule};
+use pyo3::{
+    Py, Python,
+    prelude::*,
+    types::{PyDict, PyModule},
+};
 use rstest::rstest;
 use rust_decimal::Decimal;
 
@@ -55,6 +59,82 @@ fn setup_exec_event_sender() {
 }
 
 #[rstest]
+#[case::defaults(None, None, 10, 120)]
+#[case::explicit(Some(17), Some(29), 17, 29)]
+#[case::disabled(Some(0), Some(0), 0, 0)]
+fn test_book_timeout_python_configuration(
+    #[case] snapshot: Option<u64>,
+    #[case] stale: Option<u64>,
+    #[case] expected_snapshot: u64,
+    #[case] expected_stale: u64,
+) {
+    Python::initialize();
+    Python::attach(|py| {
+        let kwargs = PyDict::new(py);
+        kwargs
+            .set_item("book_snapshot_timeout_secs", snapshot)
+            .unwrap();
+        kwargs.set_item("book_stale_threshold_secs", stale).unwrap();
+        kwargs.set_item("http_timeout_secs", 7).unwrap();
+        let object = py
+            .get_type::<DeriveDataClientConfig>()
+            .call((), Some(&kwargs))
+            .unwrap();
+        let config = object.extract::<DeriveDataClientConfig>().unwrap();
+        assert_eq!(config.http_timeout_secs, 7);
+        assert_eq!(config.book_snapshot_timeout_secs, expected_snapshot);
+        assert_eq!(config.book_stale_threshold_secs, expected_stale);
+        assert_eq!(
+            object
+                .getattr("book_snapshot_timeout_secs")
+                .unwrap()
+                .extract::<u64>()
+                .unwrap(),
+            expected_snapshot
+        );
+        assert_eq!(
+            object
+                .getattr("book_stale_threshold_secs")
+                .unwrap()
+                .extract::<u64>()
+                .unwrap(),
+            expected_stale
+        );
+    });
+}
+
+#[rstest]
+fn test_book_timeout_preserves_python_positional_configuration() {
+    Python::initialize();
+    Python::attach(|py| {
+        let object = py
+            .get_type::<DeriveDataClientConfig>()
+            .call1((
+                py.None(),
+                py.None(),
+                py.None(),
+                py.None(),
+                7,
+                py.None(),
+                13,
+                vec!["ETH"],
+                true,
+                false,
+                py.None(),
+            ))
+            .unwrap();
+        let config = object.extract::<DeriveDataClientConfig>().unwrap();
+        assert_eq!(config.http_timeout_secs, 7);
+        assert_eq!(config.update_instruments_interval_mins, 13);
+        assert_eq!(config.currencies, ["ETH"]);
+        assert!(config.include_expired);
+        assert!(!config.auto_load_missing_instruments);
+        assert_eq!(config.book_snapshot_timeout_secs, 10);
+        assert_eq!(config.book_stale_threshold_secs, 120);
+    });
+}
+
+#[rstest]
 fn test_derive_python_factories_extract_from_registry() {
     setup_data_event_sender();
     setup_exec_event_sender();
@@ -71,6 +151,7 @@ fn assert_data_factory_extracts_from_python_object(py: Python<'_>) {
     let factory = Py::new(py, DeriveDataClientFactory::new())
         .expect("factory should convert to Python object")
         .into_any();
+
     let config = Py::new(
         py,
         DeriveDataClientConfig {
@@ -82,6 +163,7 @@ fn assert_data_factory_extracts_from_python_object(py: Python<'_>) {
     )
     .expect("config should convert to Python object")
     .into_any();
+
     let registry = get_global_pyo3_registry();
 
     let extracted_factory = registry
@@ -119,6 +201,7 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
     let factory = Py::new(py, DeriveExecutionClientFactory::new())
         .expect("factory should convert to Python object")
         .into_any();
+
     let config = Py::new(
         py,
         DeriveExecutionClientConfig {
@@ -133,6 +216,7 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
     )
     .expect("config should convert to Python object")
     .into_any();
+
     let registry = get_global_pyo3_registry();
 
     let extracted_factory = registry

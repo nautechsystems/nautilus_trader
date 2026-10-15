@@ -1,0 +1,11 @@
+{
+  "balances": [
+    {
+      "coin": "USDC",
+      "token": 0,
+      "total": "100",
+      "hold": "0",
+      "entryNtl": "0"
+    }
+  ]
+}

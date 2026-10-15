@@ -15,17 +15,23 @@
 
 //! Tick scheme definitions for price-level navigation.
 
-use std::{fmt::Display, str::FromStr, sync::LazyLock};
+use std::{
+    fmt::Display,
+    str::FromStr,
+    sync::{LazyLock, PoisonError, RwLock},
+};
 
+use ahash::AHashMap;
 use nautilus_core::correctness::{
-    CorrectnessError, CorrectnessResult, check_predicate_true, check_valid_string_ascii_optional,
+    CorrectnessError, CorrectnessResult, check_in_range_inclusive_u8, check_predicate_true,
+    check_valid_string_ascii, check_valid_string_ascii_optional,
 };
 use thiserror::Error;
 
 #[cfg(not(feature = "high-precision"))]
-use crate::types::fixed::f64_to_fixed_i64;
+use crate::types::fixed::{check_fixed_raw_i64 as check_fixed_raw, f64_to_fixed_i64};
 #[cfg(feature = "high-precision")]
-use crate::types::fixed::f64_to_fixed_i128;
+use crate::types::fixed::{check_fixed_raw_i128 as check_fixed_raw, f64_to_fixed_i128};
 use crate::types::{
     Price,
     fixed::{FIXED_PRECISION, FIXED_SCALAR},
@@ -40,17 +46,11 @@ pub trait TickSchemeRule: Display {
 /// Error returned when tick scheme construction or parsing fails.
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum TickSchemeError {
-    /// A fixed tick size was not finite.
-    #[error("tick must be finite")]
-    TickNotFinite {
-        /// The invalid tick size.
-        tick: f64,
-    },
     /// A fixed tick size was not positive.
     #[error("tick must be positive")]
     TickNotPositive {
         /// The invalid tick size.
-        tick: f64,
+        tick: Price,
     },
     /// No tier definitions were supplied.
     #[error("tiers must not be empty")]
@@ -132,6 +132,27 @@ pub enum TickSchemeError {
         #[source]
         source: CorrectnessError,
     },
+    /// The fixed tick cannot be represented at the requested precision.
+    #[error("tick {tick} cannot be represented at precision {precision}")]
+    TickNotRepresentable {
+        /// The invalid tick size.
+        tick: Price,
+        /// The requested price precision.
+        precision: u8,
+    },
+    /// A tick scheme name was invalid.
+    #[error("{source}")]
+    InvalidName {
+        /// The source correctness error.
+        #[source]
+        source: CorrectnessError,
+    },
+    /// A tick scheme name was already registered.
+    #[error("tick scheme {name} is already registered")]
+    DuplicateName {
+        /// The normalized duplicate name.
+        name: String,
+    },
     /// Tier expansion produced no ticks.
     #[error("tier expansion produced no ticks")]
     EmptyTickExpansion,
@@ -197,43 +218,97 @@ pub static TOPIX100_TICK_SCHEME: LazyLock<TieredTickScheme> = LazyLock::new(|| {
 });
 
 static FIXED_TICK_SCHEME: LazyLock<FixedTickScheme> =
-    LazyLock::new(|| FixedTickScheme::new(1.0).expect("fixed tick scheme is valid"));
+    LazyLock::new(|| FixedTickScheme::new(Price::from("1")).expect("fixed tick scheme is valid"));
 
-static CRYPTO_0_01_TICK_SCHEME: LazyLock<FixedTickScheme> =
-    LazyLock::new(|| FixedTickScheme::new(0.01).expect("crypto tick scheme is valid"));
+pub(crate) static CRYPTO_0_01_TICK_SCHEME: LazyLock<FixedTickScheme> = LazyLock::new(|| {
+    FixedTickScheme::new(Price::from("0.01")).expect("crypto tick scheme is valid")
+});
 
 static FIXED_PRECISION_TICK_SCHEMES: LazyLock<Vec<FixedTickScheme>> = LazyLock::new(|| {
     (0..=FIXED_PRECISION)
         .map(|precision| {
-            let tick = 10_f64.powi(-i32::from(precision));
+            let raw = PriceRaw::pow(10, u32::from(FIXED_PRECISION - precision));
+            let tick = Price::from_raw(raw, precision);
             FixedTickScheme::new(tick).expect("fixed precision tick scheme is valid")
         })
         .collect()
 });
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct FixedTickScheme {
-    tick: f64,
-}
+static TICK_SCHEMES: LazyLock<RwLock<AHashMap<String, &'static TickScheme>>> =
+    LazyLock::new(|| RwLock::new(AHashMap::new()));
 
-impl Eq for FixedTickScheme {}
+/// Fixed price grid with an exact, positive tick size.
+///
+/// Navigation returns `None` if the requested output precision cannot represent the tick exactly.
+#[derive(Debug, Clone, Copy, Eq)]
+pub struct FixedTickScheme {
+    tick: Price,
+}
 
 impl FixedTickScheme {
     /// Creates a new [`FixedTickScheme`] with the given tick size.
     ///
     /// # Errors
     ///
-    /// Returns an error if `tick` is not finite or not positive.
-    pub fn new(tick: f64) -> Result<Self, TickSchemeError> {
-        if !tick.is_finite() {
-            return Err(TickSchemeError::TickNotFinite { tick });
-        }
+    /// Returns an error if the tick is not positive, is outside the representable price range,
+    /// has invalid precision, or contains fractional digits beyond its precision.
+    pub fn new(tick: Price) -> Result<Self, TickSchemeError> {
+        check_in_range_inclusive_u8(tick.precision, 0, FIXED_PRECISION, "precision")
+            .map_err(|source| TickSchemeError::InvalidPrecision { source })?;
 
-        if tick <= 0.0 {
+        if tick.is_zero() || tick.is_negative() {
             return Err(TickSchemeError::TickNotPositive { tick });
         }
 
+        if tick > Price::max(tick.precision) || fixed_tick_raw(tick, tick.precision).is_none() {
+            return Err(TickSchemeError::TickNotRepresentable {
+                tick,
+                precision: tick.precision,
+            });
+        }
+
         Ok(Self { tick })
+    }
+
+    /// Creates a fixed tick scheme with an explicit default output precision.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the tick is invalid, the output precision is invalid,
+    /// or the tick is not exactly representable at that precision.
+    pub fn new_with_precision(tick: Price, price_precision: u8) -> Result<Self, TickSchemeError> {
+        Self::new(tick)?;
+        check_in_range_inclusive_u8(price_precision, 0, FIXED_PRECISION, "precision")
+            .map_err(|source| TickSchemeError::InvalidPrecision { source })?;
+
+        if fixed_tick_raw(tick, price_precision).is_none() {
+            return Err(TickSchemeError::TickNotRepresentable {
+                tick,
+                precision: price_precision,
+            });
+        }
+
+        Ok(Self {
+            tick: Price::from_raw(tick.raw(), price_precision),
+        })
+    }
+
+    /// Returns the fixed tick size.
+    #[must_use]
+    pub const fn tick(&self) -> Price {
+        self.tick
+    }
+
+    /// Returns the default output price precision.
+    #[must_use]
+    pub const fn precision(&self) -> u8 {
+        self.tick.precision
+    }
+}
+
+impl PartialEq for FixedTickScheme {
+    fn eq(&self, other: &Self) -> bool {
+        self.tick == other.tick && self.precision() == other.precision()
     }
 }
 
@@ -555,9 +630,9 @@ impl FromStr for TickScheme {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.trim().to_ascii_uppercase().as_str() {
-            FIXED_TICK_SCHEME_NAME => Ok(Self::Fixed(FixedTickScheme::new(1.0)?)),
-            FOREX_3DECIMAL_TICK_SCHEME_NAME => Ok(Self::Fixed(FixedTickScheme::new(0.001)?)),
-            FOREX_5DECIMAL_TICK_SCHEME_NAME => Ok(Self::Fixed(FixedTickScheme::new(0.00001)?)),
+            FIXED_TICK_SCHEME_NAME => Ok(Self::Fixed(*FIXED_TICK_SCHEME)),
+            FOREX_3DECIMAL_TICK_SCHEME_NAME => Ok(Self::Fixed(FIXED_PRECISION_TICK_SCHEMES[3])),
+            FOREX_5DECIMAL_TICK_SCHEME_NAME => Ok(Self::Fixed(FIXED_PRECISION_TICK_SCHEMES[5])),
             TOPIX100_TICK_SCHEME_NAME => Ok(Self::Tiered(TieredTickScheme::topix100())),
             BETFAIR_TICK_SCHEME_NAME => Ok(Self::Betfair),
             CRYPTO_0_01_TICK_SCHEME_NAME => Ok(Self::Crypto),
@@ -565,9 +640,19 @@ impl FromStr for TickScheme {
                 if let Some(precision) = parse_fixed_precision_name(name)
                     && precision <= FIXED_PRECISION
                 {
-                    let tick = 10_f64.powi(-i32::from(precision));
-                    return Ok(Self::Fixed(FixedTickScheme::new(tick)?));
+                    return Ok(Self::Fixed(
+                        FIXED_PRECISION_TICK_SCHEMES[usize::from(precision)],
+                    ));
                 }
+
+                if let Some(scheme) = TICK_SCHEMES
+                    .read()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .get(name)
+                {
+                    return Ok((*scheme).clone());
+                }
+
                 Err(TickSchemeError::UnknownName {
                     name: s.to_string(),
                 })
@@ -593,12 +678,82 @@ pub fn tick_scheme_rule_from_name(name: &str) -> Option<&'static dyn TickSchemeR
     } else if name.eq_ignore_ascii_case(CRYPTO_0_01_TICK_SCHEME_NAME) {
         Some(&*CRYPTO_0_01_TICK_SCHEME)
     } else {
-        parse_fixed_precision_name_ignore_ascii_case(name).and_then(|precision| {
-            FIXED_PRECISION_TICK_SCHEMES
-                .get(usize::from(precision))
-                .map(|scheme| scheme as &dyn TickSchemeRule)
-        })
+        parse_fixed_precision_name_ignore_ascii_case(name)
+            .and_then(|precision| {
+                FIXED_PRECISION_TICK_SCHEMES
+                    .get(usize::from(precision))
+                    .map(|scheme| scheme as &dyn TickSchemeRule)
+            })
+            .or_else(|| {
+                TICK_SCHEMES
+                    .read()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .get(&name.to_ascii_uppercase())
+                    .map(|scheme| *scheme as &dyn TickSchemeRule)
+            })
     }
+}
+
+/// Registers a named tick scheme for the lifetime of the process.
+///
+/// Names are trimmed and matched without regard to ASCII case. Registered names,
+/// including built-in names and aliases, cannot be replaced or removed.
+///
+/// # Errors
+///
+/// Returns an error if the name is invalid or already registered.
+pub fn register_tick_scheme(name: &str, scheme: TickScheme) -> Result<(), TickSchemeError> {
+    let name = name.trim().to_ascii_uppercase();
+    check_valid_string_ascii(&name, "name")
+        .map_err(|source| TickSchemeError::InvalidName { source })?;
+
+    if tick_scheme_rule_from_name(&name).is_some() {
+        return Err(TickSchemeError::DuplicateName { name });
+    }
+
+    let mut schemes = TICK_SCHEMES.write().unwrap_or_else(PoisonError::into_inner);
+    if schemes.contains_key(&name) {
+        return Err(TickSchemeError::DuplicateName { name });
+    }
+
+    // The registry is append-only so borrowed rules remain valid after the lock is released
+    schemes.insert(name, Box::leak(Box::new(scheme)));
+    Ok(())
+}
+
+/// Returns a copy of a registered scheme, matching trimmed names without regard to ASCII case.
+#[must_use]
+pub fn get_tick_scheme(name: &str) -> Option<TickScheme> {
+    name.parse().ok()
+}
+
+/// Returns all registered names in uppercase, sorted lexicographically.
+#[must_use]
+pub fn list_tick_schemes() -> Vec<String> {
+    let mut names: Vec<String> = [
+        FIXED_TICK_SCHEME_NAME,
+        FOREX_3DECIMAL_TICK_SCHEME_NAME,
+        FOREX_5DECIMAL_TICK_SCHEME_NAME,
+        TOPIX100_TICK_SCHEME_NAME,
+        BETFAIR_TICK_SCHEME_NAME,
+        CRYPTO_0_01_TICK_SCHEME_NAME,
+    ]
+    .into_iter()
+    .map(String::from)
+    .chain(
+        (0..=FIXED_PRECISION)
+            .map(|precision| format!("{FIXED_PRECISION_TICK_SCHEME_PREFIX}{precision}")),
+    )
+    .collect();
+    names.extend(
+        TICK_SCHEMES
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .keys()
+            .cloned(),
+    );
+    names.sort_unstable();
+    names
 }
 
 /// Validates an optional tick scheme name.
@@ -645,7 +800,7 @@ fn parse_fixed_precision_name_ignore_ascii_case(name: &str) -> Option<u8> {
     name.get(prefix_len..)?.parse::<u8>().ok()
 }
 
-fn fixed_next_bid_price(tick: f64, value: f64, n: i32, precision: u8) -> Option<Price> {
+fn fixed_next_bid_price(tick: Price, value: f64, n: i32, precision: u8) -> Option<Price> {
     let n = PriceRaw::from(u32::try_from(n).ok()?);
     let tick_raw = fixed_tick_raw(tick, precision)?;
     let value_raw = value_to_raw(value)?;
@@ -656,7 +811,7 @@ fn fixed_next_bid_price(tick: f64, value: f64, n: i32, precision: u8) -> Option<
     price_from_raw_checked(base.checked_sub(offset)?, precision)
 }
 
-fn fixed_next_ask_price(tick: f64, value: f64, n: i32, precision: u8) -> Option<Price> {
+fn fixed_next_ask_price(tick: Price, value: f64, n: i32, precision: u8) -> Option<Price> {
     let n = PriceRaw::from(u32::try_from(n).ok()?);
     let tick_raw = fixed_tick_raw(tick, precision)?;
     let value_raw = value_to_raw(value)?;
@@ -669,15 +824,13 @@ fn fixed_next_ask_price(tick: f64, value: f64, n: i32, precision: u8) -> Option<
     price_from_raw_checked(base.checked_add(offset)?, precision)
 }
 
-fn fixed_tick_raw(tick: f64, precision: u8) -> Option<PriceRaw> {
-    Price::new_checked(0.0, precision).ok()?;
-
-    if !tick.is_finite() || tick <= 0.0 {
+fn fixed_tick_raw(tick: Price, precision: u8) -> Option<PriceRaw> {
+    if precision > FIXED_PRECISION {
         return None;
     }
 
-    let raw = f64_to_raw(tick, precision);
-    (raw > 0).then_some(raw)
+    check_fixed_raw(tick.raw(), precision).ok()?;
+    Some(tick.raw())
 }
 
 fn value_to_raw(value: f64) -> Option<PriceRaw> {
@@ -696,40 +849,314 @@ fn price_from_raw_checked(raw: PriceRaw, precision: u8) -> Option<Price> {
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
+    use std::{
+        str::FromStr,
+        sync::{Arc, Barrier},
+    };
 
     use proptest::prelude::*;
     use rstest::rstest;
+    use ustr::Ustr;
 
     use super::*;
+    use crate::instruments::{CurrencyPair, Instrument, stubs::currency_pair_btcusdt};
+
+    #[rstest]
+    #[case(" test_builder_registered_scheme ", true)]
+    #[case(" test_builder_unknown_scheme ", false)]
+    fn instrument_builder_validates_registered_scheme_names(
+        mut currency_pair_btcusdt: CurrencyPair,
+        #[case] name: &str,
+        #[case] registered: bool,
+    ) {
+        if registered {
+            register_tick_scheme(
+                name,
+                TickScheme::Fixed(FixedTickScheme::new(Price::from("0.05")).unwrap()),
+            )
+            .unwrap();
+        }
+
+        currency_pair_btcusdt.tick_scheme = Some(Ustr::from(name));
+        let expected = currency_pair_btcusdt;
+        let result = CurrencyPair::builder()
+            .instrument_id(expected.id)
+            .raw_symbol(expected.raw_symbol)
+            .base_currency(expected.base_currency)
+            .quote_currency(expected.quote_currency)
+            .price_precision(expected.price_precision)
+            .size_precision(expected.size_precision)
+            .price_increment(expected.price_increment)
+            .size_increment(expected.size_increment)
+            .max_quantity(expected.max_quantity.unwrap())
+            .min_quantity(expected.min_quantity.unwrap())
+            .max_price(expected.max_price.unwrap())
+            .min_price(expected.min_price.unwrap())
+            .margin_init(expected.margin_init)
+            .margin_maint(expected.margin_maint)
+            .tick_scheme(Ustr::from(name))
+            .ts_event(expected.ts_event)
+            .ts_init(expected.ts_init)
+            .build();
+
+        if registered {
+            let instrument = result.unwrap();
+
+            assert_eq!(
+                serde_json::to_value(&instrument).unwrap(),
+                serde_json::to_value(&expected).unwrap()
+            );
+            assert_eq!(
+                instrument.next_bid_price(1.13, 0),
+                Some(Price::from("1.10"))
+            );
+            assert_eq!(
+                instrument.next_ask_price(1.13, 0),
+                Some(Price::from("1.15"))
+            );
+        } else {
+            assert_eq!(
+                result.unwrap_err(),
+                CorrectnessError::PredicateViolation {
+                    message: "tick_scheme not found in tick schemes".into(),
+                }
+            );
+        }
+    }
+
+    #[rstest]
+    fn registered_fixed_scheme_rounds_and_rejects_duplicate_cases() {
+        let name = "TEST_REGISTERED_FIXED_CASES";
+        let scheme = FixedTickScheme::new_with_precision(Price::from("0.05"), 2).unwrap();
+        register_tick_scheme(name, TickScheme::Fixed(scheme)).unwrap();
+
+        let registered = get_tick_scheme(" test_registered_fixed_cases ").unwrap();
+        let rule = tick_scheme_rule_from_name(name).unwrap();
+        let duplicate = register_tick_scheme(
+            "test_registered_fixed_cases",
+            TickScheme::Fixed(FixedTickScheme::new(Price::from("1.0")).unwrap()),
+        );
+
+        assert_eq!(registered, TickScheme::Fixed(scheme));
+        assert_eq!(rule.next_bid_price(1.13, 0, 2), Some(Price::from("1.10")));
+        assert_eq!(rule.next_ask_price(1.13, 1, 2), Some(Price::from("1.20")));
+        assert_eq!(
+            duplicate,
+            Err(TickSchemeError::DuplicateName { name: name.into() })
+        );
+        assert_eq!(get_tick_scheme(name), Some(TickScheme::Fixed(scheme)));
+        let names = list_tick_schemes();
+        assert!(names.windows(2).all(|pair| pair[0] < pair[1]));
+        assert!(names.contains(&name.to_string()));
+    }
+
+    #[rstest]
+    #[case("FIXED")]
+    #[case("forex_3decimal")]
+    #[case("FOREX_5DECIMAL")]
+    #[case("TOPIX100")]
+    #[case("betfair")]
+    #[case("CRYPTO_0_01")]
+    #[case("FIXED_PRECISION_1")]
+    #[case(" fixed_precision_01 ")]
+    fn registration_protects_builtins(#[case] name: &str) {
+        let original = get_tick_scheme(name).unwrap();
+        let result = register_tick_scheme(
+            name,
+            TickScheme::Fixed(FixedTickScheme::new(Price::from("2.0")).unwrap()),
+        );
+
+        assert_eq!(
+            result,
+            Err(TickSchemeError::DuplicateName {
+                name: name.trim().to_ascii_uppercase()
+            })
+        );
+        assert_eq!(get_tick_scheme(name), Some(original));
+    }
+
+    #[rstest]
+    #[case("")]
+    #[case("   ")]
+    #[case("\u{e9}")]
+    fn registration_rejects_invalid_names(#[case] name: &str) {
+        let source = check_valid_string_ascii(name.trim(), "name").unwrap_err();
+        let result = register_tick_scheme(name, TickScheme::Betfair);
+
+        assert_eq!(result, Err(TickSchemeError::InvalidName { source }));
+    }
+
+    #[rstest]
+    #[case(PRICE_RAW_MAX + 1)]
+    #[case(crate::types::price::PRICE_UNDEF)]
+    fn fixed_tick_rejects_out_of_range_raw_values(#[case] raw: PriceRaw) {
+        let tick = Price { raw, precision: 0 };
+
+        assert_eq!(
+            FixedTickScheme::new(tick),
+            Err(TickSchemeError::TickNotRepresentable { tick, precision: 0 })
+        );
+    }
+
+    #[rstest]
+    fn registration_is_atomic_across_threads() {
+        let barrier = Arc::new(Barrier::new(8));
+
+        #[allow(
+            clippy::needless_collect,
+            reason = "all threads must start before any joins so the barrier can open"
+        )]
+        let handles: Vec<_> = (0..8)
+            .map(|index| {
+                let barrier = barrier.clone();
+                std::thread::spawn(move || {
+                    barrier.wait();
+
+                    let name = if index % 2 == 0 {
+                        "TEST_ATOMIC_REGISTRATION"
+                    } else {
+                        "test_atomic_registration"
+                    };
+
+                    register_tick_scheme(name, TickScheme::Crypto)
+                })
+            })
+            .collect();
+
+        let results: Vec<_> = handles
+            .into_iter()
+            .map(|handle| handle.join().unwrap())
+            .collect();
+
+        assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
+        assert_eq!(
+            results
+                .iter()
+                .filter(|result| **result
+                    == Err(TickSchemeError::DuplicateName {
+                        name: "TEST_ATOMIC_REGISTRATION".into()
+                    }))
+                .count(),
+            7
+        );
+        assert_eq!(
+            get_tick_scheme("test_atomic_registration"),
+            Some(TickScheme::Crypto)
+        );
+    }
+
+    #[rstest]
+    fn registered_tiered_scheme_preserves_exact_transition_rounding() {
+        let scheme =
+            TieredTickScheme::new(&[(0.05, 10.0, 0.05), (10.0, f64::INFINITY, 0.25)], 2, 1000)
+                .unwrap();
+        register_tick_scheme(
+            "TEST_REGISTERED_TIERED_TRANSITION",
+            TickScheme::Tiered(scheme.clone()),
+        )
+        .unwrap();
+        let rule = tick_scheme_rule_from_name("test_registered_tiered_transition").unwrap();
+
+        assert_eq!(rule.next_bid_price(9.99, 0, 2), Some(Price::from("9.95")));
+        assert_eq!(rule.next_ask_price(9.99, 0, 2), Some(Price::from("10.00")));
+        assert_eq!(rule.next_bid_price(10.63, 0, 2), Some(Price::from("10.50")));
+        assert_eq!(rule.next_ask_price(10.63, 0, 2), Some(Price::from("10.75")));
+        assert_eq!(
+            get_tick_scheme("TEST_REGISTERED_TIERED_TRANSITION"),
+            Some(TickScheme::Tiered(scheme))
+        );
+    }
+
+    #[rstest]
+    fn fixed_explicit_precision_validates_and_preserves_tick() {
+        let scheme = FixedTickScheme::new_with_precision(Price::from("0.25"), 3).unwrap();
+
+        assert_eq!(scheme.tick(), Price::from("0.250"));
+        assert_eq!(scheme.precision(), 3);
+        assert_eq!(scheme, FixedTickScheme::new(Price::from("0.250")).unwrap());
+        assert_ne!(scheme, FixedTickScheme::new(Price::from("0.25")).unwrap());
+        assert_eq!(
+            scheme.next_bid_price(1.63, 0, 3),
+            Some(Price::from("1.500"))
+        );
+        assert_eq!(
+            scheme.next_ask_price(1.63, 0, 3),
+            Some(Price::from("1.750"))
+        );
+    }
+
+    #[rstest]
+    #[case("0.015", 2)]
+    #[case("0.001", 2)]
+    #[case("0.050000001", 2)]
+    fn fixed_explicit_precision_rejects_unrepresentable_ticks(
+        #[case] value: &str,
+        #[case] precision: u8,
+    ) {
+        let tick = Price::from(value);
+
+        assert_eq!(
+            FixedTickScheme::new_with_precision(tick, precision),
+            Err(TickSchemeError::TickNotRepresentable { tick, precision })
+        );
+    }
+
+    #[rstest]
+    fn fixed_explicit_precision_returns_typed_precision_error() {
+        let precision = FIXED_PRECISION + 1;
+        let source =
+            check_in_range_inclusive_u8(precision, 0, FIXED_PRECISION, "precision").unwrap_err();
+
+        assert_eq!(
+            FixedTickScheme::new_with_precision(Price::from("0.01"), precision),
+            Err(TickSchemeError::InvalidPrecision { source })
+        );
+    }
+
+    #[rstest]
+    fn fixed_explicit_precision_accepts_large_exact_tick() {
+        let scheme = FixedTickScheme::new_with_precision(Price::from("1000000.25"), 2).unwrap();
+
+        assert_eq!(scheme.precision(), 2);
+        assert_eq!(
+            scheme.next_bid_price(1_000_000.26, 0, 2),
+            Some(Price::from("1000000.25"))
+        );
+    }
 
     #[rstest]
     fn fixed_tick_scheme_prices() {
-        let scheme = FixedTickScheme::new(0.5).unwrap();
+        let scheme = FixedTickScheme::new(Price::from("0.5")).unwrap();
         let bid = scheme.next_bid_price(10.3, 0, 2).unwrap();
         let ask = scheme.next_ask_price(10.3, 0, 2).unwrap();
-        assert!(bid < ask);
+        assert_eq!(bid, Price::from("10.00"));
+        assert_eq!(ask, Price::from("10.50"));
     }
 
     #[rstest]
     fn fixed_tick_negative_returns_typed_error_with_display() {
-        let error = FixedTickScheme::new(-0.01).unwrap_err();
+        let error = FixedTickScheme::new(Price::from("-0.01")).unwrap_err();
 
-        assert_eq!(error, TickSchemeError::TickNotPositive { tick: -0.01 });
+        assert_eq!(
+            error,
+            TickSchemeError::TickNotPositive {
+                tick: Price::from("-0.01")
+            }
+        );
         assert_eq!(error.to_string(), "tick must be positive");
     }
 
     #[rstest]
     fn fixed_tick_boundary() {
-        let scheme = FixedTickScheme::new(0.5).unwrap();
+        let scheme = FixedTickScheme::new(Price::from("0.5")).unwrap();
         let price = scheme.next_bid_price(10.5, 0, 2).unwrap();
         assert_eq!(price, Price::new(10.5, 2));
     }
 
     #[rstest]
     fn fixed_tick_scheme_preserves_decimal_boundaries() {
-        let tenth = FixedTickScheme::new(0.1).unwrap();
-        let cent = FixedTickScheme::new(0.01).unwrap();
+        let tenth = FixedTickScheme::new(Price::from("0.1")).unwrap();
+        let cent = FixedTickScheme::new(Price::from("0.01")).unwrap();
 
         assert_eq!(tenth.next_bid_price(0.3, 0, 1), Some(Price::new(0.3, 1)));
         assert_eq!(tenth.next_ask_price(0.3, 0, 1), Some(Price::new(0.3, 1)));
@@ -739,7 +1166,7 @@ mod tests {
 
     #[rstest]
     fn fixed_tick_multiple_steps() {
-        let scheme = FixedTickScheme::new(1.0).unwrap();
+        let scheme = FixedTickScheme::new(Price::from("1.0")).unwrap();
         let bid = scheme.next_bid_price(10.0, 2, 1).unwrap();
         let ask = scheme.next_ask_price(10.0, 3, 1).unwrap();
         assert_eq!(bid, Price::new(8.0, 1));
@@ -784,35 +1211,91 @@ mod tests {
 
     #[rstest]
     fn fixed_tick_zero() {
-        let error = FixedTickScheme::new(0.0).unwrap_err();
+        let error = FixedTickScheme::new(Price::from("0.0")).unwrap_err();
 
-        assert_eq!(error, TickSchemeError::TickNotPositive { tick: 0.0 });
+        assert_eq!(
+            error,
+            TickSchemeError::TickNotPositive {
+                tick: Price::from("0.0")
+            }
+        );
         assert_eq!(error.to_string(), "tick must be positive");
     }
 
     #[rstest]
-    #[case(f64::INFINITY)]
-    #[case(f64::NAN)]
-    fn fixed_tick_non_finite_returns_error(#[case] tick: f64) {
-        let error = FixedTickScheme::new(tick).unwrap_err();
+    fn fixed_tick_rejects_fractional_digits_beyond_precision() {
+        let tick = Price::from_raw(1, 2);
 
-        match &error {
-            TickSchemeError::TickNotFinite {
-                tick: returned_tick,
-            } => {
-                assert!(
-                    *returned_tick == tick || returned_tick.is_nan() && tick.is_nan(),
-                    "returned tick {returned_tick} did not match input {tick}",
-                );
-            }
-            _ => panic!("unexpected error variant: {error:?}"),
-        }
-        assert_eq!(error.to_string(), "tick must be finite");
+        assert_eq!(
+            FixedTickScheme::new(tick),
+            Err(TickSchemeError::TickNotRepresentable { tick, precision: 2 })
+        );
+    }
+
+    #[rstest]
+    fn fixed_tick_rejects_invalid_input_precision() {
+        let precision = FIXED_PRECISION + 1;
+        let mut tick = Price::from("1");
+        tick.precision = precision;
+        let source =
+            check_in_range_inclusive_u8(precision, 0, FIXED_PRECISION, "precision").unwrap_err();
+
+        assert_eq!(
+            FixedTickScheme::new(tick),
+            Err(TickSchemeError::InvalidPrecision { source })
+        );
+    }
+
+    #[rstest]
+    #[case(0)]
+    #[case(1)]
+    #[case(FIXED_PRECISION + 1)]
+    fn fixed_tick_rejects_output_precision_that_cannot_represent_tick(#[case] precision: u8) {
+        let scheme = FixedTickScheme::new(Price::from("0.25")).unwrap();
+
+        assert_eq!(scheme.next_bid_price(1.63, 0, precision), None);
+        assert_eq!(scheme.next_ask_price(1.63, 0, precision), None);
+    }
+
+    #[rstest]
+    fn fixed_tick_accepts_lower_output_precision_when_tick_is_representable() {
+        let scheme = FixedTickScheme::new(Price::from("0.250")).unwrap();
+        let rescaled = FixedTickScheme::new_with_precision(scheme.tick(), 2).unwrap();
+
+        assert_eq!(rescaled.tick(), Price::from("0.25"));
+        assert_eq!(rescaled.precision(), 2);
+        assert_eq!(scheme.next_bid_price(1.63, 0, 2), Some(Price::from("1.50")));
+        assert_eq!(scheme.next_ask_price(1.63, 0, 2), Some(Price::from("1.75")));
+    }
+
+    #[rstest]
+    fn fixed_tick_preserves_digits_beyond_float_accuracy() {
+        let tick = Price::from("9000000000.000000001");
+        let scheme = FixedTickScheme::new(tick).unwrap();
+
+        assert_eq!(scheme.tick().raw, tick.raw);
+        assert_eq!(scheme.precision(), 9);
+        assert_eq!(scheme.next_ask_price(0.0, 1, 9), Some(tick));
+        assert_eq!(scheme.next_bid_price(0.0, 1, 9), Some(-tick));
+    }
+
+    #[rstest]
+    fn fixed_tick_steps_at_max_precision() {
+        let scheme = FixedTickScheme::new(Price::from_raw(1, FIXED_PRECISION)).unwrap();
+
+        assert_eq!(
+            scheme.next_ask_price(0.0, 2, FIXED_PRECISION),
+            Some(Price::from_raw(2, FIXED_PRECISION))
+        );
+        assert_eq!(
+            scheme.next_bid_price(0.0, 2, FIXED_PRECISION),
+            Some(Price::from_raw(-2, FIXED_PRECISION))
+        );
     }
 
     #[rstest]
     fn fixed_tick_scheme_nan_value_returns_none() {
-        let scheme = FixedTickScheme::new(1.0).unwrap();
+        let scheme = FixedTickScheme::new(Price::from("1.0")).unwrap();
         assert!(scheme.next_bid_price(f64::NAN, 0, 2).is_none());
         assert!(scheme.next_ask_price(f64::NAN, 0, 2).is_none());
     }
@@ -820,7 +1303,7 @@ mod tests {
     #[rstest]
     fn fixed_tick_scheme_out_of_range_returns_none() {
         // Stepping one tick above PRICE_MAX must yield None rather than panicking
-        let scheme = FixedTickScheme::new(PRICE_MAX).unwrap();
+        let scheme = FixedTickScheme::new(Price::from_raw(PRICE_RAW_MAX, 0)).unwrap();
         assert!(scheme.next_ask_price(PRICE_MAX, 1, 2).is_none());
     }
 

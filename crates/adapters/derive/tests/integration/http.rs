@@ -16,7 +16,7 @@
 //! Integration tests for the Derive HTTP client using an axum mock server.
 //!
 //! Covers the request shape produced by `dispatch()`: URL formation,
-//! `Content-Type`, body, and the `X-LYRA*` auth-header injection for
+//! `Content-Type`, body, and the `X-Derive*` auth-header injection for
 //! authenticated calls. Pure decoding behavior lives in the unit tests
 //! beside `decode_envelope`.
 
@@ -28,26 +28,35 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
+use alloy::{
+    primitives::{Signature, eip191_hash_message, hex},
+    signers::local::PrivateKeySigner,
+};
 use axum::{
     Router,
     extract::State,
-    http::{HeaderMap, StatusCode},
+    http::{HeaderMap, StatusCode, Uri},
     response::{IntoResponse, Json, Response},
     routing::post,
 };
 use nautilus_common::testing::wait_until_async;
 use nautilus_derive::{
     common::{
-        consts::{HEADER_LYRA_SIGNATURE, HEADER_LYRA_TIMESTAMP, HEADER_LYRA_WALLET},
+        consts::{HEADER_DERIVE_SIGNATURE, HEADER_DERIVE_TIMESTAMP, HEADER_DERIVE_WALLET},
         enums::{DeriveInstrumentType, DeriveOrderSide, DeriveOrderType, DeriveTimeInForce},
         retry::http_retry_config,
     },
     http::{
-        DeriveCredentials, DeriveHttpClient,
-        query::{DeriveCancelByLabelParams, DeriveOrderParams, DeriveSignedEnvelope},
+        DeriveCredentials, DeriveHttpClient, DeriveHttpError,
+        query::{
+            DeriveCancelByLabelParams, DeriveGetOpenOrdersParams, DeriveGetOrderHistoryParams,
+            DeriveGetOrderParams, DeriveGetPositionsParams, DeriveGetSubaccountParams,
+            DeriveGetTradeHistoryParams, DeriveGetTriggerOrdersParams, DeriveOrderParams,
+            DeriveSignedEnvelope,
+        },
     },
 };
-use nautilus_network::http::HttpClient;
+use nautilus_network::{http::HttpClient, retry::RetryError};
 use rstest::rstest;
 use rust_decimal_macros::dec;
 use serde_json::{Value, json};
@@ -55,12 +64,13 @@ use serde_json::{Value, json};
 const SESSION_KEY_HEX: &str = "0x2ae8be44db8a590d20bffbe3b6872df9b569147d3bf6801a35a28281a4816bbd";
 const TEST_WALLET: &str = "0x000000000000000000000000000000000000aaaa";
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 struct CapturedRequest {
     path: String,
     headers: HashMap<String, String>,
     body: Value,
     received_at_ms: u64,
+    received_at: Instant,
 }
 
 #[derive(Clone, Default)]
@@ -68,6 +78,7 @@ struct TestServerState {
     captured: Arc<tokio::sync::Mutex<Vec<CapturedRequest>>>,
     response_body: Arc<tokio::sync::Mutex<Value>>,
     response_status: Arc<tokio::sync::Mutex<StatusCode>>,
+    response_headers: Arc<tokio::sync::Mutex<HeaderMap>>,
     delay: Arc<tokio::sync::Mutex<Option<Duration>>>,
 }
 
@@ -101,11 +112,6 @@ async fn handle(
     headers: HeaderMap,
     body: axum::body::Bytes,
 ) -> Response {
-    if let Some(delay) = *state.delay.lock().await {
-        // Intentional mock response delay for timeout/retry cases, not a readiness wait.
-        tokio::time::sleep(delay).await;
-    }
-
     let parsed_body: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
     let mut header_map = HashMap::new();
 
@@ -124,11 +130,18 @@ async fn handle(
         headers: header_map,
         body: parsed_body,
         received_at_ms,
+        received_at: Instant::now(),
     });
+
+    let delay = *state.delay.lock().await;
+    if let Some(delay) = delay {
+        tokio::time::sleep(delay).await;
+    }
 
     let status = *state.response_status.lock().await;
     let body = state.response_body.lock().await.clone();
-    (status, Json(body)).into_response()
+    let response_headers = state.response_headers.lock().await.clone();
+    (status, response_headers, Json(body)).into_response()
 }
 
 async fn handle_get_instruments(
@@ -141,18 +154,20 @@ async fn handle_get_instruments(
 
 async fn handle_get_instrument(
     State(state): State<TestServerState>,
+    uri: Uri,
     headers: HeaderMap,
     body: axum::body::Bytes,
 ) -> Response {
-    handle("/public/get_instrument", state, headers, body).await
+    handle(uri.path(), state, headers, body).await
 }
 
 async fn handle_order(
     State(state): State<TestServerState>,
+    uri: Uri,
     headers: HeaderMap,
     body: axum::body::Bytes,
 ) -> Response {
-    handle("/private/order", state, headers, body).await
+    handle(uri.path(), state, headers, body).await
 }
 
 async fn handle_cancel_by_label(
@@ -206,6 +221,7 @@ async fn start_mock_server(state: TestServerState) -> SocketAddr {
     let router = Router::new()
         .route("/public/get_instruments", post(handle_get_instruments))
         .route("/public/get_instrument", post(handle_get_instrument))
+        .route("/v3/public/get_instrument", post(handle_get_instrument))
         .route("/public/get_trade_history", post(handle_trade_history))
         .route(
             "/public/get_funding_rate_history",
@@ -216,7 +232,15 @@ async fn start_mock_server(state: TestServerState) -> SocketAddr {
             post(handle_tradingview_chart_data),
         )
         .route("/public/get_tickers", post(handle_tickers))
+        .route("/private/get_order", post(handle_order))
+        .route("/private/get_open_orders", post(handle_order))
+        .route("/private/get_trigger_orders", post(handle_order))
+        .route("/private/get_order_history", post(handle_order))
+        .route("/private/get_trade_history", post(handle_order))
+        .route("/private/get_subaccount", post(handle_order))
+        .route("/private/get_positions", post(handle_order))
         .route("/private/order", post(handle_order))
+        .route("/v3/private/order", post(handle_order))
         .route("/private/cancel_by_label", post(handle_cancel_by_label))
         .route("/health", axum::routing::get(handle_health))
         .with_state(state);
@@ -262,48 +286,6 @@ fn test_credentials() -> DeriveCredentials {
 #[tokio::test]
 async fn test_send_public_posts_params_with_no_auth_headers() {
     let state = TestServerState::with_success_response();
-    *state.response_body.lock().await = load_json("perps/http_get_instruments_eth.json");
-    let addr = start_mock_server(state.clone()).await;
-
-    let client = DeriveHttpClient::new(base_url(addr), Some(5), None, None).unwrap();
-    let instruments = client
-        .get_instruments("ETH", DeriveInstrumentType::Perp, false)
-        .await
-        .unwrap();
-
-    let captured = state.captured().await;
-    assert_eq!(captured.path, "/public/get_instruments");
-    assert_eq!(
-        captured.body,
-        json!({"currency": "ETH", "instrument_type": "perp", "expired": false})
-    );
-    assert_eq!(
-        captured.headers.get("content-type").map(String::as_str),
-        Some("application/json"),
-    );
-    assert!(
-        !captured
-            .headers
-            .contains_key(&HEADER_LYRA_WALLET.to_lowercase())
-    );
-    assert!(
-        !captured
-            .headers
-            .contains_key(&HEADER_LYRA_TIMESTAMP.to_lowercase())
-    );
-    assert!(
-        !captured
-            .headers
-            .contains_key(&HEADER_LYRA_SIGNATURE.to_lowercase())
-    );
-    assert_eq!(instruments.len(), 1);
-    assert_eq!(instruments[0].instrument_name, "ETH-PERP");
-}
-
-#[rstest]
-#[tokio::test]
-async fn test_get_instrument_posts_instrument_name() {
-    let state = TestServerState::with_success_response();
     *state.response_body.lock().await = load_json("perps/http_get_instrument_eth.json");
     let addr = start_mock_server(state.clone()).await;
 
@@ -313,13 +295,226 @@ async fn test_get_instrument_posts_instrument_name() {
     let captured = state.captured().await;
     assert_eq!(captured.path, "/public/get_instrument");
     assert_eq!(captured.body, json!({"instrument_name": "ETH-PERP"}));
+    assert_eq!(
+        captured.headers.get("content-type").map(String::as_str),
+        Some("application/json"),
+    );
+    assert!(
+        !captured
+            .headers
+            .contains_key(&HEADER_DERIVE_WALLET.to_lowercase())
+    );
+    assert!(
+        !captured
+            .headers
+            .contains_key(&HEADER_DERIVE_TIMESTAMP.to_lowercase())
+    );
+    assert!(
+        !captured
+            .headers
+            .contains_key(&HEADER_DERIVE_SIGNATURE.to_lowercase())
+    );
+    assert!(
+        !captured
+            .headers
+            .keys()
+            .any(|name| name.starts_with("x-lyra"))
+    );
+    assert_eq!(instrument.instrument_name, "ETH-PERP");
+}
+
+#[rstest]
+#[case("")]
+#[case("/v3")]
+#[tokio::test]
+async fn test_get_instrument_posts_instrument_name(#[case] prefix: &str) {
+    let state = TestServerState::with_success_response();
+    *state.response_body.lock().await = load_json("perps/http_get_instrument_eth.json");
+    let addr = start_mock_server(state.clone()).await;
+
+    let client =
+        DeriveHttpClient::new(format!("{}{prefix}", base_url(addr)), Some(5), None, None).unwrap();
+    let instrument = client.get_instrument("ETH-PERP").await.unwrap();
+
+    let captured = state.captured().await;
+    assert_eq!(captured.path, format!("{prefix}/public/get_instrument"));
+    assert_eq!(captured.body, json!({"instrument_name": "ETH-PERP"}));
     assert_eq!(instrument.instrument_name, "ETH-PERP");
     assert_eq!(instrument.instrument_type, DeriveInstrumentType::Perp);
 }
 
 #[rstest]
+#[case("subaccount")]
+#[case("positions")]
 #[tokio::test]
-async fn test_send_private_attaches_all_lyra_auth_headers() {
+async fn test_private_snapshot_requires_requested_account_identity(#[case] source: &str) {
+    let state = TestServerState::with_success_response();
+
+    let mut result = load_json(if source == "subaccount" {
+        "common/http_subaccount_usdc.json"
+    } else {
+        "perps/http_positions_result_eth.json"
+    });
+
+    result["subaccount_id"] = json!(43);
+    *state.response_body.lock().await = json!({"id": 1, "result": result.clone()});
+    let addr = start_mock_server(state.clone()).await;
+    let client =
+        DeriveHttpClient::with_credentials(base_url(addr), test_credentials(), Some(5), None, None)
+            .unwrap();
+
+    let outcome = if source == "subaccount" {
+        client
+            .get_subaccount(&DeriveGetSubaccountParams::new(42))
+            .await
+            .map(|_| ())
+    } else {
+        client
+            .get_positions(&DeriveGetPositionsParams::new(42))
+            .await
+            .map(|_| ())
+    };
+
+    let error = outcome.expect_err("foreign account snapshot must fail");
+    assert!(
+        matches!(error, DeriveHttpError::Decode(detail) if detail == "subaccount response identity mismatch: requested 42, received 43")
+    );
+    result["subaccount_id"] = json!(42);
+    *state.response_body.lock().await = json!({"id": 1, "result": result});
+
+    if source == "subaccount" {
+        let snapshot = client
+            .get_subaccount(&DeriveGetSubaccountParams::new(42))
+            .await
+            .unwrap();
+        assert_eq!(snapshot.subaccount_id, 42);
+    } else {
+        let snapshot = client
+            .get_positions(&DeriveGetPositionsParams::new(42))
+            .await
+            .unwrap();
+        assert_eq!(snapshot.subaccount_id, 42);
+        assert_eq!(snapshot.positions.len(), 1);
+        assert_eq!(snapshot.positions[0].amount, dec!(1));
+        assert_eq!(snapshot.positions[0].average_price, dec!(3500));
+    }
+
+    let captured = state.captured_all().await;
+    assert_eq!(captured.len(), 2);
+    assert_eq!(captured[0].body, json!({"subaccount_id": 42}));
+    assert_eq!(captured[1].body, captured[0].body);
+}
+
+#[rstest]
+#[case("order")]
+#[case("open-orders")]
+#[case("trigger-orders")]
+#[case("order-history")]
+#[case("trade-history")]
+#[case("embedded-order")]
+#[tokio::test]
+async fn test_private_getters_reject_foreign_account_rows(
+    #[case] source: &str,
+    #[values(false, true)] foreign_envelope: bool,
+) {
+    let state = TestServerState::with_success_response();
+    let expected = 42;
+
+    let returned_account = if foreign_envelope { 43 } else { expected };
+    let mut order = load_json("perps/http_order_eth_partially_filled.json");
+    order["subaccount_id"] = json!(if foreign_envelope { expected } else { 43 });
+    let mut trade = load_json("perps/http_private_trade_eth.json");
+    trade["subaccount_id"] = order["subaccount_id"].clone();
+
+    let result = match source {
+        "order" => {
+            order["subaccount_id"] = json!(43);
+            order
+        }
+        "open-orders" | "trigger-orders" => {
+            json!({"orders": [order], "subaccount_id": returned_account})
+        }
+        "order-history" => {
+            json!({"orders": [order], "pagination": {"count": 1, "num_pages": 1}, "subaccount_id": returned_account})
+        }
+        "trade-history" => {
+            json!({"trades": [trade], "pagination": {"count": 1, "num_pages": 1}, "subaccount_id": returned_account})
+        }
+        "embedded-order" => {
+            let mut snapshot = load_json("common/http_subaccount_usdc.json");
+            snapshot["subaccount_id"] = json!(returned_account);
+            snapshot["open_orders"] = json!([order]);
+            snapshot
+        }
+        _ => unreachable!(),
+    };
+
+    *state.response_body.lock().await = json!({"id": 1, "result": result});
+    let addr = start_mock_server(state.clone()).await;
+    let client =
+        DeriveHttpClient::with_credentials(base_url(addr), test_credentials(), Some(5), None, None)
+            .unwrap();
+
+    let outcome = match source {
+        "order" => client
+            .get_order(&DeriveGetOrderParams::new(42, "order-abc"))
+            .await
+            .map(|_| ()),
+        "open-orders" => client
+            .get_open_orders(&DeriveGetOpenOrdersParams::new(42))
+            .await
+            .map(|_| ()),
+        "trigger-orders" => client
+            .get_trigger_orders(&DeriveGetTriggerOrdersParams::new(42))
+            .await
+            .map(|_| ()),
+        "order-history" => client
+            .get_order_history(&DeriveGetOrderHistoryParams::new(42, 1, 100))
+            .await
+            .map(|_| ()),
+        "trade-history" => client
+            .get_private_trade_history(&DeriveGetTradeHistoryParams::new(42, 1, 100))
+            .await
+            .map(|_| ()),
+        "embedded-order" => client
+            .get_subaccount(&DeriveGetSubaccountParams::new(42))
+            .await
+            .map(|_| ()),
+        _ => unreachable!(),
+    };
+
+    assert!(
+        matches!(outcome, Err(DeriveHttpError::Decode(detail)) if detail == "subaccount response identity mismatch: requested 42, received 43")
+    );
+    let captured = state.captured_all().await;
+    assert_eq!(captured.len(), 1);
+    assert_eq!(captured[0].body["subaccount_id"], json!(42));
+}
+
+#[tokio::test]
+async fn test_get_instrument_rejects_foreign_definition() {
+    let state = TestServerState::with_success_response();
+    let mut response = load_json("perps/http_get_instrument_eth.json");
+    response["result"]["instrument_name"] = json!("BTC-PERP");
+    *state.response_body.lock().await = response;
+    let addr = start_mock_server(state.clone()).await;
+    let client = DeriveHttpClient::new(base_url(addr), Some(5), None, None).unwrap();
+
+    let error = client.get_instrument("ETH-PERP").await.unwrap_err();
+
+    assert!(matches!(&error, DeriveHttpError::Decode(message)
+        if message == "instrument response identity mismatch: requested ETH-PERP, received BTC-PERP"));
+    let captured = state.captured_all().await;
+    assert_eq!(captured.len(), 1);
+    assert_eq!(captured[0].path, "/public/get_instrument");
+    assert_eq!(captured[0].body, json!({"instrument_name": "ETH-PERP"}));
+}
+
+#[rstest]
+#[case("")]
+#[case("/v3")]
+#[tokio::test]
+async fn test_send_private_attaches_all_derive_auth_headers(#[case] prefix: &str) {
     let state = TestServerState::with_success_response();
     *state.response_body.lock().await = json!({
         "id": 1,
@@ -327,9 +522,15 @@ async fn test_send_private_attaches_all_lyra_auth_headers() {
     });
     let addr = start_mock_server(state.clone()).await;
 
-    let client =
-        DeriveHttpClient::with_credentials(base_url(addr), test_credentials(), Some(5), None, None)
-            .unwrap();
+    let client = DeriveHttpClient::with_credentials(
+        format!("{}{prefix}", base_url(addr)),
+        test_credentials(),
+        Some(5),
+        None,
+        None,
+    )
+    .unwrap();
+
     let payload = DeriveOrderParams {
         envelope: DeriveSignedEnvelope {
             subaccount_id: 42,
@@ -353,10 +554,11 @@ async fn test_send_private_attaches_all_lyra_auth_headers() {
         trigger_price_type: None,
         trigger_type: None,
     };
+
     let order = client.submit_order(&payload).await.unwrap();
 
     let captured = state.captured().await;
-    assert_eq!(captured.path, "/private/order");
+    assert_eq!(captured.path, format!("{prefix}/private/order"));
     assert_eq!(
         captured.body,
         json!({
@@ -366,7 +568,7 @@ async fn test_send_private_attaches_all_lyra_auth_headers() {
             "label": "client-1",
             "limit_price": "3500",
             "max_fee": "1",
-            "nonce": 123,
+            "nonce": "123",
             "order_type": "limit",
             "referral_code": "nautilus",
             "signature": "0x00",
@@ -379,23 +581,46 @@ async fn test_send_private_attaches_all_lyra_auth_headers() {
 
     let wallet = captured
         .headers
-        .get(&HEADER_LYRA_WALLET.to_lowercase())
+        .get("x-derivewallet")
         .expect("wallet header present");
     assert_eq!(wallet, TEST_WALLET);
 
     let timestamp = captured
         .headers
-        .get(&HEADER_LYRA_TIMESTAMP.to_lowercase())
+        .get("x-derivetimestamp")
         .expect("timestamp header present");
     let ts: u64 = timestamp.parse().expect("timestamp is a u64 millis string");
-    assert!(ts > 1_700_000_000_000, "timestamp must be a recent unix ms");
+    assert!(
+        ts.abs_diff(captured.received_at_ms) < 1000,
+        "timestamp must be current Unix milliseconds"
+    );
 
     let signature = captured
         .headers
-        .get(&HEADER_LYRA_SIGNATURE.to_lowercase())
+        .get("x-derivesignature")
         .expect("signature header present");
     assert!(signature.starts_with("0x"));
     assert_eq!(signature.len(), 2 + 130, "signature must be 65 bytes hex");
+
+    let signature = Signature::try_from(
+        hex::decode(signature.trim_start_matches("0x"))
+            .unwrap()
+            .as_slice(),
+    )
+    .unwrap();
+    let signer: PrivateKeySigner = SESSION_KEY_HEX.parse().unwrap();
+    assert_eq!(
+        signature
+            .recover_address_from_prehash(&eip191_hash_message(timestamp.as_bytes()))
+            .unwrap(),
+        signer.address()
+    );
+    assert!(
+        !captured
+            .headers
+            .keys()
+            .any(|name| name.starts_with("x-lyra"))
+    );
 
     assert_eq!(order.order_id, "abc-123");
 }
@@ -439,6 +664,7 @@ async fn test_paced_http_writes_build_auth_headers_after_waiting() {
     let client =
         DeriveHttpClient::with_credentials(base_url(addr), test_credentials(), Some(5), None, None)
             .unwrap();
+
     let payload = DeriveOrderParams {
         envelope: DeriveSignedEnvelope {
             subaccount_id: 42,
@@ -469,6 +695,7 @@ async fn test_paced_http_writes_build_auth_headers_after_waiting() {
         payload.envelope.nonce += sequence;
         async move { client.submit_order(&payload).await }
     });
+
     let outcomes = futures_util::future::join_all(requests).await;
     let elapsed = started.elapsed();
     let captured = state.captured_all().await;
@@ -484,7 +711,7 @@ async fn test_paced_http_writes_build_auth_headers_after_waiting() {
     for request in captured {
         let timestamp = request
             .headers
-            .get(&HEADER_LYRA_TIMESTAMP.to_lowercase())
+            .get(&HEADER_DERIVE_TIMESTAMP.to_lowercase())
             .expect("timestamp header present")
             .parse::<u64>()
             .expect("timestamp header is milliseconds");
@@ -702,11 +929,13 @@ async fn test_get_ticker_uses_get_tickers_and_selects_instrument(
     if let Some(expiry_date) = expiry_date {
         expected_body.insert("expiry_date".to_string(), expiry_date.into());
     }
+
     expected_body.insert("instrument_type".to_string(), instrument_type.into());
 
     assert_eq!(captured.path, "/public/get_tickers");
     assert_eq!(captured.body, Value::Object(expected_body));
     assert_eq!(ticker.instrument_name, instrument_name);
+
     if expect_option_pricing {
         let pricing = ticker.option_pricing.expect("option ticker has pricing");
         assert_eq!(pricing.forward_price.to_string(), "3505");
@@ -737,4 +966,113 @@ async fn test_timeout_surfaces_as_transport_error() {
         err.is_transport_error(),
         "timeout must surface as transport error, was: {err:?}",
     );
+}
+
+#[rstest]
+#[case::backend_unavailable(9002, 2)]
+#[case::order_confirmation_timeout(9000, 1)]
+#[case::engine_confirmation_timeout(9001, 1)]
+#[tokio::test]
+async fn test_read_retry_uses_venue_error_code(#[case] code: i64, #[case] attempts: usize) {
+    let state = TestServerState::with_success_response();
+    *state.response_body.lock().await = json!({
+        "id": 1,
+        "error": {"code": code, "message": "Venue response", "data": null},
+    });
+    let addr = start_mock_server(state.clone()).await;
+    let mut retry_config = http_retry_config(1, 1, 1);
+    retry_config.jitter_ms = 0;
+    let client = DeriveHttpClient::new(base_url(addr), Some(5), None, Some(retry_config)).unwrap();
+
+    let error = client.get_instrument("ETH-PERP").await.unwrap_err();
+    let requests = state.captured_all().await;
+
+    assert!(matches!(error, DeriveHttpError::JsonRpc { code: actual, .. } if actual == code));
+    assert_eq!(requests.len(), attempts);
+
+    for request in requests {
+        assert_eq!(request.path, "/public/get_instrument");
+        assert_eq!(request.body, json!({"instrument_name": "ETH-PERP"}));
+    }
+}
+
+#[rstest]
+#[case::http_delay(false, None, 2)]
+#[case::http_budget(false, Some(150), 1)]
+#[case::jsonrpc_delay(true, None, 2)]
+#[case::jsonrpc_budget(true, Some(150), 1)]
+#[tokio::test]
+async fn test_retry_after_preserves_minimum_delay_and_elapsed_budget(
+    #[case] jsonrpc: bool,
+    #[case] budget_ms: Option<u64>,
+    #[case] attempts: usize,
+) {
+    let state = TestServerState::with_success_response();
+    if jsonrpc {
+        *state.response_body.lock().await = json!({
+            "error": {"code": 9002, "message": "Backend unavailable", "data": null},
+        });
+    } else {
+        *state.response_status.lock().await = StatusCode::TOO_MANY_REQUESTS;
+        *state.response_body.lock().await = json!({"message": "Rate limited"});
+    }
+
+    state
+        .response_headers
+        .lock()
+        .await
+        .insert("retry-after", "1".parse().unwrap());
+    let addr = start_mock_server(state.clone()).await;
+    let mut config = http_retry_config(1, 1, 1);
+    config.jitter_ms = 0;
+    config.max_elapsed_ms = budget_ms;
+    let client = DeriveHttpClient::new(base_url(addr), Some(5), None, Some(config)).unwrap();
+    let _error = client.get_instrument("ETH-PERP").await.unwrap_err();
+    let requests = state.captured_all().await;
+    assert_eq!(requests.len(), attempts);
+
+    for request in &requests {
+        assert_eq!(request.path, "/public/get_instrument");
+        assert_eq!(request.body, json!({"instrument_name": "ETH-PERP"}));
+    }
+
+    if attempts == 2 {
+        assert!(
+            requests[1]
+                .received_at
+                .duration_since(requests[0].received_at)
+                >= Duration::from_secs(1)
+        );
+    }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_read_per_attempt_timeout_uses_remaining_retry_budget() {
+    let state = TestServerState::with_success_response();
+    *state.delay.lock().await = Some(Duration::from_millis(200));
+    let addr = start_mock_server(state.clone()).await;
+    let mut config = http_retry_config(1, 1, 1);
+    config.jitter_ms = 0;
+    config.operation_timeout_ms = Some(50);
+    let client = DeriveHttpClient::new(base_url(addr), Some(5), None, Some(config)).unwrap();
+
+    let error = client.get_instrument("ETH-PERP").await.unwrap_err();
+    wait_until_async(
+        || async { state.captured_all().await.len() == 2 },
+        Duration::from_secs(5),
+    )
+    .await;
+    let requests = state.captured_all().await;
+
+    assert!(matches!(
+        error,
+        DeriveHttpError::Retry(RetryError::OperationTimeout { timeout_ms: 50 })
+    ));
+    assert_eq!(requests.len(), 2);
+
+    for request in requests {
+        assert_eq!(request.path, "/public/get_instrument");
+        assert_eq!(request.body, json!({"instrument_name": "ETH-PERP"}));
+    }
 }

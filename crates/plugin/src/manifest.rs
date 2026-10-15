@@ -161,7 +161,8 @@ impl PluginManifest {
     ///
     /// # Errors
     ///
-    /// Returns every structural problem found in the manifest.
+    /// Returns an error if the manifest has structural problems. The error contains every problem
+    /// found.
     pub fn validate(&self) -> Result<(), PluginManifestValidationErrors> {
         let mut errors = PluginManifestValidationErrors::default();
 

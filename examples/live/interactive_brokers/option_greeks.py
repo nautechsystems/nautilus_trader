@@ -36,13 +36,12 @@ async def main() -> None:
     """
     ib = interactive_brokers
     host, port = resolve_ib_endpoint()
-    if not is_ib_endpoint_reachable(host, port):
-        print(f"IB Gateway/TWS is not reachable at {host}:{port}", flush=True)
-        return
-
     provider_config = instrument_provider_config(
         load_ids=[
-            os.getenv("IB_V2_OPTION_UNDERLYING_INSTRUMENT_ID", default_es_future_instrument_id()),
+            os.getenv(
+                "IB_V2_OPTION_UNDERLYING_INSTRUMENT_ID",
+                default_es_future_instrument_id(),
+            ),
             os.getenv("IB_V2_OPTION_INSTRUMENT_ID", default_es_put_option_instrument_id()),
         ],
     )
@@ -56,6 +55,18 @@ async def main() -> None:
         market_data_type=ib.MarketDataType.DELAYED,
         instrument_provider=provider_config,
     )
+
+    if not env_bool("IB_V2_RUN_CLIENT"):
+        print(
+            "Built IB option greeks client. Set IB_V2_RUN_CLIENT=1 to request data.",
+            flush=True,
+        )
+        return
+
+    if not is_ib_endpoint_reachable(host, port):
+        print(f"IB Gateway/TWS is not reachable at {host}:{port}", flush=True)
+        return
+
     try:
         client = ib.HistoricalInteractiveBrokersClient(provider, client_config)
     except RuntimeError as e:

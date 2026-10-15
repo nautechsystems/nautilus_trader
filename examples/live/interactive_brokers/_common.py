@@ -23,9 +23,12 @@ from typing import Any
 
 from nautilus_trader.adapters import interactive_brokers
 from nautilus_trader.common import Environment
+from nautilus_trader.config import LiveRiskEngineConfig
 from nautilus_trader.live import LiveNode
+from nautilus_trader.model import AccountId
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import TraderId
+from nautilus_trader.model import new_generic_spread_id
 from nautilus_trader.trading import ImportableStrategyConfig
 
 
@@ -75,6 +78,22 @@ def resolve_ib_endpoint() -> tuple[str, int]:
     return host, port
 
 
+def market_data_type() -> interactive_brokers.MarketDataType:
+    value = os.getenv("IB_V2_MARKET_DATA_TYPE", "delayed-frozen").lower()
+    values = {
+        "realtime": interactive_brokers.MarketDataType.REALTIME,
+        "frozen": interactive_brokers.MarketDataType.FROZEN,
+        "delayed": interactive_brokers.MarketDataType.DELAYED,
+        "delayed-frozen": interactive_brokers.MarketDataType.DELAYED_FROZEN,
+        "delayed_frozen": interactive_brokers.MarketDataType.DELAYED_FROZEN,
+    }
+    try:
+        return values[value]
+    except KeyError as e:
+        choices = ", ".join(values)
+        raise ValueError(f"IB_V2_MARKET_DATA_TYPE must be one of: {choices}") from e
+
+
 def is_ib_endpoint_reachable(host: str, port: int, timeout: float = 2.0) -> bool:
     """
     Is ib endpoint reachable.
@@ -104,10 +123,13 @@ def schedule_node_stop(_node: LiveNode, delay_seconds: int) -> None:
     )
 
 
+def ib_account_id(raw_account_id: str) -> AccountId:
+    if "-" in raw_account_id:
+        return AccountId.from_str(raw_account_id)
+    return AccountId.from_str(f"{IB}-{raw_account_id}")
+
+
 def contract_month_code(year: int, month: int) -> str:
-    """
-    Contract month code.
-    """
     return f"{FUTURES_MONTH_CODES[month]}{year % 10}"
 
 
@@ -173,23 +195,14 @@ def active_monthly_contract(
 
 
 def default_es_future() -> tuple[str, str, str]:
-    """
-    Default es future.
-    """
     return active_quarterly_contract(symbol="ES", venue="XCME")
 
 
 def default_ym_future() -> tuple[str, str, str]:
-    """
-    Default ym future.
-    """
     return active_quarterly_contract(symbol="YM", venue="XCBT")
 
 
 def default_cl_future() -> tuple[str, str, str]:
-    """
-    Default cl future.
-    """
     return active_monthly_contract(symbol="CL", venue="XNYM")
 
 
@@ -214,6 +227,26 @@ def default_cl_future_instrument_id() -> str:
     return default_cl_future()[1]
 
 
+def default_aapl_instrument_id() -> str:
+    return "AAPL.XNAS"
+
+
+def default_aapl_raw_instrument_id() -> str:
+    return "AAPL=STK.SMART"
+
+
+def default_spx_index_instrument_id() -> str:
+    return "^SPX.CBOE"
+
+
+def default_databento_data_instrument_id() -> str:
+    return "SPY.XNAS"
+
+
+def default_docker_subscription_instrument_id() -> str:
+    return "EUR/USD.IDEALPRO"
+
+
 def format_option_strike(strike: float) -> str:
     """
     Format option strike.
@@ -231,35 +264,34 @@ def default_es_put_option_local_symbol(strike: float = 6800.0) -> str:
 
 
 def default_es_put_option_instrument_id(strike: float = 6800.0) -> str:
-    """
-    Default es put option instrument id.
-    """
-    return f"{default_es_put_option_local_symbol(strike)}.XCME"
+    _, instrument_id, _ = default_es_future()
+    return f"{instrument_id.removesuffix('.XCME')} P{format_option_strike(strike)}.XCME"
 
 
 def default_es_put_spread_instrument_id(
     long_strike: float = 6800.0,
     short_strike: float = 6750.0,
 ) -> str:
-    """
-    Default es put spread instrument id.
-    """
-    # IB generic spread IDs encode signed leg ratios in the instrument ID
-    leg_ratios = [
-        (default_es_put_option_local_symbol(long_strike), 1),
-        (default_es_put_option_local_symbol(short_strike), -1),
-    ]
-    leg_ratios.sort(key=lambda value: value[0])
-
-    symbol_parts = []
-
-    for symbol, ratio in leg_ratios:
-        if ratio > 0:
-            symbol_parts.append(f"({ratio}){symbol}")
-        else:
-            symbol_parts.append(f"(({abs(ratio)})){symbol}")
-
-    return f"{'_'.join(symbol_parts)}.XCME"
+    _, instrument_id, _ = default_es_future()
+    instrument_symbol = instrument_id.removesuffix(".XCME")
+    return str(
+        new_generic_spread_id(
+            [
+                (
+                    InstrumentId.from_str(
+                        f"{instrument_symbol} P{format_option_strike(long_strike)}.XCME",
+                    ),
+                    1,
+                ),
+                (
+                    InstrumentId.from_str(
+                        f"{instrument_symbol} P{format_option_strike(short_strike)}.XCME",
+                    ),
+                    -1,
+                ),
+            ],
+        ),
+    )
 
 
 def default_stock_contracts() -> list[dict[str, object]]:
@@ -394,6 +426,82 @@ def instrument_provider_config(
     )
 
 
+def docker_instrument_provider_config() -> (
+    interactive_brokers.InteractiveBrokersInstrumentProviderConfig
+):
+    ib = interactive_brokers
+    cl_local_symbol, cl_instrument_id, _ = default_cl_future()
+    return instrument_provider_config(
+        load_ids=[
+            "EUR/USD.IDEALPRO",
+            "BTC/USD.PAXOS",
+            "SPY.ARCA",
+            "V.NYSE",
+            os.getenv("IB_V2_DOCKER_YM_INSTRUMENT_ID", default_ym_future_instrument_id()),
+            os.getenv("IB_V2_DOCKER_CL_INSTRUMENT_ID", cl_instrument_id),
+            os.getenv("IB_V2_DOCKER_ES_INSTRUMENT_ID", default_es_future_instrument_id()),
+        ],
+        load_contracts=[
+            {
+                "secType": ib.IbSecurityType.STOCK.as_str(),
+                "symbol": "SPY",
+                "exchange": "SMART",
+                "primaryExchange": "ARCA",
+                "build_options_chain": True,
+                "min_expiry_days": 7,
+                "max_expiry_days": 14,
+            },
+            {
+                "secType": ib.IbSecurityType.CONTINUOUS_FUTURE.as_str(),
+                "exchange": "CME",
+                "symbol": "ES",
+                "build_futures_chain": True,
+            },
+            {
+                "secType": ib.IbSecurityType.FUTURE.as_str(),
+                "exchange": "NYMEX",
+                "localSymbol": os.getenv("IB_V2_DOCKER_CL_LOCAL_SYMBOL", cl_local_symbol),
+                "build_futures_chain": False,
+            },
+        ],
+    )
+
+
+def databento_instrument_provider_config() -> (
+    interactive_brokers.InteractiveBrokersInstrumentProviderConfig
+):
+    return instrument_provider_config(
+        load_ids=[
+            "SPY.XNAS",
+            "AAPL.XNAS",
+            "V.XNYS",
+            os.getenv("IB_V2_DATABENTO_CL_INSTRUMENT_ID", default_cl_future_instrument_id()),
+            os.getenv("IB_V2_DATABENTO_ES_INSTRUMENT_ID", default_es_future_instrument_id()),
+        ],
+    )
+
+
+def set_databento_request_contracts_default() -> None:
+    ib = interactive_brokers
+    os.environ.setdefault(
+        "IB_V2_DATABENTO_REQUEST_CONTRACTS",
+        json.dumps(
+            [
+                {
+                    "secType": ib.IbSecurityType.STOCK.as_str(),
+                    "symbol": "SPY",
+                    "exchange": "SMART",
+                    "primaryExchange": "CBOE",
+                    "build_options_chain": True,
+                    "min_expiry_days": 0,
+                    "max_expiry_days": 3,
+                },
+            ],
+            separators=(",", ":"),
+        ),
+    )
+
+
 def build_ib_live_node(
     *,
     name: str,
@@ -413,12 +521,14 @@ def build_ib_live_node(
     provider_config = provider_config or instrument_provider_config()
 
     builder = LiveNode.builder(name, trader, Environment.LIVE)
+    if env_bool("IB_V2_BYPASS_RISK"):
+        builder = builder.with_risk_engine_config(LiveRiskEngineConfig(bypass=True))
     builder = builder.with_timeout_connection(env_int("IB_V2_NODE_CONNECTION_TIMEOUT", 15))
     builder = builder.with_timeout_reconciliation(5)
     builder = builder.with_timeout_portfolio(5)
     builder = builder.with_timeout_disconnection_secs(5)
-    builder = builder.with_delay_post_stop_secs(2)
-    builder = builder.with_reconciliation(env_bool("IB_V2_RECONCILIATION", default=False))
+    builder = builder.with_delay_post_stop_secs(5 if account_id is not None else 2)
+    builder = builder.with_reconciliation(env_bool("IB_V2_RECONCILIATION", False))
     builder = builder.add_data_client(
         None,
         ib.InteractiveBrokersDataClientFactory(),
@@ -428,7 +538,7 @@ def build_ib_live_node(
             client_id=data_client_id,
             connection_timeout=env_int("IB_V2_CONNECTION_TIMEOUT", 10),
             request_timeout=env_int("IB_V2_REQUEST_TIMEOUT", 30),
-            market_data_type=ib.MarketDataType.DELAYED_FROZEN,
+            market_data_type=market_data_type(),
             instrument_provider=provider_config,
         ),
     )

@@ -13,6 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+#[path = "uuid/corpus.rs"]
+mod corpus;
+
 use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
@@ -81,5 +84,6 @@ criterion_group!(
     bench_uuid4_serialize,
     bench_uuid4_deserialize,
     bench_uuid4_round_trip,
+    corpus::bench_corpus,
 );
 criterion_main!(benches);

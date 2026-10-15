@@ -376,14 +376,17 @@ mod tests {
         );
 
         let result = client.request_instruments(request);
+        let expected = format!(
+            "Handler not implemented: client BACKTEST, command {}",
+            std::any::type_name::<RequestInstruments>()
+        );
 
         assert!(result.is_ok());
         assert!(
             REQUEST_WARN_CAPTURE
                 .messages()
                 .iter()
-                .any(|message| message.contains("RequestInstruments")
-                    && message.contains("handler not implemented")),
+                .any(|message| message == &expected),
         );
     }
     #[rstest]
@@ -392,7 +395,7 @@ mod tests {
         let venue = Venue::new("BACKTEST");
         let cache = Rc::new(RefCell::new(Cache::default()));
         let client = BacktestDataClient::new(client_id, venue, cache);
-        let series_id = OptionSeriesId::new(
+        let series_id = OptionSeriesId::new_derived(
             venue,
             Ustr::from("BTC"),
             Ustr::from("BTC"),

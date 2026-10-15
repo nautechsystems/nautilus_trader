@@ -160,8 +160,7 @@ pub(crate) async fn run_analyze_pools(
     )> = Vec::with_capacity(pool_addresses.len());
 
     for pool_address in pool_addresses {
-        let permit = semaphore
-            .clone()
+        let permit = Arc::clone(&semaphore)
             .acquire_owned()
             .await
             .context("pool analysis semaphore closed unexpectedly")?;
@@ -311,8 +310,8 @@ async fn analyze_pool_with_client(
     let pool = data_client
         .cache
         .get_pool(&pool_identifier)
-        .ok_or_else(|| anyhow::anyhow!("Pool {pool_identifier} not found in cache"))?
-        .clone();
+        .map(Arc::clone)
+        .ok_or_else(|| anyhow::anyhow!("Pool {pool_identifier} not found in cache"))?;
 
     let mut outcomes = Vec::with_capacity(checkpoints.len());
     let mut rpc_profiler = None;

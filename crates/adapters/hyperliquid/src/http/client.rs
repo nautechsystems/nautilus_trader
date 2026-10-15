@@ -104,12 +104,12 @@ use crate::{
             SpotClearinghouseState, SpotMeta, SpotMetaAndCtxs,
         },
         parse::{
-            HyperliquidInstrumentDef, create_instrument_from_def, filter_recent_public_trades,
-            instruments_from_defs_owned, parse_fill_report, parse_order_status_report_from_basic,
-            parse_outcome_instruments, parse_perp_instruments_with_settlement,
-            parse_position_status_report, parse_recent_public_trade, parse_spot_instruments,
-            parse_spot_position_status_report, parse_unlisted_outcome_instrument,
-            resolve_perp_settlement_currency,
+            DEFAULT_OUTCOME_QUOTE_CURRENCY, HyperliquidInstrumentDef, create_instrument_from_def,
+            filter_recent_public_trades, get_outcome_currency, instruments_from_defs_owned,
+            parse_fill_report, parse_order_status_report_from_basic, parse_outcome_instruments,
+            parse_perp_instruments_with_settlement, parse_position_status_report,
+            parse_recent_public_trade, parse_spot_instruments, parse_spot_position_status_report,
+            parse_unlisted_outcome_instrument, resolve_perp_settlement_currency,
         },
         query::{ExchangeAction, InfoRequest},
         rate_limits::{
@@ -343,7 +343,7 @@ impl HyperliquidRawHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Auth`] if required environment variables are not set.
+    /// Returns an error if required environment variables are not set.
     pub fn from_env(environment: HyperliquidEnvironment) -> Result<Self> {
         let secrets = Secrets::from_env(environment)
             .map_err(|e| Error::auth(format!("missing credentials in environment: {e}")))?;
@@ -355,7 +355,7 @@ impl HyperliquidRawHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Auth`] if the private key is invalid or cannot be parsed.
+    /// Returns an error if the private key is invalid or cannot be parsed.
     pub fn from_credentials(
         private_key: &str,
         vault_address: Option<&str>,
@@ -395,7 +395,7 @@ impl HyperliquidRawHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Auth`] if the client has no signer configured.
+    /// Returns an error if the client has no signer configured.
     pub fn get_user_address(&self) -> Result<String> {
         self.signer
             .as_ref()
@@ -414,7 +414,7 @@ impl HyperliquidRawHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Auth`] if the client has no signer configured.
+    /// Returns an error if the client has no signer configured.
     pub fn get_account_address(&self) -> Result<String> {
         if let Some(vault) = &self.vault_address {
             Ok(vault.to_hex())
@@ -1124,7 +1124,7 @@ impl HyperliquidHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Auth`] if required environment variables are not set.
+    /// Returns an error if required environment variables are not set.
     pub fn from_env(environment: HyperliquidEnvironment) -> Result<Self> {
         let raw_client = HyperliquidRawHttpClient::from_env(environment)?;
         Ok(Self {
@@ -1154,7 +1154,7 @@ impl HyperliquidHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Auth`] if credentials are invalid.
+    /// Returns an error if credentials are invalid.
     pub fn with_credentials(
         private_key: Option<String>,
         vault_address: Option<String>,
@@ -1234,7 +1234,7 @@ impl HyperliquidHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Auth`] if the private key is invalid or cannot be parsed.
+    /// Returns an error if the private key is invalid or cannot be parsed.
     pub fn from_credentials(
         private_key: &str,
         vault_address: Option<&str>,
@@ -1308,7 +1308,7 @@ impl HyperliquidHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Auth`] if the client has no signer configured.
+    /// Returns an error if the client has no signer configured.
     pub fn get_user_address(&self) -> Result<String> {
         self.inner.get_user_address()
     }
@@ -1340,8 +1340,8 @@ impl HyperliquidHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Auth`] if the client has no signer configured and
-    /// no account_address override is set.
+    /// Returns an error if the client has no signer configured and no account_address override is
+    /// set.
     pub fn get_account_address(&self) -> Result<String> {
         if let Some(addr) = &self.account_address {
             return Ok(addr.clone());
@@ -1481,8 +1481,8 @@ impl HyperliquidHttpClient {
             }
         }
 
-        // Settled HIP-4 outcomes drop out of `outcomeMeta`, but their coin
-        // encoding fixes every instrument field a report needs
+        // Settled HIP-4 outcomes drop out of `outcomeMeta`, so uncached
+        // instruments default to USDC because the encoding lacks a quote token.
         if let Ok(asset_id) = parse_outcome_symbol(coin)
             && let Ok(def) = parse_unlisted_outcome_instrument(asset_id)
             && let Some(instrument) = create_instrument_from_def(&def, self.clock.get_time_ns())
@@ -1852,6 +1852,25 @@ impl HyperliquidHttpClient {
     /// Gets outcome metadata for internal use.
     pub(crate) async fn get_outcome_meta(&self) -> Result<OutcomeMeta> {
         self.inner.get_outcome_meta().await
+    }
+
+    pub(crate) fn outcome_quote_currency(
+        &self,
+        instrument_id: InstrumentId,
+        outcome_index: u32,
+        meta: &OutcomeMeta,
+    ) -> Currency {
+        if let Some(instrument) = self.instruments.load().get(&instrument_id.symbol.inner()) {
+            return instrument.quote_currency();
+        }
+
+        let code = meta
+            .outcomes
+            .iter()
+            .find(|market| market.outcome == outcome_index)
+            .and_then(|market| market.quote_token.as_deref())
+            .unwrap_or(DEFAULT_OUTCOME_QUOTE_CURRENCY);
+        get_outcome_currency(code)
     }
 
     /// Get L2 order book for a coin.
@@ -2258,7 +2277,7 @@ impl HyperliquidHttpClient {
     /// Split an HIP-4 outcome's quote tokens into matched Yes and No side tokens.
     ///
     /// Submits a `userOutcome` exchange action with the `splitOutcome` operation:
-    /// debits `amount` quote tokens (USDH) and credits `amount` Yes plus `amount`
+    /// debits `amount` quote tokens and credits `amount` Yes plus `amount`
     /// No side tokens for the given `outcome` index. Ordinary directional
     /// buys and sells on outcome instruments go through the standard order path
     /// without calling this; the action is for dual-side market making and
@@ -2652,6 +2671,8 @@ impl HyperliquidHttpClient {
         // without trigger fields (trigger_px, tpsl, is_market, trailing_stop).
         // Closed trigger orders will report as Limit type. This is an exchange
         // API limitation: trigger metadata is only available on open orders.
+        // The reduce-only flag is carried through so reconciliation can clamp a
+        // reduce-only fill to its fills.
         let basic = WsBasicOrderData {
             coin: entry.order.coin,
             side: entry.order.side,
@@ -2662,7 +2683,7 @@ impl HyperliquidHttpClient {
             orig_sz: entry.order.orig_sz,
             cloid: entry.order.cloid,
             tif: None,
-            reduce_only: None,
+            reduce_only: entry.order.reduce_only,
             trigger_px: None,
             is_market: None,
             tpsl: None,
@@ -2978,7 +2999,9 @@ impl HyperliquidHttpClient {
     /// account-wide margin. Otherwise USDC comes from the perp margin summary only when that
     /// summary reflects non-zero collateral, margin used, or withdrawable balance; if the
     /// summary is absent or zeroed, spot USDC is used instead. Non-USDC tokens are always
-    /// appended from the spot balances.
+    /// appended from the spot balances. Spot tokens the venue lists at zero are reported at
+    /// zero, and USDC is reported at zero when there is no USDC balance, so a previous balance
+    /// is cleared. On accounts without spot collateral this needs a perp summary in the response.
     ///
     /// # Errors
     ///
@@ -3515,9 +3538,9 @@ impl HyperliquidHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns an error for quote-denominated quantities: this raw path has no
-    /// cached market data for a quote-to-base conversion, so the order must be
-    /// submitted through the execution client instead.
+    /// Returns an error if the quantity is quote-denominated: this raw path has no cached market
+    /// data for a quote-to-base conversion, so the order must be submitted through the execution
+    /// client instead.
     pub async fn submit_order_from_order_any(&self, order: &OrderAny) -> Result<OrderStatusReport> {
         if order.is_quote_quantity() {
             return Err(Error::bad_request(
@@ -4278,6 +4301,7 @@ mod tests {
             "outcomes": [
                 {
                     "outcome": 123,
+                    "quoteToken": "USDC",
                     "name": "Recurring",
                     "description": "class:priceBinary|underlying:HYPE|expiry:20260310-1100|targetPrice:34.5|period:3m",
                     "sideSpecs": [
@@ -4455,6 +4479,7 @@ mod tests {
         assert_eq!(request_body, json!({"type": "outcomeMeta"}));
         assert_eq!(meta.outcomes.len(), 1);
         assert_eq!(meta.outcomes[0].outcome, 123);
+        assert_eq!(meta.outcomes[0].quote_token.as_deref(), Some("USDC"));
         assert_eq!(meta.outcomes[0].name, "Recurring");
         assert_eq!(meta.outcomes[0].side_specs.len(), 2);
         assert_eq!(meta.outcomes[0].side_specs[0].name, "Yes");
@@ -4657,14 +4682,18 @@ mod tests {
         let with_type = client
             .get_or_create_instrument(&Ustr::from(coin), Some(HyperliquidProductType::Outcome));
         assert!(with_type.is_some());
-        assert_eq!(with_type.unwrap().id(), instrument_id);
+        let with_type = with_type.unwrap();
+        assert_eq!(with_type.id(), instrument_id);
+        assert_eq!(with_type.quote_currency(), usdh);
 
         let no_type = client.get_or_create_instrument(&Ustr::from(coin), None);
         assert!(
             no_type.is_some(),
             "Outcome coin must resolve through the no-product fallback",
         );
-        assert_eq!(no_type.unwrap().id(), instrument_id);
+        let no_type = no_type.unwrap();
+        assert_eq!(no_type.id(), instrument_id);
+        assert_eq!(no_type.quote_currency(), usdh);
 
         let missing = client.get_or_create_instrument(&Ustr::from("#9999"), None);
         assert!(missing.is_none());
@@ -4699,8 +4728,10 @@ mod tests {
             InstrumentId::new(Symbol::new(symbol), *HYPERLIQUID_VENUE)
         );
         assert_eq!(instrument.raw_symbol(), Symbol::new(raw_symbol));
-        assert_eq!(instrument.price_precision(), 4);
-        assert_eq!(instrument.size_precision(), 2);
+        assert_eq!(instrument.price_precision(), 5);
+        assert_eq!(instrument.size_precision(), 0);
+        assert_eq!(instrument.quote_currency(), Currency::USDC());
+        assert_eq!(instrument.settlement_currency(), Currency::USDC());
         assert_eq!(client.get_asset_index(symbol), Some(asset_index));
     }
 

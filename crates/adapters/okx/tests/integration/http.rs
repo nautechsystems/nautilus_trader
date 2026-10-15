@@ -6138,6 +6138,77 @@ async fn test_place_order_venue_error_preserves_submit_retry_gate(
 
 #[rstest]
 #[tokio::test]
+async fn test_amend_algo_order_preserves_ambiguous_first_attempt() {
+    let attempt_count = Arc::new(AtomicUsize::new(0));
+    let counter = Arc::clone(&attempt_count);
+    let router = Router::new().route(
+        "/api/v5/trade/amend-algos",
+        post(move || {
+            let counter = Arc::clone(&counter);
+            async move {
+                if counter.fetch_add(1, Ordering::SeqCst) == 0 {
+                    (
+                        StatusCode::GATEWAY_TIMEOUT,
+                        Json(json!({"code": "50004", "msg": "timeout", "data": []})),
+                    )
+                } else {
+                    (
+                        StatusCode::BAD_REQUEST,
+                        Json(
+                            json!({"code": "51502", "msg": "order already triggered", "data": []}),
+                        ),
+                    )
+                }
+            }
+        }),
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    let client = OKXHttpClient::with_credentials(
+        Some("test_key".into()),
+        Some("test_secret".into()),
+        Some("test_passphrase".into()),
+        Some(format!("http://{addr}")),
+        2,
+        3,
+        1,
+        1,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+    let error = client
+        .amend_algo_order_with_domain_types(
+            InstrumentId::from("BTC-USDT-SWAP.OKX"),
+            "7003".into(),
+            Some(Price::from("54000.0")),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(attempt_count.load(Ordering::SeqCst), 1);
+    assert_eq!(error.to_string(), "Temporary OKX error 50004: timeout");
+    assert_eq!(
+        classify_okx_http_failure(&error),
+        CommandFailure::Ambiguous(error.to_string())
+    );
+    server.abort();
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_place_order_truncated_response_is_ambiguous_transport_failure() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();

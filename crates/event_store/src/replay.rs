@@ -488,7 +488,7 @@ pub trait ReplayCatalog {
     ///
     /// # Errors
     ///
-    /// Returns the catalog implementation's error when slice planning fails.
+    /// Returns an error if slice planning fails (the catalog implementation's error).
     fn plan_slice(
         &mut self,
         query: &CatalogSliceQuery,
@@ -501,7 +501,7 @@ pub trait ReplayCatalog {
     ///
     /// # Errors
     ///
-    /// Returns the catalog implementation's error when slice loading fails.
+    /// Returns an error if slice loading fails (the catalog implementation's error).
     fn load_slice(
         &mut self,
         plan: &CatalogSlicePlan,
@@ -747,10 +747,12 @@ impl CacheReplayContext {
 ///
 /// # Errors
 ///
-/// Returns [`CacheReplayError::EventStore`] when the reader fails, `restore_snapshot`'s
-/// error when the cache snapshot restore hook fails, [`CacheReplayError::Decode`] when
-/// a supported payload cannot be decoded, and [`CacheReplayError::Apply`] when the
-/// decoded payload cannot be applied to the cache.
+/// Returns an error if:
+///
+/// - The reader fails.
+/// - The `restore_snapshot` hook fails.
+/// - A supported payload cannot be decoded.
+/// - The decoded payload cannot be applied to the cache.
 pub fn restore_cache_snapshot_and_replay_tail<B, F>(
     cache: &mut Cache,
     reader: &EventStoreReader<B>,
@@ -800,7 +802,7 @@ where
 ///
 /// # Errors
 ///
-/// See [`restore_cache_snapshot_and_replay_tail`].
+/// Returns an error if [`restore_cache_snapshot_and_replay_tail`] fails.
 pub fn replay_cache_snapshot_tail<B>(
     cache: &mut Cache,
     reader: &EventStoreReader<B>,
@@ -818,8 +820,7 @@ where
 ///
 /// # Errors
 ///
-/// Returns [`ReplayInputError::InvalidSeqRange`] when `range` is invalid and
-/// [`ReplayInputError::EventStore`] when the reader scan fails.
+/// Returns an error if `range` is invalid or the reader scan fails.
 pub fn plan_forensics_replay_inputs<B>(
     reader: &EventStoreReader<B>,
     range: ReplaySeqRange,
@@ -844,7 +845,7 @@ where
 ///
 /// # Errors
 ///
-/// Returns [`ReplayInputError::EventStore`] when the reader scan fails.
+/// Returns an error if the reader scan fails.
 pub fn load_forensics_replay_inputs<B>(
     reader: &EventStoreReader<B>,
     plan: &ReplayInputPlan,
@@ -866,12 +867,14 @@ where
 ///
 /// # Errors
 ///
-/// Returns [`ReplayInputError::EmptyCatalogSelection`] when no catalog slices are selected,
-/// [`ReplayInputError::InvalidSeqRange`] when `range` is invalid,
-/// [`ReplayInputError::MissingCatalogTimeBounds`] when an unbounded selector cannot inherit
-/// bounds from an empty event-store scan, [`ReplayInputError::InvalidCatalogTimeRange`] when a
-/// resolved slice has `start > end`, [`ReplayInputError::Catalog`] when catalog planning fails,
-/// and [`ReplayInputError::EventStore`] when the reader scan fails.
+/// Returns an error if:
+///
+/// - No catalog slices are selected.
+/// - `range` is invalid.
+/// - An unbounded selector cannot inherit bounds from an empty event-store scan.
+/// - A resolved slice has `start > end`.
+/// - Catalog planning fails.
+/// - The reader scan fails.
 pub fn plan_catalog_replay_inputs<B, C>(
     reader: &EventStoreReader<B>,
     catalog: &mut C,
@@ -893,9 +896,8 @@ where
 ///
 /// # Errors
 ///
-/// Returns [`ReplayInputError::MissingCatalogSlice`] when a required slice is missing,
-/// [`ReplayInputError::Catalog`] when catalog loading fails, and
-/// [`ReplayInputError::EventStore`] when the reader scan fails.
+/// Returns an error if a required slice is missing, if catalog loading fails, or if the reader scan
+/// fails.
 pub fn load_catalog_replay_inputs<B, C>(
     reader: &EventStoreReader<B>,
     catalog: &mut C,
@@ -917,9 +919,8 @@ where
 ///
 /// # Errors
 ///
-/// Returns [`CacheReplayError::EventStore`] when the run is missing, not sealed, quarantined, or
-/// unreadable; see [`restore_cache_snapshot_and_replay_tail`] for snapshot, decode, and apply
-/// failures.
+/// Returns an error if the run is missing, not sealed, quarantined, or unreadable; see
+/// [`restore_cache_snapshot_and_replay_tail`] for snapshot, decode, and apply failures.
 pub fn restore_cache_from_sealed_run(
     cache: &mut Cache,
     base_dir: impl Into<PathBuf>,
@@ -940,8 +941,7 @@ pub fn restore_cache_from_sealed_run(
 ///
 /// # Errors
 ///
-/// Returns [`CacheReplayError::EventStore`] when the run is missing, not sealed, quarantined, or
-/// unreadable.
+/// Returns an error if the run is missing, not sealed, quarantined, or unreadable.
 pub fn open_event_store_replay_source(
     base_dir: impl Into<PathBuf>,
     instance_id: &str,
@@ -957,8 +957,7 @@ pub fn open_event_store_replay_source(
 ///
 /// # Errors
 ///
-/// Returns [`CacheReplayError::EventStore`] when the run is missing, not sealed, quarantined, or
-/// unreadable.
+/// Returns an error if the run is missing, not sealed, quarantined, or unreadable.
 pub fn validate_event_store_replay_source(
     base_dir: impl Into<PathBuf>,
     instance_id: &str,
@@ -1197,8 +1196,8 @@ fn validate_seq_range(range: ReplaySeqRange) -> Result<(), ReplayInputError> {
 ///
 /// # Errors
 ///
-/// Returns [`CacheReplayError::SnapshotRestore`] when the blob is missing, fails to load, fails its
-/// content hash check, or fails to restore into the cache.
+/// Returns an error if the blob is missing, fails to load, fails its content hash check, or fails
+/// to restore into the cache.
 pub fn restore_cache_snapshot_blob(
     cache: &mut Cache,
     anchor: Option<&SnapshotAnchor>,
@@ -1239,8 +1238,8 @@ pub fn restore_cache_snapshot_blob(
 ///
 /// # Errors
 ///
-/// Returns [`CacheReplayError::Decode`] when a supported payload cannot be decoded and
-/// [`CacheReplayError::Apply`] when the decoded payload cannot be applied to the cache.
+/// Returns an error if a supported payload cannot be decoded or the decoded payload cannot be
+/// applied to the cache.
 pub fn apply_cache_replay_entry(
     cache: &mut Cache,
     entry: &EventStoreEntry,
@@ -2675,6 +2674,17 @@ mod tests {
             "update_position_from_instrument_close",
             CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
             &[PAYLOAD_TYPE_INSTRUMENT_CLOSE],
+        ),
+        cache_mutation(
+            "update_position_from_adjustment",
+            CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
+            &[PAYLOAD_TYPE_POSITION_ADJUSTED],
+        ),
+        cache_mutation(
+            // Rolls back an adjustment whose event was never published, so replay never applies it
+            "revert_position_adjustment",
+            CacheMutationRecoveryClass::MissingLiveRecovery,
+            &[],
         ),
         cache_mutation(
             "snapshot_position",

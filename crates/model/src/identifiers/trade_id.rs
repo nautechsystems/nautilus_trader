@@ -68,7 +68,7 @@ impl TradeId {
     ///
     /// # Panics
     ///
-    /// This function panics if:
+    /// Panics if:
     /// - `value` is an invalid string (e.g., is empty or contains non-ASCII characters).
     /// - `value` length exceeds 36 characters.
     pub fn new<T: AsRef<str>>(value: T) -> Self {

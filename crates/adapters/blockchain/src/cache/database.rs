@@ -5755,8 +5755,9 @@ impl BlockchainCacheDatabase {
     ///
     /// # Errors
     ///
-    /// Returns a stage-classified error if the signer or client order is already owned, or
-    /// persistence fails. A commit-stage error does not prove the transaction rolled back.
+    /// Returns an error if the signer or client order is already owned, or persistence fails. A
+    /// commit-stage error does not prove the transaction rolled back. The error identifies the
+    /// failure stage.
     pub async fn reserve_execution_intent(
         &self,
         intent: &ExecutionIntentInsert,

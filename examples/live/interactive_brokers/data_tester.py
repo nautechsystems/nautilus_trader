@@ -22,11 +22,12 @@ configured instrument immediately, logging all received data. No orders are plac
 
 from __future__ import annotations
 
+from _common import default_es_future_instrument_id
+
 from nautilus_trader.adapters.interactive_brokers import InteractiveBrokersDataClientConfig
 from nautilus_trader.adapters.interactive_brokers import InteractiveBrokersDataClientFactory
 from nautilus_trader.adapters.interactive_brokers import InteractiveBrokersInstrumentProviderConfig
 from nautilus_trader.adapters.interactive_brokers import MarketDataType
-from nautilus_trader.adapters.interactive_brokers import SymbologyMethod
 from nautilus_trader.common import Environment
 from nautilus_trader.live import LiveNode
 from nautilus_trader.model import BarType
@@ -41,7 +42,7 @@ TRADER_ID = TraderId.from_str("TESTER-001")
 HOST = "127.0.0.1"
 PORT = 7497
 CLIENT_ID = 101
-INSTRUMENT_ID = InstrumentId.from_str("AAPL=STK.SMART")
+INSTRUMENT_ID = InstrumentId.from_str(default_es_future_instrument_id())
 BAR_TYPE = BarType.from_str(f"{INSTRUMENT_ID}-1-MINUTE-LAST-EXTERNAL")
 
 
@@ -50,7 +51,6 @@ def main() -> None:
     Run the example.
     """
     provider_config = InteractiveBrokersInstrumentProviderConfig(
-        symbology_method=SymbologyMethod.RAW,
         load_ids={INSTRUMENT_ID},
     )
 

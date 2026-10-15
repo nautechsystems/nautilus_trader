@@ -702,7 +702,7 @@ mod tests {
     use super::*;
 
     fn make_series_id() -> OptionSeriesId {
-        OptionSeriesId::new(
+        OptionSeriesId::new_derived(
             Venue::new("DERIBIT"),
             ustr::Ustr::from("BTC"),
             ustr::Ustr::from("BTC"),

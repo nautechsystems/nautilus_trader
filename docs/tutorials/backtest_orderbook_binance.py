@@ -58,7 +58,7 @@
 # %% [markdown]
 # ## Prerequisites
 #
-# - Python 3.12+
+# - Python 3.13+
 # - [NautilusTrader](https://pypi.org/project/nautilus_trader/) 2.x installed
 #   (`pip install -U --pre nautilus_trader`)
 # - pandas (`pip install pandas`). The wheel declares no runtime dependencies.

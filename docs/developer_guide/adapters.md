@@ -34,10 +34,10 @@ This guide distinguishes four kinds of guidance:
 
 ## Conformance
 
-An adapter conforms when it satisfies each rule below that applies to it, or documents an exception.
-Name the venue behavior that forces the exception, keep it inside the adapter, and cover it with a
-test that fails if the venue stops requiring it. [Phase 7](#phase-7-prove-conformance) sequences the
-work that proves conformance.
+An adapter conforms when it satisfies each rule below that applies to it, or documents an exception. Name the
+venue behavior that makes the exception necessary. Keep the exception inside the adapter. Add a test that
+fails if the venue no longer needs the exception. [Phase 7](#phase-7-prove-conformance) sequences the work
+that proves conformance.
 
 ### Adapter foundations
 
@@ -95,19 +95,20 @@ contracts against a venue.
 
 ### Shared baseline
 
-Use the shared implementation of each piece below, then use any state structure that satisfies
-the contract it implements. The shared type carries that contract with it and keeps behavior
-comparable across venues, so a local structure has to prove the same contract on its own terms.
+Use the shared implementation of each piece below. Then select any state structure that satisfies its contract.
+The shared type carries the contract and keeps behavior comparable across venues. A local structure must prove
+the same contract through its own implementation.
 
-Two execution clients implement the same trait without trading through a venue API, so the baseline
-does not apply to them: [sandbox](../../crates/adapters/sandbox/src/execution.rs) simulates fills
-locally, and [blockchain](../../crates/adapters/blockchain/src/execution/client.rs) executes
-on-chain behind the `defi` feature. Deterministic simulation is a maintained-adapter requirement
-rather than an optional capability: every maintained adapter must satisfy the
-[adapter DST contract](../concepts/dst.md#adapter-dst-contract) or carry a venue-scoped migration
-record tracking the gap. OKX is the reference implementation;
-[deterministic simulation](#deterministic-simulation) defines the seams, gates, and the bar for new
-adapters.
+The baseline does not apply to two execution clients that implement the same trait without trading
+through a venue API:
+
+- [Sandbox](../../crates/adapters/sandbox/src/execution.rs) simulates fills locally.
+- [Blockchain](../../crates/adapters/blockchain/src/execution/client.rs) executes on-chain behind
+  the `defi` feature.
+
+Deterministic simulation is mandatory for maintained adapters. Each maintained adapter must satisfy the
+[adapter DST contract](../concepts/dst.md#adapter-dst-contract) or carry a venue-scoped migration record that tracks the gap. OKX is the reference implementation.
+[Deterministic simulation](#deterministic-simulation) defines the seams, gates, and the bar for new adapters.
 
 | Target                     | Shared piece                                                                                           | Contract                                                                      |
 | -------------------------- | ------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------- |
@@ -126,9 +127,8 @@ adapters.
 | Time, tasks, and runtime   | [`nautilus_common::live::dst`](../../crates/common/src/live/dst.rs)                                    | [Deterministic simulation](#deterministic-simulation)                         |
 | Wall-clock reads           | [`duration_since_unix_epoch`](../../crates/core/src/time.rs)                                           | [Deterministic simulation](#deterministic-simulation)                         |
 
-Where a venue transmits a discrete value as an IEEE-754 field rather than a decimal string or JSON
-number, contain that at the parsing boundary as a documented exception instead of letting `f64`
-spread inward from it.
+A venue can transmit a discrete value as an IEEE-754 field, rather than a decimal string or JSON number. For
+this case, document the exception at the parsing boundary. Keep `f64` inside that boundary.
 
 Retry classification is the exception to this table: it stays adapter-owned because venue status
 codes and rate-limit semantics differ. The shared machinery around it is not. See
@@ -145,24 +145,26 @@ outside the contract until a slice proves them.
 OKX is the reference implementation. It proves the contract through shared seams, static gates, and
 behavioral gates:
 
-- **Seams:** the `nautilus_common::live::dst` facade for time, tasks, runtime, and signals; the
-  `nautilus_core::time` wall-clock seam; the simulated HTTP and WebSocket transport in
-  `nautilus-network`; and the shared subscription, reconnect, and retry machinery in the baseline
-  table above.
-- **Static gates:** `check-dst-conventions` covers every DST-path production file (`ADAPTER_PATHS`
+- **Seams**: The `nautilus_common::live::dst` facade supplies time, tasks, runtime, and signals. The
+  `nautilus_core::time` seam supplies wall-clock access. `nautilus-network` supplies simulated HTTP and
+  WebSocket transport. The baseline table above lists the shared subscription, reconnect, and retry machinery.
+- **Static gates**: `check-dst-conventions` covers every DST-path production file (`ADAPTER_PATHS`
   in `.pre-commit-hooks/check_dst_conventions.sh`), and the nightly `dst-smoke` gate runs the
   simulation Clippy and test legs.
-- **Behavioral gates:** `crates/adapters/okx/tests/integration/dst.rs` pins exact subscribe bytes
-  and exact per-operation wire fields against controlled local peers; complete wire-to-domain
-  fresh-process comparison lives in the downstream harness.
+- **Behavioral gates**: `crates/adapters/okx/tests/integration/dst.rs` pins exact subscribe bytes and exact
+  per-operation wire fields against controlled local peers. Complete wire-to-domain fresh-process comparison
+  lives in the downstream harness.
 
 The [OKX integration guide's DST section](../integrations/okx.md#deterministic-simulation-testing)
 records the audited slice.
 
-A new adapter proves the contract from its first transport: gate DST-path files as they are added,
-drive every endpoint from configuration to a local peer, and pin wire bytes before expanding the
-slice. Do not introduce a shared abstraction until a second adapter proves the same boundary is
-needed.
+A new adapter proves the contract from its first transport:
+
+1. Add the gates for each DST-path file when you add the file.
+1. Drive each endpoint from configuration to a local peer.
+1. Pin the wire bytes before you expand the slice.
+
+Do not introduce a shared abstraction until a second adapter proves the same boundary is needed.
 
 ## Structure of an adapter
 
@@ -224,8 +226,8 @@ adapter needs them:
 - Put symbols, credentials, URLs, shared enums, and shared parsing under `common/`.
 - Put transport models, typed requests, signing, and HTTP clients under `http/`.
 - Put frames, messages, subscription state, routing, and WebSocket clients under `websocket/`.
-- Implement live data and execution traits in `data.rs` and `execution.rs`, or in product
-  submodules when the venue exposes materially different protocols.
+- Implement live data and execution traits in `data.rs` and `execution.rs`. If the venue exposes materially
+  different protocols, use product submodules as an alternative.
 - Keep PyO3 projection code under `python/`.
 - Organize integration tests by public boundary or product. Do not force all adapters into the
   same filenames.
@@ -234,9 +236,9 @@ Product-specific splits are legitimate when product families have different prot
 client can also span distinct endpoints when request and state semantics remain common. Match the
 venue's real boundaries and keep shared behavior above those splits.
 
-An adapter's public Python package lives under `python/nautilus_trader/adapters/<adapter>/` and
-usually re-exports generated bindings. Change Rust binding metadata or other generator inputs,
-then run `make py-stubs`; do not edit generated `.pyi` files.
+An adapter's public Python package lives under `python/nautilus_trader/adapters/<adapter>/` and usually
+re-exports generated bindings. Change Rust binding metadata or other generator inputs, then run
+`make py-stubs`. Do not edit generated `.pyi` files.
 
 ### Repository and Python wiring
 
@@ -277,23 +279,23 @@ documentation phase. Omit phases and steps that do not apply to the adapter.
 | 0.4  | Initial slice       | Choose the smallest slice that proves an end-to-end path.                                                 |
 | 0.5  | Repository wiring   | Add the crate to the Rust workspace and test inventory, then add only the projection surfaces it exposes. |
 
-**Exit:** The integration guide contains an initial capability matrix, known gaps, and a test plan.
+**Exit**: The integration guide contains an initial capability matrix, known gaps, and a test plan.
 
 ### Phase 1: Build the protocol core
 
 | Step | Component             | Work                                                                                                                            |
 | ---- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| 1.1  | HTTP error types      | Model transport, HTTP status, venue, parsing, and validation failures; classify retryability when supported.                    |
+| 1.1  | HTTP error types      | Model transport, HTTP status, venue, parsing, and validation failures. Classify retryability when supported.                    |
 | 1.2  | HTTP client           | Implement endpoint resolution and typed requests, plus credentials, signing, rate limits, retries, and pagination as needed.    |
 | 1.3  | HTTP API models       | Define typed requests and responses, commonly under `http/` or its product-specific modules.                                    |
 | 1.4  | HTTP parsing          | Convert venue responses to domain types at deterministic boundaries in `http/parse.rs` or `common/parse.rs`.                    |
 | 1.5  | WebSocket error types | Model connection, protocol, and parsing failures, plus authentication and command failures when applicable.                     |
 | 1.6  | WebSocket client      | Implement lifecycle and shutdown, plus authentication, heartbeat, subscription state, and reconnection when applicable.         |
-| 1.7  | WebSocket messages    | Define frames and messages under `websocket/` or product-specific modules; include acknowledgements and venue errors as needed. |
+| 1.7  | WebSocket messages    | Define frames and messages under `websocket/` or product-specific modules. Include acknowledgements and venue errors as needed. |
 | 1.8  | WebSocket parsing     | Decode each frame once, convert domain events, and route data or execution messages by typed identity.                          |
 | 1.9  | Protocol tests        | Prove fixtures, canonical requests, applicable signing vectors, lifecycle, and raw exchanges with mock peers.                   |
 
-**Exit:** The crate compiles, protocol fixtures parse, applicable signing vectors pass, and mock or
+**Exit**: The crate compiles, protocol fixtures parse, applicable signing vectors pass, and mock or
 controlled requests complete any required authentication and exchange raw venue messages.
 
 ### Phase 2: Implement instruments
@@ -305,7 +307,7 @@ controlled requests complete any required authentication and exchange raw venue 
 | 2.3  | Symbol mapping     | Define bidirectional venue symbol and `InstrumentId` conversion without collapsing distinct instruments. |
 | 2.4  | Instrument updates | Implement fresh instrument requests and any supported definition or status updates.                      |
 
-**Exit:** Distinct fixtures cover every supported instrument family, invalid definitions fail
+**Exit**: Distinct fixtures cover every supported instrument family, invalid definitions fail
 clearly, and the data client emits or returns complete Nautilus instruments.
 
 ### Phase 3: Implement market data
@@ -320,7 +322,7 @@ Start with one public stream and one instrument before adding product or endpoin
 | 3.4  | Order book handling      | Preserve snapshot, incremental update, sequence, clear, and batch boundaries.                               |
 | 3.5  | Stream recovery          | Handle malformed input, gaps, unsubscribe, disconnect, reconnect, and subscription replay.                  |
 
-**Exit:** Unit and mock transport tests prove complete domain events for the supported request and
+**Exit**: Unit and mock transport tests prove complete domain events for the supported request and
 subscription matrix.
 
 ### Phase 4: Implement execution
@@ -336,7 +338,7 @@ Establish account state and reconciliation before enabling order flow.
 | 4.5  | Execution client       | Implement `ExecutionClient` commands, lifecycle, tracked and external routing, and ordered event emission.   |
 | 4.6  | Outcome recovery       | Preserve unknown outcomes, deduplicate fills, and resolve state through streams, queries, or reconciliation. |
 
-**Exit:** Mock transport tests cover every supported command, definitive rejection, uncertain
+**Exit**: Mock transport tests cover every supported command, definitive rejection, uncertain
 transmission, duplicate or out-of-order updates, and startup reconciliation.
 
 ### Phase 5: Add optional venue capabilities
@@ -351,7 +353,7 @@ Add these only after the base lifecycle is stable.
 | 5.4  | Product or endpoint splits | Split ownership only when protocol, authentication, quota, or recovery boundaries require it.     |
 | 5.5  | Capability proof           | Add fixtures, functional tests, acceptance cases, and documented limitations for each capability. |
 
-**Exit:** Each optional capability is independently testable and does not weaken the established
+**Exit**: Each optional capability is independently testable and does not weaken the established
 base paths.
 
 ### Phase 6: Complete factories and projection
@@ -364,7 +366,7 @@ base paths.
 | 6.4  | Python package        | Add the public package and Python boundary tests for the capabilities exposed to Python.         |
 | 6.5  | Generated stubs       | Add Rust stub metadata and regenerate the `.pyi` output with `make py-stubs`.                    |
 
-**Exit:** Rust factory tests and PyO3 boundary tests pass, package imports resolve, and generated
+**Exit**: Rust factory tests and PyO3 boundary tests pass, package imports resolve, and generated
 output matches its Rust inputs.
 
 ### Phase 7: Prove conformance
@@ -378,7 +380,7 @@ output matches its Rust inputs.
 | 7.5  | Recovery tests         | Exercise connection failure, reconnect, shutdown, rate limits, and state recovery.                     |
 | 7.6  | Specification gaps     | Record every skipped specification case with a venue or capability reason.                             |
 
-**Exit:** The applicable data and execution testing specifications pass, and every advertised
+**Exit**: The applicable data and execution testing specifications pass, and every advertised
 capability has deterministic and venue evidence.
 
 ### Phase 8: Measure performance and robustness
@@ -390,7 +392,7 @@ capability has deterministic and venue evidence.
 | 8.3  | Fuzz targets         | Fuzz untrusted parsing, decoding, normalization, signing, and encoding boundaries with realistic corpora. |
 | 8.4  | Invariants           | Assert domain and protocol properties stronger than panic freedom.                                        |
 
-**Exit:** Canonical benchmark and fuzz suites run with representative fixtures, documented
+**Exit**: Canonical benchmark and fuzz suites run with representative fixtures, documented
 invariants, and no mandatory categories that the adapter does not use.
 
 ### Phase 9: Finish documentation and operations
@@ -403,7 +405,7 @@ invariants, and no mandatory categories that the adapter does not use.
 | 9.4  | Operations          | Document recovery, troubleshooting, and any venue behavior an operator must understand.        |
 | 9.5  | Final verification  | Verify links, generated output, examples, and the focused documentation checks.                |
 
-**Exit:** A user can configure, test, operate, and diagnose the adapter without reading its source.
+**Exit**: A user can configure, test, operate, and diagnose the adapter without reading its source.
 
 ## Rust adapter patterns
 
@@ -421,9 +423,11 @@ Adapter configs then add only venue semantics:
 - Use an enum for a closed set such as environment, product family, account mode, or endpoint.
 - Use `Option<T>` only when absence has a distinct meaning, including runtime credential fallback.
 - Keep data and execution config separate when their capabilities or credentials differ.
-- Store fields that must not appear in `Debug` as `SecretString`. Derive `Debug` when every sensitive
-  field uses a redacting type; write a custom implementation only when a field cannot use one or the
-  type requires more restrictive output.
+- Store fields that must not appear in `Debug` as `SecretString`. Derive `Debug` when each sensitive field
+  uses a redacting type. Write a custom implementation only when either condition holds:
+
+  - A field cannot use a redacting type.
+  - The type needs more restrictive output.
 - Keep Python config projection thin. It converts types and delegates to the Rust config.
 
 Centralize default HTTP and WebSocket endpoint resolution so one environment selection cannot mix
@@ -440,19 +444,19 @@ Lay out config fields in this order:
 | 3     | `proxy_url`                                | Immediately after the URL block.                                       |
 | 4     | Everything else                            | Timeouts, retries, venue-specific behavior.                            |
 
-Resolve each `None` override to the environment default in a config helper method, and pass the
-resolved URL to the client constructor; constructors never read the `Option` fields directly.
-Keep the same relative order across the struct fields, `bon::Builder` accessors, pyo3 getter lists,
-and Python `__init__` signatures. Published Python signatures keep their positional order: new
-parameters are appended, and existing ones are not reordered, so a signature may lag the struct
-order. An intentional reorder of a published signature is a breaking change; note it under
-Breaking Changes in `RELEASES.md`.
+Resolve each `None` override to the environment default in a config method. Pass the resolved URL to the
+client constructor. Constructors do not read the `Option` fields directly.
+
+Keep the same relative order across struct fields, `bon::Builder` accessors, pyo3 getter lists, and Python
+`__init__` signatures. **Published Python signatures** keep their positional order: append new parameters
+without reordering existing ones, so a signature may lag the struct order. An intentional reorder is a
+breaking change. Note it under Breaking Changes in `RELEASES.md`.
 
 ### Credentials and secret handling
 
-When HTTP and WebSocket clients use the same key material, centralize credential handling in a type,
-commonly under `common/credential.rs`. Keep configs as data transfer objects: resolve credentials
-when constructing the credential, factory, or client, not in Python wrappers or individual request
+When HTTP and WebSocket clients use the same key material, centralize credential handling in a type, commonly
+under `common/credential.rs`. Keep configs as data transfer objects. Resolve credentials when you construct
+the credential, factory, or client. Do not resolve credentials in Python wrappers or individual request
 methods.
 
 #### Classify sensitive values
@@ -460,48 +464,54 @@ methods.
 Classify a value before choosing its type and diagnostic output. Apply the more restrictive rule
 when a venue gives one value more than one role.
 
-| Value class                  | Examples                                                                                                      | Diagnostic output                                                                       |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Secret material              | Passwords, private keys, API secrets, passphrases, bearer and session tokens, refresh tokens, and signatures. | Always show `<redacted>`.                                                               |
-| Credential identity          | API keys, client IDs, usernames, and account identifiers used during authentication.                          | Redact by default. Use a masked API key only when operational correlation requires it.  |
-| Secret-bearing location      | Proxy URLs, RPC URLs, request paths, and query parameters that can contain credentials.                       | Redact the complete location from logs and errors.                                      |
-| Deliberately public identity | Wallet addresses, vault addresses, and public account names that the venue exposes publicly.                  | Show only when the type and adapter contract deliberately classify the value as public. |
+| Value class                  | Examples                                                                                                      | Diagnostic output                                                                              |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Secret material              | Passwords, private keys, API secrets, passphrases, bearer and session tokens, refresh tokens, and signatures. | Always show `<redacted>`.                                                                      |
+| Credential identity          | API keys, client IDs, usernames, and account identifiers used during authentication.                          | Redact by default. Use a masked API key only when operational correlation requires it.         |
+| Secret-bearing location      | Proxy URLs, RPC URLs, request paths, and query parameters that can contain credentials.                       | Show at most a public origin (see below); redact the whole location when its origin is secret. |
+| Deliberately public identity | Wallet addresses, vault addresses, and public account names that the venue exposes publicly.                  | Show only when the type and adapter contract deliberately classify the value as public.        |
 
-Do not infer that an API key, username, or URL is safe to print because it is not sufficient to
-authenticate by itself. Configs often cross logging, exception, and Python representation
-boundaries where partial credential identity remains sensitive.
+An API key, username, or URL can be insufficient to authenticate by itself. Do not infer from this that it is
+safe to print. Configs often cross logging, exception, and Python representation boundaries where partial
+credential identity stays sensitive.
+
+When the adapter classifies a URL's scheme, host, and port as public, diagnostics may show only that
+origin. Omit user information, paths, queries, and fragments. If the origin itself contains a credential
+identity, as some RPC URLs do, redact the whole URL with `SecretString` or `REDACTED`.
 
 #### Use the common secret types
 
-Use `nautilus_core::string::secret` and `zeroize` instead of defining adapter-local redaction or
-zeroization conventions.
+Use `nautilus_core::string::secret`, `nautilus_network`, and `zeroize` instead of defining adapter-local
+redaction or zeroization conventions.
 
-| Mechanism                     | Use                                                                                                                                   |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `SecretString`                | Own a string that must zeroize on drop and render as `<redacted>` with `Debug`.                                                       |
-| `REDACTED`                    | Replace an unconditional secret field in a custom `Debug` or `Display` implementation.                                                |
-| `redact_option`               | Preserve `Some` versus `None` while redacting an optional field in a custom `Debug`.                                                  |
-| `mask_api_key`                | Correlate an API key only through an explicit masked-identity method. Do not use it for secret material.                              |
-| `Zeroizing<T>`                | Bound the lifetime of an owned plaintext `String`, byte buffer, decoded key, canonical payload, or serialized authentication message. |
-| `Zeroize` and `ZeroizeOnDrop` | Clear secret-bearing fields in structs that cannot use `SecretString`, including byte arrays and signing types.                       |
-| `zeroize_json_value`          | Clear owned strings in a mutable JSON value after serializing secret-bearing fields.                                                  |
+| Mechanism                          | Use                                                                                                                                   |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `SecretString`                     | Own a string that must zeroize on drop and render as `<redacted>` with `Debug`.                                                       |
+| `ConnectionUrl`                    | Store a URL with a public origin; `Debug` shows that origin. Borrow the original value with `expose()` only where required.           |
+| `url_origin`                       | Format the public HTTP or WebSocket origin of a URL, including compatible stored `String` fields; otherwise show `<redacted>`.        |
+| `TransportError::redacted_message` | Keep a typed transport category, I/O kind, and HTTP rejection status while omitting arbitrary error payloads.                         |
+| `REDACTED`                         | Replace an unconditional secret field in a custom `Debug` or `Display` implementation.                                                |
+| `redact_option`                    | Preserve `Some` versus `None` while redacting an optional field in a custom `Debug`.                                                  |
+| `mask_api_key`                     | Correlate an API key only through an explicit masked-identity method. Do not use it for secret material.                              |
+| `Zeroizing<T>`                     | Bound the lifetime of an owned plaintext `String`, byte buffer, decoded key, canonical payload, or serialized authentication message. |
+| `Zeroize` and `ZeroizeOnDrop`      | Clear secret-bearing fields in structs that cannot use `SecretString`, including byte arrays and signing types.                       |
+| `zeroize_json_value`               | Clear owned strings in a mutable JSON value after serializing secret-bearing fields.                                                  |
 
 #### Use `SecretString` safely
 
 - Treat serialization as plaintext. `SecretString` uses the underlying string for wire-format
   compatibility, so never serialize a config, credential, or authentication model for diagnostics.
-- Do not use ordinary `SecretString` equality to verify attacker-controlled secrets; it is not
-  constant-time.
+- Do not use ordinary `SecretString` equality to verify attacker-controlled secrets. It is not constant-time.
 - Borrow plaintext through `expose_secret()` only at the signing, encoding, or transport boundary
   that needs it.
-- Consume with `into_inner()` only to transfer ownership. If the receiving API requires `String`,
-  create that final copy at the call boundary and do not retain it in adapter code.
-- Take `&SecretString` when a function only reads the value. Take it by value when the function
-  retains or consumes it.
+- Consume with `into_inner()` only to transfer ownership. If the receiving API requires `String`, create the
+  final copy at the call boundary. Do not keep that copy in adapter code.
+- If a function only reads the value, pass `&SecretString`. If the function keeps or consumes the value, pass
+  it by value.
 - Put secret-bearing fields in the authenticated wire model instead of creating a second model only
   to change `Debug`. Derive `Serialize` and derive `Debug` when every sensitive field redacts.
-- Write a custom `Debug` for credentials backed by byte arrays, signing keys, or other types that
-  cannot store their secret fields as `SecretString`.
+- Some credentials use byte arrays, signing keys, or other types that cannot store secret fields as
+  `SecretString`. For these credentials, write a custom `Debug`.
 - Avoid `Display` for secret-bearing types unless a caller requires it. Any implementation must
   redact secret material.
 
@@ -524,7 +534,8 @@ zeroization conventions.
 - Convert credential strings accepted by a Python constructor to `SecretString` at the Rust
   boundary.
 - Apply the Rust `Debug` and `Display` redaction rules to Python `__repr__` and `__str__`.
-- Expose only a presence check for secret material and secret-bearing locations.
+- Expose only a presence check for secret material and secret-bearing locations, except for an
+  existing endpoint URL getter required for caller compatibility. Keep that raw value out of diagnostics.
 - Return credential identity, such as a username, only when an existing public API or another
   explicit caller needs it. Document the choice and keep the value out of diagnostics.
 - Never expose passwords, private keys, API secrets, passphrases, tokens, or signatures through
@@ -532,19 +543,19 @@ zeroization conventions.
 
 #### Bound plaintext lifetime
 
-- Zeroize each owned plaintext allocation after its final use, including normalized and decoded keys,
-  secret-bearing signing payloads, serialized authentication messages, encoded form values, and
-  mutable request models.
+- Zeroize each owned plaintext allocation after its final use. This includes normalized and decoded keys,
+  secret-bearing signing payloads, serialized authentication messages, encoded form values, and mutable
+  request models.
 - Prefer borrowed slices and existing zeroizing owners over intermediate `String` and `Vec<u8>`
   copies.
 - Limit the guarantee to allocations the adapter owns. Serialization libraries, transports, TLS,
   and the operating system may make copies the adapter cannot reach.
-- Keep plaintext lifetimes short; do not promise process-wide or transport-wide erasure.
+- Keep plaintext lifetimes short. Do not promise process-wide or transport-wide erasure.
 
 #### Redact diagnostics and transport errors
 
-- Never include credentials, signatures, secret material, or secret-bearing URLs in errors or logs
-  at any level.
+- Never include credentials, signatures, secret material, or secret-bearing URL components in errors
+  or logs at any level. Show at most an origin classified as public under the location rule above.
 - Log request metadata such as the method, field count, and byte lengths instead of credentials or
   authentication payloads. Shared transports log metadata rather than payload contents.
 - Treat TRACE as developer-facing diagnostic output. Raw inbound payloads are allowed when their
@@ -556,14 +567,19 @@ zeroization conventions.
 - Never log a raw authentication request or response, or any frame whose schema can contain secret
   material.
 
-| Surface                      | Required handling                                                                                                | Zeroization boundary                                                   |
+| Surface                      | Required handling                                                                                                | Boundary                                                               |
 | ---------------------------- | ---------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| HTTP secret body             | Use `HttpClient::request_with_secret_body`.                                                                      | The client retains the zeroizing owner; lower layers may copy it.      |
-| HTTP path or `HashMap` query | Use `HttpClient::request_with_url_redacted`.                                                                     | The URL is omitted from transport errors.                              |
-| HTTP typed query             | Use `HttpClient::request_with_params_url_redacted`.                                                              | The URL is omitted from transport errors.                              |
+| HTTP secret body             | Use `HttpClient::request_with_secret_body`.                                                                      | The client retains the zeroizing owner. Lower layers may copy it.      |
+| HTTP path or `HashMap` query | Use `HttpClient::request`.                                                                                       | The client adds only the request origin as URL context.                |
+| HTTP typed query             | Use `HttpClient::request_with_params`.                                                                           | The client adds only the request origin as URL context.                |
+| HTTP secret origin           | Set `HttpClient::builder().redact_url(true)` for endpoints whose origin is secret.                               | The client adds no URL context.                                        |
 | HTTP headers and proxy       | Create credential-bearing strings at the client boundary, avoid clones, and do not retain them in adapter state. | The shared client or transport may retain copies.                      |
-| WebSocket authentication     | Keep fields and serialized frames in `SecretString`; create the final `String` immediately before `send_text`.   | The shared client has no secret-owner-preserving send method.          |
+| WebSocket authentication     | Keep fields and serialized frames in `SecretString`. Create the final `String` immediately before `send_text`.   | The shared client has no secret-owner-preserving send method.          |
 | Unsupported combination      | Extend the common client instead of implementing adapter-local URL or error scrubbing.                           | The common API must define the resulting ownership and redaction rule. |
+
+The HTTP URL policy controls the URL context added by `HttpClient`. Diagnostic messages from
+lower layers are unchanged. For example, TLS certificate verification can include the hostname
+in its errors and dependency logs, even when `redact_url(true)` is set.
 
 :::warning Disable redirects for authenticated requests
 
@@ -585,7 +601,8 @@ Test the secret-handling contract as well as successful authentication:
 - Assert that serialization and transport preserve the exact wire value where the venue requires
   plaintext.
 - Force transport failures for credential-bearing URLs and assert that both `Display` and `Debug`
-  error output omit the URL, path secret, and query secret.
+  error output omit user information, path secrets, query secrets, and fragments. Assert that a
+  permitted public origin remains visible; otherwise assert complete redaction.
 - Use compile-time trait assertions for `Zeroize` or `ZeroizeOnDrop`, and test explicit clearing for
   mutable request and response models.
 - Keep deterministic signature vectors so redaction and zeroization changes cannot alter signing
@@ -638,19 +655,19 @@ Model the wire format, not an imagined stable subset:
   identity, and `ts_init`. Keep live client state outside parsers.
 - Treat missing, null, and empty values according to the venue schema. Do not collapse them into one
   fallback when they carry different meanings.
-- Use the venue timestamp for `ts_event` when the payload supplies one. Assign `ts_init` from the
-  adapter clock when it receives or constructs the event. Use receipt time as event time only when
-  the venue has no authoritative timestamp, and cover that fallback with a test.
+- Use the venue timestamp for `ts_event` when the payload supplies one. Assign `ts_init` from the adapter
+  clock when it receives or constructs the event. Use receipt time as event time only when the venue has no
+  authoritative timestamp. Test that fallback.
 
 Avoid permissive fallbacks that silently turn a new venue value into an existing semantic value.
 Stable error handling is part of the parser contract.
 
 #### Numeric precision
 
-Deserialize prices, quantities, money, fees, and other discrete values as `Decimal`. Construct
-domain values with `Price::from_decimal`, `Price::from_decimal_dp`, `Quantity::from_decimal`,
-`Quantity::from_decimal_dp`, `Money::from_decimal`, or `Money::zero`; never route wire values
-through `f64`. See [domain numeric types](rust.md#domain-numeric-types).
+Deserialize prices, quantities, money, fees, and other discrete values as `Decimal`. Construct domain values
+with `Price::from_decimal`, `Price::from_decimal_dp`, `Quantity::from_decimal`, `Quantity::from_decimal_dp`,
+`Money::from_decimal`, or `Money::zero`. Never route wire values through `f64`. See [domain numeric
+types](rust.md#domain-numeric-types).
 
 Choose domain precision from the field contract, not incidental payload formatting:
 
@@ -660,46 +677,45 @@ Choose domain precision from the field contract, not incidental payload formatti
 | Documented trailing zeros are non-semantic padding | `25` at precision 0     | Call `Decimal::normalize`, then use the scale-inferred constructor. |
 | Instrument or currency precision governs the value | `25.00` at precision 2  | Use `Price::from_decimal_dp` or `Quantity::from_decimal_dp`.        |
 
-Use instrument or currency precision for event and report values when available. A venue may send
-the same value as `"25"`, `"25.0"`, or `"25.000"`, so do not infer precision per payload unless
-the adapter defines and tests an explicit compatibility fallback. The declared-precision
-constructors apply banker's rounding when a value has excess non-zero digits; validate round-trip
-equality when the field contract requires exact representation. During reconciliation, follow
+Use instrument or currency precision for event and report values when available. A venue can send the same
+value as `"25"`, `"25.0"`, or `"25.000"`. Do not infer precision per payload unless the adapter defines and
+tests an explicit compatibility fallback. The declared-precision constructors apply banker's rounding when a
+value has excess non-zero digits. If the field contract requires exact representation, validate round-trip
+equality. During reconciliation, follow
 [instrument resolution](#instrument-resolution-during-reconciliation) when precision metadata is
 missing.
 
 #### Venue enum fallbacks
 
-Venues extend wire enums without notice: new order states, order types, and category codes appear
-in production before clients update. Give each extensible venue enum a forward-compatible fallback
-variant (`Unknown` for venue states, `Other` for open value sets such as types and categories) with
-`#[serde(other)]`, so one new value cannot fail deserialization of the message carrying it. Closed
-sets the adapter defines stay strict.
+Venues extend wire enums without notice: new order states, order types, and category codes appear in
+production before clients update. Give each extensible venue enum a forward-compatible fallback variant with
+`#[serde(other)]`. Use `Unknown` for venue states. Use `Other` for open value sets, such as types and
+categories. Thus, one new value cannot fail deserialization of the message that carries it. Closed sets the
+adapter defines stay strict.
 
 The fallback changes where strictness lives, not whether it exists:
 
-- Never panic on an unknown wire variant; the fallback keeps the connection and the sibling records
-  in the same payload alive.
+- Never panic on an unknown wire variant. The fallback keeps the connection and the sibling records in the
+  same payload alive.
 - Never map an unknown variant onto an existing domain value. Make the domain mapping fallible
   (`TryFrom`) so the fallback variant is rejected explicitly at the mapping boundary.
-- Preserve safety-critical payload data even when a sibling classification is unmapped. A fill
-  must still be parsed and emitted when its order state or order type is unknown, because fill
-  fields carry their own prices, quantities, and fees.
-- Skip only the unmappable classification and log a warning with the venue identifiers (order ID,
-  instrument) needed to investigate. When the message carries no data worth preserving, fail the
-  record explicitly instead of inventing a status. Reconciliation heals the gap once the order
-  reaches a mapped state; an unmapped value fails the same way on the reconciliation path, so
-  treat the warning as the signal to add the mapping.
+- Preserve safety-critical payload data even when a sibling classification is unmapped. If the order state or
+  order type is unknown, the adapter must still parse and emit the fill. Fill fields carry their own prices,
+  quantities, and fees.
+- Skip only the unmappable classification and log a warning with the venue identifiers (order ID, instrument)
+  needed to investigate. When the message carries no data worth preserving, fail the record explicitly instead
+  of inventing a status. Reconciliation heals the gap when the order reaches a mapped state. An unmapped value
+  fails the same way on the reconciliation path. Thus, treat the warning as the signal to add the mapping.
 
 #### Separate authority from projections
 
-Use separate response models when one endpoint returns both evidence that establishes permission or
-authorizes state mutation and data needed for a narrower read.
+An endpoint can return both authority evidence and data for a narrower read. The evidence establishes
+permission or authorizes state mutation. For such endpoints, use separate response models.
 
 | Boundary                   | Purpose                                                            | Validation                                                                                          | Meaning of success                                                           |
 | -------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| **Authoritative response** | Establish permission or authorize state mutation.                  | Requires all authoritative fields; rejects legacy conflicts and semantic duplicates before mapping. | The response can support the authority decision it models.                   |
-| **Narrow projection**      | Read a balance, health value, or metadata without using authority. | Decodes returned fields only; its type cannot expose, grant, or infer omitted authority.            | Only the projected value; omitted permission or account evidence is unknown. |
+| **Authoritative response** | Establish permission or authorize state mutation.                  | Requires all authoritative fields. Rejects legacy conflicts and semantic duplicates before mapping. | The response can support the authority decision it models.                   |
+| **Narrow projection**      | Read a balance, health value, or metadata without using authority. | Decodes returned fields only. Its type cannot expose, grant, or infer omitted authority.            | Only the projected value. Omitted permission or account evidence is unknown. |
 
 Use the projection when malformed authority fields must not block the narrower read. Keep the
 authoritative model strict.
@@ -718,20 +734,23 @@ when asynchronous work must outlive a synchronous trait call.
 
 #### Client naming and registration
 
-Name each client family symmetrically: `<Venue>DataClient`, `<Venue>DataClientConfig`, and
-`<Venue>DataClientFactory` for data; `<Venue>ExecutionClient`, `<Venue>ExecutionClientConfig`, and
-`<Venue>ExecutionClientFactory` for execution. Each factory consumes its corresponding client
-config directly. Do not add a separate factory config wrapper. The live node passes its
-`LiveNodeConfig.trader_id` to execution factories, while venue-specific values such as `account_id`
-belong on the execution client config.
+Name each client family symmetrically:
+
+- **Data**: `<Venue>DataClient`, `<Venue>DataClientConfig`, and `<Venue>DataClientFactory`.
+- **Execution**: `<Venue>ExecutionClient`, `<Venue>ExecutionClientConfig`, and
+  `<Venue>ExecutionClientFactory`.
+
+Each factory consumes its corresponding client config directly. Do not add a separate factory config wrapper.
+The live node passes its `LiveNodeConfig.trader_id` to execution factories, while venue-specific values such
+as `account_id` belong on the execution client config.
 
 Within a Python module, order client-family `add_class` registrations alphabetically by exported
 type name so the data and execution families remain grouped.
 
-Do not prefix the ordinary client family with `Live`: a connected client is the default, while
-names such as `SandboxExecutionClient` and `DatabentoHistoricalClient` state alternate behavior.
-Retain `Live` only when it distinguishes explicit runtime or protocol siblings. Runtime types such
-as `LiveNode`, `LiveClock`, and the `Live*EngineConfig` family retain the qualifier.
+Do not prefix the ordinary client family with `Live`. A connected client is the default. Names such as
+`SandboxExecutionClient` and `DatabentoHistoricalClient` identify alternate behavior. Retain `Live` only when
+it distinguishes explicit runtime or protocol siblings. Runtime types such as `LiveNode`, `LiveClock`, and the
+`Live*EngineConfig` family retain the qualifier.
 
 Do not shorten `Execution` in public, project-owned PascalCase type names. Internal implementation
 types may retain established `Exec` names. Also keep `Exec` where the
@@ -753,14 +772,14 @@ protocol cache is valid when parsing, subscription replay, or response correlati
 Choose collections from ownership and update behavior:
 
 - Use a plain `AHashMap` or `AHashSet` for state owned by one task.
-- Use `AtomicMap` or `AtomicSet` for read-heavy immutable snapshots with infrequent writes. Use
-  `rcu` when writers can race; a separate load and store can lose another writer's update.
+- Use `AtomicMap` or `AtomicSet` for read-heavy immutable snapshots with infrequent writes. Use `rcu` when
+  writers can race. A separate load and store can lose another writer's update.
 - Use `DashMap` or `DashSet` for independent keys that receive concurrent entry updates.
 
-Adapters use these patterns in different combinations. Keep the collection behind the component
-that owns its invariant instead of sharing it merely to avoid passing a message. Use `Ustr` for
-repeated protocol strings when interning reduces allocation or comparison cost; keep unique request
-IDs and short-lived payload text in their natural types.
+Adapters use these patterns in different combinations. Keep the collection behind the component that owns its
+invariant instead of sharing it merely to avoid passing a message. Use `Ustr` for repeated protocol strings
+when interning reduces allocation or comparison cost. Keep unique request IDs and short-lived payload text in
+their natural types.
 
 ### Connection lifecycle (`connect`)
 
@@ -776,32 +795,44 @@ Treat each lifecycle method as a contract:
 | `dispose`    | Release background tasks, threads, and external handles.                                                     | No client-owned resource remains active.                                           |
 
 Do not report connected until public commands can use the transport and required engine-side state
-is observable. In particular, an execution client that emits initial account state asynchronously
-waits until the engine cache contains the account before calling `set_connected`; reconciliation
-and strategy startup treat connected as a readiness signal. Apply the same rule to required
-instrument or stream bootstrap state. When transport connection completes before the socket becomes
-active, use a bounded `wait_until_active` step before subscribing or reporting readiness. On partial
-connection failure, clean up resources already started and leave state consistent for retry or
-disposal.
+is observable. Reconciliation and strategy startup treat **connected as a readiness signal**:
 
-When an execution client uses
-[`ExecutionEventEmitter`](../../crates/live/src/execution/emitter.rs), resolve the execution event
-sender with `try_get_exec_event_sender` and install it in the factory's `create`, before the client
-is returned. `LiveNodeBuilder` binds the runner's senders to thread-local storage before it calls
-any registered factory, so `create` runs with the sender available. `None` from
-`try_get_exec_event_sender` means the calling thread has no bound senders, which is expected in a
-factory unit test or in a host that binds later; it is not a construction failure. Install the
-sender in `start` as well, from `get_exec_event_sender`, and do so unconditionally: `LiveNode`
-rebinds the runner's senders on the calling thread before it starts clients, so the `start` install
-is the authoritative one, and the emitter shares one sender slot across its clones, so it reaches
-every clone taken during construction, including those handed to client-owned tasks. A host that
-calls a factory outside `LiveNodeBuilder` binds the runner's senders on the client's thread before
-`start`: the `start` install resolves through `get_exec_event_sender`, which reads only the
-thread-local slot and panics when nothing has bound it, so a sender passed through the host's own
-factory or client constructor - which reaches the emitter's shared slot via `set_sender` but not
-the thread-local slot - does not satisfy that lookup on its own. Constructor injection stands
-alone only for a client whose `start` accepts an already-installed sender instead of performing
-the unconditional lookup; the emitter-backed execution clients in this repository all perform it.
+- An execution client that emits initial account state asynchronously waits until the engine cache
+  contains the account before calling `set_connected`.
+- Apply the same readiness rule to required instrument or stream bootstrap state.
+- When transport connection completes before the socket becomes active, use a bounded
+  `wait_until_active` step before subscribing or reporting readiness.
+
+If connection fails after some resources start, clean up those resources. Leave the state consistent for retry
+or disposal.
+
+#### Execution event sender setup
+
+For an execution client that uses
+[`ExecutionEventEmitter`](../../crates/live/src/execution/emitter.rs), install the sender at both stages:
+
+1. **Factory creation**: Resolve the sender with `try_get_exec_event_sender`. When it returns `Some`, install
+   the sender in `create` before returning the client. `LiveNodeBuilder` binds the runner's senders to
+   thread-local storage before it calls a registered factory. Thus, the sender is available in each factory.
+
+   `None` means that the calling thread has no bound senders. This is expected in a factory unit test or a
+   host that binds later. It is not a construction failure.
+1. **Client start**: Unconditionally install the sender from `get_exec_event_sender` in `start`.
+   `LiveNode` rebinds the runner's senders on the calling thread before starting clients, so this
+   installation is authoritative. The emitter shares one sender slot across its clones, so it reaches
+   every clone taken during construction, including those handed to client-owned tasks.
+
+If a host calls a factory outside `LiveNodeBuilder`, it must bind the runner's senders on the client's thread
+before `start`. `get_exec_event_sender` reads only the thread-local slot. It panics if nothing has bound that
+slot.
+
+A sender passed through the host's factory or client constructor reaches the emitter's shared slot through
+`set_sender`. It does not populate the thread-local slot. Thus, constructor injection alone does not satisfy
+the lookup.
+
+Constructor injection stands alone only when the client's `start` accepts an already-installed
+sender instead of performing the unconditional lookup. All emitter-backed execution clients in this
+repository perform that lookup.
 
 #### Bootstrap ordering
 
@@ -855,28 +886,26 @@ enters the engine:
 Add a regression test that changes the upstream instrument response between two requests. The
 second response must reflect the new venue state rather than a private cache entry.
 
-Publish typed data through the engine's data event path. Parse and validate before emission, and do
-not hold mutable adapter state across downstream dispatch. A closed event receiver normally means
-the engine is stopping: log the send failure and let lifecycle teardown own recovery rather than
-retrying the same event indefinitely.
+Publish typed data through the engine's data event path. Parse and validate before emission, and do not hold
+mutable adapter state across downstream dispatch. A closed event receiver normally means that the engine is
+stopping. Log the send failure. Let lifecycle teardown own recovery, rather than retrying the same event
+indefinitely.
 
 For order-book deltas, follow the
 [delta flag and event boundary contract](../concepts/data/index.md#delta-flags-and-event-boundaries).
-Every logical update ends with `F_LAST`; snapshots use `F_SNAPSHOT` and end with
-`F_SNAPSHOT | F_LAST`, including an empty snapshot represented only by `Clear`.
+Each logical update ends with `F_LAST`. Snapshots use `F_SNAPSHOT` and end with `F_SNAPSHOT | F_LAST`,
+including an empty snapshot represented only by `Clear`.
 
-When a venue exposes instrument status only as a polled snapshot, diff it against the prior full
-snapshot and emit changes rather than repeating every status. Treat an instrument removed from the
-snapshot according to the venue contract. Map removal to `NotAvailableForTrading` only when
-disappearance means the instrument is unavailable. Update the full private cache even when
-emissions are filtered to active subscriptions.
+If a venue exposes instrument status only as a polled snapshot, compare it with the previous full snapshot.
+Emit only the changes, not all the statuses again. Treat an instrument removed from the snapshot according to
+the venue contract. Map removal to `NotAvailableForTrading` only when disappearance means the instrument is
+unavailable. Update the full private cache even when emissions are filtered to active subscriptions.
 
 ### Order book recovery ownership
 
-[`nautilus_live::book`](../../crates/live/src/book/mod.rs) provides the recovery machinery shared by
-OKX, Polymarket, Lighter, Binance, Hyperliquid, Bybit, Betfair, and AX Exchange. Keep venue-specific
-book synchronization and recovery in each adapter's `src/book/`, with stream handlers dispatching
-commands and frames.
+[`nautilus_live::book`](../../crates/live/src/book/mod.rs) provides shared recovery machinery. Keep
+venue-specific book synchronization and recovery in each adapter's `src/book/`, with stream handlers
+dispatching commands and frames.
 
 #### Per-book sync
 
@@ -891,9 +920,10 @@ recovery at a time, so repeated gap reports cannot start competing recoveries. A
 where a monitor checks it, or the book keeps an owner that never acts. Stale-feed reports cover
 every book that no running recovery owns.
 
-OKX, Polymarket, Binance, Hyperliquid, Bybit, and AX Exchange keep a `BookSync` per book. Betfair
-keeps one per market, since it images whole markets. Lighter keeps a `BookRecoveryState` per book
-inside its handler-owned tracker.
+- OKX, Polymarket, Binance, Hyperliquid, Bybit, and AX Exchange keep a `BookSync` per book.
+- Derive keeps a `BookSync` per exact wire channel, shared by delta and depth consumers with matching arguments.
+- Betfair keeps a `BookSync` per market, since it images whole markets.
+- Lighter keeps a `BookRecoveryState` per book inside its handler-owned tracker.
 
 #### Starting recovery
 
@@ -917,25 +947,26 @@ When recovery cannot start, keep the book able to ask again:
 - Pass every incremental update for an unsynced book through `BookSync::gap`, including updates
   that arrive while it is already recovering. Suppressing an update on phase alone strands a book
   that nothing owns: its output stays dark until a snapshot happens to arrive.
-- Cancel a claimed episode when the task scope refuses its task, for example with a drop guard on
-  the episode's cancellation token that the task takes over. A running episode without a task owns
-  the book and refuses every later claim.
+- If the task scope refuses a claimed episode's task, cancel the episode. For example, use a drop guard on the
+  episode's cancellation token. The task takes ownership of this guard. A running episode without a task owns
+  the book and refuses each later claim.
 - Start nothing after unsubscribe or shutdown. Removing the book cancels its episode, and a closed
   task scope refuses the task, so the drop guard cancels a late claim.
 
 #### Recovery state and retry budgets
 
-Keep one `BookRecoveryState` per subscribed book under the adapter's existing state lock or owning
-task, either directly or inside the shared per-book `BookSync`. It admits one running recovery and
-cancels obsolete work. A book never ends in a failed state.
+Keep one `BookRecoveryState` per subscribed book under the adapter's existing state lock or owning task. Store
+it directly or inside the shared per-book `BookSync`. It admits one running recovery and cancels obsolete
+work. A book never ends in a failed state.
 
-`BookRecovery::run` owns replacement attempts, child cancellation tokens, snapshot waits, backoff,
-and retry limits. It makes up to eight attempts within 180 seconds, then continues at an interval
-that doubles from one minute to fifteen minutes until a snapshot is accepted or the episode is
-cancelled; an error the classifier rejects moves straight to that interval. Each attempt after the
-budget is bounded by `max(snapshot_timeout, 60 seconds)`, so a stalled write or a disabled snapshot
-deadline cannot stop the retries. The adapter supplies its replacement operation and error
-classifier.
+`BookRecovery::run` owns replacement attempts, child cancellation tokens, snapshot waits, backoff, and retry
+limits. It makes up to eight attempts in 180 seconds. After that budget, the retry interval doubles from one
+minute to fifteen minutes. Retries continue until the book accepts a snapshot or the episode is cancelled. An
+error that the classifier rejects moves directly to that interval.
+
+Each attempt after the budget has a `max(snapshot_timeout, 60 seconds)` bound. Thus, a stalled write or a
+disabled snapshot deadline cannot stop the retries. The adapter supplies the replacement operation and the
+error classifier.
 
 Keep a running invocation alive across reconnects so a reconnect can neither replenish the budget
 nor abandon a replacement write. A reconnect never interrupts an attempt or shortens a backoff
@@ -964,18 +995,24 @@ snapshot parsing. The shared types describe the result of validation and monitor
   gap diagnostics.
 - `BookSyncSignal`: a stale feed or missing snapshot for one book.
 
-Lighter retains its subscription generations and control-ack/typed-snapshot correlation. OKX retains
-its documented [acknowledgement-correlation limits](../integrations/okx.md#snapshot-correlation-limitation).
-Hyperliquid accepts every `l2Book` frame as a snapshot, and with stale stream recovery enabled its
-stream health monitor starts recovery for a stale delta book. Betfair carries one market
-subscription per connection, so a replacement re-images every market; recoveries join a pending
-image request rather than writing competing subscriptions, and a reconnect resumes synced books from
-the subscription's clocks. AX Exchange accepts every L2 and L3 frame as a snapshot and keeps its
-books across client reconnects, since its WebSocket client replays subscriptions on connect.
+- **Lighter**: retains subscription generations and control-ack/typed-snapshot correlation.
+- **OKX**: retains its documented
+  [acknowledgement-correlation limits](../integrations/okx.md#snapshot-correlation-limitation).
+- **Hyperliquid**: accepts every `l2Book` frame as a snapshot. With stale stream recovery enabled,
+  its stream health monitor starts recovery for a stale delta book.
+- **Betfair**: carries one market subscription per connection, so a replacement re-images every market.
+  Recoveries join a pending image request rather than writing competing subscriptions. Reconnects resume
+  synced books from the subscription's clocks.
+- **AX Exchange**: accepts every L2 and L3 frame as a snapshot and keeps books across client reconnects,
+  since its WebSocket client replays subscriptions on connect.
+- **Derive**: accepts full snapshots only when their timestamps advance, retaining that floor across
+  reconnects. Advancing empty snapshots count as updates. Replacement uses an unsubscribe/subscribe pair on
+  the existing socket. See [Derive order book recovery](../integrations/derive.md#order-book-recovery) for
+  timer defaults and the notification correlation limit.
 
 Adapters fall into two recovery families, which determine the oracle a stress harness can use:
 
-- Push (OKX, Polymarket, Lighter, Hyperliquid, Bybit, Betfair, AX Exchange): a replacement
+- Push (OKX, Polymarket, Lighter, Hyperliquid, Bybit, Betfair, AX Exchange, Derive): a replacement
   resubscribes, and the venue stream delivers the snapshot.
 - Pull (Binance): diff streams stay subscribed. A replacement fetches a REST snapshot, and the
   adapter accepts it only when the buffered diffs continue from its `lastUpdateId` without a gap.
@@ -993,12 +1030,11 @@ without relearning behavior:
 
 - Keep book sync state in `src/book/sync.rs` behind `BookSyncTracker`.
 - Wait for snapshots with `book_snapshot_timeout_secs`, defaulting to the shared
-  `DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS` (10 seconds) in `nautilus_live::book`; the value stays
-  tunable per deployment.
-- Honor a zero timeout as disabled snapshot deadlines on every wait path, including adapter-owned
-  sends and snapshot waits outside the shared runner: with no deadline, those waits resolve only on
-  cancellation. The shared runner still bounds recovery by its 180-second initial budget and by
-  one-minute attempts after it.
+  `DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS` (10 seconds) in `nautilus_live::book`. The value stays tunable per
+  deployment.
+- Treat a zero timeout as disabled snapshot deadlines on all wait paths. This includes adapter-owned sends and
+  snapshot waits outside the shared runner. Without a deadline, those waits resolve only on cancellation. The
+  shared runner still bounds recovery by its 180-second initial budget and by one-minute attempts after it.
 - Keep the live stress harness at `tests/stress/book_stress.rs` as the `<venue>-book-stress` test
   target. The [order book sync conformance](spec_data_testing.md#order-book-sync-conformance)
   specification defines the contract it checks and the faults it forces.
@@ -1048,41 +1084,49 @@ commission failure.
 ##### Startup mass status
 
 `generate_mass_status` runs once per execution client before trading starts. Its default
-implementation composes the three bulk methods concurrently from one `ts_init`, derives each
-command's `start` from `lookback_mins`, and requests full order history with `open_only=false`.
+implementation:
+
+- Composes the three bulk methods concurrently from one `ts_init`.
+- Derives each command's `start` from `lookback_mins`.
+- Requests full order history with `open_only=false`.
+
 Implementing the bulk methods is therefore enough for startup. Override the composition when the
 client declares a history bound, as described in
-[bounded mass-status reports](#bounded-mass-status-reports), or when it does not use the realtime
-clock. Returning `Ok(None)` logs a warning and leaves that client unreconciled, while an error
-fails startup.
+[bounded mass-status reports](#bounded-mass-status-reports), or when it does not use the realtime clock.
+
+Returning `Ok(None)` logs a warning and leaves that client unreconciled. An error fails startup.
 
 ##### Mass-status order evidence
 
-Give every fill report order evidence: an order report for its venue order ID in the same mass
-status, or an order the cache already holds. Reconciliation drops a fill group with neither and
-logs a warning. The exception is a group whose fills carry a `venue_position_id`: reconciliation
-builds its order when `generate_missing_orders` is enabled and skips it otherwise. A mass status
-that reports only open orders therefore loses the fills of closed orders missing from the cache,
-such as orders placed outside the node or before a restart without a persisted cache.
+Give each fill report order evidence from one of these sources:
 
-When the venue keeps no queryable record of an order, such as a venue with no closed-order history
-or a block-trade or settlement fill, build a `FILLED` order report from its fills. Withhold the
-fills instead when applying them would misstate a position, for example when they miss balance
-changes made without a trade.
+- An order report for its venue order ID in the same mass status.
+- An order that the cache already holds.
+
+Reconciliation drops a fill group with neither and logs a warning, except when the group's fills carry a
+`venue_position_id`. For that exception, reconciliation builds the order when `generate_missing_orders` is
+enabled and skips it otherwise.
+
+Thus, a mass status with only open orders loses fills for closed orders that the cache does not contain.
+Examples include orders placed outside the node or before a restart without a persisted cache.
+
+If the venue has no queryable order record, build a `FILLED` order report from its fills. Examples include
+venues without closed-order history, block-trade fills, and settlement fills. Withhold the fills instead when
+applying them would misstate a position, for example when they miss balance changes made without a trade.
 
 ##### Position report entry averages
 
 Pass the venue's average entry price through unrounded as `avg_px_open`, and state how
 reconciliation may use it:
 
-- Keep the defaults when the venue average is the quantity-weighted average of opening fills,
-  unchanged by reductions and reset on reversal, as Nautilus computes it.
+- Nautilus computes a quantity-weighted average of opening fills. Reductions do not change it, and reversal
+  resets it. If the venue average follows those rules, keep the defaults.
 - Call `with_avg_px_open_reconciliation(AvgPxReconciliation::OpeningOnly)` when the venue computes
   the average another way, such as over FIFO lots. Reconciliation then uses it only to open a
   position from flat and never compares it with the cached average.
-- Call `with_avg_px_open_precision(precision)` when the venue rounds or truncates the average.
-  Comparisons then allow one unit at that precision; quantity matching is unchanged. Drop the
-  marker when the adapter replaces the average with an exact value.
+- Call `with_avg_px_open_precision(precision)` when the venue rounds or truncates the average. Comparisons
+  then allow one unit at that precision. Quantity matching is unchanged. Drop the marker when the adapter
+  replaces the average with an exact value.
 
 [Reported entry averages](../concepts/execution/reconciliation.md#reported-entry-averages) describes
 each effect.
@@ -1092,11 +1136,11 @@ each effect.
 `ExecutionMassStatus.ts_init` marks the start of snapshot collection. For every producer,
 including reconnect snapshots and custom `generate_mass_status` implementations:
 
-- **Capture before collection:** Read the adapter's local clock before the first request,
+- **Capture before collection**: Read the adapter's local clock before the first request,
   cache read, or concurrent collection task.
-- **Use a consistent clock:** Use the same local clock as execution fill and fill-void
+- **Use a consistent clock**: Use the same local clock as execution fill and fill-void
   initialization timestamps. Never substitute a venue timestamp or zero.
-- **Preserve the boundary:** Keep that value through snapshot construction and publication.
+- **Preserve the boundary**: Keep that value through snapshot construction and publication.
   Neither completion time nor individual report timestamps replace it.
 
 Runtime reconciliation skips an order snapshot when a cached fill or fill void has `ts_init`
@@ -1108,8 +1152,8 @@ Incorrect timestamps change reconciliation behavior:
   causing the engine to void that fill incorrectly.
 - A **zero timestamp** can suppress legitimate snapshot corrections indefinitely.
 
-**Test custom producers:** Delay a report response and assert that the mass-status timestamp
-is captured before collection starts and remains unchanged when collection finishes.
+For custom producers, delay a report response. Assert that the mass-status timestamp is captured before
+collection starts. Assert that the timestamp stays unchanged when collection finishes.
 
 See [Snapshot freshness and fill corrections](../concepts/execution/reconciliation.md#snapshot-freshness-and-fill-corrections)
 for the startup distinction and limits when venue state is already stale.
@@ -1120,21 +1164,20 @@ The bulk methods take a filter command carrying `instrument_id`, `start`, and `e
 `open_only` for order reports and `venue_order_id` for fill reports. Apply every filter the venue
 endpoint supports and complete the rest locally:
 
-- `open_only` separates the currently open orders a periodic check needs from the history a mass
-  status needs. Retain a report for `open_only` when its status is open **or** in-flight, not open
-  alone: a venue holding an order it has not yet acknowledged reports it as `SUBMITTED`, which is
-  in-flight rather than open.
-- Apply `start` and `end` only to closed reports, since an order working at the venue is authoritative
-  however long it has rested without an update.
+- `open_only` separates the currently open orders a periodic check needs from the history a mass status needs.
+  For `open_only`, keep reports whose status is open **or** in-flight, not open alone. A venue reports an
+  order as `SUBMITTED` if it holds the order but has not acknowledged it. This status is in-flight, not open.
+- Apply `start` and `end` only to closed reports. An order working at the venue is authoritative, regardless
+  of how long it has rested without an update.
 - Test a report for a terminal status with `is_closed()`, never `!is_open()`, which classifies
   `SUBMITTED` as terminal.
 
 Log report counts at the command's `log_receipt_level` so periodic checks stay at debug while mass
 status logs at info.
 
-When a periodic check request fails, the engine marks that client failed for the cycle and stops
-inferring absence for the orders and positions it covers. Returning an error is therefore safer
-than returning an empty set.
+If a periodic check request fails, the engine marks that client failed for the cycle. It stops inferring
+absence for the orders and positions that the client covers. Returning an error is therefore safer than
+returning an empty set.
 
 ##### Single-order probes
 
@@ -1146,9 +1189,9 @@ venue identifier yet. The engine discards a report whose identity does not match
 
 Distinguish absence from failure in that probe, because the engine acts on the difference:
 
-- `Ok(None)` states that the venue answered and has no such order. The engine treats that as proof
-  and resolves an accepted, submitted, or partially filled order to a terminal state, while pending
-  cancel and update states stay unresolved.
+- `Ok(None)` states that the venue answered and has no such order. The engine treats that answer as proof. It
+  resolves an accepted, submitted, or partially filled order to a terminal state. Pending cancel and update
+  states stay unresolved.
 - An error states that the lookup did not answer, so the engine defers the missing-order resolution
   to a later cycle.
 
@@ -1158,23 +1201,23 @@ implement this method before an open-order check runs in full-history mode.
 
 ##### Shared reconciliation changes
 
-The execution engine and the live `ExecutionManager` apply every adapter's reports through the
-same code, so a change to shared execution or reconciliation logic changes behavior for every venue
-at once. Assess such a change against every adapter with an execution client, not only the venue
-that motivated it. For each adapter, check the report fields the change relies on, for example:
+The execution engine and the live `ExecutionManager` apply all adapters' reports through the same code. Thus,
+changes to shared execution or reconciliation logic change behavior for all venues at once. Assess such a
+change against each adapter with an execution client, not only the venue that motivated it. For each adapter,
+check the report fields the change relies on, for example:
 
 - The time `OrderStatusReport.ts_accepted` carries: the venue's acceptance time, its last update
   time, or a local timestamp. A last update or local time can place an order's acceptance after its
   own fills.
-- The time `OrderStatusReport.ts_last` carries for a closed order: when it closed, or an earlier
-  time such as its creation, which can place a cancellation before the order's own fills.
+- The time that `OrderStatusReport.ts_last` carries for a closed order: its close time or an earlier time,
+  such as creation. An earlier time can place a cancellation before the order's own fills.
 - Whether fill reports carry the same `venue_order_id` as the order report for the same order.
 - Whether one client order can carry more than one venue order ID in a single mass status, for
   example after a price replacement.
 - Whether mass status includes closed orders or only open ones.
 
-Classify each adapter as helped, unaffected, or at risk, cite the code that decides it, and include
-the result in the pull request description.
+Classify each adapter as helped, unaffected, or at risk. Cite the code that decides the classification.
+Include the result in the pull request description.
 
 #### Commission failure handling
 
@@ -1193,8 +1236,13 @@ confirmed trade with economics the venue did not report.
 
 ##### REST report construction
 
-Commission construction belongs to the REST report request. If it fails for any required fill,
-return an error from the direct fill report request, targeted recovery, or complete mass status.
+Commission construction belongs to the REST report request. If commission construction fails for a required
+fill, return an error from the affected request:
+
+- The direct fill report request.
+- Targeted recovery.
+- Complete mass status.
+
 Never drop the fill, return a partial mass status, or mark a bounded report set incomplete for this
 failure. Otherwise, an order or position report can cause the engine to infer the same quantity
 without its venue commission.
@@ -1209,28 +1257,33 @@ reconciliation, and targeted order recovery. If commission calculation fails, th
 valid explicit fills, but it leaves the residual inferred quantity and dependent terminal
 transition pending.
 
-For an external order, calculate commission before a cache or event transition could prevent a
-retry. If the responsible execution client is unavailable, defer the inferred fill instead of
-treating the missing client as an `Ok(None)` response.
+For an external order, calculate commission before a cache or event transition could prevent a retry. If the
+responsible execution client is unavailable, defer the inferred fill. Do not treat that missing client as an
+`Ok(None)` response.
 
-Pass the same quantity, price, and liquidity side as the inferred-fill event. For a cached order with
-prior fills, calculate commission from the back-solved price of the unbooked incremental quantity,
-not the venue report's cumulative average price.
+Pass the same quantity, price, and liquidity side as the inferred-fill event. A cached order can have prior
+fills. For such an order, calculate commission from the unbooked incremental quantity's back-solved price. Do
+not use the venue report's cumulative average price for that commission.
 
-A position-only synthetic correction has no underlying trade evidence and may leave commission
-unspecified. Do not present an aggregate or generic value as the exact commission for that unknown
-fill; this case is distinct from a failed venue calculation.
+A position-only synthetic correction has no underlying trade evidence and may leave commission unspecified. Do
+not present an aggregate or generic value as the exact commission for that unknown fill. This case is distinct
+from a failed venue calculation.
 
 ##### WebSocket trade processing
 
-Process each WebSocket trade atomically. Construct every owned maker and taker fill report before
-emitting any report, mutating fill trackers, or consuming the trade's deduplication key. Consume the
-key only after all reports route successfully.
+Process each WebSocket trade atomically. Construct all owned maker and taker fill reports before any of these
+actions:
 
-On failure, log the error and leave the trade unprocessed. Do not confirm or terminalize the
-affected orders or mark them permanently unreconcilable. A duplicate or reconnect replay can retry
-the trade. Scheduled REST reconciliation remains the authoritative recovery path; the WebSocket
-handler does not start an immediate REST request.
+- Emission of a report.
+- Mutation of fill trackers.
+- Consumption of the trade's deduplication key.
+
+Consume the key only after all reports route successfully.
+
+On failure, log the error and leave the trade unprocessed. Do not confirm or terminalize the affected orders
+or mark them permanently unreconcilable. A duplicate or reconnect replay can retry the trade. Scheduled REST
+reconciliation stays the authoritative recovery path. The WebSocket handler does not start an immediate REST
+request.
 
 #### Bounded mass-status reports
 
@@ -1240,11 +1293,14 @@ reports_complete)`. Capture one cutoff for the mass-status request and use it fo
 order and fill query. A moving cutoff can omit records at different boundaries and produce a report
 set that never existed at the venue.
 
-Set `reports_complete=true` only when every source needed to interpret the bounded history
-completed and all required records were parsed, mapped, and linked to their orders. A failed
-required source, required row that cannot be parsed or mapped, or historical fill without its
-required order report makes the set incomplete. Preserve successful legs and authoritative active
-orders, but do not represent a failed historical query as a successful empty result.
+Set `reports_complete=true` only when both conditions hold:
+
+- All sources necessary to interpret the bounded history completed.
+- All required records were parsed, mapped, and linked to their orders.
+
+A failed required source, required row that cannot be parsed or mapped, or historical fill without its
+required order report makes the set incomplete. Preserve successful legs and authoritative active orders, but
+do not represent a failed historical query as a successful empty result.
 
 Commission construction is an exception to partial bounded history. Follow
 [commission failure handling](#commission-failure-handling) and fail the report request instead of
@@ -1270,9 +1326,9 @@ Do not emit a report for:
 - An unparsed row
 - A venue that does not publish positions
 
-Dropping a reported zero or flat, or inventing a zero without authoritative coverage, is an
-adapter coding error. A complete venue snapshot can establish flat only when its documented
-coverage includes the position; a missing or failed response cannot.
+Dropping a reported zero or flat, or inventing a zero without authoritative coverage, is an adapter coding
+error. A complete venue snapshot can establish flat only when its documented coverage includes the position. A
+missing or failed response cannot.
 :::
 
 When positions come from a cached stream, absence proves flat only when a complete snapshot from
@@ -1280,17 +1336,17 @@ the current connection epoch positively covers that instrument. Invalidate snaps
 reconnect, and keep a row uncovered when it could not be parsed or mapped. Emit an explicit flat
 report for an absent touched instrument only after that coverage is established.
 
-Preserve stable venue order and trade identities across live dispatch and mass status. Include
-client order linkage and `venue_position_id` where the venue supplies them so the execution engine
-can distinguish a coherent lifecycle from ambiguous history. See
+Preserve stable venue order and trade identities across live dispatch and mass status. Include client order
+linkage where the venue supplies it. Include `venue_position_id` where the venue supplies it. These fields let
+the execution engine distinguish a coherent lifecycle from ambiguous history. See
 [Bounded history safety](../concepts/execution/reconciliation.md#bounded-history-safety) for the engine's
 economic application rules.
 
 #### Instrument resolution during reconciliation
 
-Report generation resolves each record's instrument to parse venue payloads at the correct price and
-size precision. Resolve it from the instruments the adapter loaded during connect, and classify a
-miss by whether the record was in scope.
+Report generation resolves each record's instrument to parse venue payloads at the correct price and size
+precision. Resolve it from the instruments that the adapter loaded during connect. Classify a miss by whether
+the record was in scope.
 
 Do not request an instrument from the venue while generating reports:
 
@@ -1301,10 +1357,9 @@ Do not request an instrument from the venue while generating reports:
 
 Load what the adapter needs during connect instead.
 
-An in-scope record whose instrument is missing is never dropped silently. A discarded open order
-report is indistinguishable from an order the venue never had, which leads the engine to resolve a
-live order as missing at the venue. Scope decides whether a miss is expected, so evaluate it before
-classifying the record:
+An in-scope record whose instrument is missing is never dropped silently. The engine cannot distinguish a
+discarded open order report from an order that the venue did not have. Thus, it resolves a live order as
+missing at the venue. Scope decides whether a miss is expected, so evaluate it before classifying the record:
 
 | Record                                         | Outcome                                 | Report set                         |
 | ---------------------------------------------- | --------------------------------------- | ---------------------------------- |
@@ -1312,17 +1367,21 @@ classifying the record:
 | In scope, open order or position status report | Return an error from the report request | Not returned                       |
 | In scope, closed or historical record          | Log a warning naming the instrument     | Incomplete when history is bounded |
 
-`InstrumentProviderConfig.load_ids` defines that scope. When it names an explicit set, records for
-instruments outside it are expected absences rather than errors, so a node scoped to one instrument
-neither fails nor warns because the venue returned records for the rest.
+`InstrumentProviderConfig.load_ids` defines that scope. If it names an explicit set, records for instruments
+outside that set are expected absences, not errors. Thus, a node scoped to one instrument does not fail or
+warn when the venue returns records for other instruments.
 
-Historical queries reach past the loaded instrument set routinely, because expiries retire
+Historical queries routinely reach past the loaded instrument set because expiries retire
 instruments that earlier fills still reference. Failing a bounded-history query for one expired
-instrument would withhold every other record it returned, so record the incompleteness through
-`set_report_window`. Incompleteness does not veto an explicit position report. A bounded fill for an
-instrument with no explicit position report does not change a position. Emit an explicit flat report
-only when coverage proves the venue has no position. Do not omit the row and expect the engine to
-infer flat.
+instrument would withhold every other record it returned, so record incompleteness through
+`set_report_window`.
+
+**Position effects**:
+
+- Incompleteness does not veto an explicit position report.
+- A bounded fill for an instrument with no explicit position report does not change a position.
+- Emit an explicit flat report only when coverage proves the venue has no position. Do not omit the
+  row and expect the engine to infer flat.
 
 `reconciliation_instrument_ids` filters reports after the execution engine receives them, so it
 cannot prevent a resolution failure inside an adapter. Keep the adapter's scope in its instrument
@@ -1334,8 +1393,8 @@ Route execution updates according to order ownership, independent of the dispatc
 
 - For an order submitted and tracked by this client, emit typed order events through the normal
   order state machine.
-- For an untracked or external order, emit `OrderStatusReport` and `FillReport` values so the
-  execution engine can reconcile or create the external order.
+- For an untracked or external order, emit `OrderStatusReport` and `FillReport` values. These reports let the
+  execution engine reconcile or create the external order.
 
 Do not invent strategy or client identity for an untracked order. Preserve available venue
 identity in the report and let the engine apply
@@ -1346,9 +1405,9 @@ Model tracked ownership with two conceptual layers:
 
 - **Order identity** contains the stable fields that associate an update with the submitted order:
   client order ID, strategy, instrument, side, and order type.
-- **Order context** combines that identity with the submitted order shape needed to construct later
-  events without accessing the engine cache, such as quantity, price and trigger details, time in
-  force, and execution flags.
+- **Order context** combines that identity with the submitted order shape. The shape supplies the fields
+  necessary to construct later events without access to the engine cache. These fields include quantity, price
+  and trigger details, time in force, and execution flags.
 
 Keep venue order bindings, request correlation, cumulative fills, and replace state in adapter-owned
 context around that common surface.
@@ -1418,15 +1477,18 @@ the update:
 - Make repeated acknowledgements and order snapshots idempotent. They must not regress state or
   emit a second lifecycle event.
 
-Keep active order context, pending correlation, replay deduplication, and terminal tombstones as
-separate lifecycle concepts even when one state object owns them. Bound replay and tombstone state
-without letting eviction reclassify an update for an active order as external.
+One state object can own active order context, pending correlation, replay deduplication, and terminal
+tombstones. Even then, keep them as separate lifecycle concepts. Bound replay and tombstone state without
+letting eviction reclassify an update for an active order as external.
 
-For a tracked order, a definitive fill can arrive before an acknowledgement or open-order update.
-Emit any required preceding lifecycle event only when the adapter has complete order identity and
-the venue evidence proves that state. Record the synthesized transition so a later acknowledgement
-does not duplicate it. Untracked orders continue through reports rather than synthesized strategy
-events.
+For a tracked order, a definitive fill can arrive before an acknowledgement or open-order update. Emit a
+required preceding lifecycle event only when both conditions hold:
+
+- The adapter has complete order identity.
+- The venue evidence proves that state.
+
+Record the synthesized transition so a later acknowledgement does not duplicate it. Untracked orders continue
+through reports rather than synthesized strategy events.
 
 When parent and child updates can arrive on different streams:
 
@@ -1436,10 +1498,10 @@ When parent and child updates can arrive on different streams:
 - Route commands from the same authoritative binding. Do not infer it from an engine cache that may
   still be processing those events.
 
-When a venue implements modify as cancel-replace, update the venue order ID mapping before routing
-the replacement leg. Distinguish a stale cancel for the old leg from cancellation of the active
-replacement, and calculate replacement quantity from current cumulative fills. This behavior is
-venue-specific and needs focused race tests; it does not imply a shared dispatch state layout.
+When a venue implements modify as cancel-replace, update the venue order ID mapping before routing the
+replacement leg. Distinguish a stale cancel for the old leg from cancellation of the active replacement, and
+calculate replacement quantity from current cumulative fills. This behavior is venue-specific and needs
+focused race tests. It does not imply a shared dispatch state layout.
 
 Focused tests distinguish tracked and external updates, fills that precede acknowledgement,
 duplicates from overlapping sources, submission or venue-binding races, and stale post-terminal
@@ -1452,14 +1514,17 @@ command delivery, event application, persistence, and recovery.
 
 Separate three evidence classes:
 
-- **Definitive local failure:** local evidence proves that the command was never transmitted.
-  Deterministic validation before a submit is one example. Emit `OrderDenied` before
-  `OrderSubmitted`. For cancel or modify preparation, emit the matching rejection only when the
-  failure is attributable to that command and proves it was not sent. Otherwise, log the failure
-  without inventing a rejection.
-- **Definitive venue result:** a structured venue response or status explicitly accepts, updates,
+- **Definitive local failure**: local evidence proves that the command was never transmitted. Deterministic
+  validation before a submit is one example. Emit `OrderDenied` before `OrderSubmitted`. During cancel or
+  modify preparation, emit the matching rejection only when both conditions hold:
+
+  - The failure is attributable to that command.
+  - The failure proves that the command was not sent.
+
+  Otherwise, log the failure without inventing a rejection.
+- **Definitive venue result**: a structured venue response or status explicitly accepts, updates,
   or rejects one command. Emit the matching domain event.
-- **Unknown outcome:** the request may have reached the venue, but no definitive result is
+- **Unknown outcome**: the request may have reached the venue, but no definitive result is
   available. Keep the command in flight for stream updates, polling, queries, or reconciliation.
 
 ```mermaid
@@ -1486,10 +1551,9 @@ Transport errors, timeouts, disconnects, task cancellation, retry exhaustion, HT
 rate limits, missing acknowledgements, and parse failures after transmission usually leave an
 unknown outcome. Do not convert them into a venue rejection.
 
-For batch commands, apply evidence per order. A whole-request failure does not prove that every
-child command failed. Treat venue messages such as "not found" or "already closed" according to
-documented venue semantics; they may describe a race with a fill or cancellation rather than an
-unambiguous command rejection.
+For batch commands, apply evidence per order. A whole-request failure does not prove that each child command
+failed. Treat venue messages such as "not found" or "already closed" according to documented venue semantics.
+They can describe a race with a fill or cancellation, rather than an unambiguous command rejection.
 
 Keep this policy independent of the HTTP or WebSocket path used to send a command.
 
@@ -1511,22 +1575,20 @@ from a stream update, query, poll, or reconciliation still resolves the command 
 A definitive venue acceptance or update is not a failure and carries no variant. Apply the venue
 event directly.
 
-Classify once at the execution boundary, using the evidence preserved by lower layers, rather than
-re-branching on the error enum at each emit site. Apply this to every state-changing order command,
-submit, modify, and cancel alike, including their batch and list forms. A classifier scoped to one
-command type leaves the others to drift. Queries produce no terminal command event and need no
-classification.
+Use the evidence that lower layers preserve to classify one time at the execution boundary. Do not re-branch
+on the error enum at each emit site. Apply this to each state-changing order command, submit, modify, and
+cancel alike, including their batch and list forms. A classifier scoped to one command type leaves the others
+to drift. Queries produce no terminal command event and need no classification.
 
-Keep this axis separate from `is_retryable`. Retryability answers whether to send the request
-again; ambiguity answers whether the venue may already have acted on the first attempt. An error
-can be both, either, or neither, and collapsing them is what makes an unknown outcome look like a
-rejection.
+Keep this axis separate from `is_retryable`. Retryability answers whether to send the request again. Ambiguity
+answers whether the venue may already have acted on the first attempt. An error can be both, either, or
+neither, and collapsing them is what makes an unknown outcome look like a rejection.
 
 Two conditions are easy to misfile:
 
-- An HTTP 5xx without definitive command evidence is ambiguous. It proves only that the command
-  was not confirmed, never that it was not applied, and a gateway 5xx does not prove the request
-  failed to reach the venue.
+- An HTTP 5xx without definitive command evidence is ambiguous. It proves only that the command was not
+  confirmed. It does not prove that the venue did not apply the command. A gateway 5xx does not prove that the
+  request failed to reach the venue.
 - A response parse failure is ambiguous, while a request encoding failure is `NotSent`. Both may
   surface as one serialization error variant, so classify by which side of the write boundary
   the failure occurred on.
@@ -1535,6 +1597,11 @@ Two conditions are easy to misfile:
 
 Preserve a structured diagnostic error through classification and logging. Derive a
 strategy-facing reason only at the execution event boundary, after the outcome and retry decisions.
+
+For opaque errors from client traits, log only the operation and trusted public command metadata.
+Keep typed status, venue code, or transport category at the adapter boundary where their types are known.
+Do not format arbitrary error payloads to recover those details. Shared command loggers retain their error
+parameter for caller compatibility and omit its text.
 
 | Representation         | Consumers                                          | Required content                                                                                         |
 | ---------------------- | -------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
@@ -1562,8 +1629,8 @@ Apply these rules at the boundary:
   it.
 - Prefer documented venue error fields and codes. Sanitize and bound raw fallback text before
   logging, interning, or emitting it, and use a stable fallback when no useful text remains.
-- Map equivalent venue evidence through the same adapter-owned classification and reason functions
-  whether it arrives through HTTP, WebSocket, polling, or reconciliation.
+- Use the same adapter-owned classification and reason functions for equivalent venue evidence from HTTP,
+  WebSocket, polling, or reconciliation.
 
 Set `OrderRejected.due_post_only` from a structured venue code or flag when the protocol provides
 one. Otherwise, use one narrow adapter-owned, source-backed message classifier across every venue
@@ -1582,10 +1649,10 @@ A common design separates three responsibilities:
 | Domain client    | Nautilus identifiers and domain values. | Domain objects, reports, or acknowledgements. | Operation semantics, parsing context, caching, and domain mapping.             |
 | Execution client | Nautilus execution commands.            | Lifecycle events and execution reports.       | Command lifecycle, failure evidence classification, and terminal event policy. |
 
-The execution client is the shared command outcome boundary. Raw and domain clients preserve
-enough adapter-specific evidence to distinguish a failure before transmission from one after the
-venue may have received the request. They keep their natural venue and domain return types; do not
-make them return `CommandFailure` only to standardize command handling.
+The execution client is the shared command outcome boundary. Raw and domain clients preserve enough
+adapter-specific evidence to distinguish a failure before transmission from one after the venue may have
+received the request. They keep their natural venue and domain return types. Do not make them return
+`CommandFailure` only to standardize command handling.
 
 Share the `CommandFailure` evidence classes and terminal event policy across adapters. Keep venue
 error codes, response statuses, protocol semantics, and their mapping to evidence classes inside
@@ -1617,11 +1684,12 @@ Keep typed request construction separate from sending. This makes signatures and
 encoding testable without a server. Put response conversion in pure parser functions when it does
 not need live state.
 
-Typed request and query builders preserve the difference between an omitted field, an explicit
-zero, and an empty value. Keep required venue parameters required, omit absent optional parameters
-from the wire representation, and test the exact serialized query or body. Pagination code also
-tests cursor direction, inclusive boundaries, duplicate boundary records, and a repeated cursor or
-empty page so it cannot loop forever.
+Typed request and query builders preserve the difference between an omitted field, an explicit zero, and an
+empty value. Keep required venue parameters required. Omit absent optional parameters from the wire
+representation. Test the exact serialized query or body.
+
+Pagination tests cover cursor direction, inclusive boundaries, duplicate boundary records, and a
+repeated cursor or empty page so pagination cannot loop forever.
 
 ### Request signing and authentication
 
@@ -1641,18 +1709,24 @@ with a new identity unless venue semantics make that safe.
 
 Treat request identity, timestamp, and nonce as separate protocol fields even when the venue packs
 them into one signed payload. The component that allocates a nonce also owns its ordering rule.
-Build and sign from the same reserved value, then handle pre-send failure, uncertain transmission,
-and venue nonce rejection according to documented venue consumption semantics. On a sequence
-mismatch, resynchronize from an authoritative source before issuing further state-changing
-commands. Test deterministic vectors, concurrent allocation, monotonicity or uniqueness, and
-recovery after a rejected sequence.
+
+For request preparation and recovery:
+
+1. Build and sign from the same reserved value.
+1. Handle pre-send failure, uncertain transmission, and venue nonce rejection according to documented
+   venue consumption semantics.
+1. On a sequence mismatch, resynchronize from an authoritative source before issuing further
+   state-changing commands.
+
+Test deterministic vectors, concurrent allocation, monotonicity or uniqueness, and recovery after a
+rejected sequence.
 
 ### Error handling and retry logic
 
-Map transport, HTTP status, venue error, parse, and validation failures without erasing their
-source. Retry only when the failure is classified as transient and the operation is safe to repeat.
-Compose both decisions at the client boundary; a predicate on the error alone is not a complete
-retry policy. This contract applies to HTTP and WebSocket request paths.
+Map transport, HTTP status, venue error, parse, and validation failures without erasing their source. Retry
+only when the failure is classified as transient and the operation is safe to repeat. Compose both decisions
+at the client boundary. A predicate on the error alone is not a complete retry policy. This contract applies
+to HTTP and WebSocket request paths.
 
 #### Classify transient failures
 
@@ -1668,16 +1742,24 @@ At each call site, bypass retry for an unsafe operation or pass a `should_retry`
 combines transient failure classification with operation safety. A `POST` can be safe to retry and
 a `DELETE` can be unsafe. This implements the [safety test](../concepts/execution/policies.md#safety-test).
 
-A repeat is safe only when it cannot apply a state change twice, cannot change an order the first
-attempt did not name, and cannot report an earlier success as a rejection:
+A repeat is safe only when all these conditions hold:
+
+- It cannot apply a state change twice.
+- It cannot change an order that the first attempt did not name.
+- It cannot report an earlier success as a rejection.
+
+Apply those conditions to each operation:
 
 - A read or other idempotent operation may retry a classified transient failure. A read-only
   `POST` may retry. A method allowlist, for example `GET` and `DELETE`, does not prove safety.
-- A session-token request may retry when a repeat only mints an additional short-lived token and
-  does not revoke an existing session or create a lasting credential.
-- Send submit, submit order list, modify, cancel, batch cancel, and cancel-all once unless
-  duplicate detection for a stable request identity, or idempotent semantics for the same target,
-  holds for the whole retry window.
+- A session-token request can retry only under these conditions:
+
+  - A repeat only mints an additional short-lived token.
+  - It does not revoke an existing session.
+  - It does not create a lasting credential.
+- Send submit, submit order list, modify, cancel, batch cancel, and cancel-all commands one time only. Retry
+  only if duplicate detection for a stable request identity or idempotent semantics for the same target holds
+  throughout the retry window.
 
 That window is not only the time the first order rests open:
 
@@ -1695,20 +1777,20 @@ Allocate the semantic request identity outside the retry closure and keep it sta
 attempts. Regenerate authentication timestamps, signatures, or other transport fields only when
 changing them does not alter the venue's request identity or duplicate detection.
 
-Ambiguity is monotonic across attempts for one semantic command. Once any attempt may have reached
-the venue, a later failure remains ambiguous. A later venue rejection resolves it only when
-documented semantics make the response authoritative for the same request identity and prove that
-no attempt was applied.
+Ambiguity is monotonic across attempts for one semantic command. Once any attempt may have reached the venue,
+a later failure stays ambiguous. A later venue rejection resolves ambiguity only if documented semantics make
+the response authoritative for the same request identity. Those semantics must also prove that no attempt was
+applied.
 
-An acceptance resolves ambiguity only when it correlates to the same semantic command. Validate a
-returned venue identifier for syntax and expected scope before constructing a domain identifier or
-binding it to a local order; a non-empty string alone is not proof. A malformed or mismatched
-identifier leaves the outcome ambiguous unless separate authoritative evidence proves rejection.
+An acceptance resolves ambiguity only when it correlates to the same semantic command. Before you construct a
+domain identifier or bind it to a local order, validate the returned venue identifier. Check its syntax and
+expected scope. A non-empty string alone is not proof. A malformed or mismatched identifier leaves the outcome
+ambiguous unless separate authoritative evidence proves rejection.
 
-Treat a venue duplicate-identity response as evidence that the venue saw an earlier request with
-that wire identity, not as a rejection of the original command by default. Use it to resolve the
-current command only when the adapter proves the same semantic identity. If the identity may
-collide or its scope is uncertain, keep the outcome ambiguous and reconcile it against venue state.
+A venue duplicate-identity response shows that the venue saw an earlier request with that wire identity. Do
+not treat it as a rejection of the original command by default. Use it to resolve the current command only
+when the adapter proves the same semantic identity. If the identity may collide or its scope is uncertain,
+keep the outcome ambiguous and reconcile it against venue state.
 
 #### Handle backoff and termination
 
@@ -1716,25 +1798,23 @@ Respect venue backoff and rate-limit signals, and stop retries on cancellation. 
 [`RetryManager`](../../crates/network/src/retry.rs) when its cancellation and backoff model fits.
 
 `RetryManager` passes a typed [`RetryError`](../../crates/network/src/retry.rs) to the caller's error
-callback: `Canceled`, `OperationTimeout`, `ElapsedBudgetExceeded`, or `InvalidConfiguration`. Match
-a variant when the adapter must distinguish its control reason; never branch on display text. The
-error returned for `OperationTimeout` is evaluated by `should_retry`, so map it to the adapter's
-transient timeout variant when timeouts should retry. Other synthesized reasons terminate without
-reclassification.
+callback: `Canceled`, `OperationTimeout`, `ElapsedBudgetExceeded`, or `InvalidConfiguration`. Match a variant
+when the adapter must distinguish its control reason. Never branch on display text. The error returned for
+`OperationTimeout` is evaluated by `should_retry`, so map it to the adapter's transient timeout variant when
+timeouts should retry. Other synthesized reasons terminate without reclassification.
 
 `InvalidConfiguration` is created before the operation can run, so it is a definitive local
 failure. Preserve that evidence instead of mapping it to a transport or ambiguous outcome.
 
-`RetryManager` control errors do not record whether the operation ran. Track possible transmission
-at the adapter boundary for state-changing commands, treating entry into the send operation as
-possible transmission unless more precise evidence exists. Classify cancellation, per-attempt
-timeout, and retry exhaustion as `CommandFailure::NotSent` only when local evidence proves that no
-attempt was transmitted; otherwise, classify them as `CommandFailure::Ambiguous`.
+`RetryManager` control errors do not record whether the operation ran. Track possible transmission at the
+adapter boundary for state-changing commands, treating entry into the send operation as possible transmission
+unless more precise evidence exists. Classify cancellation, per-attempt timeout, and retry exhaustion as
+`CommandFailure::NotSent` only when local evidence proves that no attempt was transmitted. If no such proof
+exists, classify them as `CommandFailure::Ambiguous`.
 
-Map every elapsed-budget termination path by transmission evidence rather than the returned error
-shape. When an error provides a minimum delay and the effective retry delay cannot fit within the
-remaining budget, `RetryManager` returns the original operation error instead of a synthesized
-budget error.
+Map each elapsed-budget termination path by transmission evidence rather than the returned error shape.
+If an error supplies a minimum delay and the effective retry delay cannot fit within the remaining budget,
+`RetryManager` returns the original operation error. It does not synthesize a budget error in this case.
 
 #### Test retry behavior
 
@@ -1759,10 +1839,13 @@ Focused tests distinguish:
 This table covers HTTP retry gates only. It is not a complete census, and it does not assess
 WebSocket or gRPC retry. New adapters must follow the safety test. Do not copy an unsafe gate.
 
-Conforms means the adapter decides by operation, and sends an order command once unless repetition
-is safe. Over-restricts means order commands are sent once, but the gate is the HTTP method, so a
-safe `POST` is not retried. Unsafe means an order command, or another state change, can be applied
-twice.
+The status column uses these definitions:
+
+- **Conforms**: The adapter decides by operation and sends an order command once unless repetition
+  is safe.
+- **Over-restricts**: Order commands are sent once, but the gate is the HTTP method, so a safe `POST`
+  is not retried.
+- **Unsafe**: An order command or another state change can be applied twice.
 
 | Adapter      | Retry gate                                            | Order commands                                                                                                       | Status         | Notes                                                                                                                                 |
 | ------------ | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1830,9 +1913,8 @@ Choose client boundaries from protocol facts:
 | Separate public, private, or trading endpoints      | Separate transports with shared models where useful        | Authenticate and recover each endpoint according to its own contract.       |
 | Different wire formats, signing, or reconnect rules | Separate protocol modules behind shared data or exec logic | Keep shared instrument and order identity above the protocol-specific code. |
 
-This table is a decision aid, not a target dispatch architecture. Do not split a client only to
-match another adapter's filenames, and do not combine endpoints when doing so hides independent
-authentication, quotas, or recovery.
+This table is a decision aid, not a target dispatch architecture. Do not split a client only to match another
+adapter's filenames. Do not combine endpoints if this hides independent authentication, quotas, or recovery.
 
 ```mermaid
 flowchart LR
@@ -1904,13 +1986,14 @@ reference counts for duplicate subscribers.
 
 Confirm from an explicit venue acknowledgement when the protocol provides one. If acknowledgements
 are absent or unreliable, authoritative first data can confirm the topic. Both paths can coexist
-because confirmation is idempotent. Never confirm from local send success alone. On a negative
-subscribe result, call `mark_failure` so reconnect retains the intent. Correlate unsubscribe
-results separately so a late subscribe acknowledgement cannot revive removed intent and a stale
-unsubscribe acknowledgement cannot erase a later resubscription.
+because confirmation is idempotent. Never confirm from local send success alone.
 
-Derive a stable topic key from the venue subscription arguments, but keep the original arguments
-when replay would otherwise require lossy parsing. On reconnect:
+On a negative subscribe result, call `mark_failure` so reconnect retains the intent. Correlate
+unsubscribe results separately so a late subscribe acknowledgement cannot revive removed intent
+and a stale unsubscribe acknowledgement cannot erase a later resubscription.
+
+Derive a stable topic key from the venue subscription arguments. If replay would need lossy parsing of that
+key, keep the original arguments. On reconnect:
 
 1. Invalidate connection and authentication state.
 1. Re-establish the transport.
@@ -1919,9 +2002,9 @@ when replay would otherwise require lossy parsing. On reconnect:
 1. Confirm subscriptions from explicit acknowledgements or authoritative data.
 1. Notify downstream consumers when they must reset protocol state.
 
-Do not replay pending unsubscriptions. Handle late or stale acknowledgements without reviving
-removed subscriptions. `SubscriptionState` provides these state transitions; the adapter provides
-the wire correlation.
+Do not replay pending unsubscriptions. Handle late or stale acknowledgements without reviving removed
+subscriptions. `SubscriptionState` provides these state transitions. The adapter provides the wire
+correlation.
 
 ### Message routing
 
@@ -1939,15 +2022,15 @@ and protocol correlation. The consuming data or execution client owns domain rou
 Parsing may remain in the handler when it depends on handler-owned protocol state, but tracked versus
 external execution ownership remains a client decision.
 
-When reporting malformed frames, log the parse error separately from a sanitized, bounded payload
-excerpt. Never log a raw authentication frame or a frame whose schema can contain secret material.
-Log a peer close code and reason at the transport layer that receives it; the adapter should not
-duplicate the shared transport log.
+When reporting malformed frames, log the parse error separately from a sanitized, bounded payload excerpt.
+Never log a raw authentication frame or a frame whose schema can contain secret material. Log a peer close
+code at the transport layer that receives it. Keep arbitrary server-controlled reasons out of diagnostics,
+but preserve them for retry classification or delivery when required. The adapter should not duplicate the
+shared transport log.
 
-Dispatch module layout, intermediate enum names, context registries, venue bindings, and state
-containers remain adapter-specific. Prefer the smallest design that makes protocol ownership and
-state transitions testable; extract another component only when multiple adapters share its
-semantics and atomicity.
+Dispatch module layout, intermediate enum names, context registries, venue bindings, and state containers stay
+adapter-specific. Prefer the smallest design that makes protocol ownership and state transitions testable.
+Extract another component only when multiple adapters share its semantics and atomicity.
 
 ### Reconnection and shutdown
 
@@ -1959,17 +2042,16 @@ Reconnection must restore protocol state, not only the socket:
 - Reset sequence, snapshot, or gap state when the venue requires a fresh bootstrap.
 - Preserve in-flight execution state needed to correlate late responses or reconciliation.
 
-Support both WebSocket control frames and venue text heartbeats when applicable. Let the shared
-client handle protocol control frames; keep application heartbeat messages in the venue handler.
+Support both WebSocket control frames and venue text heartbeats when applicable. Let the shared client handle
+protocol control frames. Keep application heartbeat messages in the venue handler.
 
 #### Reconnect ownership
 
-A handler-mode client requests a reconnect through the shared client rather than a private
-reconnect loop. Its `request_reconnect` returns `true` only when the call moves an active client
-into reconnecting. Take the reconnect handle's `request_reconnect` when the adapter must
-distinguish the `ReconnectRequestOutcome` variants, since an already reconnecting, disconnecting,
-closed, or unsupported transport each warrant a different response. Stream-mode clients own their
-reconnect loop, and their handles report `Unsupported`.
+A handler-mode client requests a reconnect through the shared client rather than a private reconnect loop. Its
+`request_reconnect` returns `true` only when the call moves an active client into reconnecting. If the adapter
+must distinguish `ReconnectRequestOutcome` variants, use the reconnect handle's `request_reconnect`.
+Transports that are already reconnecting, disconnecting, closed, or unsupported each need a different
+response. Stream-mode clients own their reconnect loop, and their handles report `Unsupported`.
 
 #### Shutdown
 
@@ -2008,16 +2090,17 @@ explicit ambiguous outcome. Do not let transport shutdown silently reclassify th
 ### Task storage and observation
 
 [`TaskHandles`](../../crates/common/src/live/task.rs) stores unit task handles without setting
-spawn, cancellation, generation, or join policy. Use it inside a component that defines those
-rules. [`TaskGroup`](../../crates/live/src/task.rs) supplies the shared live-client policy for
-unit-output session and command tasks. Use `TaskGroup::spawn_named` when client state must observe a
-grouped task's logical name, instance identity, or terminal state. Its `TaskRef` is read-only: the
-group remains the sole owner of cancellation and joining. Read-only observation does not make the
-task explicitly singular.
+spawn, cancellation, generation, or join policy. Use it inside a component that defines those rules.
 
-`TaskRef::is_active` and `TaskRef::is_finished` expose the same one-way lifecycle state. Active means
-the task was admitted and has not reached a terminal state. A task may finish before `spawn_named`
-returns; neither state proves that the user future received its first poll.
+[`TaskGroup`](../../crates/live/src/task.rs) supplies the shared live-client policy for unit-output
+session and command tasks. Use `TaskGroup::spawn_named` when client state must observe a grouped
+task's logical name, instance identity, or terminal state. Its `TaskRef` is read-only: the group
+remains the sole owner of cancellation and joining. Read-only observation does not make the task
+explicitly singular.
+
+`TaskRef::is_active` and `TaskRef::is_finished` expose the same one-way lifecycle state. Active means the task
+was admitted and has not reached a terminal state. A task may finish before `spawn_named` returns. Neither
+state proves that the user future received its first poll.
 
 The same task module's `finish_task` function applies the bounded policy to an explicitly singular
 handle without erasing a typed result. For another explicit ownership pattern, spawn through
@@ -2053,11 +2136,17 @@ where
 }
 ```
 
-Validate the command and clone every input before constructing the future. Do not capture a
-`RefCell` borrow, cache guard, clock borrow, or reference to the command in work that outlives the
-trait call. When a long-lived task creates children, capture a `TaskSpawner` from the owning group.
-Use `TaskSpawner::spawn_named` when those child tasks also need identity in shutdown failures. A
-spawner from an older generation cannot register work in the replacement generation.
+Validate the command and clone each input before constructing the future. Work that outlives the trait call
+must not capture these values:
+
+- A `RefCell` borrow.
+- A cache guard.
+- A clock borrow.
+- A reference to the command.
+
+When a long-lived task creates children, capture a `TaskSpawner` from the owning group. Use
+`TaskSpawner::spawn_named` when those child tasks also need identity in shutdown failures. A spawner from an
+older generation cannot register work in the replacement generation.
 
 Give each task:
 
@@ -2079,16 +2168,15 @@ Task shutdown has separate synchronous and asynchronous phases:
    cancellation.
 1. `disconnect`, or the next asynchronous `connect`, closes the generation's transports in their
    required protocol order and calls `finish_shutdown` with bounded graceful and forced intervals.
-1. `finish_shutdown` repeatedly drains tasks registered by an allowed race, reports unexpected
-   cancellations and join failures, aborts unfinished work after the graceful interval, and awaits
-   the forced abort within its second bound.
+1. `finish_shutdown` repeatedly drains tasks registered by an allowed race. It reports unexpected
+   cancellations and join failures. After the graceful interval, it aborts unfinished work. It awaits the
+   forced abort within its second bound.
 1. `start_generation` reopens the group only after the prior generation drains. A timeout retains
    the remaining handles and keeps admission closed.
 
-When `connect` fails after creating a transport or admitting a task, apply the same sequence before
-returning the startup error. Close every transport created by that attempt, drain both session and
-command work that cannot survive the failure, and include teardown failures in the returned or
-logged evidence.
+When `connect` fails after creating a transport or admitting a task, apply the same sequence before returning
+the startup error. Close all transports created by that attempt. Drain both session and command work that
+cannot survive the failure. Include teardown failures in the returned or logged evidence.
 
 Make repeated `begin_shutdown` and `finish_shutdown` calls safe. A synchronous lifecycle method may
 begin teardown more than once before an asynchronous boundary finishes it.
@@ -2119,11 +2207,10 @@ old work cross the reconnect boundary.
 
 ## Testing
 
-Tests prove adapter semantics at progressively wider boundaries. Store canonical valid fixtures
-under `test_data/` and keep network access out of ordinary unit and integration tests. Source valid
-payloads from official venue documentation or captured venue responses; do not hand-fabricate
-them. Synthetic malformed or mutated inputs remain useful for negative, property, and fuzz tests
-when the test marks them as such.
+Tests prove adapter semantics at progressively wider boundaries. Store canonical valid fixtures under
+`test_data/` and keep network access out of ordinary unit and integration tests. Source valid payloads from
+official venue documentation or captured venue responses. Do not hand-fabricate them. Synthetic malformed or
+mutated inputs stay useful for negative, property, and fuzz tests when the test marks them as such.
 
 | Boundary                    | Typical location                                                  | Required proof                                                                                  |
 | --------------------------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
@@ -2153,22 +2240,23 @@ Parser and serializer tests should cover:
 - Round trips or canonical bytes where the protocol defines them.
 - Stable errors for rejected input.
 
-Keep the complete venue envelope when status fields, pagination cursors, timestamps, or nested
-result wrappers affect behavior. Record fixture provenance in the fixture, a nearby README, or a
-source manifest. Use separate real payloads for structurally distinct states such as long, short,
-flat, empty, and partially filled; do not mutate one happy-path fixture into every valid case.
+Keep the complete venue envelope when status fields, pagination cursors, timestamps, or nested result wrappers
+affect behavior. Record fixture provenance in the fixture, a nearby README, or a source manifest. Use separate
+real payloads for structurally distinct states, such as long, short, flat, empty, and partially filled. Do not
+mutate one happy-path fixture into all valid cases.
 
-When HTTP and WebSocket tests share fixture loaders or model builders, place test-only code in a
-`common::testing` module rather than copying it into production modules. This pattern is optional
+If HTTP and WebSocket tests share fixture loaders or model builders, place test-only code in a
+`common::testing` module. Do not copy that shared test code into production modules. This pattern is optional
 when no test code is shared.
 
 #### Client synchronization
 
-Client tests should drive public methods through mock HTTP or WebSocket servers. Assert emitted
-events, requests, connection state, subscription state, retry count, and shutdown behavior. Prefer
-a notification owned by the test or mock when the operation exposes one. Subscribe before reading
-the authoritative state, then recheck it after every notification so a transition between the read
-and the await cannot be missed. When no suitable signal exists, use
+Drive public client methods through mock HTTP or WebSocket servers. Assert emitted events,
+requests, connection state, subscription state, retry count, and shutdown behavior.
+
+Prefer a notification owned by the test or mock when the operation exposes one. Subscribe before
+reading authoritative state, then recheck it after every notification so a transition between the
+read and the await cannot be missed. When no suitable signal exists, use
 [`wait_until_async`](../../crates/common/src/testing.rs). A short sleep is valid when the time window
 itself is under test, but it should not mask a missing synchronization point.
 
@@ -2222,7 +2310,7 @@ Execution tests cover each advertised command and report, plus:
 Keep adapter tests focused on adapter behavior. The
 [data testing specification](spec_data_testing.md) and
 [execution testing specification](spec_exec_testing.md) define the shared scenario catalogs and
-skip rules; link to them instead of copying partial lists into an adapter README.
+skip rules. Link to them instead of copying partial lists into an adapter README.
 
 ### Acceptance testing
 
@@ -2246,11 +2334,12 @@ Provide the applicable tester entry points:
 - Python: `examples/live/<adapter>/data_tester.py` and `exec_tester.py`, using `LiveNode` and
   the Rust config and factory classes.
 
-Python tester scripts run out of the box: settings live in module-level constants at the top of
-the file, and running the script connects and starts immediately without CLI flags. Execution
-testers place real orders by default, so state this plainly in a warning at the top of the module
-and set `dry_run=False` explicitly in the `ExecTesterConfig` to advertise the dry-run option. Rust
-tester controls vary; inspect them before running.
+Python tester settings live in module-level constants at the top of the file. Running the script
+connects and starts immediately without CLI flags.
+
+**Execution testers place real orders by default.** State this in a warning at the top of the module. Set
+`dry_run=False` explicitly in `ExecTesterConfig` to advertise the dry-run option. Rust tester controls vary.
+Inspect them before running.
 
 ### Python boundary testing
 
@@ -2271,9 +2360,8 @@ inputs and committed `.pyi` output agree.
 
 ## Performance and robustness
 
-Add these suites late, after functional, integration, and acceptance work establishes correct
-behavior. They deepen assurance for confirmed hot paths and untrusted venue input; they do not
-replace conformance tests.
+Add these suites late, after functional, integration, and acceptance work establishes correct behavior. They
+deepen assurance for confirmed hot paths and untrusted venue input. They do not replace conformance tests.
 
 ### Canonical benchmarks
 
@@ -2283,7 +2371,7 @@ important. The Lighter and Derive suites provide the reference structure:
 | Suite               | Canonical boundary                                                                                                   | Reference                                                                                                                            |
 | ------------------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | `benches/data.rs`   | Raw venue frame or payload through decoding, parsing, cache lookup where required, and Nautilus domain construction. | [Lighter data](../../crates/adapters/lighter/benches/data.rs), [Derive data](../../crates/adapters/derive/benches/data.rs)           |
-| `benches/exec.rs`   | Order command through serialization and signing; where applicable, inbound execution payload through event dispatch. | [Lighter execution](../../crates/adapters/lighter/benches/exec.rs), [Derive execution](../../crates/adapters/derive/benches/exec.rs) |
+| `benches/exec.rs`   | Order command through serialization and signing. Where applicable, inbound execution payload through event dispatch. | [Lighter execution](../../crates/adapters/lighter/benches/exec.rs), [Derive execution](../../crates/adapters/derive/benches/exec.rs) |
 | `benches/micros.rs` | Decode-only, parse-only, and focused component costs that localize a regression found at a pipeline boundary.        | [Lighter micros](../../crates/adapters/lighter/benches/micros.rs), [Derive micros](../../crates/adapters/derive/benches/micros.rs)   |
 
 Put shared realistic instruments, payloads, signer state, and other fixtures in
@@ -2346,7 +2434,7 @@ Canonical adapter wiring is:
 | `fuzz/fuzz_targets/`                                       | Focused targets below live network and runtime layers.                             | Keeps arbitrary input at the parser, codec, normalization, or model boundary. |
 | [`scripts/fuzz-adapter.sh`](../../scripts/fuzz-adapter.sh) | Adapter target discovery and repeated time-sliced runs.                            | Uses the registered binaries and preserves corpus and artifact locations.     |
 
-Adapter crates must not depend directly on `libfuzzer-sys`; the
+Adapter crates must not depend directly on `libfuzzer-sys`. The
 [Cargo conventions hook](../../.pre-commit-hooks/check_cargo_conventions.sh) enforces the shared
 feature path. Use the focused [Lighter fuzz README][lighter-fuzz] and
 [Derive fuzz README][derive-fuzz] for setup, corpus, artifact, and target commands instead of

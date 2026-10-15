@@ -1,0 +1,28 @@
+{
+  "type": "book",
+  "symbol_id": "BITSTAMP_SPOT_BTC_USD",
+  "sequence": 2323346,
+  "time_exchange": "2013-09-28T22:40:50.0000000Z",
+  "time_coinapi": "2017-03-18T22:42:21.3763342Z",
+  "is_snapshot": true,
+  "asks": [
+    {
+      "price": 456.35,
+      "size": 123
+    },
+    {
+      "price": 456.36,
+      "size": 23
+    }
+  ],
+  "bids": [
+    {
+      "price": 456.10,
+      "size": 42
+    },
+    {
+      "price": 456.09,
+      "size": 5
+    }
+  ]
+}

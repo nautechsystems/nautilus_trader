@@ -74,7 +74,10 @@ use crate::{
             OKX_WS_HEARTBEAT_SECS, okx_reduce_only_wire_value, resolve_instrument_families,
             validate_okx_client_order_id,
         },
-        enums::{OKXInstrumentType, OKXMarginMode, OKXTradeMode, is_advance_algo_order},
+        enums::{
+            OKXAlgoOrderType, OKXInstrumentType, OKXMarginMode, OKXTradeMode, OKXTriggerType,
+            conditional_order_to_algo_type, is_advance_algo_order,
+        },
         failure::{classify_okx_http_failure, classify_okx_venue_code, classify_okx_ws_failure},
         parse::{
             is_okx_spread_symbol, is_order_status_report_more_advanced, nanos_to_datetime,
@@ -88,13 +91,13 @@ use crate::{
             AlgoOrderReportSweep, FillHistory, OKXHttpClient, OKXPendingAlgoOrderReportsError,
             ReportInstrumentScope,
         },
-        models::OKXCancelAlgoOrderRequest,
+        models::{OKXAmendAlgoOrderRequest, OKXCancelAlgoOrderRequest},
     },
     websocket::{
         client::OKXWebSocketClient,
         dispatch::{
-            AlgoCancelContext, WsDispatchState, dispatch_ws_message, emit_algo_cancel_rejections,
-            format_order_response_reason,
+            AlgoCancelContext, AlgoOrderState, WsDispatchState, dispatch_ws_message,
+            emit_algo_cancel_rejections, format_order_response_reason,
         },
         messages::OKXWsMessage,
         parse::{FeeCache, FilledQtyCache, OrderStateSnapshot},
@@ -378,7 +381,7 @@ impl OKXExecutionClient {
         }
     }
 
-    fn cancel_order_route(
+    fn order_command_route(
         &self,
         instrument_id: InstrumentId,
         order_state: Option<(OrderType, Option<bool>)>,
@@ -630,6 +633,20 @@ impl OKXExecutionClient {
             (None, None)
         };
 
+        let algo_order_type = if close_fraction.is_some() {
+            OKXAlgoOrderType::Conditional
+        } else {
+            conditional_order_to_algo_type(order_type)?
+        };
+
+        self.ws_dispatch_state.algo_order_states.insert(
+            client_order_id,
+            AlgoOrderState {
+                order_type: algo_order_type,
+                ts_last: UnixNanos::default(),
+            },
+        );
+
         self.ws_dispatch_state.track_order_context(context);
         let dispatch_state = Arc::clone(&self.ws_dispatch_state);
 
@@ -679,6 +696,71 @@ impl OKXExecutionClient {
         });
 
         Ok(())
+    }
+
+    fn modify_algo_order(&self, cmd: &ModifyOrder) {
+        let algo_type = self
+            .ws_dispatch_state
+            .algo_order_states
+            .get(&cmd.client_order_id)
+            .map(|state| state.order_type);
+        let context = self.ws_dispatch_state.order_context(cmd.client_order_id);
+
+        let request = match algo_amend_request(cmd, algo_type, context) {
+            Ok(request) => request,
+            Err(reason) => {
+                emit_modify_failure(
+                    CommandFailure::NotSent(reason.to_string()),
+                    &self.emitter,
+                    self.clock,
+                    cmd.strategy_id,
+                    cmd.instrument_id,
+                    cmd.client_order_id,
+                    cmd.venue_order_id,
+                );
+                return;
+            }
+        };
+
+        let http_client = self.http_client.clone();
+        let command = cmd.clone();
+        let emitter = self.emitter.clone();
+        let clock = self.clock;
+        self.spawn_task("modify_algo_order", async move {
+            let result = http_client.amend_algo_order(request).await;
+
+            let failure = match result {
+                Err(e) => Some(classify_okx_http_failure(&e)),
+                Ok(response) => response
+                    .s_code
+                    .as_deref()
+                    .filter(|code| *code != OKX_SUCCESS_CODE)
+                    .map(|code| {
+                        classify_okx_venue_code(
+                            code,
+                            format_order_response_reason(
+                                code,
+                                response.s_msg.as_deref().unwrap_or(""),
+                                "",
+                            ),
+                        )
+                    }),
+            };
+
+            if let Some(failure) = failure {
+                emit_modify_failure(
+                    failure,
+                    &emitter,
+                    clock,
+                    command.strategy_id,
+                    command.instrument_id,
+                    command.client_order_id,
+                    command.venue_order_id,
+                );
+            }
+
+            Ok(())
+        });
     }
 
     fn cancel_ws_order(&self, cmd: &CancelOrder) {
@@ -2097,20 +2179,42 @@ impl ExecutionClient for OKXExecutionClient {
             return Ok(());
         }
 
-        self.ensure_order_identity(cmd.client_order_id, cmd.strategy_id, cmd.instrument_id);
-
-        let ws_private = self.ws_private.clone();
-        let mut command = cmd.clone();
-        command.venue_order_id = self
+        let venue_binding = self
             .ws_dispatch_state
-            .order_venue_binding(cmd.client_order_id)
-            .map(|(venue_order_id, _)| venue_order_id)
-            .or(cmd.venue_order_id);
+            .order_venue_binding(cmd.client_order_id);
 
-        let new_px_usd = get_param_as_string(cmd.params.as_ref(), "px_usd");
-        let new_px_vol = get_param_as_string(cmd.params.as_ref(), "px_vol");
-        let rpi_taker_access = get_param_as_bool(cmd.params.as_ref(), "rpi_taker_access");
-        let rpi_px_round = get_param_as_bool(cmd.params.as_ref(), "rpi_px_round");
+        let route = {
+            let cache = self.core.cache();
+            let order_state = cache
+                .order(&cmd.client_order_id)
+                .map(|order| (order.order_type(), order.is_triggered()));
+            self.order_command_route(
+                cmd.instrument_id,
+                order_state,
+                venue_binding.is_some_and(|(_, has_bound_child)| has_bound_child),
+            )
+        };
+
+        let mut command = cmd;
+        command.venue_order_id = venue_binding
+            .map(|(venue_order_id, _)| venue_order_id)
+            .or(command.venue_order_id);
+        if route == OrderCommandRoute::AlgoHttp {
+            self.modify_algo_order(&command);
+            return Ok(());
+        }
+
+        self.ensure_order_identity(
+            command.client_order_id,
+            command.strategy_id,
+            command.instrument_id,
+        );
+        let ws_private = self.ws_private.clone();
+
+        let new_px_usd = get_param_as_string(command.params.as_ref(), "px_usd");
+        let new_px_vol = get_param_as_string(command.params.as_ref(), "px_vol");
+        let rpi_taker_access = get_param_as_bool(command.params.as_ref(), "rpi_taker_access");
+        let rpi_px_round = get_param_as_bool(command.params.as_ref(), "rpi_px_round");
 
         let emitter = self.emitter.clone();
         let clock = self.clock;
@@ -2160,7 +2264,7 @@ impl ExecutionClient for OKXExecutionClient {
             let order_state = cache
                 .order(&cmd.client_order_id)
                 .map(|order| (order.order_type(), order.is_triggered()));
-            self.cancel_order_route(
+            self.order_command_route(
                 cmd.instrument_id,
                 order_state,
                 venue_binding.is_some_and(|(_, has_bound_child)| has_bound_child),
@@ -2246,7 +2350,8 @@ impl ExecutionClient for OKXExecutionClient {
             let authoritative_venue_order_id = venue_binding
                 .map(|(venue_order_id, _)| venue_order_id)
                 .or(cancel.venue_order_id);
-            match self.cancel_order_route(
+
+            match self.order_command_route(
                 cancel.instrument_id,
                 order_state,
                 venue_binding.is_some_and(|(_, has_bound_child)| has_bound_child),
@@ -3266,6 +3371,67 @@ fn emit_modify_failure(
     }
 }
 
+fn algo_amend_request(
+    cmd: &ModifyOrder,
+    algo_type: Option<OKXAlgoOrderType>,
+    context: Option<OrderContext>,
+) -> Result<OKXAmendAlgoOrderRequest, &'static str> {
+    let algo_type = algo_type.ok_or("Cannot determine OKX algo order terms for modification")?;
+    let context = context.ok_or("Cannot determine OKX algo order terms for modification")?;
+    let algo_id = cmd
+        .venue_order_id
+        .ok_or("No algo ID available for pending conditional order")?;
+    let trigger_price = cmd.trigger_price.map(|price| price.to_string());
+    let order_price = cmd.price.map(|price| price.to_string());
+
+    let trigger_px_type = cmd.trigger_price.map(|_| {
+        context
+            .trigger_type
+            .map_or(OKXTriggerType::Last, Into::into)
+            .to_string()
+    });
+
+    let mut request = OKXAmendAlgoOrderRequest {
+        inst_id: cmd.instrument_id.symbol.to_string(),
+        algo_id: algo_id.to_string(),
+        algo_cl_ord_id: None,
+        new_sz: cmd.quantity.map(|quantity| quantity.to_string()),
+        new_trigger_px: None,
+        new_trigger_px_type: None,
+        new_tp_trigger_px: None,
+        new_tp_ord_px: None,
+        new_tp_trigger_px_type: None,
+        new_sl_trigger_px: None,
+        new_sl_ord_px: None,
+        new_sl_trigger_px_type: None,
+        new_order_px: None,
+        new_callback_ratio: None,
+        new_callback_spread: None,
+        new_active_px: None,
+    };
+
+    match (algo_type, context.identity.order_type) {
+        (OKXAlgoOrderType::Trigger, _) => {
+            request.new_trigger_px = trigger_price;
+            request.new_order_px = order_price;
+            request.new_trigger_px_type = trigger_px_type;
+        }
+        (OKXAlgoOrderType::Conditional, OrderType::StopMarket | OrderType::StopLimit) => {
+            request.new_sl_trigger_px = trigger_price;
+            request.new_sl_ord_px = order_price;
+            request.new_sl_trigger_px_type = trigger_px_type;
+        }
+        (OKXAlgoOrderType::Conditional, OrderType::MarketIfTouched | OrderType::LimitIfTouched) => {
+            request.new_tp_trigger_px = trigger_price;
+            request.new_tp_ord_px = order_price;
+            request.new_tp_trigger_px_type = trigger_px_type;
+        }
+        _ => return Err("OKX does not support modification of this algo order type"),
+    }
+
+    Ok(request)
+}
+
 fn emit_cancel_failure(
     failure: CommandFailure,
     emit_venue: Option<(&ExecutionEventEmitter, &'static AtomicTime)>,
@@ -3522,7 +3688,7 @@ mod tests {
     use nautilus_common::{cache::Cache, messages::ExecutionEvent, testing::wait_until_async};
     use nautilus_core::UUID4;
     use nautilus_model::{
-        enums::{OrderSide, OrderStatus},
+        enums::{OrderSide, OrderStatus, TriggerType},
         events::OrderEventAny,
         identifiers::TraderId,
         instruments::Instrument,
@@ -4125,6 +4291,367 @@ mod tests {
     }
 
     #[rstest]
+    #[case::stop_limit(OrderType::StopLimit, OKXAlgoOrderType::Trigger)]
+    #[case::stop_market(OrderType::StopMarket, OKXAlgoOrderType::Trigger)]
+    #[case::touched_limit(OrderType::LimitIfTouched, OKXAlgoOrderType::Trigger)]
+    #[case::touched_market(OrderType::MarketIfTouched, OKXAlgoOrderType::Trigger)]
+    #[case::sl_limit(OrderType::StopLimit, OKXAlgoOrderType::Conditional)]
+    #[case::sl_market(OrderType::StopMarket, OKXAlgoOrderType::Conditional)]
+    #[case::tp_limit(OrderType::LimitIfTouched, OKXAlgoOrderType::Conditional)]
+    #[case::tp_market(OrderType::MarketIfTouched, OKXAlgoOrderType::Conditional)]
+    #[tokio::test]
+    async fn test_modify_algo_order_http(
+        #[case] order_type: OrderType,
+        #[case] algo_type: OKXAlgoOrderType,
+        #[values("all", "trigger", "quantity")] amendment: &str,
+        #[values(("0", "0"), ("0", "51000"), ("0", "50004"), ("1", "51000"), ("1", "50004"))]
+        response: (&'static str, &'static str),
+    ) {
+        let (code, s_code) = response;
+        let (client, cache) = build_test_exec_client_with_cache();
+        let (submit_tx, mut submit_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (request_tx, mut request_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let router = Router::new()
+            .route(
+                "/api/v5/trade/order-algo",
+                post(move |Json(request): Json<Value>| {
+                    let tx = submit_tx.clone();
+                    async move {
+                        tx.send(request).unwrap();
+                        Json(serde_json::json!({"code": "0", "msg": "", "data": [{
+                            "algoId": "7003", "sCode": "0", "sMsg": ""
+                        }]}))
+                    }
+                }),
+            )
+            .route(
+                "/api/v5/trade/amend-algos",
+                post(move |Json(request): Json<Value>| {
+                    let tx = request_tx.clone();
+                    async move {
+                        tx.send(request).unwrap();
+                        Json(serde_json::json!({"code": code, "msg": "All operations failed", "data": [{
+                            "algoId": "7003", "sCode": s_code, "sMsg": "test message"
+                        }]}))
+                    }
+                }),
+            );
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base_url = format!("http://{}", listener.local_addr().unwrap());
+
+        let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        let mut client = client;
+        let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
+        client.emitter.set_sender(event_tx);
+        client.http_client = OKXHttpClient::with_credentials(
+            Some("test_key".into()),
+            Some("test_secret".into()),
+            Some("test_pass".into()),
+            Some(base_url),
+            5,
+            0,
+            1,
+            1,
+            crate::common::enums::OKXEnvironment::Live,
+            None,
+        )
+        .unwrap();
+        let client_order_id = ClientOrderId::from("OMODIFYALGO");
+        let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
+        let order = OrderTestBuilder::new(order_type)
+            .instrument_id(instrument_id)
+            .client_order_id(client_order_id)
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("0.03"))
+            .price(Price::from("54900.0"))
+            .trigger_price(Price::from("55000.0"))
+            .trigger_type(TriggerType::MarkPrice)
+            .build();
+        let accepted = TestOrderEventStubs::accepted(
+            &order,
+            client.core.account_id,
+            VenueOrderId::from("7003"),
+        );
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, Some(*OKX_CLIENT_ID), false)
+            .unwrap();
+        let mut submit = SubmitOrder::from_order(
+            &order,
+            TraderId::from("TESTER-001"),
+            Some(*OKX_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+        );
+
+        if algo_type == OKXAlgoOrderType::Conditional {
+            let mut params = Params::new();
+            params.insert("close_fraction".into(), Value::String("1".into()));
+            submit.params = Some(params);
+        }
+
+        client.submit_order(submit).unwrap();
+        let submitted = tokio::time::timeout(Duration::from_secs(5), submit_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            submitted["ordType"],
+            serde_json::to_value(algo_type).unwrap()
+        );
+        wait_until_async(
+            || async { client.pending_tasks.is_empty() },
+            Duration::from_secs(5),
+        )
+        .await;
+        assert!(matches!(
+            event_rx.try_recv().unwrap(),
+            ExecutionEvent::Order(OrderEventAny::Submitted(_))
+        ));
+        assert!(event_rx.try_recv().is_err());
+        cache.borrow_mut().update_order(&accepted).unwrap();
+        let limit = matches!(order_type, OrderType::StopLimit | OrderType::LimitIfTouched);
+        client
+            .modify_order(ModifyOrder::new(
+                TraderId::from("TESTER-001"),
+                Some(*OKX_CLIENT_ID),
+                order.strategy_id(),
+                instrument_id,
+                client_order_id,
+                Some(VenueOrderId::from("stale-parent")),
+                (amendment != "trigger").then(|| Quantity::from("0.04")),
+                (limit && amendment == "all").then(|| Price::from("53900.0")),
+                (amendment != "quantity").then(|| Price::from("54000.0")),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .unwrap();
+        let request = tokio::time::timeout(Duration::from_secs(5), request_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        let mut expected = serde_json::json!({"instId": "BTC-USDT-SWAP", "algoId": "7003"});
+        if amendment != "trigger" {
+            expected["newSz"] = Value::String("0.04".into());
+        }
+
+        let (trigger_field, type_field, price_field) = if algo_type == OKXAlgoOrderType::Trigger {
+            ("newTriggerPx", "newTriggerPxType", "newOrdPx")
+        } else if matches!(order_type, OrderType::StopLimit | OrderType::StopMarket) {
+            ("newSlTriggerPx", "newSlTriggerPxType", "newSlOrdPx")
+        } else {
+            ("newTpTriggerPx", "newTpTriggerPxType", "newTpOrdPx")
+        };
+
+        if amendment != "quantity" {
+            expected[trigger_field] = Value::String("54000.0".into());
+            expected[type_field] = Value::String("mark".into());
+        }
+
+        if limit && amendment == "all" {
+            expected[price_field] = Value::String("53900.0".into());
+        }
+
+        assert_eq!(request, expected);
+        wait_until_async(
+            || async { client.pending_tasks.is_empty() },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        if s_code == "51000" {
+            let ExecutionEvent::Order(OrderEventAny::ModifyRejected(rejected)) =
+                event_rx.try_recv().unwrap()
+            else {
+                panic!("expected OrderModifyRejected");
+            };
+
+            assert_eq!(rejected.client_order_id, client_order_id);
+            assert_eq!(rejected.venue_order_id, Some(VenueOrderId::from("7003")));
+            assert_eq!(rejected.instrument_id, instrument_id);
+            assert_eq!(rejected.strategy_id, order.strategy_id());
+            assert_eq!(rejected.reason.as_str(), "OKX error 51000: test message");
+        }
+
+        assert!(event_rx.try_recv().is_err());
+        server.abort();
+    }
+
+    #[rstest]
+    #[case::trigger(
+        OrderType::StopLimit,
+        OKXAlgoOrderType::Trigger,
+        "newOrdPx",
+        "newTriggerPx",
+        "newTriggerPxType"
+    )]
+    #[case::sl(
+        OrderType::StopLimit,
+        OKXAlgoOrderType::Conditional,
+        "newSlOrdPx",
+        "newSlTriggerPx",
+        "newSlTriggerPxType"
+    )]
+    #[case::tp(
+        OrderType::LimitIfTouched,
+        OKXAlgoOrderType::Conditional,
+        "newTpOrdPx",
+        "newTpTriggerPx",
+        "newTpTriggerPxType"
+    )]
+    fn test_algo_amend_request_preserves_unconfirmed_terms(
+        #[case] order_type: OrderType,
+        #[case] algo_type: OKXAlgoOrderType,
+        #[case] price_field: &str,
+        #[case] trigger_field: &str,
+        #[case] type_field: &str,
+    ) {
+        let order = OrderTestBuilder::new(order_type)
+            .instrument_id(InstrumentId::from("BTC-USDT-SWAP.OKX"))
+            .client_order_id(ClientOrderId::from("OUNCONFIRMED"))
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("0.03"))
+            .price(Price::from("54900.0"))
+            .trigger_price(Price::from("55000.0"))
+            .trigger_type(TriggerType::MarkPrice)
+            .build();
+        let context = OrderContext::from(&order);
+
+        let mut command = ModifyOrder::new(
+            TraderId::from("TESTER-001"),
+            Some(*OKX_CLIENT_ID),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            Some(VenueOrderId::from("7003")),
+            None,
+            Some(Price::from("53900.0")),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        );
+        let first = algo_amend_request(&command, Some(algo_type), Some(context)).unwrap();
+        command.price = None;
+        command.trigger_price = Some(Price::from("54000.0"));
+        let second = algo_amend_request(&command, Some(algo_type), Some(context)).unwrap();
+        command.trigger_price = None;
+        command.quantity = Some(Quantity::from("0.04"));
+        let third = algo_amend_request(&command, Some(algo_type), Some(context)).unwrap();
+        let mut first_expected = serde_json::json!({"instId": "BTC-USDT-SWAP", "algoId": "7003"});
+        first_expected[price_field] = Value::String("53900.0".into());
+        let mut second_expected = serde_json::json!({"instId": "BTC-USDT-SWAP", "algoId": "7003"});
+        second_expected[trigger_field] = Value::String("54000.0".into());
+        second_expected[type_field] = Value::String("mark".into());
+        assert_eq!(serde_json::to_value(first).unwrap(), first_expected);
+        assert_eq!(serde_json::to_value(second).unwrap(), second_expected);
+        assert_eq!(
+            serde_json::to_value(third).unwrap(),
+            serde_json::json!({
+                "instId": "BTC-USDT-SWAP", "algoId": "7003", "newSz": "0.04"
+            })
+        );
+    }
+
+    #[rstest]
+    #[case::unknown(
+        None,
+        true,
+        true,
+        "Cannot determine OKX algo order terms for modification"
+    )]
+    #[case::missing_context(
+        Some(OKXAlgoOrderType::Trigger),
+        false,
+        true,
+        "Cannot determine OKX algo order terms for modification"
+    )]
+    #[case::missing_id(
+        Some(OKXAlgoOrderType::Trigger),
+        true,
+        false,
+        "No algo ID available for pending conditional order"
+    )]
+    #[case::trailing(
+        Some(OKXAlgoOrderType::MoveOrderStop),
+        true,
+        true,
+        "OKX does not support modification of this algo order type"
+    )]
+    fn test_modify_algo_order_rejects_locally(
+        #[case] algo_type: Option<OKXAlgoOrderType>,
+        #[case] has_context: bool,
+        #[case] has_id: bool,
+        #[case] reason: &str,
+    ) {
+        let mut client = build_test_exec_client();
+        let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
+        client.emitter.set_sender(event_tx);
+        let client_order_id = ClientOrderId::from("OMODIFYINVALID");
+        let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
+        let order = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(instrument_id)
+            .client_order_id(client_order_id)
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("0.03"))
+            .trigger_price(Price::from("55000.0"))
+            .build();
+
+        if has_context {
+            client
+                .ws_dispatch_state
+                .track_order_context(OrderContext::from(&order));
+        }
+
+        if let Some(order_type) = algo_type {
+            client.ws_dispatch_state.algo_order_states.insert(
+                client_order_id,
+                AlgoOrderState {
+                    order_type,
+                    ts_last: UnixNanos::default(),
+                },
+            );
+        }
+
+        let venue_order_id = has_id.then(|| VenueOrderId::from("7004"));
+        client.modify_algo_order(&ModifyOrder::new(
+            TraderId::from("TESTER-001"),
+            Some(*OKX_CLIENT_ID),
+            order.strategy_id(),
+            instrument_id,
+            client_order_id,
+            venue_order_id,
+            None,
+            None,
+            Some(Price::from("54000.0")),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ));
+
+        let ExecutionEvent::Order(OrderEventAny::ModifyRejected(rejected)) =
+            event_rx.try_recv().unwrap()
+        else {
+            panic!("expected OrderModifyRejected");
+        };
+
+        assert_eq!(rejected.client_order_id, client_order_id);
+        assert_eq!(rejected.venue_order_id, venue_order_id);
+        assert_eq!(rejected.instrument_id, instrument_id);
+        assert_eq!(rejected.strategy_id, order.strategy_id());
+        assert_eq!(rejected.reason.as_str(), reason);
+        assert!(event_rx.try_recv().is_err());
+        assert!(client.pending_tasks.is_empty());
+    }
+
+    #[rstest]
     #[case::client_id(true)]
     #[case::venue_id(false)]
     fn test_report_fallback_uses_current_cache(#[case] match_client_id: bool) {
@@ -4719,17 +5246,25 @@ mod tests {
     }
 
     #[rstest]
-    fn test_cancel_order_route_uses_bound_child_before_engine_trigger_state_updates() {
+    fn test_order_command_route_uses_bound_child_before_engine_trigger_state_updates() {
         let client = build_test_exec_client();
         let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
         let pending_trigger = Some((OrderType::StopLimit, Some(false)));
 
         assert_eq!(
-            client.cancel_order_route(instrument_id, pending_trigger, false),
+            client.order_command_route(instrument_id, pending_trigger, false),
             OrderCommandRoute::AlgoHttp
         );
         assert_eq!(
-            client.cancel_order_route(instrument_id, pending_trigger, true),
+            client.order_command_route(instrument_id, pending_trigger, true),
+            OrderCommandRoute::RegularWs
+        );
+        assert_eq!(
+            client.order_command_route(
+                instrument_id,
+                Some((OrderType::StopLimit, Some(true))),
+                false
+            ),
             OrderCommandRoute::RegularWs
         );
     }

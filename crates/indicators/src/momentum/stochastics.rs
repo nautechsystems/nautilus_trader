@@ -208,7 +208,7 @@ impl Stochastics {
     ///
     /// # Panics
     ///
-    /// This function panics if:
+    /// Panics if:
     /// - `period_k` or `period_d` is less than 1 or greater than `MAX_PERIOD`.
     #[must_use]
     pub fn new(period_k: usize, period_d: usize) -> Self {
@@ -233,7 +233,7 @@ impl Stochastics {
     ///
     /// # Panics
     ///
-    /// This function panics if:
+    /// Panics if:
     /// - `period_k`, `period_d`, or `slowing` is less than 1 or greater than `MAX_PERIOD`.
     #[must_use]
     pub fn new_with_params(

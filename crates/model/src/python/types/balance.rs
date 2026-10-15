@@ -91,7 +91,7 @@ impl AccountBalance {
     ///
     /// # Errors
     ///
-    /// Returns a `PyErr` if parsing or conversion fails.
+    /// Returns an error if parsing or conversion fails.
     #[staticmethod]
     #[pyo3(name = "from_dict")]
     pub fn py_from_dict(values: &Bound<'_, PyDict>) -> PyResult<Self> {
@@ -121,7 +121,7 @@ impl AccountBalance {
     ///
     /// # Errors
     ///
-    /// Returns a `PyErr` if serialization fails.
+    /// Returns an error if serialization fails.
     #[pyo3(name = "to_dict")]
     pub fn py_to_dict(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let dict = PyDict::new(py);
@@ -229,7 +229,7 @@ impl MarginBalance {
     ///
     /// # Errors
     ///
-    /// Returns a `PyErr` if parsing or conversion fails.
+    /// Returns an error if parsing or conversion fails.
     #[staticmethod]
     #[pyo3(name = "from_dict")]
     pub fn py_from_dict(values: &Bound<'_, PyDict>) -> PyResult<Self> {
@@ -262,7 +262,7 @@ impl MarginBalance {
     ///
     /// # Errors
     ///
-    /// Returns a `PyErr` if serialization fails.
+    /// Returns an error if serialization fails.
     #[pyo3(name = "to_dict")]
     pub fn py_to_dict(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let dict = PyDict::new(py);

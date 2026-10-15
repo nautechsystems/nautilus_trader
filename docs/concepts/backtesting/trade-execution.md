@@ -46,25 +46,30 @@ The engine temporarily moves its matching references to the trade price:
 - A `BUY` trade can match resting SELL orders.
 - A `NO_AGGRESSOR` trade can affect both sides because the passive side is unknown.
 
-L1 trades update both simulated top-of-book levels to the trade price and size. L2 and L3 depth books
-remain unchanged; only the matching core's transient bid, ask, and last prices move for the iteration.
+L1 trades update both simulated top-of-book levels to the trade price and size. L2 and L3 depth books stay
+unchanged. Only the matching core's transient bid, ask, and last prices move for the iteration.
 
 ### Fill determination
 
 When a trade triggers a limit fill:
 
-- With L1 data, the engine uses the trade's volume even when the simulated book contains the trade
-  price. Resting maker orders fill at their limit price. Taker orders use the trade price when it
-  satisfies their limit; otherwise, they retain the limit-price fallback.
+- With L1 data, the engine uses the trade's volume even when the simulated book contains the trade price.
+  Resting maker orders fill at their limit price. Taker orders use the trade price when it satisfies their
+  limit. If the trade price does not satisfy their limit, they keep the limit-price fallback.
 - With L2 or L3 data, the engine fills against crossed book levels. If the book does not represent
   the trade price, it can create a trade-driven fill at the order's limit price.
 - A trade-driven fill is capped at `min(order.leaves_qty, trade.size)`.
 
-With `liquidity_consumption=False`, the same trade size can support more than one order during an
-iteration. With `liquidity_consumption=True`, trade-driven fills share a consumption counter, so
-their total cannot exceed the unconsumed trade size. Each L1 trade has a fresh budget, including
-successive trades with the same price and size. Once that budget is exhausted, L1 fills do not
-fall back to book liquidity.
+Trade-size consumption depends on `liquidity_consumption`:
+
+- With `False`, the same trade size can support more than one order during an iteration.
+- With `True`, trade-driven fills share a consumption counter, so their total cannot exceed the
+  unconsumed trade size.
+
+**L1 trade budget**: With consumption enabled, each trade has a fresh budget, including successive
+trades with the same price and size. The budget applies to limit fills on both sides and persists
+across matching and settlement passes until fresh market data replaces it. Once exhausted, L1
+fills do not fall back to book liquidity.
 
 For example, with L2 or L3 data, a `SELL` trade at 100.00 can fill a BUY LIMIT at 100.05. If no book
 level represents that fill, the engine uses 100.05 rather than granting the better trade price.
@@ -73,10 +78,10 @@ level represents that fill, the engine uses 100.05 rather than granting the bett
 
 After the iteration, the engine restores matching references from the available market baseline:
 
-- With L2 or L3 data, the depth book remains the independent source of bid and ask state.
+- With L2 or L3 data, the depth book stays the independent source of bid and ask state.
 - With an L1 quote baseline, the non-aggressor side is restored from the latest quote.
-- With trade-only L1 data, there is no quote baseline to restore, so the latest trade continues to
-  define the available top-of-book state.
+- With trade-only L1 data, no quote baseline exists to restore, so the latest trade continues to define the
+  available top-of-book state.
 
 This distinction matters when interpreting a stream of trades without quotes. Repeated trades can
 move the simulated L1 state, but quote-backed L1 matching does not progressively discard the
@@ -91,8 +96,7 @@ The **aggressor** is the participant that crossed the spread:
 - `NO_AGGRESSOR`: The data does not identify the aggressor. The engine considers both sides where
   the feature requires a side.
 
-A trade with aggressor side `BUY` provides evidence for passive `SELL` orders, not `BUY` orders. A
-trade with aggressor side `SELL` provides evidence for passive `BUY` orders, not `SELL` orders.
+A known aggressor side does not provide evidence for passive orders on the same side.
 
 ## Combining book and trade data
 
@@ -133,9 +137,10 @@ venue = BacktestVenueConfig(
 )
 ```
 
-Sandbox paper trading uses the same matching-engine flags. Pass them on
-`SandboxExecutionClientConfig` (defaults remain off, matching current sandbox
-behavior):
+### Sandbox configuration
+
+Sandbox paper trading uses the same matching-engine flags. Pass them on `SandboxExecutionClientConfig`
+(defaults stay off, matching current sandbox behavior):
 
 ```python
 from decimal import Decimal
@@ -184,10 +189,10 @@ For L2 books and aggregate L3 updates:
 
 - A DELETE clears the price level and its queue.
 - An UPDATE caps quantity ahead at the level's new displayed size.
-- A completed book snapshot rebases each tracked queue position against the new visible
-  quantity at its price: quantity ahead is capped at the snapshot size, while newly added
-  liquidity does not move an existing simulated order further back. Snapshot batches may start
-  with a `F_SNAPSHOT` clear and finish with a later `F_LAST` delta.
+- A completed book snapshot rebases each tracked queue position against the new visible quantity at its price.
+  Quantity ahead is capped at the snapshot size. Newly added liquidity does not move an existing simulated
+  order further back. Snapshot batches may start with a `F_SNAPSHOT` clear and finish with a later `F_LAST`
+  delta.
 - A `BookDepth` replacement applies the same rebase rule after the full depth replacement.
 
 For L3 MBO books:
@@ -196,11 +201,11 @@ For L3 MBO books:
 - A size decrease advances the queue by the difference.
 - A size increase keeps the larger order ahead.
 - A price change removes the book order from the tracked queue.
-- A completed book snapshot retains only surviving tracked order IDs ahead, each capped at
-  its previous quantity.
+- A completed book snapshot keeps only surviving tracked order IDs ahead, each capped at its previous
+  quantity.
 
-Changing a simulated order's price resets its queue position at the new level. A quantity-only
-change retains the progress already made.
+Changing a simulated order's price resets its queue position at the new level. A quantity-only change keeps
+the progress already made.
 
 ### L1 queue tracking
 
@@ -212,14 +217,14 @@ displayed-size evidence:
 - A return to a previously visible level caps quantity ahead at the new displayed size.
 - A quote at the order's price caps quantity ahead at the same-side displayed size.
 - A displayed-size increase preserves queue progress.
-- An order behind the BBO remains pending until a quote reaches its price or a trade crosses it.
+- An order behind the BBO stays pending until a quote reaches its price or a trade crosses it.
 
 ### Limitations
 
 - Queue tracking applies only to `LIMIT` orders.
 - Each simulated order has an independent queue estimate.
 - The initial estimate is limited to book state visible at acceptance.
-- Historical data cannot reveal hidden orders or every venue-specific priority rule.
+- Historical data cannot reveal hidden orders or all venue-specific priority rules.
 
 :::warning[Unknown aggressor side]
 `NO_AGGRESSOR` trades reduce queues on both sides. This can clear a queue and fill an order

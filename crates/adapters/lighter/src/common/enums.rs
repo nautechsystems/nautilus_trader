@@ -514,6 +514,10 @@ impl LighterOrderStatus {
             _ => None,
         }
     }
+
+    pub(crate) fn is_terminal(self) -> bool {
+        !matches!(self, Self::InProgress | Self::Pending | Self::Open)
+    }
 }
 
 /// Side string used by REST and WebSocket order payloads.
@@ -617,8 +621,8 @@ impl LighterOrderType {
     ///
     /// # Errors
     ///
-    /// Returns an error for venue-internal or algorithmic order types which
-    /// do not map to a single Nautilus order type.
+    /// Returns an error if a venue-internal or algorithmic order type does not map to a single
+    /// Nautilus order type.
     pub fn as_nautilus(self) -> anyhow::Result<OrderType> {
         match self {
             Self::Limit => Ok(OrderType::Limit),

@@ -47,7 +47,7 @@ use crate::{
     http::models::{LighterOrder, LighterPriceLevel, LighterTrade},
 };
 
-pub(crate) const CANCEL_BATCH_ID_PREFIX: &str = "cancel-batch:";
+pub(crate) const TX_BATCH_ID_PREFIX: &str = "tx-batch:";
 
 /// Inbound message produced by the Lighter feed handler and consumed by the
 /// data and execution clients.

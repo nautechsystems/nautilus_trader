@@ -106,7 +106,7 @@ where
 ///
 /// # Errors
 ///
-/// Returns an error when the nanosecond value is outside the Jiff timestamp range.
+/// Returns an error if the nanosecond value is outside the Jiff timestamp range.
 pub fn format_rfc3339_from_nanos(timestamp: UnixNanos) -> anyhow::Result<String> {
     Ok(timestamp
         .to_datetime_utc()

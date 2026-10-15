@@ -1,11 +1,11 @@
 # Design Principles
 
-This page defines the principles, policies, and trade-offs that guide NautilusTrader design.
-[Architecture](../concepts/architecture.md) describes the components and runtime structure.
-These policies guide implementation and review; they do not establish that every existing path
-already conforms. Specific guides describe current behavior and limits.
-[Runtime conformance contract](runtime_conformance.md) maps selected requirements to source,
-representative checks, and implementation limits.
+This page defines the principles, policies, and trade-offs that guide NautilusTrader design,
+implementation, and review. [Architecture](../concepts/architecture.md) describes the components and runtime structure.
+
+These policies do not establish that every existing path already conforms. Specific guides describe
+current behavior and limits. The [runtime conformance contract](runtime_conformance.md) maps selected
+requirements to source, representative checks, and implementation limits.
 
 ## Design priorities
 
@@ -18,9 +18,9 @@ Design decisions weigh these quality attributes in roughly this order:
 - Maintainability
 - Deployability
 
-Performance improvements must preserve critical invariants and their required verification.
-Testability and maintainability sustain reliability; deployability affects safe rollout,
-configuration, and recovery. The priority order does not make these qualities optional.
+Performance improvements must preserve critical invariants and their required verification. Testability and
+maintainability sustain reliability. Deployability affects safe rollout, configuration, and recovery. The
+priority order does not make these qualities optional.
 
 ## Data integrity and failure
 
@@ -53,8 +53,8 @@ Failing at the invalid operation provides:
 - **Immediate feedback**: The caller receives an error, or the process terminates, at the point of
   the violated contract.
 - **Diagnostic context**: Errors and panic messages identify the rejected operation or value.
-- **Deterministic behavior**: With deterministic ordering and configuration, the same invalid input
-  produces the same failure; nondeterministic inputs can still vary the outcome.
+- **Deterministic behavior**: With deterministic ordering and configuration, the same invalid input produces
+  the same failure. Nondeterministic inputs can still vary the outcome.
 
 Expected network, storage, business-validation, and user-input failures have explicit error
 surfaces. Unrecoverable invariant violations stop the operation or process before invalid state
@@ -63,11 +63,11 @@ API behavior.
 
 ### Failure containment
 
-Stop the smallest scope whose integrity can no longer be established, provided the remaining system
-can continue safely. Rejected input or a failed operation need not stop unrelated components when
-isolation is established. Untrustworthy shared state may require stopping the node. Containment
-must follow the API's failure contract and proven isolation boundaries; it must not assume a
-component can recover from an arbitrary panic.
+Stop the smallest scope whose integrity can no longer be established, provided the remaining system can
+continue safely. Rejected input or a failed operation need not stop unrelated components when isolation is
+established. Untrustworthy shared state may require stopping the node. Containment must follow the API's
+failure contract and proven isolation boundaries. It must not assume a component can recover from an arbitrary
+panic.
 
 Stopping a process does not cancel working venue orders or remove exposure. Recovery must establish
 venue state before deciding which further actions are safe.
@@ -102,14 +102,14 @@ The invariant protects several properties the system depends on:
 
 - **Stable inputs**: Every consumer sees the same message payload. Replaying a sequence preserves
   the original logical inputs for backtesting, incident reconstruction, and regression testing.
-- **Temporal integrity**: A message preserves what its producer reported, observed, requested, or
-  inferred at creation time. Preserve the available provenance; immutability does not establish
-  that the producer's information is true. Corrections require an explicit new record.
+- **Temporal integrity**: A message preserves what its producer reported, observed, requested, or inferred at
+  creation time. Preserve the available provenance. Immutability does not establish that the producer's
+  information is true. Corrections require an explicit new record.
 - **Safer concurrency**: Readers do not need coordination to protect message payloads from later
   rewrites. This removes a common source of races around shared state.
-- **Debugging and auditability**: Logs, traces, replay tools, and dead-letter inspection retain the
-  original payload, allowing investigation of what the system received or created, when, and
-  what it did with that information.
+- **Debugging and auditability**: Logs, traces, replay tools, and dead-letter inspection keep the original
+  payload. This permits investigation of what the system received or created, when this occurred, and what the
+  system did with that information.
 - **Clear ownership boundaries**: Components treat incoming messages as input. If a component needs
   a different representation, it derives new local state or a new message explicitly.
 - **More robust distribution**: Serialized messages already cross process and service boundaries as
@@ -137,14 +137,14 @@ Live venue behavior and independent external inputs remain outside that guarante
 
 ## Bounded resource use
 
-Design queues, retries, retained history, and callback chains with explicit resource budgets and
-exhaustion behavior. Account for payload size as well as item count where memory use varies, and
-bound work as well as storage so a replenishing queue cannot monopolize execution.
+Design queues, retries, retained history, and callback chains with explicit resource budgets and exhaustion
+behavior. If memory use varies, account for payload size as well as item count. Bound work as well as storage,
+so a replenishing queue cannot monopolize execution.
 
-Choose backpressure, rejection, or safe termination according to the affected contract. Overload
-must not silently lose required state transitions or leave partially applied operations presented
-as complete. These are design requirements; existing paths can still be unbounded, as documented
-in [live dispatch and overload behavior](../concepts/live.md#dispatch-priority-and-overload-behavior).
+Choose backpressure, rejection, or safe termination according to the affected contract. Overload must not
+silently lose required state transitions or leave partially applied operations presented as complete. These
+are design requirements. Existing paths can still be unbounded, as documented in [live dispatch and overload
+behavior](../concepts/live.md#dispatch-priority-and-overload-behavior).
 
 ## Recovery after failure
 
@@ -152,10 +152,10 @@ Unrecoverable faults must not leave the system operating on potentially invalid 
 startup includes configured state recovery, so restart uses the same initialization path as
 ordinary startup. Recovery depends on retained state and backing-store durability.
 
-An external supervisor owns restart after process failure. Recovery aims to minimize downtime;
-its duration depends on the state to restore and the backing store. Execution recovery must
-reconcile venue state rather than blindly retry venue commands. Normal operation retains graceful
-shutdown; an unrecoverable fault may make cleanup unsafe.
+An external supervisor owns restart after process failure. Recovery aims to minimize downtime. Its duration
+depends on the state to restore and the backing store. Execution recovery must reconcile venue state rather
+than blindly retry venue commands. Normal operation retains graceful shutdown. An unrecoverable fault may make
+cleanup unsafe.
 
 [Runtime failure and recovery](../concepts/architecture.md#crash-only-design) describes the process
 and persistence boundaries.
@@ -175,8 +175,8 @@ also introduces venue, transport, timing, persistence, external-activity, and re
 behavior that a simulation may not reproduce. Shared code does not imply identical outcomes from
 different inputs or operating conditions.
 
-The [common core](../concepts/architecture.md#common-core) supplies the engines and interfaces;
-[behavioral models](../concepts/behavioral_models.md) define how model implementations enter the runtime.
+The [common core](../concepts/architecture.md#common-core) supplies the engines and interfaces.
+[Behavioral models](../concepts/behavioral_models.md) define how model implementations enter the runtime.
 
 ## Queued callback dispatch requirements
 
@@ -189,10 +189,10 @@ mutable borrows end. Individual dispatch, flush, and lifecycle methods must not 
 draining policy. Keep failure handling and cleanup under existing lifecycle owners. Share scheduling
 code only where it reduces complexity while preserving backtest settlement and live yielding rules.
 
-Deterministic callback order in the synchronous core and backtesting is a required activation
-criterion. Verify exact sequences through real native and Python components, including nested
-publication, fan-out, callback-generated commands, same-timestamp work, and continuation across
-bounded drain passes. Final counts and balances alone do not establish ordering.
+Deterministic callback order in the synchronous core and backtesting is a required activation criterion.
+Verify exact sequences through real native and Python components. Include nested publication, fan-out,
+callback-generated commands, same-timestamp work, and continuation across bounded drain passes. Final counts
+and balances alone do not establish ordering.
 
 These are requirements for queued dispatch, not guarantees of existing synchronous paths.
 The [callback dispatch contract](callback_dispatch.md) specifies maintenance timing, ownership

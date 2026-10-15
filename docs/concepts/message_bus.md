@@ -10,7 +10,7 @@ The *messaging patterns* include:
 - Publish/Subscribe
 - Request/Response
 
-Messages exchanged via the `MessageBus` fall into three categories:
+Messages exchanged through the `MessageBus` fall into three categories:
 
 - Data
 - Events
@@ -21,13 +21,13 @@ Messages exchanged via the `MessageBus` fall into three categories:
 Nautilus keeps market data topics under the `data` root. Live data publications use the direct
 `data.<kind>...` topics, for example `data.book.deltas.XCME.ESZ24`.
 
-When requested, replayed, or workflow-generated data flows over the message bus as
-topic-addressable data, the `DataEngine` publishes it under `data.pipeline.<kind>...`.
-Long requests, grouped requests, and aggregation chains can split, transform, and fan data back in
-before the parent request completes. These messages are still data messages, but they do not claim
-the same live ordering and timing semantics as normal real-time publications. For example, book
-deltas on the pipeline path use
+When requested, replayed, or workflow-generated data flows over the message bus as topic-addressable data, the
+`DataEngine` publishes it under `data.pipeline.<kind>...`. For example, book deltas on the pipeline path use
 `data.pipeline.book.deltas.XCME.ESZ24`.
+
+Long requests, grouped requests, and aggregation chains can split, transform, and fan data back in before the
+parent request completes. These messages are still data messages, but they do not claim the same live ordering
+and timing semantics as normal real-time publications.
 
 Correlated request responses are delivered through response handlers keyed by correlation ID. The
 `data.response` topic is a capture channel for response publications, not the pipeline data path.
@@ -38,9 +38,9 @@ Once a message is created, **its fields must not be mutated**. This includes con
 `params` maps. Components can read a message and derive local state from it, but they must not
 rewrite the original.
 
-Immutable messages keep every consumer seeing the same input, preserve what was true at emission
-time, and remove a class of shared-state races. Replay, debugging, and audit all depend on messages
-remaining stable after dispatch.
+Immutable messages keep each consumer seeing the same input, preserve what was true at emission time, and
+remove a class of shared-state races. Replay, debugging, and audit all depend on messages remaining stable
+after dispatch.
 
 Three ownership rules follow from this:
 
@@ -97,19 +97,21 @@ Publication requires a non-empty concrete topic without wildcards. Subscription 
 `app.risk.*` also matches `app.risk.limit.eu`.
 
 Handlers receive the original object without copying, string conversion, or serialization. Follow
-[message integrity](#message-integrity): treat published objects as immutable. Use application-owned
-topics such as `app.risk.limit`; system data and event topics carry their own payload types.
-These callbacks receive objects published through `publish_message`, not typed market data or signals.
-Use the corresponding typed subscription methods for those payloads.
-Patterns that also match signals or custom data log an error for each incompatible payload instead
-of invoking the Python callback.
+[message integrity](#message-integrity): treat published objects as immutable. Use application-owned topics
+such as `app.risk.limit`. System data and event topics carry their own payload types.
+
+These callbacks receive objects published through `publish_message`, not typed market data or signals. Use the
+corresponding typed subscription methods for those payloads. Patterns that also match signals or custom data
+log an error for each incompatible payload instead of invoking the Python callback.
+
 Python object publication does not send the object to external message-bus storage or transport.
 
-Delivery is **synchronous**. Nested publication finishes before the publishing callback continues.
-Higher subscription priorities run first; equal priority does not imply subscription insertion order.
-Use distinct priorities when callback order matters, including reproducible backtests.
-A handler exception is logged, and delivery continues to the remaining handlers. This delivery model
-does not make it safe to re-enter a component that is already executing in the publishing call stack.
+Delivery is **synchronous**. Nested publication finishes before the publishing callback continues. Higher
+subscription priorities run first. Equal priority does not imply subscription insertion order. Use distinct
+priorities when callback order matters, including reproducible backtests.
+
+A handler exception is logged, and delivery continues to the remaining handlers. This delivery model does not
+make it safe to re-enter a component that is already executing in the publishing call stack.
 
 Subscriptions belong to the subscribing component:
 
@@ -119,20 +121,21 @@ Subscriptions belong to the subscribing component:
   the same handler. Other callables, including bound built-in methods, match by object identity.
   Keep a reference to these other callables for later unsubscription.
   Neither equality nor representation methods run.
-- Unsubscription removes only the exact pattern and callable owned by that component. An absent
-  subscription is a no-op. Other components' subscriptions remain independent.
+- Unsubscription removes only the exact pattern and callable owned by that component. An absent subscription
+  is a no-op. Other components' subscriptions stay independent.
 - A callback already selected for a publication can still run if it is unsubscribed during that
   publication.
 
-Stopping retains subscriptions, and raw topic callbacks can run while a component is stopped.
-Resuming keeps those subscriptions. Successful reset and disposal release the component's
-subscriptions and retained callables; successful reset requires subscribing again. A failed disposal
-retains subscriptions until retirement cleanup succeeds. Fault cleanup also releases subscriptions.
+Stopping keeps subscriptions, and raw topic callbacks can run while a component is stopped. Resuming keeps
+those subscriptions. Successful reset and disposal release the component's subscriptions and retained
+callables. Successful reset requires subscribing again. A failed disposal keeps subscriptions until retirement
+cleanup succeeds. Fault cleanup also releases subscriptions.
 
-These methods raise `RuntimeError` before runtime registration, after successful disposal, from a
-foreign thread, while releasing subscriptions, or when the registered bus is unavailable or replaced.
-Invalid topics and patterns raise `ValueError`; a non-callable handler raises `TypeError`.
-Priority must be an integer in `[0, 4294967295]`; values outside this range raise `OverflowError`.
+These methods raise `RuntimeError` before runtime registration, after successful disposal, from a foreign
+thread, or while releasing subscriptions. They also raise `RuntimeError` when the registered bus is
+unavailable or replaced. Invalid topics and patterns raise `ValueError`. A non-callable handler raises
+`TypeError`. Priority must be an integer in `[0, 4294967295]`. Values outside this range raise
+`OverflowError`.
 
 ## Messaging styles
 
@@ -164,7 +167,7 @@ Direct message-bus access is for native components that need:
 
 - **Cross-component communication** within the system.
 - **Flexibility** to define typed topics and payloads.
-- **Decoupling** between publishers and subscribers who don't need to know about each other.
+- **Decoupling** between publishers and subscribers who do not need to know about each other.
 - **Global reach** where messages can be received by multiple subscribers.
 - Working with events that do not fit the data actor model.
 - Advanced scenarios requiring full control over messaging.
@@ -187,7 +190,8 @@ ordering.
 The Data publish/subscribe approach works well when you need:
 
 - **Exchange of structured trading data** like market data, indicators, custom metrics, or option greeks.
-- **Event timestamps** (`ts_event`, `ts_init`) for ordering inputs during backtests; publication itself does not sort messages.
+- **Event timestamps** (`ts_event`, `ts_init`) for ordering inputs during backtests. Publication itself does
+  not sort messages.
 - **Data persistence and serialization** through registered custom data classes, integrating with NautilusTrader's data catalog system.
 - **Standardized trading data exchange** between system components.
 
@@ -250,14 +254,14 @@ The Signal messaging approach works well when you need:
 - **Simple, lightweight notifications/alerts** like "RiskThresholdExceeded" or "TrendUp".
 - **Quick, on-the-fly messaging** without defining custom classes.
 - **Broadcasting alerts or flags** as simple primitive values.
-- **Easy API integration** with straightforward methods (`publish_signal`, `subscribe_signal`).
+- **API integration** through the methods (`publish_signal`, `subscribe_signal`).
 - **Multiple subscriber communication** where all subscribers receive signals when published.
 - **Minimal setup overhead** with no class definitions required.
 
 #### Considerations
 
-- Each signal carries a single value. The value is converted to a string on publish, so handlers
-  always receive `signal.value` as a `str`; complex data structures are not preserved.
+- Each signal carries a single value. The value is converted to a string on publish, so handlers always
+  receive `signal.value` as a `str`. Complex data structures are not preserved.
 - Differentiate between signals in the `on_signal` handler with `signal.name`.
 
 :::warning Signal callback reentry
@@ -344,11 +348,14 @@ subscribers, then serialized into the existing `BusMessage` wire record:
 - `encoding`: the payload encoding selected from the message bus encoding policy.
 - `payload`: serialized bytes encoded with the selected encoding.
 
-An external producer that writes directly to a Redis stream must include `topic`, `type`, and
-`payload`. The `topic` must be a valid publish topic and cannot contain `*` or `?`. The `encoding`
-field is optional and defaults to JSON when omitted. The receiving node skips entries without
-`type` because it cannot select a payload decoder. Set `payload_kind` to `typed` for a fixed typed
-payload; without this discriminator, the receiving node treats the same type name as custom data.
+An external producer that writes directly to a Redis stream must follow these rules:
+
+- Include `topic`, `type`, and `payload`. The `topic` must be a valid publish topic and cannot contain `*` or
+  `?`.
+- The `encoding` field is optional and defaults to JSON when omitted.
+- The receiving node skips entries without `type` because it cannot select a payload decoder.
+- Set `payload_kind` to `typed` for a fixed typed payload. Without this discriminator, the receiving node
+  treats the same type name as custom data.
 
 External egress receives that record as `publish(BusMessage)`. This outbound call must not block the
 node's bus thread. Bounded egress implementations drop on a full queue instead of applying
@@ -387,12 +394,16 @@ bare custom object. The canonical JSON envelope is:
 }
 ```
 
-The envelope requires `type` and `payload`; `data_type` is optional on ingress and defaults to the
-message type with no metadata or identifier. In the canonical emitted form, `data_type.type_name`
-uses the same custom type name, `metadata` is an object that may be empty, and `identifier` is
-present only when assigned. The envelope `type` must match the Redis stream `type`. The envelope
-`payload` is the bare object passed to the registered class's `from_json(...)` method. MessagePack
-uses the same map fields encoded as MessagePack bytes.
+The envelope requires `type` and `payload`. `data_type` is optional on ingress and defaults to the message
+type with no metadata or identifier.
+
+- **Canonical output**: `data_type.type_name` uses the same custom type name, `metadata` is an object that may
+  be empty, and `identifier` is present only when assigned.
+- **Type matching**: the envelope `type` must match the Redis stream `type`.
+- **Payload**: the envelope `payload` is the bare object passed to the registered class's `from_json(...)`
+  method.
+
+MessagePack uses the same map fields encoded as MessagePack bytes.
 
 For Python custom data, register the class before starting the node:
 
@@ -406,28 +417,39 @@ The external-client subscription registers the payload type for streaming, while
 `register_custom_data_class(...)` installs the process-wide JSON decoder. Both registrations are
 required. See [Custom data](custom_data.md#registration-architecture) for the class requirements.
 
-For Redis, messages are transmitted via a Multiple-Producer Single-Consumer (MPSC) channel to a
+For Redis, the message bus sends messages through a Multiple-Producer Single-Consumer (MPSC) channel to a
 separate Rust task. That task writes the message to Redis streams.
 
 Offloading I/O to a separate task keeps the publishing thread unblocked.
 
-With MessagePack or JSON, Rust-native external egress forwards serializable typed publications. This
-includes instruments, quotes, trades, bars, book deltas, variable-depth snapshots, mark/index/funding
-updates, option greeks (`OptionGreeks`), account state, portfolio snapshots, order events, position
-events, and custom data. With the `defi` feature this also includes DeFi blocks, pools, liquidity
-updates, fee collects, and flash events. Full order book snapshots, `GreeksData` records, option
-chain slices, and DeFi pool swaps are not forwarded because those types do not implement Serde
-serialization.
+With MessagePack or JSON, Rust-native external egress forwards serializable typed publications:
 
-When `external_streams` is non-empty, JSON or MessagePack egress also forwards subscription
-commands, trading commands, execution mass-status requests, order status reports, fill reports,
-position status reports, and execution mass-status reports. These payloads remain local when no
-external streams are configured.
+- Instruments, quotes, trades, bars, book deltas, and variable-depth snapshots.
+- Mark/index/funding updates and option greeks (`OptionGreeks`).
+- Account state, portfolio snapshots, order events, position events, and custom data.
+- With the `defi` feature, DeFi blocks, pools, liquidity updates, fee collects, and flash events.
 
-With SBE or Cap'n Proto, Rust-native external egress forwards the built-in market data payloads with
-schema codecs: quotes, trades, bars, book deltas, variable-depth snapshots, mark price updates, index
-price updates, funding rate updates, and option greeks. Other payload types are dropped with a
-debug log when those schema encodings are selected.
+Full order book snapshots, `GreeksData` records, option chain slices, and DeFi pool swaps are not forwarded
+because those types do not implement Serde serialization.
+
+When `external_streams` is non-empty, JSON or MessagePack egress also forwards subscription commands, trading
+commands, and execution mass-status requests. It also forwards order status reports, fill reports, position
+status reports, and execution mass-status reports. These payloads stay local when no external streams are
+configured.
+
+With SBE or Cap'n Proto, Rust-native external egress forwards only these built-in market data payloads with schema codecs:
+
+- Quotes
+- Trades
+- Bars
+- Book deltas
+- Variable-depth snapshots
+- Mark price updates
+- Index price updates
+- Funding rate updates
+- Option greeks
+
+Other payload types are dropped with a debug log when those schema encodings are selected.
 
 ## Configuration
 
@@ -476,24 +498,22 @@ Rust-native callers that inject `MessageBusExternalEgress` with
 that egress surface. The core message bus does not require a `RedisMessageBusConfig` for injected
 egress.
 
-The Rust live runtime accepts `external_streams` in `MessageBusConfig`, and consumes inbound
-`BusMessage`s when callers inject a `MessageBusExternalIngress` with
-`LiveNodeBuilder::with_external_ingress`. The config names the external stream keys; the injected
-ingress is the concrete runtime source. Rust callers can install `RedisMessageBusConfig` with
-`LiveNodeBuilder::with_external_msgbus_factory`. Building fails when a factory is combined with
-separately injected egress or ingress. A factory always installs egress and creates ingress only when
-`external_streams` is non-empty.
+The Rust live runtime accepts `external_streams` in `MessageBusConfig` and consumes inbound `BusMessage`s when
+callers inject a `MessageBusExternalIngress` with `LiveNodeBuilder::with_external_ingress`. The config names
+the external stream keys. The injected ingress is the concrete runtime source.
 
-Python exposes the same builder method for built-in backing configs, currently
-`RedisMessageBusConfig`. The existing `RedisMessageBusFactory` wrapper remains supported. Python
-does not accept arbitrary factory classes.
+Rust callers can install `RedisMessageBusConfig` with `LiveNodeBuilder::with_external_msgbus_factory`.
+Building fails when a factory is combined with separately injected egress or ingress. A factory always
+installs egress and creates ingress only when `external_streams` is non-empty.
+
+Python exposes the same builder method. Its only supported built-in backing config is `RedisMessageBusConfig`.
+The existing `RedisMessageBusFactory` wrapper stays supported. Python does not accept arbitrary factory classes.
 
 :::warning
-The built-in Redis ingress starts each configured stream at the current timestamp, so entries that
-already exist when the node starts are not replayed. After startup it advances the last-seen ID for
-each stream and preserves those IDs across connection retries. Use cache recovery or the event store
-when durable pre-start replay is required; `external_streams` provides live forwarding, not a
-consumer-group backlog.
+The built-in Redis ingress starts each configured stream at the current timestamp, so entries that already
+exist when the node starts are not replayed. After startup it advances the last-seen ID for each stream and
+preserves those IDs across connection retries. Use cache recovery or the event store when durable pre-start
+replay is required. `external_streams` provides live forwarding, not a consumer-group backlog.
 :::
 
 ### Encoding
@@ -510,16 +530,15 @@ Use `encoding_market_data` to override the encoding for market data payloads bac
 bus binary codecs. Use `encoding_builtin` to override account state, portfolio snapshot, order
 event, and position event payloads. Custom and unmapped payload types always use `encoding`.
 
-`MessageBusConfig::validate` requires the default `encoding` to support custom payloads, so it must
-be JSON or MessagePack. Category overrides must be supported by every published payload type in
-that category. SBE and Cap'n Proto can currently be used only for `encoding_market_data`, and only
-when the matching Rust feature is enabled. `encoding_builtin = "sbe"` and
-`encoding_builtin = "capnp"` fail validation until those schema codecs cover the built-in event
-category.
+`MessageBusConfig::validate` requires the default `encoding` to support custom payloads, so it must be JSON or
+MessagePack. Category overrides must be supported by each published payload type in that category. SBE and
+Cap'n Proto can be used only for `encoding_market_data`, and only when the matching Rust feature is enabled.
+`encoding_builtin = "sbe"` and `encoding_builtin = "capnp"` fail validation until those schema codecs cover
+the built-in event category.
 
-The Redis cache payload path supports MessagePack and JSON only. SBE and Cap'n Proto are schema
-payload encodings for Rust-native external message bus egress, not Redis cache encodings, and
-selecting either for a Redis cache payload is an error.
+The Redis cache payload path supports MessagePack and JSON only. SBE and Cap'n Proto are schema payload
+encodings for Rust-native external message bus egress, not Redis cache encodings. Either encoding is an error
+for a Redis cache payload.
 
 :::tip
 The `json` encoding is used by default for human readability and interoperability.
@@ -533,10 +552,9 @@ configure ISO 8601 string formatting by setting `timestamps_as_iso8601` to `true
 
 ### Message stream keys
 
-Message stream keys identify individual trader nodes and organize messages within streams. The
-`trader-` prefix, trader ID, and instance ID segments are optional and controlled by the options
-below; the streams prefix is always included. With every segment enabled, a trader key has the
-following structure:
+Message stream keys identify individual trader nodes and organize messages within streams. The `trader-`
+prefix, trader ID, and instance ID segments are optional and controlled by the options below. The streams
+prefix is always included. With each segment enabled, a trader key has the following structure:
 
 ```
 trader-{trader_id}:{instance_id}:{streams_prefix}
@@ -546,9 +564,9 @@ With the default options (`use_trader_prefix` and `use_trader_id` enabled, `use_
 disabled) the base stream key is `trader-{trader_id}:{streams_prefix}`.
 
 These options control Redis stream keys. They do not rewrite the `topic` passed to an injected
-`MessageBusExternalEgress`; that topic remains the internal message bus publish topic. When
-`stream_per_topic` is `True`, Redis egress appends the topic to the stream key. When it is
-`False`, Redis stores all messages on the base stream key and keeps the topic as a message field.
+`MessageBusExternalEgress`. That topic stays the internal message bus publish topic. When `stream_per_topic`
+is `True`, Redis egress appends the topic to the stream key. When it is `False`, Redis stores all messages on
+the base stream key and keeps the topic as a message field.
 
 The following options are available for configuring message stream keys:
 
@@ -562,21 +580,19 @@ If the key should include the trader ID for the node.
 
 #### Instance ID
 
-Each trader node is assigned a unique instance ID, which is a UUIDv4. This instance ID helps distinguish individual traders when messages
-are distributed across multiple streams. You can include the instance ID in the trader key by setting the `use_instance_id` configuration option to `True`.
-This is particularly useful when you need to track and identify traders across various streams in a multi-node trading system.
+Each trader node receives a unique UUIDv4 instance ID, which distinguishes individual traders when messages
+are distributed across multiple streams. Set `use_instance_id=True` to include it in the trader key and
+identify traders across streams in a multi-node trading system.
 
 #### Streams prefix
 
-The `streams_prefix` string enables you to group all streams for a single trader instance or organize
-messages for multiple instances. Configure this by passing a string to the `streams_prefix` configuration
-option, ensuring other prefixes are set to false.
+The `streams_prefix` string groups all streams for a single trader instance or organizes messages for multiple
+instances. Set the other prefixes to false. Then pass a string to the `streams_prefix` configuration option.
 
 #### Stream per topic
 
-Indicates whether the producer will write a separate stream for each topic. This is particularly
-useful for Redis backings, which do not support wildcard topics when listening to streams.
-If set to False, all messages will be written to the same stream.
+Set `stream_per_topic=True` to write a separate stream for each topic. This suits Redis backings, which do not
+support wildcard topics when listening to streams. Set it to `False` to write all messages to the same stream.
 
 :::info
 Redis does not support wildcard stream topics. For better compatibility with Redis, it is recommended to set this option to False.
@@ -584,13 +600,13 @@ Redis does not support wildcard stream topics. For better compatibility with Red
 
 ### Types filtering
 
-When messages are published on the message bus, they are serialized and written to a stream if a backing
-for the message bus is configured and enabled. To prevent flooding the stream with data like high-frequency
-quotes, you may filter out certain types of messages from external publication.
+If a message-bus backing is configured and enabled, published messages are serialized and written to a stream.
+You can exclude selected message types from external publication to prevent stream flooding (such as from
+high-frequency quotes).
 
-To enable this filtering mechanism, pass a list of payload type names to the `types_filter`
-parameter in the message bus configuration. Listed types are excluded from external publication.
-A name shared by a custom payload and a fixed typed payload excludes both.
+For external publication filtering, pass a list of payload type names to the message-bus configuration's
+`types_filter` parameter. Listed types are excluded from external publication. A name shared by a custom
+payload and a fixed typed payload excludes both.
 
 ```python
 from nautilus_trader.config import MessageBusConfig
@@ -601,17 +617,16 @@ message_bus = MessageBusConfig(types_filter=["QuoteTick", "TradeTick"])
 
 ### Stream auto-trimming
 
-Use `autotrim_mins` to set a lookback window in minutes and `autotrim_maxlen` to set an
-approximate maximum number of entries for each Redis stream. You can configure either policy or
-both. When both are set, the message bus removes entries that exceed either the time window or the
-entry-count threshold.
+Use `autotrim_mins` to set a lookback window in minutes. Use `autotrim_maxlen` to set an approximate maximum
+number of entries for each Redis stream. You can configure either policy or both. When both are set, the
+message bus removes entries that exceed either the time window or the entry-count threshold.
 
 Redis applies `autotrim_maxlen` with approximate trimming for better write performance, so a stream
 may contain slightly more entries than the configured threshold.
 
 :::info
-The Redis implementation trims each stream at most once per minute, so entries can remain up to
-roughly a minute longer than the `autotrim_mins` window.
+The Redis implementation trims each stream at most once per minute, so entries can stay up to roughly a minute
+longer than the `autotrim_mins` window.
 :::
 
 ## External streams
@@ -633,21 +648,24 @@ flowchart TB
 ```
 
 :::info
-Set the `LiveDataEngineConfig.external_clients` with the list of `client_id`s intended to represent the external streaming clients.
-The `DataEngine` will filter out subscription commands for these clients, ensuring that the external streaming provides the necessary data for any subscriptions to these clients.
-When the Rust `DataEngine` skips an external-client subscription, it registers the corresponding streaming payload type for inbound republishing on the message bus.
+Set `LiveDataEngineConfig.external_clients` to the list of `client_id`s representing external streaming
+clients. The `DataEngine` filters out subscription commands for these clients because external streaming
+supplies their subscription data.
+
+When the Rust `DataEngine` skips an external-client subscription, it registers the corresponding streaming
+payload type for inbound republishing on the message bus.
 :::
 
 ### Example configuration
 
-The following example details a streaming setup where a producer node publishes Binance data externally,
-and a downstream consumer node publishes these data messages onto its internal message bus.
+In this streaming example, a producer node publishes Binance data externally. A downstream consumer node
+publishes these data messages onto its internal message bus.
 
 #### Producer node
 
-We configure the `MessageBus` of the producer node to publish to a `"binance"` stream.
-The settings `use_trader_id`, `use_trader_prefix`, and `use_instance_id` are all set to `false`
-to ensure a simple and predictable stream key that the consumer nodes can register for.
+The producer node's `MessageBus` publishes to a `"binance"` stream. The settings `use_trader_id`,
+`use_trader_prefix`, and `use_instance_id` are all `false`. This gives the stream a simple, predictable key
+that consumer nodes can register for.
 
 ```rust
 let message_bus = MessageBusConfig {

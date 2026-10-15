@@ -1,0 +1,171 @@
+{
+  "oracle": "hyperliquid-python-sdk 0.24.0, signing.py at revision 2fdb18f9517675ea03695a0962bd19eece9c83f0",
+  "nonce": 1680000000000,
+  "cases": [
+    {
+      "name": "limit",
+      "input": {
+        "type": "order",
+        "orders": [
+          {
+            "a": 0,
+            "b": true,
+            "p": "51000.00",
+            "s": "1.0000",
+            "r": false,
+            "t": {
+              "limit": {
+                "tif": "Gtc"
+              }
+            }
+          }
+        ],
+        "grouping": "na"
+      },
+      "action": {
+        "type": "order",
+        "orders": [
+          {
+            "a": 0,
+            "b": true,
+            "p": "51000",
+            "s": "1",
+            "r": false,
+            "t": {
+              "limit": {
+                "tif": "Gtc"
+              }
+            }
+          }
+        ],
+        "grouping": "na"
+      },
+      "msgpack": "83a474797065a56f72646572a66f72646572739186a16100a162c3a170a53531303030a173a131a172c2a17481a56c696d697481a3746966a3477463a867726f7570696e67a26e61",
+      "connection_id": "3794cf332b5cd27c76ddd66f20b3158e0b23a5b02590c5dd932beeec64d84b8c",
+      "mainnet_signature": {
+        "r": "0xb4da094fd4fb4c6d9fa5848886feaf6a1fc546ac960a23395afab0f24b9082d9",
+        "s": "0x3e9ff8f65fbc05400e429e56d35da9e193ab7b6e4daeb0dc25848d74db335b5f",
+        "v": 27
+      },
+      "testnet_signature": {
+        "r": "0x9892ccc953af0a83301ea0d431b64d5cbab945c971f50c8ed713bab66450d966",
+        "s": "0x45c9915f3e928215ea42be261d8b43c1228a974e6dda4b9a3e56c8deea41d1d2",
+        "v": 27
+      }
+    },
+    {
+      "name": "trigger",
+      "input": {
+        "type": "order",
+        "orders": [
+          {
+            "a": 0,
+            "b": true,
+            "p": "52260.00",
+            "s": "1.0000",
+            "r": false,
+            "t": {
+              "trigger": {
+                "isMarket": true,
+                "triggerPx": "52000.0000",
+                "tpsl": "sl"
+              }
+            }
+          }
+        ],
+        "grouping": "na"
+      },
+      "action": {
+        "type": "order",
+        "orders": [
+          {
+            "a": 0,
+            "b": true,
+            "p": "52260",
+            "s": "1",
+            "r": false,
+            "t": {
+              "trigger": {
+                "isMarket": true,
+                "triggerPx": "52000",
+                "tpsl": "sl"
+              }
+            }
+          }
+        ],
+        "grouping": "na"
+      },
+      "msgpack": "83a474797065a56f72646572a66f72646572739186a16100a162c3a170a53532323630a173a131a172c2a17481a77472696767657283a869734d61726b6574c3a9747269676765725078a53532303030a47470736ca2736ca867726f7570696e67a26e61",
+      "connection_id": "188efca609b35b1e690949b52409e5126e7ee6d4c32c5a4901bae9cf8ff3fa5f",
+      "mainnet_signature": {
+        "r": "0xb097dbcf4a79d290d5efbcd763ee089c190cde191a3581436c69518ad737fde9",
+        "s": "0x62f489a7f12a35fc15fbf6f61ff90a03c9156a10b0e4da8bea4e9a828552f2d9",
+        "v": 28
+      },
+      "testnet_signature": {
+        "r": "0x2f78d617555dda53d6e6711c3e9f148f1b54d7c8785b890bbbfd74a04efc2a6d",
+        "s": "0xf1e339594db4b775211fc595ef9f4ca5e2296d69b667ee09969b14a94ebe523",
+        "v": 27
+      }
+    },
+    {
+      "name": "batch_modify",
+      "input": {
+        "type": "batchModify",
+        "modifies": [
+          {
+            "oid": 12345,
+            "order": {
+              "a": 0,
+              "b": true,
+              "p": "3.1400",
+              "s": "0.0100",
+              "r": false,
+              "t": {
+                "trigger": {
+                  "isMarket": false,
+                  "triggerPx": "3.125000",
+                  "tpsl": "tp"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "action": {
+        "type": "batchModify",
+        "modifies": [
+          {
+            "oid": 12345,
+            "order": {
+              "a": 0,
+              "b": true,
+              "p": "3.14",
+              "s": "0.01",
+              "r": false,
+              "t": {
+                "trigger": {
+                  "isMarket": false,
+                  "triggerPx": "3.125",
+                  "tpsl": "tp"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "msgpack": "82a474797065ab62617463684d6f64696679a86d6f6469666965739182a36f6964cd3039a56f7264657286a16100a162c3a170a4332e3134a173a4302e3031a172c2a17481a77472696767657283a869734d61726b6574c2a9747269676765725078a5332e313235a47470736ca27470",
+      "connection_id": "886e78bd9cac47e2e97c6e5fb45a24fdddd7c896aa79aaff95f166f43ffb299b",
+      "mainnet_signature": {
+        "r": "0x17695d7436d5b85cf413abae4d4fbf95bef66fa0d9d0624ede29f9035830327e",
+        "s": "0x428dc290d630fcabed03f8a187475aee5035ac60c6325099e4f4fb6fc683769e",
+        "v": 27
+      },
+      "testnet_signature": {
+        "r": "0x447592fcd4a651ebf0c06aa609863fe9fcf1fc3b5639f98727be3d089d308ec9",
+        "s": "0x5fec8ff723cf601a9f5db4e3a0166c065240d43104e100a70a1e10304278802",
+        "v": 28
+      }
+    }
+  ]
+}

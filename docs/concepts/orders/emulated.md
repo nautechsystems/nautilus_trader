@@ -2,15 +2,15 @@
 
 Emulation lets you use order types even when your trading venue does not natively support them.
 
-The `OrderEmulator` monitors the market data selected by `emulation_trigger`. When the local order
-matches its release condition, the emulator transforms it into a `MARKET` or `LIMIT` order and sends
-that order through the normal risk and execution path. For example, an emulated `STOP_LIMIT` becomes
-a `LIMIT` order after its stop price triggers.
+The `OrderEmulator` monitors the market data selected by `emulation_trigger`. When the local order matches its
+release condition, the emulator transforms it into a `MARKET` or `LIMIT` order. It routes that order to the
+configured execution algorithm or the execution engine. For example, an emulated `STOP_LIMIT` becomes a
+`LIMIT` order after its stop price triggers.
 
 ## Submitting an order for emulation
 
-Set `emulation_trigger` on an order constructor or `OrderFactory` method. The local emulator accepts
-these values:
+**Supported triggers**: set `emulation_trigger` on an order constructor or `OrderFactory` method.
+The local emulator accepts these values.
 
 | Trigger type | Market data used                                   |
 | ------------ | -------------------------------------------------- |
@@ -29,12 +29,21 @@ The emulator cancels an order submitted with any other `emulation_trigger` value
 unsupported trigger type as an error.
 :::
 
-The choice of trigger type determines how emulation behaves:
+**Trigger behavior**: emulation depends on the selected trigger type.
 
 - For stop orders, the emulator compares the trigger price with the selected market data.
 - For trailing-stop orders, it updates the trailing trigger from that market data.
 - For emulated `LIMIT` orders, it compares the limit price with that market data and releases a
   `MARKET` order when matched.
+
+**Cached data**: the emulator creates a matching core for a trigger instrument. The first order's
+`emulation_trigger` selects the cached market data used to seed that core.
+
+- `DEFAULT` and `BID_ASK` use the latest cached quote's bid and ask.
+- `LAST_PRICE` uses the latest cached trade price.
+
+An eligible order that matches this data releases on submission **without an `OrderEmulated` event**. If the
+selected source has no cached data, the order stays emulated until matching market data arrives.
 
 ## Technical details
 
@@ -48,28 +57,35 @@ cost of market data processing provide practical limits.
 
 ## Lifecycle
 
-An emulated order progresses through these stages:
+**Lifecycle**: an emulated order progresses through these stages.
 
-1. A `Strategy` submits it through `submit_order`.
-1. The `RiskEngine` applies pre-trade checks and may deny it.
-1. The `OrderEmulator` holds and monitors it locally.
-1. A matching market update transforms it into a `MARKET` or `LIMIT` order and releases it once
-   the required prices are available.
-1. The `RiskEngine` checks the released order again before venue submission.
+1. A `Strategy` submits it through `submit_order`, which routes it to the `OrderEmulator`.
+1. The `OrderEmulator` checks for immediate release. If the order does not match, it holds and
+   monitors it locally.
+1. For a held order, a matching market update transforms it into a `MARKET` or `LIMIT` order and
+   releases it once the required prices are available.
+1. The emulator routes the released order to an `ExecutionAlgorithm` when `exec_algorithm_id` is
+   set, or to the `ExecutionEngine` otherwise.
+
+:::warning[Emulation does not guarantee pre-trade risk checks]
+Strategy submissions go directly to the `OrderEmulator`. Direct releases go to the `ExecutionEngine`
+without passing through `RiskEngine` command checks. The risk engine receives the `OrderReleased`
+event for logging, but does not validate it. An execution algorithm's `submit_order` method routes
+its submissions through the risk engine. Do not rely on emulation alone to enforce pre-trade risk
+limits.
+:::
 
 :::note
-Emulated orders pass through the normal risk controls. A strategy can modify or cancel them, and a
-cancel-all request includes them.
+A strategy can modify or cancel emulated orders, and a cancel-all request includes them.
 :::
 
 :::info
-An emulated order retains its client order ID when transformed, so cache queries continue to use the
-same ID.
+An emulated order keeps its client order ID when transformed, so cache queries continue to use the same ID.
 :::
 
 ### Held emulated orders
 
-While the `OrderEmulator` holds an order:
+**While held**: the `OrderEmulator` takes these actions while it holds an order.
 
 - It caches the original `SubmitOrder` command.
 - It processes the order in a local matching core.
@@ -78,17 +94,18 @@ While the `OrderEmulator` holds an order:
 
 ### Released emulated orders
 
-When market data matches an emulated order, release performs these actions:
+**Release sequence**: when market data matches an emulated order, release performs these actions
+in order.
 
-- It transforms the order into a `MARKET` or `LIMIT` order through another `OrderInitialized`
-  event.
-- It sets the order's `emulation_trigger` to `None` so components no longer treat it as emulated.
-- It sends the transformed order and original `SubmitOrder` command back through the `RiskEngine`.
-- If the risk engine does not deny it, the `ExecutionEngine` routes it to an `ExecutionClient`.
+1. It transforms the order into a `MARKET` or `LIMIT` order through another `OrderInitialized` event. This
+   sets `emulation_trigger` to `None`, so components no longer treat the order as emulated.
+1. It updates the original `SubmitOrder` command to describe the transformed order.
+1. It sends that command to the configured `ExecutionAlgorithm` or, otherwise, the `ExecutionEngine`.
+   The execution engine routes an eligible order to an `ExecutionClient`.
 
 ## Order types that can be emulated
 
-The released type depends on the original emulated order type:
+**Released type**: the released type depends on the original emulated order type.
 
 | Order type for emulation | Can emulate | Released type |
 | ------------------------ | ----------- | ------------- |
@@ -107,11 +124,13 @@ orders do not support `GTD`.
 
 :::warning
 An emulated `TRAILING_STOP_LIMIT` submitted without a limit price gets one from the trailing
-calculation. If the order triggers before that calculation succeeds, the emulator logs a warning and
-keeps the order emulated. Once a market update lets the calculation produce a limit price, the next
-matching update releases the order. For example, the `LAST_OR_BID_ASK` trigger type needs a last
-trade price. A `BID_ASK` emulation trigger subscribes the emulator to quotes only, so the order
-stays held until trade data reaches the cache, such as from a strategy's trade subscription.
+calculation. If the order triggers before that calculation succeeds, the emulator logs a warning
+and keeps the order emulated. Once a market update lets the calculation produce a limit price,
+the next matching update releases the order.
+
+For example, the `LAST_OR_BID_ASK` trigger type needs a last trade price. A `BID_ASK` emulation trigger
+subscribes the emulator to quotes only. Thus, the order stays held until trade data reaches the cache (such as
+from a strategy's trade subscription).
 :::
 
 ## Querying
@@ -120,7 +139,7 @@ Use the cache or the order object to query emulation status.
 
 ### Through the cache
 
-The `Cache` provides these methods:
+**Cache methods**: the `Cache` provides these methods.
 
 - `self.cache.orders_emulated(...)` returns all emulated orders that match its filters.
 - `self.cache.is_order_emulated(...)` checks one client order ID.
@@ -145,11 +164,11 @@ restored into the cache. This preserves their state across restarts.
 
 ## Best practices
 
-When working with emulated orders:
+**Best practices**: when working with emulated orders, follow these rules.
 
-1. Query the `Cache` instead of storing local order references.
-1. Account for the order type changing on release.
-1. Handle a denial at either the initial or release-time risk check.
+- Query the `Cache` instead of storing local order references.
+- Account for the order type changing on release.
+- Handle denials and rejections from the released order's execution path.
 
 ## Related guides
 

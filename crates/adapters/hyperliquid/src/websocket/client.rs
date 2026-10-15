@@ -14,7 +14,6 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    fmt::Debug,
     str::FromStr,
     sync::{
         Arc,
@@ -48,7 +47,7 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use nautilus_network::{
-    SocketStateSink,
+    ConnectionUrl, SocketStateSink,
     http::create_standard_nautilus_headers,
     mode::ConnectionMode,
     websocket::{
@@ -128,7 +127,7 @@ pub(super) enum AssetContextDataType {
 /// where the inner FeedHandler owns the WebSocketClient and handles all I/O.
 #[derive(Debug)]
 pub struct HyperliquidWebSocketClient {
-    url: String,
+    url: ConnectionUrl,
     connection_mode: Arc<ArcSwap<AtomicU8>>,
     signal: Arc<AtomicBool>,
     cmd_tx: Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>>,
@@ -216,7 +215,7 @@ impl HyperliquidWebSocketClient {
             ConnectionMode::Closed as u8,
         ))));
         Self {
-            url,
+            url: url.into(),
             connection_mode,
             signal: Arc::new(AtomicBool::new(false)),
             auth_tracker: AuthTracker::new(),
@@ -303,7 +302,7 @@ impl HyperliquidWebSocketClient {
         let headers = create_standard_nautilus_headers();
 
         let cfg = WebSocketConfig {
-            url: self.url.clone(),
+            url: self.url.expose().to_owned(),
             headers,
             heartbeat_interval_secs: None,
             heartbeat_payload: None,
@@ -362,7 +361,7 @@ impl HyperliquidWebSocketClient {
         self.out_rx = Some(out_rx);
 
         self.connection_mode.store(client.connection_mode_atomic());
-        log::debug!("Hyperliquid WebSocket connected: {}", self.url);
+        log::debug!("Hyperliquid WebSocket connected: {}", self.url.origin());
 
         // Send SetClient command immediately
         if let Err(e) = cmd_tx.send(HandlerCommand::SetClient(client)) {
@@ -846,9 +845,9 @@ impl HyperliquidWebSocketClient {
     ///
     /// # Errors
     ///
-    /// Returns an error for any quote-denominated quantity: this raw path has
-    /// no cached market data for a quote-to-base conversion, so such orders
-    /// must be submitted through the execution client instead.
+    /// Returns an error if any quantity is quote-denominated: this raw path has no cached market
+    /// data for a quote-to-base conversion, so such orders must be submitted through the execution
+    /// client instead.
     pub async fn submit_orders(
         &self,
         signer: &HyperliquidHttpClient,
@@ -1278,7 +1277,7 @@ impl HyperliquidWebSocketClient {
 
     /// Returns the URL of this WebSocket client.
     pub fn url(&self) -> &str {
-        &self.url
+        self.url.expose()
     }
 
     /// Caches multiple instruments.
@@ -2707,6 +2706,26 @@ mod tests {
         },
         websocket::handler::subscription_to_key,
     };
+
+    #[rstest]
+    #[case("wss://stream.example.com/feed", "wss://stream.example.com")]
+    #[case(
+        "wss://SYN-user:SYN-password@stream.example.com:9443/SYN-path?token=SYN-query#SYN-fragment",
+        "wss://stream.example.com:9443"
+    )]
+    fn test_debug_preserves_url_origin(#[case] url: &str, #[case] origin: &str) {
+        let client = HyperliquidWebSocketClient::new(
+            Some(url.to_string()),
+            HyperliquidEnvironment::Testnet,
+            None,
+            TransportBackend::default(),
+            None,
+        );
+        let debug = format!("{client:?}");
+        assert!(debug.contains(&format!("url: {origin:?}")));
+        assert!(!debug.contains("SYN-"));
+        assert_eq!(client.url.expose(), url);
+    }
 
     #[rstest]
     fn test_debug_redacts_proxy_url() {

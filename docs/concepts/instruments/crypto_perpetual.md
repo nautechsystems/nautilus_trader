@@ -35,21 +35,20 @@ Examples include `ETHUSDT-PERP.BINANCE`, `BTCUSD.BYBIT`, and `BTC-USD-SWAP.OKX`.
 | `tick_scheme`         | `Option<Ustr>`     | `str \| None`      | `None`           | Registered variable tick scheme name.    |
 | `info`                | `Option<Params>`   | `dict \| None`     | `None`           | Adapter metadata.                        |
 
-*Note: Python constructors use `instrument_id`; Rust stores the same value as `id`.*
+**Note**: Python constructors use `instrument_id`. Rust stores the same value as `id`.
 
 ## Behavior
 
 - `CryptoPerpetual` has asset class `Cryptocurrency` and instrument class `Swap`.
 - It has no activation or expiration timestamp.
 
-The currency set determines the settlement style:
+**Settlement style**: the currency set determines the settlement style.
 
 - **Linear**: typically sets `is_inverse=False` and settles in the quote currency.
 - **Inverse**: sets `is_inverse=True` and typically settles in the base currency.
 - **Quanto**: settles in a third currency that differs from both base and quote.
 
-The cost currency follows from that style: base for inverse contracts, settlement for
-quanto contracts, and quote otherwise.
+**Cost currency**: base for inverse contracts, settlement for quanto contracts, and quote otherwise.
 
 :::note
 Funding payments are not fields on the instrument. They arrive as data, such as
@@ -132,7 +131,7 @@ ethusdt_perp = CryptoPerpetual(
 
 ## Adapters
 
-Representative adapters that create or consume `CryptoPerpetual` instruments include:
+**Adapters that create or consume `CryptoPerpetual` instruments include**:
 
 - [Binance](../../integrations/binance.md) for USD-M and COIN-M perpetual futures.
 - [Bybit](../../integrations/bybit.md) for linear and inverse perpetual products.

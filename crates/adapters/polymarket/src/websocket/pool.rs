@@ -295,7 +295,8 @@ impl PolymarketMarketConnectionPool {
     ///
     /// # Errors
     ///
-    /// Returns an error after attempting every shard when a task or connection does not stop.
+    /// Returns an error if a task or connection does not stop. Attempts every shard before
+    /// returning the error.
     pub async fn disconnect(&self) -> anyhow::Result<()> {
         self.inner.begin_shutdown();
         let _wire = self.inner.wire_mutex.lock().await;

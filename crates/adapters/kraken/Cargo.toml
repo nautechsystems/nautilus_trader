@@ -119,6 +119,10 @@ toml = { workspace = true }
 name = "websocket"
 harness = false
 
+[[bench]]
+name = "market_data"
+harness = false
+
 [[bin]]
 name = "kraken-http-spot-raw"
 path = "bin/http_spot_raw.rs"

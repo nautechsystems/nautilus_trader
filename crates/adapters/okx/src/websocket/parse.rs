@@ -2391,9 +2391,8 @@ pub fn parse_option_summary_greeks(
 ///
 /// # Panics
 ///
-/// Panics only in the case where `okx_channel_to_bar_spec(channel)` returns
-/// `None` after a prior `is_some` check - an unreachable scenario indicating a
-/// logic error.
+/// Panics if `okx_channel_to_bar_spec(channel)` returns `None` after a prior `is_some` check, an
+/// unreachable scenario indicating a logic error.
 #[expect(clippy::too_many_arguments)]
 pub fn parse_ws_message_data(
     channel: &OKXWsChannel,

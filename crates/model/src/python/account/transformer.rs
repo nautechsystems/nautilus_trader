@@ -25,7 +25,7 @@ use crate::{
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if an event cannot be converted or the input `events` list is empty.
+/// Returns an error if an event cannot be converted or the input `events` list is empty.
 #[pyfunction]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
 #[pyo3(signature = (events, calculate_account_state, allow_borrowing = false))]
@@ -56,7 +56,7 @@ pub fn cash_account_from_account_events(
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if the input `events` list is empty.
+/// Returns an error if the input `events` list is empty.
 #[pyfunction]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
 pub fn betting_account_from_account_events(
@@ -85,7 +85,7 @@ pub fn betting_account_from_account_events(
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if an event cannot be converted or the input `events` list is empty.
+/// Returns an error if an event cannot be converted or the input `events` list is empty.
 #[pyfunction]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
 #[pyo3(signature = (events, calculate_account_state))]
@@ -119,7 +119,7 @@ pub fn wallet_account_from_account_events(
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if an event cannot be converted or the input `events` list is empty.
+/// Returns an error if an event cannot be converted or the input `events` list is empty.
 #[pyfunction]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.model")]
 pub fn margin_account_from_account_events(

@@ -23,19 +23,26 @@
 #[cfg(feature = "arrow")]
 pub mod arrow;
 
+#[cfg(feature = "arrow")]
+use nautilus_model::data::greeks::YieldCurve;
 use pyo3::prelude::*;
+
+#[cfg(feature = "arrow")]
+use crate::arrow::custom::ensure_custom_data_registered;
 
 /// Exposed through `nautilus_trader.serialization`.
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if registering any module components fails.
+/// Returns an error if registering any module components fails.
 // Allow unused `m` when no feature-gated content registers on the module
 #[allow(deprecated, unused_variables)]
 #[pymodule]
 pub fn serialization(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     #[cfg(feature = "arrow")]
     {
+        ensure_custom_data_registered::<YieldCurve>();
+
         m.add_function(wrap_pyfunction!(
             crate::python::arrow::get_arrow_schema_map,
             m

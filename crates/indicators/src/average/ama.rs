@@ -116,7 +116,7 @@ impl AdaptiveMovingAverage {
     ///
     /// # Panics
     ///
-    /// This function panics if:
+    /// Panics if:
     /// - `period_efficiency_ratio` is zero or its rolling-window storage
     ///   cannot be reserved.
     /// - `period_fast` == 0.

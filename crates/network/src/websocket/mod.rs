@@ -92,6 +92,6 @@ pub use config::{InitialConnectRetryPolicy, TransportBackend, WebSocketConfig};
 pub use consts::{AUTHENTICATION_TIMEOUT_SECS, TEXT_PING, TEXT_PONG};
 pub use subscription::{SubscriptionSnapshot, SubscriptionState, split_topic};
 pub use types::{
-    EpochMessageHandler, EpochPingHandler, MessageHandler, MessageReader, PingHandler,
-    channel_epoch_message_handler, channel_message_handler,
+    CloseHandler, EpochMessageHandler, EpochPingHandler, MessageHandler, MessageReader,
+    PingHandler, channel_epoch_message_handler, channel_message_handler,
 };

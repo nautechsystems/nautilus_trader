@@ -16,11 +16,14 @@
   "collaterals_initial_margin": "1000",
   "collaterals_maintenance_margin": "1000",
   "collaterals_value": "1000",
-  "currency": "USDC",
-  "initial_margin": "150",
+  "currency": [
+    "ETH",
+    "BTC"
+  ],
+  "initial_margin": "905",
   "is_under_liquidation": false,
   "label": null,
-  "maintenance_margin": "100",
+  "maintenance_margin": "925",
   "margin_type": "PM3",
   "open_orders": [
     {
@@ -37,7 +40,7 @@
       "limit_price": "3501.0",
       "max_fee": "211.87",
       "mmp": false,
-      "nonce": 1751600000000001,
+      "nonce": "1751600000000001",
       "order_fee": "0",
       "order_id": "6a1f2b3c-0001-4d5e-8f90-a1b2c3d4e5f6",
       "order_status": "open",
@@ -68,7 +71,7 @@
       "limit_price": "3600.0",
       "max_fee": "211.87",
       "mmp": false,
-      "nonce": 1751600000000002,
+      "nonce": "1751600000000002",
       "order_fee": "0",
       "order_id": "6a1f2b3c-0002-4d5e-8f90-a1b2c3d4e5f6",
       "order_status": "queued",
@@ -86,7 +89,7 @@
       "trigger_type": null
     }
   ],
-  "open_orders_margin": "50",
+  "open_orders_margin": "-50",
   "positions": [
     {
       "amount": "0.75",
@@ -96,16 +99,16 @@
       "delta": "0.75",
       "gamma": "0",
       "index_price": "3505",
-      "initial_margin": "100",
+      "initial_margin": "-95",
       "instrument_name": "ETH-STRUCTURED-1",
       "instrument_type": "structured",
       "leverage": "5",
       "liquidation_price": "4200",
-      "maintenance_margin": "80",
+      "maintenance_margin": "-75",
       "mark_price": "3504",
-      "mark_value": "2628",
+      "mark_value": "5",
       "net_settlements": "0",
-      "open_orders_margin": "50",
+      "open_orders_margin": "-50",
       "pending_funding": "0.1",
       "realized_pnl": "12",
       "theta": "0",
@@ -113,9 +116,15 @@
       "vega": "0"
     }
   ],
-  "positions_initial_margin": "100",
-  "positions_maintenance_margin": "80",
-  "positions_value": "2628",
+  "positions_initial_margin": "-95",
+  "positions_maintenance_margin": "-75",
+  "positions_value": "5",
   "subaccount_id": 42,
-  "subaccount_value": "3628"
+  "subaccount_value": "1005",
+  "manager_id": 12,
+  "risk_universe_id": 1,
+  "failed_to_fetch": false,
+  "mm_credits": "0",
+  "projected_margin_change": "0",
+  "vault_deposit_holds": []
 }

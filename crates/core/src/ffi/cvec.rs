@@ -164,18 +164,12 @@ impl CVec {
 /// Note: drop the memory by reconstructing the vec using `from_raw_parts` method
 /// as shown in the test below.
 impl<T> From<Vec<T>> for CVec {
-    fn from(mut data: Vec<T>) -> Self {
+    fn from(data: Vec<T>) -> Self {
         if data.is_empty() {
             Self::empty()
         } else {
-            let len = data.len();
-            let cap = data.capacity();
-            let ptr = data.as_mut_ptr();
-            #[allow(
-                clippy::mem_forget,
-                reason = "intentional ownership transfer to C; matching CVec::drop reclaims via Vec::from_raw_parts"
-            )]
-            std::mem::forget(data);
+            let (ptr, len, cap) = data.into_raw_parts();
+
             Self {
                 ptr: ptr.cast::<std::ffi::c_void>(),
                 len,

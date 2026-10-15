@@ -245,7 +245,7 @@ impl PyNautilusRecordType {
 ///
 /// # Errors
 ///
-/// Returns an error for data variants without a Python representation.
+/// Returns an error if the operation encounters data variants without a Python representation.
 pub fn data_to_pyobject(py: Python<'_>, data: Data) -> PyResult<Py<PyAny>> {
     match data {
         Data::Custom(custom) => Py::new(py, custom).map(Py::into_any),
@@ -271,7 +271,7 @@ pub fn data_to_pyobject(py: Python<'_>, data: Data) -> PyResult<Py<PyAny>> {
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if element conversion fails or the data is not monotonically increasing.
+/// Returns an error if element conversion fails or the data is not monotonically increasing.
 pub fn pyobjects_to_book_deltas(data: Vec<Bound<'_, PyAny>>) -> PyResult<Vec<OrderBookDelta>> {
     let deltas: Vec<OrderBookDelta> = data
         .into_iter()
@@ -290,7 +290,7 @@ pub fn pyobjects_to_book_deltas(data: Vec<Bound<'_, PyAny>>) -> PyResult<Vec<Ord
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if element conversion fails or the data is not monotonically increasing.
+/// Returns an error if element conversion fails or the data is not monotonically increasing.
 pub fn pyobjects_to_quotes(data: Vec<Bound<'_, PyAny>>) -> PyResult<Vec<QuoteTick>> {
     let quotes: Vec<QuoteTick> = data
         .into_iter()
@@ -309,7 +309,7 @@ pub fn pyobjects_to_quotes(data: Vec<Bound<'_, PyAny>>) -> PyResult<Vec<QuoteTic
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if element conversion fails or the data is not monotonically increasing.
+/// Returns an error if element conversion fails or the data is not monotonically increasing.
 pub fn pyobjects_to_trades(data: Vec<Bound<'_, PyAny>>) -> PyResult<Vec<TradeTick>> {
     let trades: Vec<TradeTick> = data
         .into_iter()
@@ -328,7 +328,7 @@ pub fn pyobjects_to_trades(data: Vec<Bound<'_, PyAny>>) -> PyResult<Vec<TradeTic
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if element conversion fails or the data is not monotonically increasing.
+/// Returns an error if element conversion fails or the data is not monotonically increasing.
 pub fn pyobjects_to_bars(data: Vec<Bound<'_, PyAny>>) -> PyResult<Vec<Bar>> {
     let bars: Vec<Bar> = data
         .into_iter()
@@ -347,7 +347,7 @@ pub fn pyobjects_to_bars(data: Vec<Bound<'_, PyAny>>) -> PyResult<Vec<Bar>> {
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if element conversion fails or the data is not monotonically increasing.
+/// Returns an error if element conversion fails or the data is not monotonically increasing.
 pub fn pyobjects_to_mark_prices(data: Vec<Bound<'_, PyAny>>) -> PyResult<Vec<MarkPriceUpdate>> {
     let mark_prices: Vec<MarkPriceUpdate> = data
         .into_iter()
@@ -366,7 +366,7 @@ pub fn pyobjects_to_mark_prices(data: Vec<Bound<'_, PyAny>>) -> PyResult<Vec<Mar
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if element conversion fails or the data is not monotonically increasing.
+/// Returns an error if element conversion fails or the data is not monotonically increasing.
 pub fn pyobjects_to_index_prices(data: Vec<Bound<'_, PyAny>>) -> PyResult<Vec<IndexPriceUpdate>> {
     let index_prices: Vec<IndexPriceUpdate> = data
         .into_iter()
@@ -385,7 +385,7 @@ pub fn pyobjects_to_index_prices(data: Vec<Bound<'_, PyAny>>) -> PyResult<Vec<In
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if element conversion fails or the data is not monotonically increasing.
+/// Returns an error if element conversion fails or the data is not monotonically increasing.
 pub fn pyobjects_to_instrument_statuses(
     data: Vec<Bound<'_, PyAny>>,
 ) -> PyResult<Vec<InstrumentStatus>> {
@@ -405,7 +405,7 @@ pub fn pyobjects_to_instrument_statuses(
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if element conversion fails or the data is not monotonically increasing.
+/// Returns an error if element conversion fails or the data is not monotonically increasing.
 pub fn pyobjects_to_option_greeks(data: Vec<Bound<'_, PyAny>>) -> PyResult<Vec<OptionGreeks>> {
     let greeks: Vec<OptionGreeks> = data
         .into_iter()
@@ -423,7 +423,7 @@ pub fn pyobjects_to_option_greeks(data: Vec<Bound<'_, PyAny>>) -> PyResult<Vec<O
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if element conversion fails or the data is not monotonically increasing.
+/// Returns an error if element conversion fails or the data is not monotonically increasing.
 pub fn pyobjects_to_instrument_closes(
     data: Vec<Bound<'_, PyAny>>,
 ) -> PyResult<Vec<InstrumentClose>> {
@@ -444,7 +444,7 @@ pub fn pyobjects_to_instrument_closes(
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if the type is not registered or JSON deserialization fails.
+/// Returns an error if the type is not registered or JSON deserialization fails.
 #[cfg(feature = "python")]
 #[pyfunction]
 pub fn deserialize_custom_from_json(type_name: &str, payload: &[u8]) -> PyResult<CustomData> {
@@ -635,7 +635,8 @@ fn py_decode_record_batch_to_custom_data(
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if the class lacks required methods or the type is already registered.
+/// Returns an error if the class lacks required methods, or if a Rust custom data type with a
+/// different class already uses the type name.
 ///
 /// # Example
 ///
@@ -666,6 +667,12 @@ pub fn register_custom_data_class(data_class: &Bound<'_, PyAny>) -> PyResult<()>
     } else {
         data_class.getattr("__name__")?.extract()?
     };
+
+    if registry::conflicts_with_rust_class(&type_name, data_class) {
+        return Err(to_pyvalue_err(format!(
+            "Custom data type \"{type_name}\" is already registered for a different Rust class"
+        )));
+    }
 
     #[cfg(feature = "arrow")]
     if !data_class.hasattr("decode_record_batch_py")? {
@@ -758,7 +765,7 @@ pub fn register_custom_data_class(data_class: &Bound<'_, PyAny>) -> PyResult<()>
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if element conversion fails or the data is not monotonically increasing.
+/// Returns an error if element conversion fails or the data is not monotonically increasing.
 pub fn pyobjects_to_funding_rates(data: Vec<Bound<'_, PyAny>>) -> PyResult<Vec<FundingRateUpdate>> {
     let funding_rates: Vec<FundingRateUpdate> = data
         .into_iter()

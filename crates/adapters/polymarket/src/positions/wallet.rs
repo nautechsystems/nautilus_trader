@@ -56,6 +56,7 @@ impl WalletVerifier {
         let client = HttpClient::builder()
             .headers(headers)
             .redirect_policy(HttpRedirectPolicy::Reject)
+            .redact_url(true)
             .timeout_secs(timeout_secs)
             .maybe_proxy_url(proxy_url.map(|url| url.expose().to_string()))
             .build()
@@ -142,7 +143,7 @@ impl WalletVerifier {
         )?;
         let response = self
             .client
-            .request_with_url_redacted(
+            .request(
                 Method::POST,
                 self.rpc_url.clone(),
                 None,
@@ -238,6 +239,7 @@ mod tests {
         server.await.unwrap();
         assert!(matches!(error, Error::Transport(_)));
         let rendered = format!("{error}; {error:?}");
+        assert!(!rendered.contains(&addr.to_string()));
         assert!(!rendered.contains("dummy-path-secret"));
         assert!(!rendered.contains("dummy-query-secret"));
     }

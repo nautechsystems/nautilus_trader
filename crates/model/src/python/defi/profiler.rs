@@ -211,7 +211,7 @@ impl PoolProfiler {
     /// Simulates an exact input swap (know input amount, calculate output amount).
     ///
     /// # Errors
-    /// Returns error if pool is not initialized, input is zero, or price limit is invalid
+    /// Returns an error if pool is not initialized, input is zero, or price limit is invalid.
     #[pyo3(name = "swap_exact_in")]
     fn py_swap_exact_in(
         &self,
@@ -232,8 +232,8 @@ impl PoolProfiler {
     /// Simulates an exact output swap (know output amount, calculate required input amount).
     ///
     /// # Errors
-    /// Returns error if pool is not initialized, output is zero, price limit is invalid,
-    /// or insufficient liquidity exists to fulfill the exact output amount
+    /// Returns an error if pool is not initialized, output is zero, price limit is invalid, or
+    /// insufficient liquidity exists to fulfill the exact output amount.
     #[pyo3(name = "swap_exact_out")]
     fn py_swap_exact_out(
         &self,
@@ -261,10 +261,10 @@ impl PoolProfiler {
     /// The maximum trade size (U256) that produces the target slippage
     ///
     /// # Errors
-    /// Returns error if:
-    /// - Impact is zero or exceeds 100% (10000 bps)
-    /// - Pool is not initialized
-    /// - Swap simulations fail
+    /// Returns an error if:
+    /// - Impact is zero or exceeds 100% (10000 bps).
+    /// - Pool is not initialized.
+    /// - Swap simulations fail.
     #[pyo3(name = "size_for_impact_bps")]
     fn py_size_for_impact_bps(&self, impact_bps: u32, zero_for_one: bool) -> PyResult<String> {
         self.size_for_impact_bps(impact_bps, zero_for_one)
@@ -281,10 +281,10 @@ impl PoolProfiler {
     /// Detailed result with size and search diagnostics
     ///
     /// # Errors
-    /// Returns error if:
-    /// - Impact is zero or exceeds 100% (10000 bps)
-    /// - Pool is not initialized
-    /// - Swap simulations fail
+    /// Returns an error if:
+    /// - Impact is zero or exceeds 100% (10000 bps).
+    /// - Pool is not initialized.
+    /// - Swap simulations fail.
     #[pyo3(name = "size_for_impact_bps_detailed")]
     fn py_size_for_impact_bps_detailed(
         &self,

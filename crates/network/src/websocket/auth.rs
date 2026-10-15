@@ -234,11 +234,11 @@ impl AuthTracker {
     ///
     /// # Errors
     ///
-    /// Returns an error in the following cases:
-    /// - Authentication fails (server rejects credentials)
-    /// - Authentication times out (no response within timeout duration)
-    /// - Authentication channel closes unexpectedly
-    /// - Authentication attempt is superseded by a new attempt
+    /// Returns an error if:
+    /// - Authentication fails (server rejects credentials).
+    /// - Authentication times out (no response within timeout duration).
+    /// - Authentication channel closes unexpectedly.
+    /// - Authentication attempt is superseded by a new attempt.
     pub async fn wait_for_result<E>(
         &self,
         timeout: Duration,

@@ -1028,7 +1028,7 @@ pub fn parse_spot_trades_sbe(
 ///
 /// # Errors
 ///
-/// Returns an error for an unknown or absent venue value.
+/// Returns an error if the venue value is unknown or absent.
 pub fn map_order_status_sbe(status: SbeOrderStatus) -> anyhow::Result<OrderStatus> {
     Ok(match status {
         SbeOrderStatus::New => OrderStatus::Accepted,
@@ -1049,7 +1049,7 @@ pub fn map_order_status_sbe(status: SbeOrderStatus) -> anyhow::Result<OrderStatu
 ///
 /// # Errors
 ///
-/// Returns an error for an unknown or absent venue value.
+/// Returns an error if the venue value is unknown or absent.
 pub fn map_order_type_sbe(order_type: SbeOrderType) -> anyhow::Result<OrderType> {
     Ok(match order_type {
         SbeOrderType::Market => OrderType::Market,
@@ -1076,7 +1076,7 @@ pub const fn map_order_side_sbe(side: SbeOrderSide) -> Option<OrderSide> {
 ///
 /// # Errors
 ///
-/// Returns an error for an unknown or absent venue value.
+/// Returns an error if the venue value is unknown or absent.
 pub fn map_time_in_force_sbe(tif: SbeTimeInForce) -> anyhow::Result<TimeInForce> {
     Ok(match tif {
         SbeTimeInForce::Gtc => TimeInForce::Gtc,

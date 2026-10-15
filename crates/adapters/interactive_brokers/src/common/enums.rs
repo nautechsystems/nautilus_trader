@@ -75,7 +75,7 @@ mod tests {
     #[case(
         "PreSubmitted",
         IbOrderStatus::PreSubmitted,
-        NautilusOrderStatus::Submitted
+        NautilusOrderStatus::Accepted
     )]
     #[case("Submitted", IbOrderStatus::Submitted, NautilusOrderStatus::Accepted)]
     #[case(
@@ -383,7 +383,7 @@ mod tests {
         #[case] value: i32,
         #[case] expected_trigger_method: IbTriggerMethod,
     ) {
-        let trigger_method = IbTriggerMethod::from(value);
+        let trigger_method = IbTriggerMethod::try_from(value).unwrap();
         assert_eq!(trigger_method, expected_trigger_method);
         assert_eq!(trigger_method.as_i32(), value);
         assert_eq!(
@@ -398,7 +398,7 @@ mod tests {
     #[case(2, IbOcaType::ReduceWithBlock)]
     #[case(3, IbOcaType::ReduceWithoutBlock)]
     fn test_ib_oca_type_parse(#[case] value: i32, #[case] expected_oca_type: IbOcaType) {
-        let oca_type = IbOcaType::from(value);
+        let oca_type = IbOcaType::try_from(value).unwrap();
         assert_eq!(oca_type, expected_oca_type);
         assert_eq!(oca_type.as_i32(), value);
         assert_eq!(
@@ -436,5 +436,18 @@ mod tests {
             IbLiquidity::from(liquidity.ibapi_liquidity()),
             expected_liquidity
         );
+    }
+
+    #[rstest]
+    fn test_strict_order_enums_reject_unknown_codes() {
+        assert_eq!(
+            IbTriggerMethod::try_from(6).unwrap_err().to_string(),
+            "Unknown IB trigger method: 6"
+        );
+        assert_eq!(
+            IbOcaType::try_from(4).unwrap_err().to_string(),
+            "Unknown IB OCA type: 4"
+        );
+        assert_eq!(IbLiquidity::from(99), IbLiquidity::Unknown);
     }
 }

@@ -23,6 +23,39 @@ cost is disproportionate to its value to the project, maintainers may decline it
 resolve blocking feedback before a pull request merges, either by updating the change or agreeing
 with a maintainer on another resolution.
 
+## Contribution assessment
+
+AI coding agents have increased the volume of submissions maintainers receive from new
+contributors. **We are raising the bar on contribution quality to protect the correctness and
+maintainability of NautilusTrader.** Maintainers do not lower review standards to merge
+contributions faster or accept unnecessary complexity because code is easy to generate.
+
+**We prioritize contributions from people who actively use NautilusTrader and understand the
+problems their changes solve**. Explain the problem or use case in the issue or pull request and
+keep the change within the [project's scope](ROADMAP.md#open-source-scope). You do not need to
+share proprietary strategy details. First-time and occasional contributors are welcome when
+their work meets this standard, including documentation, tooling, and specialist contributions.
+
+Maintainers may decline drive-by pull requests that shift investigation, validation, or follow-up
+onto maintainers, such as speculative refactors, fixes the contributor cannot explain, or submissions
+with blocking review feedback left unaddressed. Contributions that put collecting GitHub activity
+ahead of understanding, verifying, and following through on the work (portfolio padding) are
+not welcome. The [small-fix exception](#start-with-an-issue) waives prior agreement, not the
+quality and validation requirements.
+
+When prioritizing review, assessing submissions, or checking compliance with project policy,
+maintainers may weigh new contributors' public GitHub history. A high rate of issues, comments,
+or pull requests across many unrelated projects can raise concerns about the care and human
+review behind each submission. Maintainers assess these patterns alongside the submitted work
+and the contributor's responses, and may decline contributions when that combined evidence raises
+reasonable concerns about meaningful human direction and review, adequate validation, or
+disproportionate maintainer effort. Activity volume alone does not establish portfolio padding
+or a policy violation.
+
+Local validation remains required under the
+[local check requirements](#run-local-checks-and-follow-repository-rules), and summaries of results
+remain optional. Maintainers may request specific evidence when they need it to assess a change.
+
 ## Use of AI
 
 If you use AI tools, you remain responsible for every submission. Read and follow the

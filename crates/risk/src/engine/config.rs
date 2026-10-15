@@ -72,8 +72,7 @@ impl<S: risk_engine_config_builder::IsComplete> RiskEngineConfigBuilder<S> {
     ///
     /// # Errors
     ///
-    /// Returns a [`ConfigError`] if any field fails validation
-    /// (see [`RiskEngineConfig::validate`]).
+    /// Returns an error if any field fails validation (see [`RiskEngineConfig::validate`]).
     pub fn build(self) -> ConfigResult<RiskEngineConfig> {
         let config = self.build_inner();
         config.validate()?;
@@ -86,8 +85,8 @@ impl RiskEngineConfig {
     ///
     /// # Errors
     ///
-    /// Returns a [`ConfigError`] (a [`ConfigError::Multiple`] when more than one field is
-    /// invalid) if any field fails validation.
+    /// Returns an error if any field fails validation. Multiple validation failures are collected
+    /// into one error.
     pub fn validate(&self) -> ConfigResult<()> {
         let mut errors = ConfigErrorCollector::new();
 

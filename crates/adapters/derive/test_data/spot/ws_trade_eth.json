@@ -11,7 +11,7 @@
   "rfq_id": null,
   "wallet": "0xB45Be91c81430D0098cbA69A59Bd45323CF33B80",
   "subaccount_id": 143373,
-  "tx_status": "settled",
+  "batch_status": "Settled",
   "tx_hash": "0x0e4a010450dfd52d8f7e43dcbd6dc745cecd3d18bfa391e1c742b81a919c06d0",
   "trade_fee": "0",
   "expected_rebate": "0",

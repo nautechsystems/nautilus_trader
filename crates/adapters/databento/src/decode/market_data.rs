@@ -462,9 +462,11 @@ pub fn decode_bbo_msg(
 
 /// Decodes a Databento MBP10 (Market by Price 10 levels) message into an `OrderBookDepth`.
 ///
-/// # Errors
-///
-/// This function does not currently return an error; the result type matches the common decode API.
+/// This function does not return an error; the result type matches the common decode API.
+#[allow(
+    clippy::missing_errors_doc,
+    reason = "this decoder constructs the depth without fallible operations"
+)]
 pub fn decode_mbp10_msg(
     msg: &dbn::Mbp10Msg,
     instrument_id: InstrumentId,

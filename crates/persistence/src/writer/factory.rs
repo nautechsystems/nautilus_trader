@@ -95,7 +95,7 @@ impl WriterConnectConfig {
     ///
     /// # Errors
     ///
-    /// Returns an error naming `backend` when no catalog is configured.
+    /// Returns an error if no catalog is configured. The error names `backend`.
     pub fn required_catalog(&self, backend: &str) -> anyhow::Result<&CatalogConnectConfig> {
         self.catalog
             .as_ref()

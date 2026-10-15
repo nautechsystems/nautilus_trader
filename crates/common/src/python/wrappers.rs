@@ -86,7 +86,7 @@ pub fn get_python_wrapper(component_id: ComponentId) -> Option<Py<PyAny>> {
 ///
 /// # Errors
 ///
-/// Returns a runtime error when this thread does not retain the wrapper.
+/// Returns an error if this thread does not retain the wrapper.
 pub fn get_python_message_bus(wrapper: &Bound<'_, PyAny>) -> PyResult<Rc<PyMessageBusScope>> {
     PYTHON_WRAPPERS.with_borrow(|wrappers| {
         wrappers

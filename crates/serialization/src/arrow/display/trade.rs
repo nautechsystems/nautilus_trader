@@ -56,7 +56,7 @@ pub fn trades_schema() -> Schema {
 ///
 /// # Errors
 ///
-/// Returns an [`ArrowError`] if the Arrow `RecordBatch` cannot be constructed.
+/// Returns an error if the Arrow `RecordBatch` cannot be constructed.
 pub fn encode_trades(data: &[TradeTick]) -> Result<RecordBatch, ArrowError> {
     let mut instrument_id_builder = StringBuilder::new();
     let mut price_builder = Float64Builder::with_capacity(data.len());

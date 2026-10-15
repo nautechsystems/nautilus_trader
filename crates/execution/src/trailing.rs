@@ -20,7 +20,7 @@ use nautilus_model::{
     orders::{Order, OrderAny, OrderError},
     types::Price,
 };
-use rust_decimal::Decimal;
+use rust_decimal::{Decimal, RoundingStrategy};
 
 /// Calculates the new trigger and limit prices for a trailing stop order.
 ///
@@ -199,7 +199,25 @@ pub fn trailing_stop_calculate_with_last(
         OrderSide::Sell => last - offset,
     };
 
-    Price::from_decimal_dp(price, price_increment.precision).map_err(Into::into)
+    let rounded = Price::from_decimal_dp(price, price_increment.precision)?;
+    let increment_raw = price_increment.raw().abs();
+
+    if increment_raw == 0 || rounded.raw() % increment_raw == 0 {
+        return Ok(rounded);
+    }
+
+    // The increment is coarser than its precision, such as 0.25: use its nearest multiple
+    let increment = price_increment.as_decimal();
+    let nearest = price
+        .checked_div(increment)
+        .and_then(|increments| {
+            increments
+                .round_dp_with_strategy(0, RoundingStrategy::MidpointNearestEven)
+                .checked_mul(increment)
+        })
+        .unwrap_or(price);
+
+    Price::from_decimal_dp(nearest, price_increment.precision).map_err(Into::into)
 }
 
 /// Calculates the trailing stop price using bid and ask prices.
@@ -723,6 +741,107 @@ mod tests {
         .unwrap();
 
         assert_eq!(price, expected);
+    }
+
+    #[rstest]
+    #[case::basis_points_sell(
+        "0.25",
+        TrailingOffsetType::BasisPoints,
+        OrderSide::Sell,
+        dec!(33),
+        "1500.00",
+        "1495.00"
+    )]
+    #[case::basis_points_buy(
+        "0.25",
+        TrailingOffsetType::BasisPoints,
+        OrderSide::Buy,
+        dec!(33),
+        "1500.25",
+        "1505.25"
+    )]
+    #[case::price_offset(
+        "0.25",
+        TrailingOffsetType::Price,
+        OrderSide::Sell,
+        dec!(0.30),
+        "1500.00",
+        "1499.75"
+    )]
+    #[case::midpoint_to_even_increment(
+        "0.50",
+        TrailingOffsetType::Price,
+        OrderSide::Sell,
+        dec!(0.25),
+        "100.50",
+        "100.00"
+    )]
+    #[case::offset_under_half_increment(
+        "0.25",
+        TrailingOffsetType::Price,
+        OrderSide::Sell,
+        dec!(0.10),
+        "1500.00",
+        "1500.00"
+    )]
+    #[case::negative_price(
+        "0.25",
+        TrailingOffsetType::Price,
+        OrderSide::Sell,
+        dec!(0.30),
+        "-10.00",
+        "-10.25"
+    )]
+    #[case::decimal_increment(
+        "0.01",
+        TrailingOffsetType::BasisPoints,
+        OrderSide::Sell,
+        dec!(1.25),
+        "100.00",
+        "99.99"
+    )]
+    #[case::decimal_increment_midpoint(
+        "0.01",
+        TrailingOffsetType::Price,
+        OrderSide::Sell,
+        dec!(0.005),
+        "100.00",
+        "100.00"
+    )]
+    #[case::decimal_increment_offset_under_half(
+        "0.01",
+        TrailingOffsetType::Price,
+        OrderSide::Sell,
+        dec!(0.004),
+        "100.00",
+        "100.00"
+    )]
+    #[case::zero_increment(
+        "0.00",
+        TrailingOffsetType::Price,
+        OrderSide::Sell,
+        dec!(0.30),
+        "1500.00",
+        "1499.70"
+    )]
+    fn test_calculate_with_last_rounds_to_price_increment(
+        #[case] price_increment: &str,
+        #[case] trailing_offset_type: TrailingOffsetType,
+        #[case] side: OrderSide,
+        #[case] offset: Decimal,
+        #[case] last: &str,
+        #[case] expected: &str,
+    ) {
+        let price = trailing_stop_calculate_with_last(
+            Price::from(price_increment),
+            trailing_offset_type,
+            side,
+            offset,
+            Price::from(last),
+        )
+        .unwrap();
+
+        assert_eq!(price, Price::from(expected));
     }
 
     #[rstest]

@@ -1,8 +1,8 @@
 # Positions
 
-This guide explains how NautilusTrader creates and updates positions from order fills, calculates
-profit and loss (PnL), and preserves closed cycles under `NETTING` order management system (OMS)
-configurations.
+This guide explains how NautilusTrader creates and updates positions from order fills and calculates profit
+and loss (PnL). It also explains how NautilusTrader preserves closed cycles under `NETTING` order management
+system (OMS) configurations.
 
 ## Overview
 
@@ -11,8 +11,8 @@ assigned to one position ID and tracks its quantity, average prices, realized Pn
 related identifiers. Use a market price with the position's methods to calculate unrealized PnL and
 notional value.
 
-The execution engine creates positions when orders fill and tracks them from open to close. OMS
-configuration determines whether fills share a net position or remain in separate hedged positions.
+The execution engine creates positions when orders fill and tracks them from open to close. OMS configuration
+determines whether fills share a net position or stay in separate hedged positions.
 
 ## Position lifecycle
 
@@ -58,29 +58,29 @@ A position closes when the **net quantity becomes zero** (`FLAT`). At closure:
 
 ### Settlement at contract expiration
 
-In a live node, an `InstrumentClose` of type `CONTRACT_EXPIRED` for a binary option on a venue
-served by one of the node's execution clients settles every open position in that instrument at the
-close price, such as `1` for a winning outcome and `0` for a losing one. For each position, the
+In a live node, an `InstrumentClose` of type `CONTRACT_EXPIRED` settles binary option positions only on venues
+served by the node's execution clients. Under that condition, it settles each open position in that instrument
+at the close price (such as `1` for a winning outcome and `0` for a losing one). For each position, the
 execution engine:
 
 - Closes the current cycle at the close price without creating an order or fill.
-- Books realized PnL for the settled quantity. Fill quantities and commissions stay as filled, so
-  opening fees remain in realized PnL.
+- Books realized PnL for the settled quantity. Fill quantities and commissions stay as filled, so opening fees
+  stay in realized PnL.
 - Emits one `PositionClosed` with no closing order ID.
 
-The first close applied to an instrument is authoritative. A repeated or conflicting close, or a
-restart that restores the settled position, does not settle it again. After settlement, a fill or
-fill void for the instrument still updates its order but no longer changes positions: the engine
-logs a warning and emits no position event.
+The first close applied to an instrument is authoritative. A repeated or conflicting close, or a restart that
+restores the settled position, does not settle it again. After settlement, a fill or fill void for the
+instrument still updates its order but no longer changes positions. The engine logs a warning and emits no
+position event.
 
 Settlement does not redeem venue assets or change account balances. Venue account reports stay
 authoritative for cash, so an unredeemed payout counts toward account balances only once the venue
 reports the redeemed funds.
 
-Backtests and sandbox paper trading keep the simulated venue's expiration handling instead: the
-matching engine closes positions with expiration fills, and those fills credit the simulated
-account. The live node does not apply engine settlement on a venue whose execution client settles
-expiring contracts itself, as the sandbox client does.
+Backtests and sandbox paper trading keep the simulated venue's expiration handling instead. The matching
+engine closes positions with expiration fills, and those fills credit the simulated account. The live node
+does not apply engine settlement on a venue whose execution client settles expiring contracts itself, as the
+sandbox client does.
 
 ## Order fill aggregation
 
@@ -131,21 +131,21 @@ An opposite-side fill larger than the open quantity closes the existing exposure
 residual in the other direction. The execution engine splits this fill into a close and a new
 opening, with closed-state retention governed by [Position snapshotting](#position-snapshotting).
 
-When an unsplit reversal fill is applied directly to one `Position`, including during fill-void
-replay, the position starts a new accounting episode for the residual exposure:
+An unsplit reversal fill applied directly to one `Position` starts a new accounting episode for the residual
+exposure. The episode has these resets, including during fill-void replay:
 
 - `avg_px_open` becomes the reversal fill price.
 - `avg_px_close` becomes `None`, and `realized_return` becomes zero until a subsequent closing fill.
-- `buy_qty` and `sell_qty` restart with only the opening residual on the new entry side and zero on
-  the other side. Later close averages therefore exclude volume from the previous direction.
+- `buy_qty` and `sell_qty` restart with only the opening residual on the new entry side and zero on the other
+  side. Later close averages thus exclude volume from the previous direction.
 
-**Only the closing portion** realizes PnL against the previous entry price. The object's `realized_pnl` and commission
-totals remain cumulative across this reversal, with the fill's commission counted once. The reset
-does not clear fill history, opening timestamps, or peak quantity. If the position instead reaches
-`FLAT` and a later fill reopens it, the full cycle resets, including realized PnL and commissions.
+**Only the closing portion** realizes PnL against the previous entry price. The object's `realized_pnl` and
+commission totals stay cumulative across this reversal, with the fill's commission counted once. The reset
+does not clear fill history, opening timestamps, or peak quantity. If the position instead reaches `FLAT` and
+a later fill reopens it, the full cycle resets, including realized PnL and commissions.
 
-These episode resets apply to fill-driven reversals; a quantity adjustment that changes the
-position's side does not perform the same reset.
+These episode resets apply to fill-driven reversals. A quantity adjustment that changes the position's side
+does not perform the same reset.
 
 ## Position adjustments
 
@@ -159,9 +159,9 @@ currency directly affect the net quantity received or delivered:
 
 - **Opening fills**: Commission is deducted from the traded quantity. A buy of 1.0 BTC with
   0.001 BTC commission results in a net long position of 0.999 BTC.
-- **Closing fills**: Commission is applied to `signed_qty` because it affects actual inventory.
-  Selling a 0.999 BTC LONG position with 0.000999 BTC commission leaves you SHORT 0.000999 BTC,
-  not FLAT, because you gave up 0.999999 BTC total.
+- **Closing fills**: Commission is applied to `signed_qty` because it affects actual inventory. A sale of a
+  0.999 BTC LONG position with 0.000999 BTC commission leaves you SHORT 0.000999 BTC, not FLAT. You gave up
+  0.999999 BTC total.
 - **Flips**: Commission affects the final position size on both sides of the flip.
 
 :::note
@@ -183,9 +183,9 @@ The position exposes its retained adjustments:
 - Each adjustment includes its type (`COMMISSION` or `FUNDING`), quantity or PnL change, reason,
   event ID, and timestamps.
 - The current adjustment history is cleared when a closed position reopens.
-- If fills remain after `purge_events_for_order()`, the position regenerates commission adjustments
-  from the surviving fills and reapplies non-commission adjustments. If no fills remain, the
-  position becomes an empty `FLAT` shell and clears its adjustment history.
+- After `purge_events_for_order()`, a position with fills regenerates commission adjustments from the
+  surviving fills and reapplies non-commission adjustments. With no fills, the position becomes an empty
+  `FLAT` shell and clears its adjustment history.
 
 ## OMS types and position management
 
@@ -212,8 +212,15 @@ In `HEDGING` mode, multiple positions can exist for the same instrument:
 - No automatic netting across positions.
 - A fill with a new position ID creates a separate position. If a later fill reuses a closed
   position ID, the engine archives the closed cycle before replacing the cached state.
-- A virtual position flip creates a new ID and keeps the original closed position in the cache,
-  so that path does not need a closed-cycle snapshot.
+- A virtual position flip creates a new ID and keeps the original closed position in the cache. Thus, that
+  path does not need a closed-cycle snapshot.
+
+After a virtual flip, later fills for the same order follow the destination position even if they carry the
+original position ID. The engine derives the destination from retained order and position history, including
+after cache recovery and fill-void corrections. It rejects fills when that history is incomplete or ambiguous.
+
+Virtual `HEDGING` positions always keep replay history across reopens, even when
+`carry_replay_events_on_reopen=False`, to preserve this routing when a position ID is reused.
 
 :::warning
 `HEDGING` can increase margin requirements when a venue maintains long and short positions
@@ -244,9 +251,9 @@ reopens a closed position.
 
 ### Why snapshotting matters
 
-When a position closes (becomes `FLAT`) and then reopens under the same ID with a new trade,
-the position object is reset to track the new exposure. Without snapshotting, the historical
-realized PnL from the previous position cycle would be lost.
+When a position closes (becomes `FLAT`) and then reopens under the same ID with a new trade, its object
+resets. This reset tracks the new exposure. Without snapshotting, the historical realized PnL from the
+previous position cycle would be lost.
 
 ### How it works
 
@@ -262,23 +269,24 @@ The snapshot preserves:
 - All fill events.
 - Commission totals.
 
-The cache stores snapshots by position ID. The active cache entry then represents the new cycle,
-while previous snapshots remain accessible. The Portfolio includes their realized PnL in instrument
-totals.
+The cache stores snapshots by position ID. The active cache entry then represents the new cycle, while
+previous snapshots stay accessible. The Portfolio includes their realized PnL in instrument totals.
 
-A fill void that corrects a fill from an earlier cycle is the one exception. The correction moves the
-cycle boundaries the stored snapshots describe, so the engine replaces them with the cycles the
-corrected history actually closes, keeping each counted once. See
+A fill void that corrects a fill from an earlier cycle is the one exception. The correction moves the cycle
+boundaries the stored snapshots describe. Thus, the engine replaces them with the cycles the corrected history
+actually closes, keeping each counted once. See
 [Position replay across NETTING cycles](execution/index.md#position-replay-across-netting-cycles).
 
 :::note
-This closed-cycle archive differs from optional position state snapshots. Setting
-`snapshot_positions=True` publishes state when a position opens, changes, or closes, while
-`snapshot_positions_interval_secs` periodically publishes all open positions. A cache with a
-Redis or Postgres backing also persists these snapshots. Without cache backing, both paths publish
-snapshots on the in-process message bus without persisting them. See
-[`LiveExecutionEngineConfig`](/docs/python-api-latest/live.html#nautilus_trader.live.LiveExecutionEngineConfig) for
-these settings.
+This closed-cycle archive differs from optional position state snapshots:
+
+- `snapshot_positions=True` publishes state when a position opens, changes, or closes.
+- `snapshot_positions_interval_secs` periodically publishes all open positions.
+
+A cache with a Redis or Postgres backing also persists these snapshots. Without cache backing, both paths
+publish snapshots on the in-process message bus without persisting them. See
+[`LiveExecutionEngineConfig`](/docs/python-api-latest/live.html#nautilus_trader.live.LiveExecutionEngineConfig)
+for these settings.
 :::
 
 ### Example scenario
@@ -318,9 +326,9 @@ Commissions in the position's cost currency affect realized PnL as each fill arr
 # SHORT: realized_pnl = closed_quantity * multiplier * (1/exit_price - 1/entry_price)
 ```
 
-The position side selects the formula. Premium-based inverse instruments, such as coin-settled
-options, quote the premium in the base currency, so they use the standard formula and report PnL
-and notional value in the base currency.
+The position side selects the formula. Premium-based inverse instruments (such as coin-settled options) quote
+the premium in the base currency. Thus, they use the standard formula and report PnL and notional value in the
+base currency.
 
 ### Unrealized PnL
 
@@ -371,11 +379,14 @@ notional = position.notional_value(current_price)
 ```
 
 :::warning
-In Python, `notional_value()` raises `ValueError` if an inverse position lacks a base currency, the
-supplied price is not positive for a non-premium inverse position, or the result cannot be
-represented as `Money`.
-Rust callers can use `try_notional_value()` to handle these calculation errors; `notional_value()`
-panics if the calculation fails.
+In Python, `notional_value()` raises `ValueError` under these conditions:
+
+- An inverse position lacks a base currency.
+- The supplied price is not positive for a non-premium inverse position.
+- The result cannot be represented as `Money`.
+
+Rust callers can use `try_notional_value()` to handle these calculation errors. `notional_value()` panics if
+the calculation fails.
 :::
 
 ## Position properties and state
@@ -398,7 +409,7 @@ panics if the calculation fails.
 - `quantity`: Current absolute position size.
 - `signed_qty`: Signed position size (positive for `LONG`, negative for `SHORT`).
 - `peak_qty`: Maximum quantity reached during the current open-close cycle.
-- `is_open`: Whether position is currently open.
+- `is_open`: Whether position is open.
 - `is_closed`: Whether position is closed (`FLAT`).
 - `is_long`: Whether position side is `LONG`.
 - `is_short`: Whether position side is `SHORT`.
@@ -408,13 +419,13 @@ panics if the calculation fails.
 - `avg_px_open`: Average entry price.
 - `avg_px_close`: Average exit price when closing.
 - `realized_pnl`: Realized profit/loss.
-- `realized_return`: Realized return as decimal (e.g., 0.05 for 5%).
+- `realized_return`: Realized return as decimal (for example, 0.05 for 5%).
 - `quote_currency`: Quote currency of the instrument.
 - `base_currency`: Base currency if applicable.
 - `settlement_currency`: Currency for PnL settlement.
 
-See [Reversal accounting](#reversal-accounting) for how price averages and returns reset while
-realized PnL remains cumulative when an unsplit fill reverses one position.
+See [Reversal accounting](#reversal-accounting) for how price averages and returns reset while realized PnL
+stays cumulative when an unsplit fill reverses one position.
 
 ### Instrument specifications
 
@@ -453,10 +464,10 @@ For complete type information and detailed property documentation, see the Posit
 
 Each `Position` object records the fills and adjustments for its current open-close cycle:
 
-- Fill events remain in application order.
+- Fill events stay in application order.
 - Client order, venue order, and trade ID accessors return sorted, unique values.
 - `event_count` reports the number of retained fill events.
-- Closed `NETTING` cycles retain their event history in the cache snapshots described above.
+- Closed `NETTING` cycles keep their event history in the cache snapshots described above.
 
 This data supports:
 
@@ -473,11 +484,13 @@ See the [Execution guide](execution/) for reconciliation best practices.
 
 ## Numerical precision
 
-`Position` uses `f64` for signed quantity, average prices, realized returns, and PnL intermediates.
-`Price`, `Quantity`, and `Money` retain their fixed-point representations at the API boundary, but
-conversions between these types and `f64` can introduce rounding. `f64` represents every integer
-exactly only through `2^53`; above that boundary, conversion can lose low-order bits. It provides
-roughly 15 to 16 significant decimal digits rather than a fixed number of exact decimal places.
+`Position` uses `f64` for signed quantity, average prices, realized returns, and PnL intermediates. `Price`,
+`Quantity`, and `Money` keep their fixed-point representations at the API boundary, but conversions between
+these types and `f64` can introduce rounding.
+
+`f64` represents each integer exactly only through `2^53`. Above that boundary, conversion can lose low-order
+bits. It provides roughly 15 to 16 significant decimal digits rather than a fixed number of exact decimal
+places.
 
 The design avoids the higher computational cost of arbitrary-precision arithmetic. The
 average-price calculation also avoids multiplying raw fixed-point values because those products can
@@ -485,23 +498,26 @@ overflow their integer representation. Average prices reuse the prior `f64` aver
 PnL is converted between `Money` and `f64` as fills accumulate. The resulting precision depends on
 the values, settlement-currency precision, and sequence of fills.
 
-`quantity` is derived from `signed_qty` at the instrument's `size_precision`. If that conversion
-rounds a residual quantity to zero, the position becomes `FLAT` and normalizes `signed_qty` to zero.
-Inverse PnL calculations for non-premium instruments reject nonpositive open or close prices and
-positive prices below `1e-15`.
-With the `defi` feature, converting a `Price` or `Quantity` with more than 16 decimal places to
-`f64` panics, so `Position` does not support 17- or 18-decimal fill values.
+Numerical limits affect quantity, inverse PnL, and high-precision fills:
+
+- **Quantity**: `quantity` is derived from `signed_qty` at the instrument's `size_precision`. If that
+  conversion rounds a residual quantity to zero, the position becomes `FLAT` and normalizes `signed_qty` to
+  zero.
+- **Inverse PnL**: calculations for non-premium instruments reject nonpositive open or close prices and
+  positive prices below `1e-15`.
+- **DeFi precision**: with the `defi` feature, conversion of a `Price` or `Quantity` with more than 16 decimal
+  places to `f64` panics. Thus, `Position` does not support 17- or 18-decimal fill values.
 
 Tests in `crates/model/src/position.rs` cover a `0.01` USD commission, nine-decimal price inputs, 100
 sequential fills, prices from `0.00001` to `99999.99999`, and same-price round trips. These cases do
 not establish a universal precision bound.
 
 :::warning
-If a workflow requires exact decimal arithmetic for regulatory reporting or audit records, perform
-and retain a separate decimal calculation from the original fills and adjustments. Converting
-`Position` float outputs back to decimal, including through `signed_decimal_qty()`, cannot restore
-discarded precision. `Position` does not provide an exact-decimal guarantee. Validate the
-instruments, currencies, amount ranges, and fill sequences used by the application.
+For exact decimal arithmetic in regulatory reporting or audit records, perform a separate decimal calculation
+from the original fills and adjustments. Keep that calculation. Converting `Position` float outputs back to
+decimal, including through `signed_decimal_qty()`, cannot restore discarded precision. `Position` does not
+provide an exact-decimal guarantee. Validate the instruments, currencies, amount ranges, and fill sequences
+used by the application.
 :::
 
 ## Integration with other components

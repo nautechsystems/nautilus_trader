@@ -26,7 +26,7 @@ use nautilus_model::{
     accounts::AccountAny,
     data::{
         Bar, CustomData, DataType, FundingRateUpdate, InstrumentClose, QuoteTick, TradeTick,
-        greeks::{GreeksData, YieldCurveData},
+        greeks::{GreeksData, YieldCurve},
     },
     events::{OrderEventAny, OrderSnapshot, position::snapshot::PositionSnapshot},
     identifiers::{
@@ -345,7 +345,7 @@ impl CacheDatabaseAdapter for FailNthAddOrderDatabase {
         Ok(())
     }
 
-    fn add_yield_curve(&self, _yield_curve: &YieldCurveData) -> anyhow::Result<()> {
+    fn add_yield_curve(&self, _yield_curve: &YieldCurve) -> anyhow::Result<()> {
         Ok(())
     }
 

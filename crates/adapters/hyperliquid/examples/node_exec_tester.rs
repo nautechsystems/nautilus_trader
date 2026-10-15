@@ -92,6 +92,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_data_client(None, Box::new(data_factory), Box::new(data_config))?
         .add_exec_client(None, Box::new(exec_factory), Box::new(exec_config))?
         .with_reconciliation(true)
+        .with_reconciliation_lookback_mins(24 * 60)
         .with_delay_post_stop_secs(10)
         .build()?;
 

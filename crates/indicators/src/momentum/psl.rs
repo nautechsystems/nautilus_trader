@@ -15,11 +15,13 @@
 
 use std::fmt::{Debug, Display};
 
+use nautilus_core::correctness::FAILED;
 use nautilus_model::data::Bar;
 
 use crate::{
     average::{MovingAverageFactory, MovingAverageType},
     indicator::{Indicator, MovingAverage},
+    support::MAX_PERIOD,
 };
 
 #[repr(C)]
@@ -78,9 +80,24 @@ impl Indicator for PsychologicalLine {
 
 impl PsychologicalLine {
     /// Creates a new [`PsychologicalLine`] instance.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `period` is zero or exceeds the supported indicator period limit.
     #[must_use]
     pub fn new(period: usize, ma_type: Option<MovingAverageType>) -> Self {
-        Self {
+        Self::new_checked(period, ma_type).expect(FAILED)
+    }
+
+    pub(crate) fn new_checked(
+        period: usize,
+        ma_type: Option<MovingAverageType>,
+    ) -> anyhow::Result<Self> {
+        anyhow::ensure!(
+            (1..=MAX_PERIOD).contains(&period),
+            "period must be in [1, {MAX_PERIOD}]"
+        );
+        Ok(Self {
             period,
             ma_type: ma_type.unwrap_or(MovingAverageType::Simple),
             value: 0.0,
@@ -89,7 +106,7 @@ impl PsychologicalLine {
             has_inputs: false,
             initialized: false,
             diff: 0.0,
-        }
+        })
     }
 
     pub fn update_raw(&mut self, close: f64) {
@@ -122,11 +139,45 @@ mod tests {
     use nautilus_model::data::Bar;
     use rstest::rstest;
 
+    use super::{MAX_PERIOD, MovingAverageType};
     use crate::{
         indicator::Indicator,
         momentum::psl::PsychologicalLine,
         stubs::{bar_ethusdt_binance_minute_bid, psl_10},
     };
+
+    #[rstest]
+    #[case(0)]
+    #[case(MAX_PERIOD + 1)]
+    #[case(usize::MAX)]
+    fn test_checked_constructor_rejects_invalid_periods(
+        #[case] period: usize,
+        #[values(
+            MovingAverageType::Simple,
+            MovingAverageType::Exponential,
+            MovingAverageType::DoubleExponential,
+            MovingAverageType::Wilder,
+            MovingAverageType::Hull
+        )]
+        ma_type: MovingAverageType,
+    ) {
+        let error = PsychologicalLine::new_checked(period, Some(ma_type)).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            format!("period must be in [1, {MAX_PERIOD}]")
+        );
+    }
+
+    #[rstest]
+    fn test_checked_constructor_accepts_maximum_period() {
+        let ind = PsychologicalLine::new_checked(MAX_PERIOD, Some(MovingAverageType::Exponential))
+            .unwrap();
+        assert_eq!(ind.period, MAX_PERIOD);
+        assert_eq!(ind.ma_type, MovingAverageType::Exponential);
+        assert_eq!(ind.value, 0.0);
+        assert!(!ind.initialized());
+        assert!(!ind.has_inputs());
+    }
 
     #[rstest]
     fn test_psl_initialized(psl_10: PsychologicalLine) {

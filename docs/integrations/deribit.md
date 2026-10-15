@@ -16,7 +16,8 @@ operations, and uses HTTP for instrument loading, historical requests, and recon
 Components:
 
 - `DeribitRawHttpClient`: Low-level HTTP client owning JSON-RPC framing, signing, rate limits, and retries.
-- `DeribitHttpClient`: Domain HTTP client parsing venue responses into Nautilus types; reach the raw client with `inner()`.
+- `DeribitHttpClient`: Domain HTTP client parsing venue responses into Nautilus types. Reach the raw client
+  with `inner()`.
 - `DeribitWebSocketClient`: Low-level WebSocket connectivity for Rust callers.
 - `DeribitDataClient`: Market data feed manager.
 - `DeribitDataClientFactory`: Data client factory.
@@ -34,8 +35,8 @@ Python surface available from `nautilus_trader.adapters.deribit`:
 - `DERIBIT`, `DERIBIT_CLIENT_ID`, and `DERIBIT_VENUE`
 
 :::note
-Most users will define a configuration for a live trading node (as shown below),
-and won't need to work directly with these lower-level components.
+Most users configure a live trading node as shown below. They do not need to use these lower-level components
+directly.
 :::
 
 ## Examples
@@ -52,15 +53,14 @@ and won't need to work directly with these lower-level components.
 - [Order management](https://docs.deribit.com/articles/order-management-best-practices)
 - [Access scope](https://docs.deribit.com/articles/access-scope)
 
-It's recommended you also refer to the Deribit documentation in conjunction with this
-NautilusTrader integration guide.
+Read the Deribit documentation with this NautilusTrader integration guide.
 
 ## Product support
 
-Each client loads only the product families listed in its `product_types` configuration, once on
-connect. Neither client refreshes the instrument set afterwards, so restart the node to pick up
-newly listed instruments. On the data client, `auto_load_missing_instruments` instead fetches an
-uncached instrument on first subscribe; see [Lazy-load on subscribe](#lazy-load-on-subscribe).
+Each client loads only the product families listed in its `product_types` configuration, once on connect.
+Neither client refreshes the instrument set afterwards, so restart the node to pick up newly listed
+instruments. On the data client, `auto_load_missing_instruments` instead fetches an uncached instrument on
+first subscribe. See [Lazy-load on subscribe](#lazy-load-on-subscribe).
 
 | Product type      | Data feed | Trading | Notes                                          |
 | ----------------- | --------- | ------- | ---------------------------------------------- |
@@ -79,10 +79,10 @@ All instrument IDs should include the `.DERIBIT` suffix when referencing them
 
 ### Quantity units
 
-Nautilus quantities map to Deribit's `amount` field, not the optional `contracts` field. Deribit
-reports perpetual and inverse futures amounts in USD units, and reports options and linear futures
-amounts in the underlying base currency. The Deribit `contract_size` field converts between
-`amount` and contract count; the adapter does not apply it again as the Nautilus multiplier.
+Nautilus quantities map to Deribit's `amount` field, not the optional `contracts` field. Deribit reports
+perpetual and inverse futures amounts in USD units, and reports options and linear futures amounts in the
+underlying base currency. The Deribit `contract_size` field converts between `amount` and contract count. The
+adapter does not apply it again as the Nautilus multiplier.
 
 ### Perpetual futures
 
@@ -182,9 +182,8 @@ Examples:
 InstrumentId.from_str("BTC-STRG-26MAR27-72000_80000.DERIBIT")
 ```
 
-The adapter models option combos as `CryptoOptionSpread`, priced in the base currency under
-Deribit's inverse-option convention; fractional `size_increment` (e.g. `0.1`) is preserved
-end-to-end.
+The adapter models option combos as `CryptoOptionSpread`, priced in the base currency under Deribit's
+inverse-option convention. Fractional `size_increment` (e.g. `0.1`) is preserved end-to-end.
 
 ## Traded expirations
 
@@ -209,9 +208,9 @@ expirations = await client.request_option_expirations(DeribitCurrency.BTC)
 ```
 
 The high-level method returns option expirations only. For lower-level Rust requests, call
-`client.inner().get_expirations(...)` with `GetExpirationsParams`. Deribit returns a
-currency-keyed result for concrete currencies such as `BTC`, and a direct kind-keyed result for
-`currency=any`; the adapter handles both shapes.
+`client.inner().get_expirations(...)` with `GetExpirationsParams`. Deribit returns a currency-keyed result for
+concrete currencies such as `BTC`, and a direct kind-keyed result for `currency=any`. The adapter handles both
+shapes.
 
 ## Combo instruments
 
@@ -233,12 +232,11 @@ Deribit publishes each combo trade twice:
 - On each leg's trade channel (`trades.{leg_instrument}.{interval}`): a standalone trade for the
   leg, tagged with `combo_id` and `combo_trade_id` pointing back to the parent.
 
-A subscriber to a plain option or future therefore sees combo-origin fills on its existing
-trade stream, and a subscriber to the combo itself sees the combo-level trade. The adapter
-does not fan out combo parent messages into extra leg ticks; it forwards the upstream parent
-and per-leg messages as separate `TradeTick`s against their respective `InstrumentId`s, so a
-subscriber to both the combo and an underlying leg sees one combo tick plus one leg tick for
-that combo trade, not duplicate ticks against the same instrument.
+A subscriber to a plain option or future therefore sees combo-origin fills on its existing trade stream, and a
+subscriber to the combo itself sees the combo-level trade. The adapter does not fan out combo parent messages
+into extra leg ticks. It forwards upstream parent and per-leg messages as separate `TradeTick`s against their
+respective `InstrumentId`s. Thus, a subscriber to both the combo and an underlying leg sees one combo tick
+plus one leg tick for that combo trade. It does not receive duplicate ticks against the same instrument.
 
 To have the Deribit data client open the real leg trade channels alongside a combo trade
 subscription, pass `params={"subscribe_combo_legs": True}` to `subscribe_trades`. When
@@ -288,26 +286,24 @@ Deribit's own IDs is a prefix strip.
 | `COMBO-`     | `combo_id`       | Per-leg trade whose parent originated from a combo instrument. |
 | *unprefixed* | (none of above)  | Standard trade.                                                |
 
-Precedence when multiple tags are present: `RFQ-` > `BLK-` > `COMBO-`. Block RFQs are
-themselves block trades on Deribit, so the RFQ tag wins; combos executed as block trades
-are tagged `BLK-` because the block flow is the more important reconciliation signal.
+Precedence when multiple tags are present: `RFQ-` > `BLK-` > `COMBO-`. Block RFQs are themselves block trades
+on Deribit, so the RFQ tag wins. Combos executed as block trades are tagged `BLK-` because the block flow is
+the more important reconciliation signal.
 
 This applies only to public trades (`TradeTick`). `FillReport.trade_id` is unchanged so
 reconciliation against `get_user_trades_*` keeps working.
 
 :::note
-This is a one-way convention introduced in NautilusTrader 1.228.0. Replay data captured
-before that release lacks prefixes. Strategies that store and compare `trade_id` strings
-across releases should strip the prefix on the new-data side, or filter by prefix only on
-data they know was captured after upgrading.
+This is a one-way convention introduced in NautilusTrader 1.228.0. Replay data captured before that release
+lacks prefixes. If you store and compare `trade_id` strings across releases, strip the prefix on the new-data
+side. Alternatively, filter by prefix only on data captured after the upgrade.
 :::
 
 ## Market data
 
-Live subscriptions are served from WebSocket channels; historical requests go over HTTP. Every
-channel that takes an `{interval}` resolves it through the `interval` subscription parameter and
-the default selection rules described under
-[Order book subscriptions](#order-book-subscriptions).
+Live subscriptions are served from WebSocket channels. Historical requests go over HTTP. Every channel that
+takes an `{interval}` resolves it through the `interval` subscription parameter and the default selection
+rules described under [Order book subscriptions](#order-book-subscriptions).
 
 | Nautilus subscription | Deribit channel                                                           | Notes                                                                      |
 | --------------------- | ------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
@@ -341,13 +337,14 @@ Deribit chart resolutions are `1`, `3`, `5`, `10`, `15`, `30`, `60`, `120`, `180
 Historical requests are strict: a bar type that does not map onto one of those resolutions is
 rejected, as is any aggregation other than minute, hour, and day.
 
-Live subscriptions snap instead. The requested step is rounded **up** to the next supported
-resolution, so a 2-minute step opens Deribit's 3-minute channel and a 6-minute step opens the
-10-minute channel; anything longer than 720 minutes becomes `1D`. Aggregations other than minute,
-hour, and day fall back to 1 minute with a warning. Each received candle is stamped with the
-`BarType` derived from the venue resolution, always with a `LAST` price type. Subscribe with a bar
-type naming a supported resolution and `LAST`; otherwise the bars publish under a different
-`BarType` than the one you subscribed with and never reach your handler.
+Live subscriptions snap instead. The requested step is rounded **up** to the next supported resolution, so a
+2-minute step opens Deribit's 3-minute channel and a 6-minute step opens the 10-minute channel. Anything
+longer than 720 minutes becomes `1D`. Aggregations other than minute, hour, and day fall back to 1 minute with
+a warning.
+
+Each received candle is stamped with the `BarType` derived from the venue resolution, always with a `LAST`
+price type. Subscribe with a bar type that names a supported resolution and `LAST`. Otherwise, bars publish
+under a different `BarType` than your subscription and never reach your handler.
 
 `Bar.volume` comes from the chart `cost` field (USD) for inverse perpetuals and inverse futures,
 and from the `volume` field (base currency) for everything else, including options and option
@@ -434,9 +431,9 @@ tick-by-tick book updates.
 
 ### Sequence gap recovery
 
-The adapter records the `change_id` of every book message it applies and checks the
-`prev_change_id` of each incremental update against it. Only raw-channel updates carry
-`prev_change_id`; aggregated messages are self-contained snapshots and need no sequence check.
+The adapter records the `change_id` of every book message it applies and checks the `prev_change_id` of each
+incremental update against it. Only raw-channel updates carry `prev_change_id`. Aggregated messages are
+self-contained snapshots and need no sequence check.
 
 When a gap is detected (a missed message), or a level in a book message fails conversion to `Price`
 or `Quantity` (for example, a value beyond their range), the adapter automatically:
@@ -450,14 +447,14 @@ or `Quantity` (for example, a value beyond their range), the adapter automatical
 During resync, the strategy will not receive stale or incomplete book updates. A user-initiated
 unsubscribe while a resync is pending cancels the resubscribe instead of reopening the channel.
 
-A grouped book channel (`book.{instrument}.{group}.{depth}.{interval}`) sends a full snapshot every
-interval, so the adapter never resyncs it: it drops a snapshot that fails conversion, and the next
-snapshot replaces the book.
+A grouped book channel (`book.{instrument}.{group}.{depth}.{interval}`) sends a full snapshot every interval,
+so the adapter never resyncs it. It drops a snapshot that fails conversion. The next snapshot replaces the
+book.
 
 :::warning[Subscribe each instrument to one delta book channel]
-Book channels for the same instrument share one sequence and resync state. If an instrument has more
-than one delta book channel (for example `raw` and `100ms`) and a resync starts while one of them
-still awaits its initial snapshot, that channel can stay unsubscribed until the next reconnect.
+Book channels for the same instrument share one sequence and resync state. An instrument can have multiple
+delta book channels (for example `raw` and `100ms`). If a resync starts while one still awaits its initial
+snapshot, that channel can stay unsubscribed until the next reconnect.
 :::
 
 The adapter logs a warning and skips a malformed level, including a value that does not parse as a
@@ -649,15 +646,15 @@ This provides several advantages:
 | Queue priority preservation | Keeps position when only reducing quantity or keeping same price. |
 | Fill history maintained     | Partial fills remain linked to the same order ID.                 |
 
-**Queue priority rules:**
+**Queue priority rules**:
 
 - **Decreasing quantity only**: Keeps queue position.
 - **Same price**: Keeps queue position.
 - **Increasing quantity or changing price**: Loses queue position (treated as new order).
 
-A modify command must carry the venue order ID and a price; either one missing rejects the
-command locally without reaching Deribit. Quantity is optional and falls back to the cached
-order's current quantity.
+A modify command must carry the venue order ID and a price. If either is missing, the adapter rejects the
+command locally without reaching Deribit. Quantity is optional and falls back to the cached order's current
+quantity.
 
 ### Position management
 
@@ -706,11 +703,10 @@ Deribit tags any trade that was triggered by a liquidation. On the
 | `"MT"` | Both sides were liquidated.   |
 | absent | Normal non-liquidation trade. |
 
-The adapter logs a warning for each liquidation-tagged fill with the
-instrument, trade ID, order ID, and liquidation side, and then emits the
-`FillReport` through the normal pipeline. Deribit does not operate an ADL
-mechanism distinct from the liquidation + insurance-fund / portfolio margin
-process, so there is no separate ADL signal to surface.
+For each liquidation-tagged fill, the adapter logs a warning with the instrument, trade ID, order ID, and
+liquidation side. Then it emits the `FillReport` through the normal pipeline. Deribit does not operate an ADL
+mechanism distinct from the liquidation + insurance-fund / portfolio margin process, so there is no separate
+ADL signal to surface.
 
 Upstream references:
 
@@ -726,9 +722,8 @@ server-side checks.
 
 ### HTTP limits
 
-Every HTTP request consumes the global bucket, plus the order or account bucket when the JSON-RPC
-method falls into that category, plus a per-method bucket keyed `deribit:{method}` that uses the
-global quota.
+Every HTTP request consumes the global bucket and a per-method bucket keyed `deribit:{method}` that uses the
+global quota. If the JSON-RPC method belongs to the order or account category, it also consumes that bucket.
 
 | Bucket / key       | Adapter bucket        | Notes                                                          |
 | ------------------ | --------------------- | -------------------------------------------------------------- |
@@ -754,7 +749,7 @@ Order operations are rate-limited by `DERIBIT_WS_ORDER_QUOTA` (5 req/sec, 20 bur
 Deribit replenishes non-matching-engine credits continuously. Current public documentation lists
 the default non-matching-engine pool as follows:
 
-**Non-matching engine requests:**
+**Non-matching engine requests**:
 
 | Parameter        | Value              | Notes                           |
 | ---------------- | ------------------ | ------------------------------- |
@@ -762,7 +757,7 @@ the default non-matching-engine pool as follows:
 | Maximum pool     | 50,000 credits     | Allows 100 request burst.       |
 | Refill rate      | 10,000 credits/sec | ~20 sustained requests/second.  |
 
-**Matching engine requests (default tier):**
+**Matching engine requests (default tier)**:
 
 | Parameter      | Value          | Notes                            |
 | -------------- | -------------- | -------------------------------- |
@@ -813,7 +808,7 @@ authentication scope:
 | Data client      | `nautilus-data`      | Market data subscriptions (raw feeds require auth). |
 | Execution client | `nautilus-execution` | Order operations (buy, sell, edit, cancel).         |
 
-**Authentication flow:**
+**Authentication flow**:
 
 1. WebSocket connects to Deribit.
 2. Client authenticates using `client_signature` grant type with session scope.
@@ -883,7 +878,7 @@ Configure appropriate permissions when
 | `trade:read_write` | Place, modify, and cancel orders.      |
 | `wallet:read`      | View balances and transaction history. |
 
-**Recommended minimum for trading:** `account:read`, `trade:read_write`, `wallet:read`
+**Recommended minimum for trading**: `account:read`, `trade:read_write`, `wallet:read`
 
 :::tip
 Follow the principle of least privilege. For data-only access (market data, no trading),
@@ -953,15 +948,14 @@ for the testnet through the testnet interface at [test.deribit.com](https://test
 
 #### Lazy-load on subscribe
 
-`subscribe_*` commands look up the instrument in the local cache before sending the
-WebSocket subscribe so the handler can parse the inbound frames. With
-`auto_load_missing_instruments = False` (the default), a subscribe for an instrument that
-was not preloaded (because of the configured `product_types`) returns an error up front
-rather than silently succeeding and dropping subsequent frames at the handler.
+`subscribe_*` commands look up the instrument in the local cache before sending the WebSocket subscribe so the
+handler can parse the inbound frames. With `auto_load_missing_instruments = False` (the default), a
+subscription returns an error if its instrument was not preloaded by the configured `product_types`. It does
+not silently succeed and then drop subsequent frames at the handler.
 
-Set `auto_load_missing_instruments = True` to instead fetch the instrument over HTTP on
-the first subscribe, seed the WebSocket handler cache, and then forward the subscribe.
-HTTP failures are logged and the WebSocket subscribe is skipped.
+To load missing instruments on first subscribe, set `auto_load_missing_instruments = True`. The client fetches
+the instrument over HTTP, seeds the WebSocket handler cache, and then forwards the subscribe. HTTP failures
+are logged and the WebSocket subscribe is skipped.
 
 ### Execution client configuration options
 
@@ -982,9 +976,9 @@ HTTP failures are logged and the WebSocket subscribe is skipped.
 | `auth_timeout_secs`      | `None`     | Seconds to await the WebSocket auth result; unset means 30.        |
 | `transport_backend`      | `Sockudo`  | WebSocket transport backend.                                       |
 
-`transport_backend` selects between the `Sockudo` and `Tungstenite` WebSocket transports. The
-default is `Sockudo` when the `transport-sockudo` Cargo feature is enabled, which the published
-Python wheels do; a Rust build without that feature defaults to `Tungstenite`.
+`transport_backend` selects between the `Sockudo` and `Tungstenite` WebSocket transports. The default is
+`Sockudo` when the `transport-sockudo` Cargo feature is enabled, as in published Python wheels. A Rust build
+without that feature defaults to `Tungstenite`.
 
 ### Production configuration
 

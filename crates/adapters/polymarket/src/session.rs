@@ -82,7 +82,7 @@ impl PolymarketSessionKeyClient {
     ///
     /// # Errors
     ///
-    /// Returns an error for invalid keys, wallet address, proxy, or HTTP configuration.
+    /// Returns an error if keys, wallet address, proxy, or HTTP configuration are invalid.
     pub fn new(config: PolymarketSessionKeyClientConfig) -> Result<Self> {
         let wallet = parse_address(&config.funder)?;
         let signer = OrderSigner::new(&EvmPrivateKey::new(config.private_key.expose_secret())?)?;
@@ -127,7 +127,7 @@ impl PolymarketSessionKeyClient {
     ///
     /// # Errors
     ///
-    /// Returns an error on authentication failure, malformed data, or a different response wallet.
+    /// Returns an error if authentication fails, data is malformed, or the response wallet differs.
     pub async fn list_session_keys(&self) -> Result<Vec<PolymarketSessionKey>> {
         let mut response = self.clob.list_session_keys().await?;
         if parse_address(&response.wallet)? != self.wallet {
@@ -155,7 +155,8 @@ impl PolymarketSessionKeyClient {
     ///
     /// # Errors
     ///
-    /// Returns an error on rejection, failed confirmation, timeout, or unknown submission outcome.
+    /// Returns an error if the request is rejected, confirmation fails, a timeout occurs, or the
+    /// submission outcome is unknown.
     pub async fn authorize_session_key(&self, address: &str) -> Result<PolymarketSessionKey> {
         self.mutate(address, true).await?.ok_or_else(|| {
             Error::decode("Session authorization completed without registry metadata")
@@ -166,8 +167,8 @@ impl PolymarketSessionKeyClient {
     ///
     /// # Errors
     ///
-    /// Returns an error on rejection, timeout, or unknown submission outcome.
-    /// Repeat the same operation on this client to resume an unresolved request.
+    /// Returns an error if the request is rejected, a timeout occurs, or the submission outcome is
+    /// unknown. Repeat the same operation on this client to resume an unresolved request.
     pub async fn revoke_session_key(&self, address: &str) -> Result<()> {
         self.mutate(address, false).await.map(|_| ())
     }

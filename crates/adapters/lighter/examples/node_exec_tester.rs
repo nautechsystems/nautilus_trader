@@ -94,7 +94,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let exec_engine_config = LiveExecutionEngineConfig {
-        reconciliation_lookback_mins: Some(60),
+        reconciliation_lookback_mins: Some(2 * 24 * 60),
         reconciliation_instrument_ids: Some(vec![instrument_id.to_string()]),
         open_check_interval_secs: Some(10.0),
         position_check_interval_secs: Some(30.0),

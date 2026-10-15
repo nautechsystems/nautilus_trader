@@ -46,7 +46,7 @@ Examples include Betfair match-odds selections and handicap market selections.
 | `ts_event`           | `UnixNanos`        | `int`              | Required         | Event timestamp in nanoseconds.          |
 | `ts_init`            | `UnixNanos`        | `int`              | Required         | Initialization timestamp in nanoseconds. |
 
-*Note: Python constructors use `instrument_id`; Rust stores the same value as `id`.*
+**Note**: Python constructors use `instrument_id`. Rust stores the same value as `id`.
 
 ## Behavior
 
@@ -155,9 +155,8 @@ selection = BettingInstrument(
 
 ## Adapters
 
-Representative adapters that create or consume `BettingInstrument` instruments include:
-
-- [Betfair](../../integrations/betfair.md) for sports betting markets.
+The [Betfair](../../integrations/betfair.md) adapter creates or consumes
+`BettingInstrument` instruments for sports betting markets.
 
 ## Related guides
 

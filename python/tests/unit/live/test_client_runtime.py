@@ -74,7 +74,7 @@ def test_task_before_binding_closes_coroutine() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("eager", [False, True])
-async def test_task_admission_never_runs_user_code_inline(eager) -> None:
+async def test_task_admission_never_runs_user_code_inline(eager, eager_task_factory) -> None:
     """
     Task admission never runs user code inline.
     """
@@ -91,7 +91,7 @@ async def test_task_admission_never_runs_user_code_inline(eager) -> None:
     factory = loop.get_task_factory()
     try:
         if eager:
-            loop.set_task_factory(asyncio.eager_task_factory)
+            loop.set_task_factory(eager_task_factory)
         task = runtime.create_task(operation())
         assert entered == []
         result = await task
@@ -101,6 +101,33 @@ async def test_task_admission_never_runs_user_code_inline(eager) -> None:
     assert result == 17
     assert entered == ["entered"]
     assert runtime.complete is True
+
+
+@pytest.mark.parametrize("loop_kind", ["asyncio", "uvloop"])
+def test_eager_task_factory_starts_coroutine_inline(loop_kind, eager_task_factory) -> None:
+    """
+    The eager test factory starts tasks inline on both supported event loops.
+    """
+    runner = asyncio.run if loop_kind == "asyncio" else pytest.importorskip("uvloop").run
+
+    async def exercise_factory():
+        loop = asyncio.get_running_loop()
+        entered = []
+
+        async def operation():
+            entered.append(137)
+            return 137
+
+        loop.set_task_factory(eager_task_factory)
+        try:
+            task = loop.create_task(operation())
+            assert entered == [137]
+            assert task.done() is True
+            assert await task == 137
+        finally:
+            loop.set_task_factory(None)
+
+    runner(exercise_factory())
 
 
 @pytest.mark.asyncio

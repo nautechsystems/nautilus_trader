@@ -1005,7 +1005,7 @@ impl DydxHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns None if the instrument is not found in the market params cache.
+    /// Returns `None` if the instrument is not found in the market params cache.
     #[must_use]
     pub fn get_market_params(
         &self,
@@ -1201,8 +1201,8 @@ impl DydxHttpClient {
     ///
     /// # Panics
     ///
-    /// This function will panic if the API returns a non-empty trades response
-    /// but `last()` on the trades vector returns `None` (should never happen).
+    /// Panics if the API returns a non-empty trades response but `last()` on the trades vector
+    /// returns `None` (should never happen).
     pub async fn request_trade_ticks(
         &self,
         instrument_id: InstrumentId,

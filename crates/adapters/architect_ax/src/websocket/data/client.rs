@@ -34,6 +34,7 @@ use nautilus_live::{
     task::{SharedTaskSlot, TaskJoinOutcome},
 };
 use nautilus_network::{
+    ConnectionUrl,
     http::create_standard_nautilus_headers,
     mode::ConnectionMode,
     websocket::{
@@ -147,7 +148,7 @@ impl SymbolDataTypes {
 /// Provides streaming market data including tickers, trades, order books, and candles.
 /// Requires Bearer token authentication obtained via the HTTP `/api/authenticate` endpoint.
 pub struct AxMdWebSocketClient {
-    url: String,
+    url: ConnectionUrl,
     heartbeat: Option<u64>,
     auth_token: Arc<Mutex<Option<SecretString>>>,
     reconnect_headers: Arc<Mutex<Option<ReconnectHeaders>>>,
@@ -232,7 +233,7 @@ impl AxMdWebSocketClient {
         let connection_mode = Arc::new(ArcSwap::from_pointee(initial_mode));
 
         Self {
-            url,
+            url: url.into(),
             heartbeat: Some(heartbeat),
             auth_token: Arc::new(Mutex::new(Some(auth_token.into()))),
             reconnect_headers: Arc::new(Mutex::new(None)),
@@ -270,7 +271,7 @@ impl AxMdWebSocketClient {
         let connection_mode = Arc::new(ArcSwap::from_pointee(initial_mode));
 
         Self {
-            url,
+            url: url.into(),
             heartbeat: Some(heartbeat),
             auth_token: Arc::new(Mutex::new(None)),
             reconnect_headers: Arc::new(Mutex::new(None)),
@@ -302,7 +303,7 @@ impl AxMdWebSocketClient {
     /// Returns the WebSocket URL.
     #[must_use]
     pub fn url(&self) -> &str {
-        &self.url
+        self.url.expose()
     }
 
     /// Sets the authentication token for subsequent connections.
@@ -437,7 +438,7 @@ impl AxMdWebSocketClient {
         }
 
         let config = WebSocketConfig {
-            url: self.url.clone(),
+            url: self.url.expose().to_owned(),
             headers,
             heartbeat_interval_secs: self.heartbeat,
             heartbeat_payload: None, // Ax server sends heartbeats
@@ -469,7 +470,11 @@ impl AxMdWebSocketClient {
             .connect()
             .await
             .map_err(|e| {
-                AxWsClientError::Transport(format!("Failed to connect to {}: {e}", self.url))
+                AxWsClientError::Transport(format!(
+                    "WebSocket connection failed: {}: {}",
+                    self.url.origin(),
+                    e.redacted_message()
+                ))
             })?;
 
         self.connection_mode.store(client.connection_mode_atomic());
@@ -1264,6 +1269,26 @@ mod tests {
         book::{recovery::spawn_subscription_task, sync::BookSyncTracker},
         websocket::data::subscription::SubscriptionOrder,
     };
+
+    #[rstest]
+    #[case("wss://stream.example.com/feed", "wss://stream.example.com")]
+    #[case(
+        "wss://SYN-user:SYN-password@stream.example.com:9443/SYN-path?token=SYN-query#SYN-fragment",
+        "wss://stream.example.com:9443"
+    )]
+    fn test_debug_preserves_url_origin(#[case] url: &str, #[case] origin: &str) {
+        let client = AxMdWebSocketClient::new(
+            url.to_string(),
+            "SYN-auth-token",
+            30,
+            TransportBackend::default(),
+            None,
+        );
+        let debug = format!("{client:?}");
+        assert!(debug.contains(&format!("url: {origin:?}")));
+        assert!(!debug.contains("SYN-"));
+        assert_eq!(client.url.expose(), url);
+    }
 
     #[rstest]
     fn test_auth_token_uses_secret_string_owner() {

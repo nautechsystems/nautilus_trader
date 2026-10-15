@@ -3,7 +3,7 @@
 #
 # Runs lychee in offline mode to catch broken relative paths, anchors, and
 # cross-references without hitting the network. External URLs are ignored
-# here; they're covered by the periodic `make docs-check-links` audit.
+# here; they're covered by the periodic `make check-docs-links` audit.
 #
 # If lychee is not installed, the hook exits 0 with a warning so that
 # contributors without the cargo toolchain can still commit.

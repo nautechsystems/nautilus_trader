@@ -141,6 +141,9 @@ impl MakerTakerFeeSchedule {
 /// and currency) come from the instrument; fee policy (the rate) comes from the
 /// account-owned schedule and must already be resolved by the caller.
 ///
+/// The fee rate alone decides the commission sign: a positive rate charges and a
+/// negative rate rebates, including at a negative price.
+///
 /// # Errors
 ///
 /// Returns an error if the notional value cannot be calculated, arithmetic
@@ -156,6 +159,7 @@ pub fn calculate_maker_taker_commission(
         instrument.try_calculate_notional_value(last_qty, last_px, use_quote_for_inverse)?;
     let commission = notional
         .as_decimal()
+        .abs()
         .checked_mul(fee_rate)
         .ok_or_else(|| anyhow::anyhow!("commission calculation overflow"))?;
     Money::from_decimal(commission, notional.currency).map_err(Into::into)
@@ -241,5 +245,31 @@ mod tests {
             notional.as_decimal() * dec!(0.0002)
         );
         assert_eq!(commission.currency, notional.currency);
+    }
+
+    #[rstest]
+    #[case::charge(dec!(0.0002), "0.80 USD")]
+    #[case::rebate(dec!(-0.0001), "-0.40 USD")]
+    fn test_commission_sign_follows_rate_at_negative_price(
+        #[case] fee_rate: Decimal,
+        #[case] expected: &str,
+    ) {
+        use crate::{
+            instruments::stubs::futures_contract_es,
+            types::{Price, Quantity},
+        };
+
+        // Notional is 100 * -40.00 = -4000.00 USD
+        let instrument = InstrumentAny::FuturesContract(futures_contract_es(None, None));
+        let commission = calculate_maker_taker_commission(
+            &instrument,
+            Quantity::from(100),
+            Price::from("-40.00"),
+            fee_rate,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(commission, Money::from(expected));
     }
 }

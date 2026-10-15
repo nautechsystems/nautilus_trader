@@ -25,7 +25,7 @@ use crate::python;
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if registering any module components fails.
+/// Returns an error if registering any module components fails.
 #[pymodule]
 pub fn cryptography(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(python::signing::py_hmac_signature, m)?)?;

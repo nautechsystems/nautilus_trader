@@ -186,7 +186,7 @@ nautilus_model::for_each_data_type!(define_catalog_raw_schema_lookup);
 ///
 /// # Errors
 ///
-/// Returns [`EncodingError::ParseError`] when the data type is unsupported.
+/// Returns an error if the data type is unsupported.
 pub fn catalog_raw_schema(data_type: &NautilusDataType) -> Result<Schema, EncodingError> {
     if let NautilusDataType::Custom { type_name } = data_type {
         if get_arrow_schema(type_name).is_none() {
@@ -205,7 +205,7 @@ pub fn catalog_raw_schema(data_type: &NautilusDataType) -> Result<Schema, Encodi
 ///
 /// # Errors
 ///
-/// Returns [`EncodingError::ParseError`] when the data type is unsupported.
+/// Returns an error if the data type is unsupported.
 #[allow(
     clippy::match_wildcard_for_single_variants,
     unreachable_patterns,
@@ -228,8 +228,8 @@ pub fn catalog_display_schema(data_type: &NautilusDataType) -> Result<Schema, En
 ///
 /// # Errors
 ///
-/// Returns [`EncodingError`] when required metadata or columns are missing, a
-/// columns do not use the current Arrow format, or enum values are invalid.
+/// Returns an error if required metadata or columns are missing, a columns do not use the current
+/// Arrow format, or enum values are invalid.
 #[allow(
     clippy::match_wildcard_for_single_variants,
     unreachable_patterns,

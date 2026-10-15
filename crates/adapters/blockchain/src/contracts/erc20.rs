@@ -125,9 +125,9 @@ impl Erc20Contract {
     ///
     /// # Errors
     ///
-    /// Returns an error if any of the contract calls fail.
-    /// - [`BlockchainRpcClientError::ClientError`] if an RPC call fails.
-    /// - [`BlockchainRpcClientError::AbiDecodingError`] if ABI decoding fails.
+    /// Returns an error if:
+    /// - An RPC call fails.
+    /// - ABI decoding fails.
     pub async fn fetch_token_info(
         &self,
         token_address: &Address,
@@ -191,9 +191,9 @@ impl Erc20Contract {
     ///
     /// # Errors
     ///
-    /// Returns an error only if the operation cannot proceed. Multicall failures trigger
-    /// automatic fallback to individual fetches. Individual token failures are captured
-    /// in the Result values of the returned `HashMap`.
+    /// Returns an error if the operation cannot proceed, and only in that case. Multicall failures
+    /// trigger automatic fallback to individual fetches. Individual token failures are captured in
+    /// the Result values of the returned `HashMap`.
     pub async fn batch_fetch_token_info(
         &self,
         token_addresses: &[Address],
@@ -281,9 +281,9 @@ impl Erc20Contract {
     ///
     /// # Errors
     ///
-    /// Returns an error if the contract call fails.
-    /// - [`BlockchainRpcClientError::ClientError`] if an RPC call fails.
-    /// - [`BlockchainRpcClientError::AbiDecodingError`] if ABI decoding fails.
+    /// Returns an error if:
+    /// - An RPC call fails.
+    /// - ABI decoding fails.
     pub async fn balance_of(
         &self,
         token_address: &Address,
@@ -337,9 +337,9 @@ impl Erc20Contract {
     ///
     /// # Errors
     ///
-    /// Returns an error if the contract call fails.
-    /// - [`BlockchainRpcClientError::ClientError`] if an RPC call fails.
-    /// - [`BlockchainRpcClientError::AbiDecodingError`] if ABI decoding fails.
+    /// Returns an error if:
+    /// - An RPC call fails.
+    /// - ABI decoding fails.
     pub async fn allowance(
         &self,
         token_address: &Address,

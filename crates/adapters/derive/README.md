@@ -13,9 +13,9 @@ The `nautilus-derive` crate implements the Derive adapter for NautilusTrader, in
 and WebSocket clients, REST and stream models, venue parsing, data and execution client wiring, and
 EIP-712 signing for the official **Derive API**.
 
-Derive offers European-style options, perpetual swaps, and spot markets on the Derive Chain, an
-optimistic rollup that settles to Ethereum. Orders match off-chain and settle on-chain while users
-retain custody through per-user smart-contract wallets.
+Derive offers European-style options, perpetual swaps, and spot markets. The v3 API authenticates
+the owner's EOA or multisig through a session-key signer. Orders match off-chain, and operations
+are batched for settlement on Ethereum while users retain custody.
 
 ## NautilusTrader
 
@@ -36,6 +36,7 @@ This crate provides feature flags to control source code inclusion during compil
   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
   to use 128-bit value types.
 - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+- `simulation`: Enables deterministic simulation with `cfg(madsim)`.
 
 ## Fuzzing
 

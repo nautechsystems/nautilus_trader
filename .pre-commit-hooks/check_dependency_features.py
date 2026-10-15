@@ -66,6 +66,7 @@ NETWORK_PACKAGE_FEATURES = {
     "nautilus-binance": frozenset({"transport-sockudo"}),
     "nautilus-blockchain": frozenset({"transport-sockudo"}),
     "nautilus-bybit": frozenset({"transport-sockudo"}),
+    "nautilus-coinapi": frozenset({"transport-sockudo"}),
     "nautilus-coinbase": frozenset({"transport-sockudo"}),
     "nautilus-databento": frozenset(),
     "nautilus-deribit": frozenset({"transport-sockudo"}),

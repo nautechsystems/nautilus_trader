@@ -224,7 +224,7 @@ impl ExecutionHarness {
     ///
     /// # Errors
     ///
-    /// Returns an error when the engine already contains the client ID or venue route.
+    /// Returns an error if the engine already contains the client ID or venue route.
     pub fn register_client(&self, client: Box<dyn ExecutionClient>) -> anyhow::Result<()> {
         let client_id = client.client_id();
         let venue = client.venue();

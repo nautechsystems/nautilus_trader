@@ -887,6 +887,7 @@ mod tests {
                 outcome: 99,
                 name: "BTC daily".to_string(),
                 description: String::new(),
+                quote_token: Some("USDC".to_string()),
                 side_specs: vec![],
             }],
             questions: vec![],
@@ -926,9 +927,9 @@ mod tests {
         .unwrap();
 
         // Zero-fee outcome fills fall back to the instrument's quote currency
-        // (USDH) instead of the unregistered side token, keeping downstream
+        // instead of the unregistered side token, keeping downstream
         // OrderFilled events and persistence on a registered currency.
-        assert_eq!(report.commission.currency.code, "USDH");
+        assert_eq!(report.commission.currency.code, "USDC");
         assert!(report.commission.as_decimal().is_zero());
         assert_eq!(report.order_side, OrderSide::Buy);
     }
@@ -1125,7 +1126,7 @@ mod tests {
                     prev_day_px: dec!(49000.0),
                     mark_px: dec!(50000.0),
                     mid_px: Some(dec!(50001.0)),
-                    impact_pxs: Some(vec!["50000.0".to_string(), "50002.0".to_string()]),
+                    impact_pxs: Some(vec![dec!(50000.0), dec!(50002.0)]),
                     day_base_vlm: Some(dec!(100.0)),
                 },
                 funding: dec!(0.0001),
@@ -1168,7 +1169,7 @@ mod tests {
                     prev_day_px: dec!(49000.0),
                     mark_px: dec!(50000.0),
                     mid_px: Some(dec!(50001.0)),
-                    impact_pxs: Some(vec!["50000.0".to_string(), "50002.0".to_string()]),
+                    impact_pxs: Some(vec![dec!(50000.0), dec!(50002.0)]),
                     day_base_vlm: Some(dec!(100.0)),
                 },
                 circulating_supply: dec!(19000000.0),

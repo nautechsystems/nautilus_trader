@@ -27,7 +27,7 @@ use std::{
 
 use ahash::AHashSet;
 use async_trait::async_trait;
-use indexmap::IndexSet;
+use indexmap::{IndexMap, IndexSet};
 use log::{Level, LevelFilter, Log, Metadata, Record};
 use nautilus_common::{
     cache::Cache,
@@ -75,8 +75,9 @@ use nautilus_model::{
         OrderEventAny, OrderFilled,
         account::state::AccountState,
         order::spec::{
-            OrderAcceptedSpec, OrderCancelRejectedSpec, OrderModifyRejectedSpec,
-            OrderPendingCancelSpec, OrderPendingUpdateSpec, OrderUpdatedSpec,
+            OrderAcceptedSpec, OrderCancelRejectedSpec, OrderFillVoidedSpec,
+            OrderModifyRejectedSpec, OrderPendingCancelSpec, OrderPendingUpdateSpec,
+            OrderUpdatedSpec,
         },
     },
     identifiers::{
@@ -93,6 +94,7 @@ use nautilus_model::{
     },
     position::Position,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
+    stubs::TestDefault,
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
 use parking_lot::Mutex;
@@ -385,10 +387,11 @@ struct ManagerLogCapture {
 impl Log for ManagerLogCapture {
     fn enabled(&self, metadata: &Metadata<'_>) -> bool {
         metadata.level() <= Level::Warn
-            && matches!(
+            && (matches!(
                 metadata.target(),
                 "nautilus_live::execution::manager" | "nautilus_live::execution::reconciliation"
-            )
+            ) || metadata.target() == "nautilus_common::cache"
+                && metadata.level() == Level::Error)
     }
 
     fn log(&self, record: &Record<'_>) {
@@ -425,6 +428,232 @@ fn test_fill_deduplication_new_fill_not_processed() {
         test_instrument_id(),
         trade_id
     ));
+}
+
+#[rstest]
+#[case::unchanged(None, "3.000", "0.75 USDT")]
+#[case::partial_opening(Some("0.500"), "2.500", "0.625 USDT")]
+#[case::entire_opening(Some("1.000"), "2.000", "0.50 USDT")]
+#[case::partial_closing(Some("1.500"), "1.500", "0.375 USDT")]
+fn test_position_fill_report_accounts_for_virtual_flip(
+    #[case] voided_qty: Option<&str>,
+    #[case] remaining_qty: &str,
+    #[case] remaining_commission: &str,
+    #[values(false, true)] rebuild_index: bool,
+) {
+    let ctx = TestContext::new();
+    let instrument = test_instrument();
+    let position_id = PositionId::from("P-FLIP-SOURCE");
+    let position =
+        create_test_position(&instrument, position_id, OrderSide::Buy, "2.000", "3000.00");
+    ctx.add_instrument(instrument.clone());
+    ctx.add_position(&position);
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::from("O-FLIP-ROUTE"))
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("5.000"))
+        .build();
+    ctx.exec_engine
+        .borrow_mut()
+        .register_oms_type(order.strategy_id(), OmsType::Hedging);
+    ctx.add_order(order.clone());
+    ctx.exec_engine
+        .borrow_mut()
+        .process(&TestOrderEventStubs::submitted(&order, test_account_id()));
+    ctx.exec_engine
+        .borrow_mut()
+        .process(&TestOrderEventStubs::accepted(
+            &order,
+            test_account_id(),
+            VenueOrderId::from("V-FLIP-ROUTE"),
+        ));
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::from("T-FLIP-ROUTE")),
+        Some(position_id),
+        Some(Price::from("3100.00")),
+        Some(Quantity::from("3.000")),
+        Some(LiquiditySide::Taker),
+        Some(Money::from("0.75 USDT")),
+        None,
+        Some(test_account_id()),
+    );
+    ctx.exec_engine.borrow_mut().process(&fill);
+
+    let OrderEventAny::Filled(fill) = fill else {
+        unreachable!()
+    };
+
+    let mut report = FillReport::new(
+        fill.account_id,
+        fill.instrument_id,
+        fill.venue_order_id,
+        fill.trade_id,
+        fill.order_side,
+        fill.last_qty,
+        fill.last_px,
+        fill.commission.unwrap(),
+        fill.liquidity_side,
+        Some(fill.client_order_id),
+        Some(position_id),
+        fill.ts_event,
+        fill.ts_init,
+        None,
+    );
+
+    if let Some(voided_qty) = voided_qty {
+        let voided_qty = Quantity::from(voided_qty);
+        let voided = OrderFillVoidedSpec::builder()
+            .trader_id(fill.trader_id)
+            .strategy_id(fill.strategy_id)
+            .instrument_id(fill.instrument_id)
+            .client_order_id(fill.client_order_id)
+            .venue_order_id(fill.venue_order_id)
+            .account_id(fill.account_id)
+            .trade_id(fill.trade_id)
+            .voided_qty(voided_qty)
+            .order_side(fill.order_side)
+            .order_type(fill.order_type)
+            .last_px(fill.last_px)
+            .currency(fill.currency)
+            .liquidity_side(fill.liquidity_side)
+            .position_id(position_id)
+            .commission_voided(
+                Money::from_decimal(voided_qty.as_decimal() * dec!(0.25), Currency::USDT())
+                    .unwrap(),
+            )
+            .is_reopened(true)
+            .build();
+        ctx.exec_engine
+            .borrow_mut()
+            .process(&OrderEventAny::FillVoided(voided));
+        assert!(!ctx.manager.position_contains_fill_report(&report));
+        report.last_qty = Quantity::from(remaining_qty);
+        report.commission = Money::from(remaining_commission);
+    }
+
+    if rebuild_index {
+        let mut cache = ctx.cache.borrow_mut();
+        cache.clear_index();
+        cache.build_index();
+    }
+
+    assert!(ctx.manager.position_contains_fill_report(&report));
+    ctx.manager
+        .prepare_position_fill_report(&mut report, &[])
+        .unwrap();
+    assert_eq!(report.venue_position_id, Some(position_id));
+
+    let accepted_report = report.clone();
+    report.last_qty = Quantity::from("1.000");
+    assert!(!ctx.manager.position_contains_fill_report(&report));
+    report = accepted_report.clone();
+    report.commission = Money::from("0.01 USDT");
+    assert!(!ctx.manager.position_contains_fill_report(&report));
+    report = accepted_report.clone();
+    report.venue_position_id = Some(PositionId::from("P-UNRELATED"));
+    assert!(!ctx.manager.position_contains_fill_report(&report));
+    assert!(
+        ctx.manager
+            .prepare_position_fill_report(&mut report, &[])
+            .is_err()
+    );
+    report = accepted_report;
+    report.venue_position_id = None;
+    ctx.manager
+        .prepare_position_fill_report(&mut report, &[])
+        .unwrap();
+    assert_eq!(
+        report.venue_position_id,
+        ctx.cache
+            .borrow()
+            .position_id(&fill.client_order_id)
+            .copied()
+    );
+    assert!(ctx.manager.position_contains_fill_report(&report));
+}
+
+#[rstest]
+fn test_position_fill_report_preserves_netting_void_behavior(
+    #[values(false, true)] rebuild_index: bool,
+) {
+    let ctx = TestContext::new();
+    let instrument = test_instrument();
+
+    let position_id = PositionId::new(format!(
+        "{}-{}",
+        instrument.id(),
+        StrategyId::test_default()
+    ));
+    let position =
+        create_test_position(&instrument, position_id, OrderSide::Buy, "2.000", "3000.00");
+    let mut fill = position.events[0].clone();
+    fill.commission = Some(Money::from("0.50 USDT"));
+    let mut position = Position::new(&instrument, fill.clone());
+
+    let voided = OrderFillVoidedSpec::builder()
+        .trader_id(fill.trader_id)
+        .strategy_id(fill.strategy_id)
+        .instrument_id(fill.instrument_id)
+        .client_order_id(fill.client_order_id)
+        .venue_order_id(fill.venue_order_id)
+        .account_id(fill.account_id)
+        .trade_id(fill.trade_id)
+        .voided_qty(Quantity::from("1.000"))
+        .order_side(fill.order_side)
+        .order_type(fill.order_type)
+        .last_px(fill.last_px)
+        .currency(fill.currency)
+        .liquidity_side(fill.liquidity_side)
+        .position_id(position_id)
+        .commission_voided(Money::from("0.25 USDT"))
+        .is_reopened(true)
+        .build();
+    position
+        .apply_fill_void(
+            voided,
+            Quantity::from("1.000"),
+            Some(Money::from("0.25 USDT")),
+        )
+        .unwrap();
+    ctx.add_instrument(instrument);
+    ctx.cache
+        .borrow_mut()
+        .add_position(&position, OmsType::Netting)
+        .unwrap();
+
+    if rebuild_index {
+        let mut cache = ctx.cache.borrow_mut();
+        cache.clear_index();
+        cache.build_index();
+    }
+
+    let report = FillReport::new(
+        fill.account_id,
+        fill.instrument_id,
+        fill.venue_order_id,
+        fill.trade_id,
+        fill.order_side,
+        fill.last_qty,
+        fill.last_px,
+        fill.commission.unwrap(),
+        fill.liquidity_side,
+        Some(fill.client_order_id),
+        None,
+        fill.ts_event,
+        fill.ts_init,
+        None,
+    );
+    let mut corrected_report = report.clone();
+    corrected_report.last_qty = Quantity::from("1.000");
+    corrected_report.commission = Money::from("0.25 USDT");
+
+    assert_eq!(position.quantity, Quantity::from("1.000"));
+    assert!(ctx.manager.position_contains_fill_report(&report));
+    assert!(!ctx.manager.position_contains_fill_report(&corrected_report));
 }
 
 #[rstest]
@@ -1525,6 +1754,172 @@ async fn test_cached_order_canceled_with_fills() {
     let cached_order = ctx.get_order(&client_order_id).unwrap();
     assert_eq!(cached_order.status(), OrderStatus::Canceled);
     assert_eq!(cached_order.filled_qty(), Quantity::from("1.0"));
+}
+
+#[rstest]
+#[case::partial(OrderStatus::PartiallyFilled, "0.2", "0.5", dec!(3002))]
+#[case::filled(OrderStatus::Filled, "1.2", "1.5", dec!(3004))]
+#[tokio::test]
+async fn test_mass_reconciliation_applies_replacement_alias_fills_before_inference(
+    #[case] status: OrderStatus,
+    #[case] child_quantity: &str,
+    #[case] cumulative_quantity: &str,
+    #[case] average: Decimal,
+    #[values(false, true)] parent_label: bool,
+    #[values(false, true)] duplicate_parent: bool,
+) {
+    let mut ctx = TestContext::new();
+    let instrument_id = test_instrument_id();
+    let client_order_id = ClientOrderId::from("O-REPLACE-MASS");
+    let parent_id = VenueOrderId::from("V-REPLACE-PARENT");
+    let current_id = VenueOrderId::from("V-REPLACE-CURRENT");
+    let parent_trade = TradeId::from("T-REPLACE-PARENT");
+    let child_trade = TradeId::from("T-REPLACE-CURRENT");
+    ctx.add_instrument(test_instrument());
+    let mut order = create_submitted_order(
+        client_order_id.as_str(),
+        instrument_id,
+        OrderSide::Buy,
+        "1.0",
+        "3000.00",
+    );
+    order
+        .apply(TestOrderEventStubs::accepted(
+            &order,
+            test_account_id(),
+            parent_id,
+        ))
+        .unwrap();
+    order
+        .apply(OrderEventAny::Updated(
+            OrderUpdatedSpec::builder()
+                .trader_id(order.trader_id())
+                .strategy_id(order.strategy_id())
+                .instrument_id(instrument_id)
+                .client_order_id(client_order_id)
+                .account_id(test_account_id())
+                .venue_order_id(current_id)
+                .quantity(Quantity::from("1.5"))
+                .price(Price::from("3005.00"))
+                .build(),
+        ))
+        .unwrap();
+    ctx.add_order(order);
+    let report = create_order_report(
+        Some(client_order_id),
+        current_id,
+        instrument_id,
+        status,
+        Quantity::from("1.5"),
+        Quantity::from(cumulative_quantity),
+    )
+    .with_price(Price::from("3005.00"))
+    .with_avg_px(average);
+
+    let parent_fill = FillReport::new(
+        test_account_id(),
+        instrument_id,
+        parent_id,
+        parent_trade,
+        OrderSide::Buy,
+        Quantity::from("0.3"),
+        Price::from("3000.00"),
+        Money::from("0.03 USDT"),
+        LiquiditySide::Maker,
+        parent_label.then_some(client_order_id),
+        None,
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+    );
+
+    let child_fill = FillReport::new(
+        test_account_id(),
+        instrument_id,
+        current_id,
+        child_trade,
+        OrderSide::Buy,
+        Quantity::from(child_quantity),
+        Price::from("3005.00"),
+        Money::from("0.05 USDT"),
+        LiquiditySide::Taker,
+        Some(client_order_id),
+        None,
+        UnixNanos::from(2_000_000),
+        UnixNanos::from(2_000_000),
+        None,
+    );
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::from(10_000_000),
+        None,
+    );
+    let parent_report = create_order_report(
+        Some(client_order_id),
+        parent_id,
+        instrument_id,
+        OrderStatus::Canceled,
+        Quantity::from("1.0"),
+        Quantity::from("0.3"),
+    )
+    .with_price(Price::from("3000.00"))
+    .with_avg_px(dec!(3000));
+    mass_status.add_order_reports(vec![parent_report, report]);
+    mass_status.add_fill_reports(if duplicate_parent {
+        vec![child_fill, parent_fill.clone(), parent_fill]
+    } else {
+        vec![child_fill, parent_fill]
+    });
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
+    let repeated = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
+    let order = ctx.get_order(&client_order_id).unwrap();
+    assert_eq!(order.quantity(), Quantity::from("1.5"));
+    assert_eq!(order.filled_qty(), Quantity::from(cumulative_quantity));
+    assert_eq!(order.avg_px(), Some(average));
+    assert_eq!(order.venue_order_id(), Some(current_id));
+    assert_eq!(order.status(), status);
+    assert_eq!(order.trade_ids().len(), 2);
+    assert!(order.trade_ids().contains(&&parent_trade));
+    assert!(order.trade_ids().contains(&&child_trade));
+    assert_eq!(
+        order.commissions().get(&Currency::USDT()),
+        Some(&Money::from("0.08 USDT"))
+    );
+
+    let fills: Vec<_> = result
+        .events
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(fills.len(), 2);
+    assert_eq!(fills[0].venue_order_id, parent_id);
+    assert_eq!(fills[0].trade_id, parent_trade);
+    assert_eq!(fills[0].last_qty, Quantity::from("0.3"));
+    assert_eq!(fills[0].last_px, Price::from("3000.00"));
+    assert_eq!(fills[0].commission, Some(Money::from("0.03 USDT")));
+    assert_eq!(fills[1].venue_order_id, current_id);
+    assert_eq!(fills[1].trade_id, child_trade);
+    assert_eq!(fills[1].last_qty, Quantity::from(child_quantity));
+    assert_eq!(fills[1].last_px, Price::from("3005.00"));
+    assert_eq!(fills[1].commission, Some(Money::from("0.05 USDT")));
+    assert!(repeated.events.is_empty());
+    let cache = ctx.cache.borrow();
+    let positions = cache.positions_open(None, Some(&instrument_id), None, None, None);
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].quantity, Quantity::from(cumulative_quantity));
+    assert_eq!(positions[0].commissions(), vec![Money::from("0.08 USDT")]);
 }
 
 #[tokio::test]
@@ -4992,6 +5387,272 @@ async fn test_bounded_same_timestamp_orders_reconcile_explicit_flat() {
     assert_eq!(portfolio_events, expected_portfolio_events);
 }
 
+/// An order whose fills span a position lifecycle keeps its pre-boundary fill as order-only.
+///
+/// A sell that closes a long and opens a short crosses zero inside the order. The closing fill
+/// stays on the order, so its filled quantity settles at the real price rather than an inferred
+/// one, and it does not apply to the position.
+#[tokio::test]
+async fn test_order_spanning_two_lifecycles_keeps_pre_boundary_fill_order_only() {
+    let mut ctx = TestContext::new();
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let strategy_id = StrategyId::from("STRATEGY-001");
+    let open_order_id = ClientOrderId::from("O-LIFECYCLE-OPEN");
+    let open_venue_order_id = VenueOrderId::from("V-LIFECYCLE-OPEN");
+    let open_trade_id = TradeId::from("T-LIFECYCLE-OPEN");
+    let flip_order_id = ClientOrderId::from("O-LIFECYCLE-FLIP");
+    let flip_venue_order_id = VenueOrderId::from("V-LIFECYCLE-FLIP");
+    let close_trade_id = TradeId::from("T-LIFECYCLE-CLOSE");
+    let short_trade_id = TradeId::from("T-LIFECYCLE-SHORT");
+    let position_id = PositionId::new(format!("{instrument_id}-{strategy_id}"));
+
+    ctx.add_instrument(instrument);
+    ctx.manager
+        .claim_external_orders(instrument_id, strategy_id)
+        .unwrap();
+    ctx.exec_engine
+        .borrow_mut()
+        .register_oms_type(strategy_id, OmsType::Netting);
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+
+    // The long that the flip closes, opened and filled before the crossing.
+    let open_report = create_order_report(
+        Some(open_order_id),
+        open_venue_order_id,
+        instrument_id,
+        OrderStatus::Filled,
+        Quantity::from("1.000"),
+        Quantity::from("1.000"),
+    )
+    .with_avg_px(dec!(3000.0));
+    let open_fill = FillReport::new(
+        test_account_id(),
+        instrument_id,
+        open_venue_order_id,
+        open_trade_id,
+        OrderSide::Buy,
+        Quantity::from("1.000"),
+        Price::from("3000.00"),
+        Money::from("0.50 USDT"),
+        LiquiditySide::Maker,
+        Some(open_order_id),
+        None,
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+    );
+
+    // The sell spanning the crossing: one fill closes the long, the next opens the short. Its
+    // order price sits below both fill prices, so an inferred remainder would be visible.
+    let flip_report = create_order_report_for_side(
+        Some(flip_order_id),
+        flip_venue_order_id,
+        instrument_id,
+        OrderSide::Sell,
+        OrderStatus::Filled,
+        Quantity::from("2.000"),
+        Quantity::from("2.000"),
+    )
+    .with_price(Price::from("3000.00"))
+    .with_avg_px(dec!(3150.0));
+    let close_fill = FillReport::new(
+        test_account_id(),
+        instrument_id,
+        flip_venue_order_id,
+        close_trade_id,
+        OrderSide::Sell,
+        Quantity::from("1.000"),
+        Price::from("3100.00"),
+        Money::from("0.50 USDT"),
+        LiquiditySide::Taker,
+        Some(flip_order_id),
+        None,
+        UnixNanos::from(2_000_000),
+        UnixNanos::from(2_000_000),
+        None,
+    );
+    let short_fill = FillReport::new(
+        test_account_id(),
+        instrument_id,
+        flip_venue_order_id,
+        short_trade_id,
+        OrderSide::Sell,
+        Quantity::from("1.000"),
+        Price::from("3200.00"),
+        Money::from("0.50 USDT"),
+        LiquiditySide::Taker,
+        Some(flip_order_id),
+        None,
+        UnixNanos::from(3_000_000),
+        UnixNanos::from(3_000_000),
+        None,
+    );
+    let position_report = PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSide::Short,
+        Quantity::from("1.000"),
+        UnixNanos::from(3_000_000),
+        UnixNanos::from(3_000_000),
+        None,
+        None,
+        Some(dec!(3200.00)),
+    );
+    mass_status.add_order_reports(vec![open_report, flip_report]);
+    mass_status.add_fill_reports(vec![open_fill, close_fill, short_fill]);
+    mass_status.add_position_reports(vec![position_report]);
+
+    ctx.manager
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
+
+    let cache = ctx.cache.borrow();
+    let flip_order = cache.order(&flip_order_id).unwrap();
+    assert_eq!(flip_order.status(), OrderStatus::Filled);
+    assert_eq!(flip_order.filled_qty(), Quantity::from("2.000"));
+    assert!(
+        flip_order.trade_ids().contains(&&close_trade_id),
+        "the closing fill must settle the order rather than be inferred: {:?}",
+        flip_order.trade_ids()
+    );
+    assert!(flip_order.trade_ids().contains(&&short_trade_id));
+    assert_eq!(
+        flip_order.avg_px(),
+        Some(dec!(3150.0)),
+        "both real fills price the order; nothing is inferred at the 3000 order price"
+    );
+
+    let position = cache.position(&position_id).unwrap();
+    assert_eq!(position.side, PositionSide::Short);
+    assert_eq!(position.quantity, Quantity::from("1.000"));
+    assert!(
+        !position.trade_ids.contains(&close_trade_id),
+        "the pre-boundary fill must not apply to the current lifecycle"
+    );
+    assert!(position.trade_ids.contains(&short_trade_id));
+}
+
+/// A partially filled cached order recovers its remaining executions at their real prices.
+///
+/// With 0.600 of 1.000 already recorded and the final 0.400 executing offline, the fills page
+/// carries only that 0.400. Reconciliation matches it to the cached order rather than inferring
+/// it, so the adapter must not withhold the report for not covering the full quantity on its own.
+#[tokio::test]
+async fn test_partially_filled_cached_order_recovers_remaining_fills_at_real_prices() {
+    let mut ctx = TestContext::new();
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let strategy_id = StrategyId::from("STRATEGY-001");
+    let client_order_id = ClientOrderId::from("O-PARTIAL-CACHED");
+    let venue_order_id = VenueOrderId::from("V-PARTIAL-CACHED");
+    let cached_trade_id = TradeId::from("T-PARTIAL-CACHED");
+    let remaining_trade_id = TradeId::from("T-PARTIAL-REMAINING");
+    let position_id = PositionId::new(format!("{instrument_id}-{strategy_id}"));
+
+    ctx.add_instrument(instrument.clone());
+    ctx.exec_engine
+        .borrow_mut()
+        .register_oms_type(strategy_id, OmsType::Netting);
+
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .client_order_id(client_order_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .price(Price::from("3000.00"))
+        .build();
+    apply_submitted_and_accepted(&mut order, venue_order_id);
+    let cached_fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(cached_trade_id),
+        Some(position_id),
+        Some(Price::from("3000.00")),
+        Some(Quantity::from("0.600")),
+        Some(LiquiditySide::Maker),
+        Some(Money::from("0.30 USDT")),
+        Some(UnixNanos::from(1_000_000)),
+        Some(test_account_id()),
+    );
+    order.apply(cached_fill).unwrap();
+    {
+        let mut cache = ctx.cache.borrow_mut();
+        cache
+            .add_order(order, None, Some(test_client_id()), false)
+            .unwrap();
+        cache
+            .add_venue_order_id(&client_order_id, &venue_order_id, false)
+            .unwrap();
+    }
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+    let order_report = create_order_report(
+        Some(client_order_id),
+        venue_order_id,
+        instrument_id,
+        OrderStatus::Filled,
+        Quantity::from("1.000"),
+        Quantity::from("1.000"),
+    )
+    .with_avg_px(dec!(3050.0));
+    let remaining_fill = FillReport::new(
+        test_account_id(),
+        instrument_id,
+        venue_order_id,
+        remaining_trade_id,
+        OrderSide::Buy,
+        Quantity::from("0.400"),
+        Price::from("3125.00"),
+        Money::from("0.20 USDT"),
+        LiquiditySide::Taker,
+        Some(client_order_id),
+        None,
+        UnixNanos::from(2_000_000),
+        UnixNanos::from(2_000_000),
+        None,
+    );
+    mass_status.add_order_reports(vec![order_report]);
+    mass_status.add_fill_reports(vec![remaining_fill]);
+
+    ctx.manager
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
+
+    let cache = ctx.cache.borrow();
+    let order = cache.order(&client_order_id).unwrap();
+    assert_eq!(order.status(), OrderStatus::Filled);
+    assert_eq!(order.filled_qty(), Quantity::from("1.000"));
+    assert!(order.trade_ids().contains(&&cached_trade_id));
+    assert!(
+        order.trade_ids().contains(&&remaining_trade_id),
+        "the remaining execution must be applied from its fill report: {:?}",
+        order.trade_ids()
+    );
+    assert_eq!(
+        order.trade_ids().len(),
+        2,
+        "no inferred fill alongside the real ones"
+    );
+    assert_eq!(
+        order.avg_px(),
+        Some(dec!(3050.0)),
+        "0.600 at 3000 and 0.400 at 3125 price the order; nothing is inferred"
+    );
+}
+
 #[expect(
     clippy::too_many_arguments,
     reason = "test fixture sets distinct lifecycle fields"
@@ -7337,9 +7998,24 @@ async fn test_fill_qty_mismatch_venue_less_generates_fill_void(#[case] echo_cach
         .order_owned(&client_order_id)
         .expect("order cached");
 
-    assert_eq!(result.events.len(), 1);
+    let expected_events = if echo_cached_fill {
+        // The echoed fill report prices the trade at 3000.00 while the cached fill recorded
+        // 1.0, so reconciliation first restates the trade's price, then voids the decrease
+        let OrderEventAny::Filled(restatement) = &result.events[0] else {
+            panic!("expected price restatement fill event");
+        };
 
-    let OrderEventAny::FillVoided(voided) = &result.events[0] else {
+        assert_eq!(restatement.trade_id, trade_id);
+        assert_eq!(restatement.last_qty, Quantity::from("5.0"));
+        assert_eq!(restatement.last_px, Price::from("3000.00"));
+        2
+    } else {
+        1
+    };
+
+    assert_eq!(result.events.len(), expected_events);
+
+    let OrderEventAny::FillVoided(voided) = &result.events[expected_events - 1] else {
         panic!("expected OrderFillVoided event");
     };
 
@@ -7350,6 +8026,14 @@ async fn test_fill_qty_mismatch_venue_less_generates_fill_void(#[case] echo_cach
     assert_eq!(order.status(), OrderStatus::PartiallyFilled);
     assert_eq!(order.filled_qty(), Quantity::from("3.0"));
     assert_eq!(order.voided_qty(), Quantity::from("2.0"));
+    assert_eq!(
+        order.avg_px(),
+        if echo_cached_fill {
+            Some(dec!(3000.00))
+        } else {
+            Some(dec!(1.0))
+        }
+    );
 }
 
 #[tokio::test]
@@ -9166,7 +9850,7 @@ async fn test_mass_status_coarse_average_keeps_retained_position(
 
 #[rstest]
 #[case::marked_keeps_cached_average(Some(4), "0.560")]
-#[case::unmarked_solves_weighted_average(None, "0.060")]
+#[case::unmarked_solves_weighted_average(None, "0.0599")]
 #[tokio::test]
 async fn test_mass_status_coarse_average_prices_increase(
     #[case] avg_px_open_precision: Option<u8>,
@@ -9216,6 +9900,189 @@ async fn test_mass_status_coarse_average_prices_increase(
         )]
     );
     assert!(result.unresolved_positions.is_empty());
+}
+
+#[rstest]
+#[case::off_tick(dec!(2.4564), "0.001")]
+#[case::low_price(dec!(0.85237), "0.001")]
+#[case::fine_tick(dec!(0.123456), "0.0001")]
+#[case::within_tolerance(dec!(2.45621), "0.001")]
+#[case::high_price(dec!(84060.35), "0.1")]
+#[tokio::test]
+async fn test_mass_status_recovers_off_tick_position_average(
+    #[case] avg_px: Decimal,
+    #[case] price_increment: &str,
+    #[values(OrderSide::Buy, OrderSide::Sell)] side: OrderSide,
+    #[values(false, true)] hedging: bool,
+) {
+    let mut ctx = TestContext::new();
+    let mut instrument = crypto_perpetual_ethusdt();
+    instrument.price_increment = Price::from(price_increment);
+    instrument.price_precision = instrument.price_increment.precision;
+    instrument.max_price = None;
+    let instrument = InstrumentAny::CryptoPerpetual(instrument);
+    let instrument_id = instrument.id();
+    ctx.add_instrument(instrument);
+    ctx.exec_engine.borrow_mut().register_oms_type(
+        StrategyId::external(),
+        if hedging {
+            OmsType::Hedging
+        } else {
+            OmsType::Netting
+        },
+    );
+
+    let position_side = if side == OrderSide::Buy {
+        PositionSide::Long
+    } else {
+        PositionSide::Short
+    };
+
+    let report = PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        position_side,
+        Quantity::from("3.000"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        hedging.then_some(PositionId::from("P-OFF-TICK")),
+        Some(avg_px),
+    );
+    let mut mass_status = create_mass_status(vec![], vec![]);
+    mass_status.add_position_reports(vec![report]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
+    let cache = ctx.cache.borrow();
+    let positions = cache.positions_open(
+        None,
+        Some(&instrument_id),
+        None,
+        Some(&test_account_id()),
+        None,
+    );
+
+    assert!(
+        result.unresolved_positions.is_empty(),
+        "{:?}",
+        result.unresolved_positions
+    );
+    assert_eq!(
+        filled_events(&result.events),
+        vec![(
+            side,
+            Quantity::from("3.000"),
+            Price::from_decimal(avg_px).unwrap()
+        )]
+    );
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].side, position_side);
+    assert_eq!(positions[0].quantity, Quantity::from("3.000"));
+
+    // Position stores its average as f64, compare at the reported decimal precision
+    assert_eq!(
+        Decimal::from_str_exact(&positions[0].avg_px_open.to_string())
+            .unwrap()
+            .round_dp(avg_px.scale()),
+        avg_px
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_mass_status_recovers_off_tick_average_with_partial_fill_history(
+    #[values(OrderSide::Buy, OrderSide::Sell)] side: OrderSide,
+) {
+    let mut ctx = TestContext::new();
+    let mut instrument = crypto_perpetual_ethusdt();
+    instrument.price_precision = 3;
+    instrument.price_increment = Price::from("0.001");
+    let instrument = InstrumentAny::CryptoPerpetual(instrument);
+    let instrument_id = instrument.id();
+    ctx.add_instrument(instrument);
+    ctx.exec_engine
+        .borrow_mut()
+        .register_oms_type(StrategyId::external(), OmsType::Netting);
+
+    let mut orders = Vec::new();
+    let mut fills = Vec::new();
+
+    for (id, quantity, price, ts) in [
+        ("1", "1.000", "2.456", 1_000_000),
+        ("2", "2.000", "2.457", 2_000_000),
+    ] {
+        let (order, fill) = create_bounded_fill_lifecycle(
+            instrument_id,
+            VenueOrderId::from(id),
+            TradeId::from(id),
+            side,
+            quantity,
+            price,
+            false,
+            UnixNanos::from(ts),
+        );
+        orders.push(order);
+        fills.push(fill);
+    }
+
+    let position_side = if side == OrderSide::Buy {
+        PositionSide::Long
+    } else {
+        PositionSide::Short
+    };
+
+    let avg_px = dec!(2.42568);
+
+    let report = PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        position_side,
+        Quantity::from("10.000"),
+        UnixNanos::from(2_000_000),
+        UnixNanos::from(2_000_000),
+        None,
+        None,
+        Some(avg_px),
+    );
+    let mut mass_status = create_mass_status(orders, fills);
+    mass_status.add_position_reports(vec![report]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
+    let cache = ctx.cache.borrow();
+    let positions = cache.positions_open(
+        None,
+        Some(&instrument_id),
+        None,
+        Some(&test_account_id()),
+        None,
+    );
+
+    assert!(
+        result.unresolved_positions.is_empty(),
+        "{:?}",
+        result.unresolved_positions
+    );
+    assert_eq!(
+        filled_events(&result.events),
+        vec![
+            (side, Quantity::from("7.000"), Price::from("2.4124")),
+            (side, Quantity::from("1.000"), Price::from("2.456")),
+            (side, Quantity::from("2.000"), Price::from("2.457")),
+        ]
+    );
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].side, position_side);
+    assert_eq!(positions[0].quantity, Quantity::from("10.000"));
+    assert_eq!(
+        Decimal::from_str_exact(&positions[0].avg_px_open.to_string())
+            .unwrap()
+            .round_dp(avg_px.scale()),
+        avg_px
+    );
 }
 
 #[rstest]
@@ -14006,6 +14873,7 @@ async fn test_reconciliation_instrument_ids_filters_position_reports() {
 }
 
 struct MockExecutionClient {
+    order_venue_ids: IndexMap<ClientOrderId, Vec<VenueOrderId>>,
     retain_unresolved_submissions: bool,
     client_id: ClientId,
     account_id: AccountId,
@@ -14031,6 +14899,7 @@ impl MockExecutionClient {
     fn new(order_reports: Vec<OrderStatusReport>) -> Self {
         Self {
             retain_unresolved_submissions: false,
+            order_venue_ids: IndexMap::new(),
             client_id: test_client_id(),
             account_id: test_account_id(),
             venue: test_venue(),
@@ -14055,6 +14924,7 @@ impl MockExecutionClient {
     fn for_venue(client_id: ClientId, venue: Venue, order_reports: Vec<OrderStatusReport>) -> Self {
         Self {
             retain_unresolved_submissions: false,
+            order_venue_ids: IndexMap::new(),
             client_id,
             account_id: test_account_id(),
             venue,
@@ -14079,6 +14949,7 @@ impl MockExecutionClient {
     fn failing(client_id: ClientId, venue: Venue) -> Self {
         Self {
             retain_unresolved_submissions: false,
+            order_venue_ids: IndexMap::new(),
             client_id,
             account_id: test_account_id(),
             venue,
@@ -14144,6 +15015,13 @@ impl MockExecutionClient {
 
 #[async_trait(?Send)]
 impl ExecutionClient for MockExecutionClient {
+    fn venue_order_ids(
+        &self,
+        _mass_status: &ExecutionMassStatus,
+    ) -> Option<IndexMap<ClientOrderId, Vec<VenueOrderId>>> {
+        (!self.order_venue_ids.is_empty()).then(|| self.order_venue_ids.clone())
+    }
+
     fn retain_unresolved_submissions(&self) -> bool {
         self.retain_unresolved_submissions
     }
@@ -19645,5 +20523,429 @@ async fn test_zero_quantity_fill_does_not_suppress_hedge_position_report() {
     assert_eq!(
         cache.position(&position_id).unwrap().quantity,
         Quantity::from("5.0")
+    );
+}
+
+#[rstest]
+#[case::ordinary(false, false)]
+#[case::duplicate(true, false)]
+#[case::flat_crossing(false, true)]
+#[tokio::test]
+async fn test_fresh_cache_replacement_chain_preserves_native_fills(
+    #[values(false, true)] child_fill: bool,
+    #[values(false, true)] reverse_reports: bool,
+    #[values(false, true)] parent_label: bool,
+    #[case] duplicate_fill: bool,
+    #[case] crosses_flat: bool,
+) {
+    let _log_guard = MANAGER_LOG_TEST_LOCK.lock().await;
+    install_manager_log_capture();
+    let mut ctx = TestContext::new();
+    ctx.add_instrument(test_instrument());
+    let strategy_id = StrategyId::from("STRATEGY-001");
+    ctx.manager
+        .claim_external_orders(test_instrument_id(), strategy_id)
+        .unwrap();
+    ctx.exec_engine
+        .borrow_mut()
+        .register_oms_type(strategy_id, OmsType::Netting);
+    let mut client = MockExecutionClient::new(Vec::new());
+    client.order_venue_ids.insert(
+        ClientOrderId::from("O-FRESH-CHAIN"),
+        vec![
+            VenueOrderId::from("V-FRESH-ROOT"),
+            VenueOrderId::from("V-FRESH-MIDDLE"),
+            VenueOrderId::from("V-FRESH-CURRENT"),
+        ],
+    );
+    {
+        let mut engine = ctx.exec_engine.borrow_mut();
+        engine.deregister_client(test_client_id()).unwrap();
+        engine.register_client(Box::new(client)).unwrap();
+    }
+
+    let cid = ClientOrderId::from("O-FRESH-CHAIN");
+    let root_id = VenueOrderId::from("V-FRESH-ROOT");
+    let middle_id = VenueOrderId::from("V-FRESH-MIDDLE");
+    let current_id = VenueOrderId::from("V-FRESH-CURRENT");
+
+    let filled = if child_fill { "0.5" } else { "0.3" };
+
+    let average = if child_fill {
+        dec!(3500)
+    } else {
+        dec!(10300) / dec!(3)
+    };
+
+    let mut reports = vec![
+        create_order_report(
+            Some(cid),
+            root_id,
+            test_instrument_id(),
+            OrderStatus::Canceled,
+            Quantity::from("1.0"),
+            Quantity::from("0.2"),
+        ),
+        create_order_report(
+            Some(cid),
+            middle_id,
+            test_instrument_id(),
+            OrderStatus::Canceled,
+            Quantity::from("0.8"),
+            Quantity::from("0.1"),
+        ),
+        create_order_report(
+            Some(cid),
+            current_id,
+            test_instrument_id(),
+            OrderStatus::PartiallyFilled,
+            Quantity::from("1.0"),
+            Quantity::from(filled),
+        )
+        .with_avg_px(average),
+    ];
+
+    for (index, report) in reports.iter_mut().enumerate() {
+        report.ts_accepted = UnixNanos::from(100 + index as u64 * 50);
+        report.ts_last = UnixNanos::from(900 + index as u64 * 50);
+        report.price = Some(Price::from("3605.00"));
+    }
+
+    reports[2].ts_accepted = UnixNanos::from(100);
+    if reverse_reports {
+        reports.reverse();
+    }
+
+    let root_fill = FillReport::new(
+        test_account_id(),
+        test_instrument_id(),
+        root_id,
+        TradeId::from("T-FRESH-ROOT"),
+        OrderSide::Buy,
+        Quantity::from("0.2"),
+        Price::from("3400.00"),
+        Money::from("0.02 USDT"),
+        LiquiditySide::Maker,
+        parent_label.then_some(cid),
+        None,
+        UnixNanos::from(200),
+        UnixNanos::from(2000),
+        None,
+    );
+
+    let middle_fill = FillReport::new(
+        test_account_id(),
+        test_instrument_id(),
+        middle_id,
+        TradeId::from("T-FRESH-MIDDLE"),
+        OrderSide::Buy,
+        Quantity::from("0.1"),
+        Price::from("3500.00"),
+        Money::from("0.03 USDT"),
+        LiquiditySide::Taker,
+        parent_label.then_some(cid),
+        None,
+        UnixNanos::from(250),
+        UnixNanos::from(2000),
+        None,
+    );
+    let mut fills = vec![middle_fill, root_fill.clone()];
+    if child_fill {
+        fills.push(FillReport::new(
+            test_account_id(),
+            test_instrument_id(),
+            current_id,
+            TradeId::from("T-FRESH-CURRENT"),
+            OrderSide::Buy,
+            Quantity::from("0.2"),
+            Price::from("3600.00"),
+            Money::from("0.05 USDT"),
+            LiquiditySide::Taker,
+            Some(cid),
+            None,
+            UnixNanos::from(300),
+            UnixNanos::from(2000),
+            None,
+        ));
+    }
+
+    if duplicate_fill {
+        fills.push(root_fill);
+    }
+
+    let mut mass = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::from(2000),
+        None,
+    );
+    mass.add_order_reports(reports);
+    mass.add_fill_reports(fills);
+
+    if crosses_flat {
+        let close_id = VenueOrderId::from("V-FRESH-CLOSE");
+        mass.add_order_reports(vec![
+            create_order_report_for_side(
+                Some(ClientOrderId::from("O-FRESH-CLOSE")),
+                close_id,
+                test_instrument_id(),
+                OrderSide::Sell,
+                OrderStatus::Filled,
+                Quantity::from("0.3"),
+                Quantity::from("0.3"),
+            )
+            .with_avg_px(dec!(3550)),
+        ]);
+        mass.add_fill_reports(vec![FillReport::new(
+            test_account_id(),
+            test_instrument_id(),
+            close_id,
+            TradeId::from("T-FRESH-CLOSE"),
+            OrderSide::Sell,
+            Quantity::from("0.3"),
+            Price::from("3550.00"),
+            Money::from("0.07 USDT"),
+            LiquiditySide::Taker,
+            Some(ClientOrderId::from("O-FRESH-CLOSE")),
+            None,
+            UnixNanos::from(275),
+            UnixNanos::from(2000),
+            None,
+        )]);
+        mass.add_position_reports(vec![PositionStatusReport::new(
+            test_account_id(),
+            test_instrument_id(),
+            if child_fill {
+                PositionSide::Long
+            } else {
+                PositionSide::Flat
+            },
+            Quantity::from(if child_fill { "0.2" } else { "0.0" }),
+            UnixNanos::from(1000),
+            UnixNanos::from(2000),
+            None,
+            None,
+            Some(dec!(3600)),
+        )]);
+    }
+
+    let first = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass, &ctx.exec_engine);
+    let repeated = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass, &ctx.exec_engine);
+    let order = ctx.get_order(&cid).unwrap();
+
+    let fills: Vec<_> = first
+        .events
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) if fill.client_order_id == cid => Some(fill),
+            _ => None,
+        })
+        .collect();
+
+    let mut expected_trades = vec![
+        TradeId::from("T-FRESH-ROOT"),
+        TradeId::from("T-FRESH-MIDDLE"),
+    ];
+
+    if child_fill {
+        expected_trades.push(TradeId::from("T-FRESH-CURRENT"));
+    }
+
+    assert_eq!(order.status(), OrderStatus::PartiallyFilled);
+    assert_eq!(order.venue_order_id(), Some(current_id));
+    assert_eq!(
+        order.venue_order_ids(),
+        vec![&root_id, &middle_id, &current_id]
+    );
+    assert_eq!(order.quantity(), Quantity::from("1.0"));
+    assert_eq!(order.filled_qty(), Quantity::from(filled));
+    assert_eq!(order.avg_px(), Some(average));
+    assert_eq!(
+        order.trade_ids(),
+        expected_trades.iter().collect::<Vec<_>>()
+    );
+    assert_eq!(
+        order.commissions().get(&Currency::USDT()),
+        Some(&Money::from(if child_fill {
+            "0.10 USDT"
+        } else {
+            "0.05 USDT"
+        }))
+    );
+    assert_eq!(fills.len(), if child_fill { 3 } else { 2 });
+    assert_eq!(fills[0].venue_order_id, root_id);
+    assert_eq!(fills[0].trade_id, TradeId::from("T-FRESH-ROOT"));
+    assert_eq!(fills[0].last_qty, Quantity::from("0.2"));
+    assert_eq!(fills[0].last_px, Price::from("3400.00"));
+    assert_eq!(fills[0].commission, Some(Money::from("0.02 USDT")));
+    assert_eq!(fills[0].liquidity_side, LiquiditySide::Maker);
+    assert_eq!(fills[0].ts_event, UnixNanos::from(200));
+    assert_eq!(fills[1].venue_order_id, middle_id);
+    assert_eq!(fills[1].trade_id, TradeId::from("T-FRESH-MIDDLE"));
+    assert_eq!(fills[1].last_qty, Quantity::from("0.1"));
+    assert_eq!(fills[1].last_px, Price::from("3500.00"));
+    assert_eq!(fills[1].commission, Some(Money::from("0.03 USDT")));
+    assert_eq!(fills[1].liquidity_side, LiquiditySide::Taker);
+    assert_eq!(fills[1].ts_event, UnixNanos::from(250));
+
+    if child_fill {
+        assert_eq!(fills[2].venue_order_id, current_id);
+        assert_eq!(fills[2].trade_id, TradeId::from("T-FRESH-CURRENT"));
+        assert_eq!(fills[2].last_qty, Quantity::from("0.2"));
+        assert_eq!(fills[2].last_px, Price::from("3600.00"));
+        assert_eq!(fills[2].commission, Some(Money::from("0.05 USDT")));
+        assert_eq!(fills[2].liquidity_side, LiquiditySide::Taker);
+        assert_eq!(fills[2].ts_event, UnixNanos::from(300));
+    }
+
+    assert!(
+        repeated
+            .events
+            .iter()
+            .all(|event| crosses_flat && event.client_order_id() != cid)
+    );
+    assert!(!MANAGER_LOG_CAPTURE.messages.lock().iter().any(|message| {
+        message.starts_with("Error indexing venue order ID")
+            || message.starts_with("Cannot initialize venue order ID history")
+    }));
+    let cache = ctx.cache.borrow();
+    assert_eq!(
+        cache.orders(None, None, None, None, None).len(),
+        1 + usize::from(crosses_flat)
+    );
+    assert_eq!(cache.venue_order_id(&cid), Some(&current_id));
+
+    for id in [root_id, middle_id, current_id] {
+        assert_eq!(cache.client_order_id(&id), Some(&cid));
+    }
+
+    let positions = cache.positions_open(None, Some(&test_instrument_id()), None, None, None);
+    assert_eq!(positions.len(), usize::from(!crosses_flat || child_fill));
+
+    if positions.is_empty() {
+        return;
+    }
+
+    assert_eq!(
+        positions[0].quantity,
+        Quantity::from(if crosses_flat { "0.2" } else { filled })
+    );
+    assert_eq!(
+        positions[0].trade_ids,
+        if crosses_flat {
+            vec![TradeId::from("T-FRESH-CURRENT")]
+        } else {
+            expected_trades
+        }
+        .into_iter()
+        .collect()
+    );
+    assert_eq!(
+        positions[0].commissions(),
+        vec![Money::from(if child_fill && !crosses_flat {
+            "0.10 USDT"
+        } else {
+            "0.05 USDT"
+        })]
+    );
+}
+
+#[rstest]
+#[case::ordinary_client(false)]
+#[case::venue_id_history_client(true)]
+#[tokio::test]
+async fn test_fresh_cache_venue_id_history_requires_client_proof(#[case] venue_id_history: bool) {
+    let mut ctx = TestContext::new();
+    ctx.add_instrument(test_instrument());
+    let mut client = MockExecutionClient::new(Vec::new());
+    if venue_id_history {
+        client.order_venue_ids.insert(
+            ClientOrderId::from("O-LABEL-PROOF"),
+            vec![
+                VenueOrderId::from("V-LABEL-PARENT"),
+                VenueOrderId::from("V-LABEL-CURRENT"),
+            ],
+        );
+    }
+
+    {
+        let mut engine = ctx.exec_engine.borrow_mut();
+        engine.deregister_client(test_client_id()).unwrap();
+        engine.register_client(Box::new(client)).unwrap();
+    }
+
+    let cid = ClientOrderId::from("O-LABEL-PROOF");
+    let parent_id = VenueOrderId::from("V-LABEL-PARENT");
+    let current_id = VenueOrderId::from("V-LABEL-CURRENT");
+    let reports = vec![
+        create_order_report(
+            Some(cid),
+            parent_id,
+            test_instrument_id(),
+            OrderStatus::Canceled,
+            Quantity::from("1.0"),
+            Quantity::from("0.0"),
+        )
+        .with_price(Price::from("3500.00")),
+        create_order_report(
+            Some(cid),
+            current_id,
+            test_instrument_id(),
+            OrderStatus::Accepted,
+            Quantity::from("1.0"),
+            Quantity::from("0.0"),
+        )
+        .with_price(Price::from("3500.00")),
+    ];
+
+    let mut mass = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::from(2000),
+        None,
+    );
+    mass.add_order_reports(reports);
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass, &ctx.exec_engine);
+    let order = ctx.get_order(&cid).unwrap();
+    assert_eq!(
+        order.status(),
+        if venue_id_history {
+            OrderStatus::Accepted
+        } else {
+            OrderStatus::Canceled
+        }
+    );
+    assert_eq!(
+        order.venue_order_id(),
+        Some(if venue_id_history {
+            current_id
+        } else {
+            parent_id
+        })
+    );
+    assert_eq!(order.quantity(), Quantity::from("1.0"));
+    assert_eq!(order.filled_qty(), Quantity::from("0.0"));
+    assert_eq!(
+        result
+            .events
+            .iter()
+            .filter(|event| matches!(event, OrderEventAny::Updated(_)))
+            .count(),
+        usize::from(venue_id_history)
+    );
+    assert_eq!(
+        ctx.cache
+            .borrow()
+            .orders(None, None, None, None, None)
+            .len(),
+        1
     );
 }

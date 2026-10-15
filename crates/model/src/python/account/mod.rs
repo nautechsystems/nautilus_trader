@@ -33,10 +33,10 @@ use crate::{
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if:
-/// - retrieving the `account_type` attribute fails.
-/// - extracting the object into the account type's concrete class fails.
-/// - the `account_type` is unsupported.
+/// Returns an error if:
+/// - Retrieving the `account_type` attribute fails.
+/// - Extracting the object into the account type's concrete class fails.
+/// - The `account_type` is unsupported.
 #[expect(clippy::needless_pass_by_value)]
 pub fn pyobject_to_account_any(py: Python, account: Py<PyAny>) -> PyResult<AccountAny> {
     let account_type = account
@@ -63,7 +63,7 @@ pub fn pyobject_to_account_any(py: Python, account: Py<PyAny>) -> PyResult<Accou
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if converting the underlying account into a Python object fails.
+/// Returns an error if converting the underlying account into a Python object fails.
 pub fn account_any_to_pyobject(py: Python, account: AccountAny) -> PyResult<Py<PyAny>> {
     match account {
         AccountAny::Margin(account) => account.into_py_any(py),

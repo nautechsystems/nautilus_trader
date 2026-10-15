@@ -449,6 +449,10 @@ impl Order for TrailingStopLimitOrder {
         self.voided_qty
     }
 
+    fn non_reopened_voided_qty(&self) -> Quantity {
+        self.non_reopened_voided_qty
+    }
+
     fn leaves_qty(&self) -> Quantity {
         self.leaves_qty
     }
@@ -543,8 +547,7 @@ impl Order for TrailingStopLimitOrder {
         if event.trigger_price.is_some() {
             self.trigger_price = event.trigger_price;
         }
-        self.quantity = event.quantity;
-        self.leaves_qty = self.quantity.saturating_sub(self.filled_qty);
+        self.core.apply_updated_quantity(event.quantity);
     }
 
     fn is_triggered(&self) -> Option<bool> {

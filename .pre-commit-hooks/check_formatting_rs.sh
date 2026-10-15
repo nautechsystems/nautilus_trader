@@ -132,7 +132,7 @@ if [[ -n "$rust_files" ]]; then
       return 0
     }
 
-    function is_exempt(keyword, i, trimmed, previous, prev_trimmed) {
+    function is_exempt(keyword, i, trimmed, previous, prev_trimmed,    j, column, depth, token) {
       if (prev_trimmed == "") return 1
       if (prev_trimmed ~ /\{[[:space:]]*$/) return 1
       if (prev_trimmed ~ /^\/\// || prev_trimmed ~ /^\*[[:space:]]/ || prev_trimmed ~ /^\*\//) return 1
@@ -156,6 +156,30 @@ if [[ -n "$rust_files" ]]; then
 
       if (shares_identifier(keyword, condition_text(keyword, trimmed), previous)) return 1
       if (i < total && shares_identifier(keyword, lines[i + 1], previous)) return 1
+      if (keyword != "spawn") {
+        depth = 0
+        for (j = i; j <= total; j++) {
+          if (j > inspected_end) inspected_end = j
+          for (column = 1; column <= length(lines[j]); column++) {
+            token = substr(lines[j], column, 1)
+            if (token == "(" || token == "[") {
+              depth++
+            } else if (token == ")" || token == "]") {
+              if (depth == 0) return 0
+              depth--
+            } else if (depth == 0) {
+              if (token == "{") {
+                if (j < total) {
+                  inspected_end = j + 1
+                  return shares_identifier(keyword, lines[j + 1], previous)
+                }
+                return 0
+              }
+              if (token == "}" || token == ";" || substr(lines[j], column, 2) == "=>") return 0
+            }
+          }
+        }
+      }
       return 0
     }
 

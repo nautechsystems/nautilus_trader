@@ -6,6 +6,12 @@ reconciliation, and simulated matching drive the position lifecycle events.
 
 Typical transition: `ACCEPTED` -> `FILLED` / `PARTIALLY_FILLED`. Handler: `on_order_filled`.
 
+A fill carrying a `trade_id` already on the order at a new `last_px` is a **price restatement**. It
+restates the trade's accounting price and applies no quantity, status change, or portfolio economics.
+
+Handlers that accumulate `last_qty` across fill events must skip restatements. Detect them by checking
+`order.events` for an earlier `OrderFilled` with the same `trade_id` and a different `event_id`.
+
 ## Fields
 
 Beyond the [common Python order event fields](index.md#common-python-order-event-fields),

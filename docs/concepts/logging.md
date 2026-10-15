@@ -1,7 +1,6 @@
 # Logging
 
-The platform provides logging for both backtesting and live trading using a high-performance logging subsystem implemented in Rust
-with a standardized facade from the `log` crate.
+The platform provides Rust logging for backtesting and live trading through the standard `log` crate facade.
 
 The core logger operates in a separate thread and uses a multi-producer single-consumer (MPSC) channel to receive log messages.
 This moves log output I/O off the calling thread. Message arguments are still formatted on the
@@ -70,7 +69,8 @@ flowchart TB
 - **Python and Nautilus components**: Log directly through the Nautilus Logger.
 - **External `log` crate users**: Filtered by `stdout_level`/`fileout_level` in `LoggerConfig`.
 - **External `tracing` crate users**: When enabled, output goes directly to stdout (separate from Nautilus logging), filtered by the `RUST_LOG` environment variable.
-- **Logging thread**: All Nautilus log events are sent through an MPSC channel to a dedicated thread, ensuring the main thread isn't blocked by I/O operations.
+- **Logging thread**: NautilusTrader sends all log events through an MPSC channel to a dedicated thread. Thus,
+  log I/O operations do not block the main thread.
 
 ## Configuration
 
@@ -83,7 +83,7 @@ The following log levels are supported:
 - `TRACE` - Most verbose level.
 - `DEBUG` - Detailed diagnostic information.
 - `INFO` - General operational messages.
-- `WARNING` - Potential issues that don't prevent operation.
+- `WARNING` - Potential issues that do not prevent operation.
 - `ERROR` - Errors that may affect functionality.
 
 See the `LoggerConfig` [API Reference](/docs/python-api-latest/common.html#nautilus_trader.common.LoggerConfig) for further details.
@@ -105,28 +105,26 @@ Logging can be configured in the following ways:
 
 ### Standard output logging
 
-Log messages are written to the console via stdout/stderr writers. Set the minimum level with
-`stdout_level`.
+The stdout/stderr writers write log messages to the console. Set the minimum level with `stdout_level`.
 
 ### File logging
 
-Log files are written to the current working directory by default. The naming convention and rotation behavior are configurable and follow specific patterns based on your settings.
+Log files are written to the current working directory by default. Settings control file naming and rotation.
 
 Set the log directory and custom file basename with `FileWriterConfig.directory` and
 `FileWriterConfig.file_name`.
 
 :::warning
-When file logging is enabled, logging initialization fails if the log directory cannot be created
-or the log file cannot be opened, so a node with an unusable log path does not start. Rust binaries
-that initialize logging lazily from `NAUTILUS_LOG` report the error and continue with console
-logging only.
+When file logging is enabled, logging initialization fails if the log directory cannot be created or the log
+file cannot be opened. Thus, a node with an unusable log path does not start. Rust binaries that initialize
+logging lazily from `NAUTILUS_LOG` report the error and continue with console logging only.
 :::
 
-The logging thread flushes the file buffer to the operating system about every 100 ms without
-syncing to disk, so a tailed log file stays current. Blocking console output can delay a flush, and
-an abrupt process exit can still lose lines that are buffered or queued for the logging thread.
+The logging thread flushes the file buffer to the operating system at approximately 100 ms intervals without
+syncing to disk. Thus, a tailed log file stays current. Blocking console output can delay a flush, and an
+abrupt process exit can still lose lines that are buffered or queued for the logging thread.
 
-**Log file formats:**
+**Log file formats**:
 
 - `None` (default) - Plain text format with `.log` extension.
 - `"json"` - JSON format with `.jsonl` extension, useful for log aggregation tools.
@@ -145,15 +143,16 @@ Rotation behavior depends on both the presence of a size limit and whether a cus
     logging continues to that file, which may briefly exceed the configured maximum size.
 - **Date-based rotation (default naming only)**:
   - Applies when `file_rotate` and `file_name` are both unset.
-  - On the first write after each UTC date change (midnight), the current log file is closed and a new one is started, creating one file per UTC day.
+  - On the first write after each UTC date change (midnight), the logger closes the current log file and
+    starts a new one. This creates one file per UTC day.
 - **No rotation**:
   - When `file_name` is set without `file_rotate`, logs continue to append to the same file.
   - Note: Size-based rotation takes precedence: if both a custom name and size limit are provided, rotation still occurs.
 - **Backup file management**:
   - The second value in `file_rotate` limits the total number of rotated files kept.
   - When this limit is exceeded, the oldest backup files are automatically removed.
-  - The limit applies to files rotated by the current process. Rotated files from earlier runs are
-    not removed; use an external tool such as `logrotate` for retention across restarts.
+  - The limit applies to files rotated by the current process. Rotated files from earlier runs are not
+    removed. Use an external tool such as `logrotate` for retention across restarts.
 - **Rotation failures**:
   - If a rotation fails (for example, the new file cannot be opened), logging continues to the
     current file and rotation is retried at the next size or date boundary.
@@ -168,7 +167,7 @@ The format depends on whether file rotation is enabled:
 - **Format**: `{trader_id}_{%Y-%m-%d_%H%M%S-%3f}_{instance_id}.{log|jsonl}`
 - **Example**: `TESTER-001_2025-04-09_210721-521_d7dc12c8-7008-4042-8ac4-017c3db0fc38.log`
 - **Components**:
-  - `{trader_id}`: The trader identifier (e.g., `TESTER-001`).
+  - `{trader_id}`: The trader identifier (for example, `TESTER-001`).
   - `{%Y-%m-%d_%H%M%S-%3f}`: UTC datetime with millisecond resolution.
   - `{instance_id}`: A unique instance identifier.
   - `{log|jsonl}`: File suffix based on format setting.
@@ -186,10 +185,11 @@ The format depends on whether file rotation is enabled:
 
 **Custom naming**:
 
-If `file_name` is set (e.g., `my_custom_log`):
+If `file_name` is set (for example, `my_custom_log`):
 
-- With rotation disabled: The file will be named exactly as provided (e.g., `my_custom_log.log`).
-- With rotation enabled: The file will include the custom name and timestamp (e.g., `my_custom_log_2025-04-09_210721-521.log`).
+- With rotation disabled: The file will be named exactly as provided (for example, `my_custom_log.log`).
+- With rotation enabled: The file will include the custom name and timestamp (for example,
+  `my_custom_log_2025-04-09_210721-521.log`).
 - An extension in `file_name` is replaced by the format suffix, so `my_custom_log.log` produces the
   same names as `my_custom_log`.
 
@@ -228,7 +228,7 @@ The `NAUTILUS_LOG` environment variable provides an alternative way to configure
 export NAUTILUS_LOG="stdout=Info;fileout=Debug;RiskEngine=Error;is_colored"
 ```
 
-**Supported keys:**
+**Supported keys**:
 
 | Key                   | Type      | Description                                      |
 | --------------------- | --------- | ------------------------------------------------ |
@@ -266,7 +266,8 @@ logging = LoggerConfig(
 )
 ```
 
-If configuring via the environment using the Rust spec string, include `log_components_only` alongside component filters, for example:
+If you use the Rust spec string through the environment, include `log_components_only` alongside component
+filters, for example:
 
 ```bash
 export NAUTILUS_LOG="stdout=Info;log_components_only;RiskEngine=Debug;Portfolio=Info"
@@ -288,7 +289,7 @@ Rust log macros automatically capture the module path when no explicit component
 :::
 
 :::note
-Module path filtering is only available via the `NAUTILUS_LOG` environment variable. The Python
+Module path filtering is only available through the `NAUTILUS_LOG` environment variable. The Python
 `component_levels` configuration uses component name matching only.
 :::
 
@@ -311,24 +312,24 @@ Set `LoggerConfig.is_colored=False` for these environments.
 Python callback errors include a traceback and chained exceptions. If traceback formatting fails,
 reporting falls back to the exception type and message.
 
-Python strategy and execution algorithm order and position callbacks log failures at `ERROR`, with
-the component identity and callback name. Strategy market-exit callbacks use the same reporting.
-Python data and timer callback errors also reach `ERROR`; those records use the emitting Rust module
-as their component.
+Python strategy and execution algorithm order and position callbacks log failures at `ERROR`, with the
+component identity and callback name. Strategy market-exit callbacks use the same reporting. Python data and
+timer callback errors also reach `ERROR`. Those records use the emitting Rust module as their component.
 
-For these event callbacks, an exception interrupts that Python invocation. By default, the runtime
-continues dispatching events; it does not roll back work the callback completed before raising.
-To request a normal shutdown after an error, enable `shutdown_on_error` in the
-[backtest engine](backtesting/apis-and-runs.md#shutdown-on-error) or [live node](live.md#shutdown-on-error)
-configuration. The request takes effect when the runtime next checks for shutdown, rather than
-interrupting the current event dispatch.
+For these event callbacks, an exception interrupts that Python invocation. By default, the runtime continues
+dispatching events. It does not roll back work the callback completed before raising.
+
+To request a normal shutdown after an error, enable `shutdown_on_error` in the [backtest
+engine](backtesting/apis-and-runs.md#shutdown-on-error) or [live node](live.md#shutdown-on-error)
+configuration. The request takes effect when the runtime next checks for shutdown, rather than interrupting
+the current event dispatch.
 
 ## Using a logger directly
 
-It's possible to use `Logger` objects directly, and these can be initialized anywhere (very similar to the Python built-in `logging` API).
+You can initialize and use `Logger` objects directly anywhere, much like Python's built-in `logging` API.
 
-If you ***aren't*** using an object which already initializes a `NautilusKernel` (and logging) such as `BacktestEngine` or `LiveNode`,
-then you can activate logging in the following way:
+Without an object that initializes a `NautilusKernel` and logging (such as `BacktestEngine` or `LiveNode`),
+activate logging as follows:
 
 ```python
 from nautilus_trader.common import init_logging
@@ -366,8 +367,8 @@ The logging system uses reference counting to track active `LogGuard` instances:
   process-global logging thread stays available for later guards.
 - **Maximum guards**: The system supports up to 255 concurrent `LogGuard` instances. Attempting to create more raises a `ValueError` from `init_logging`, or a `RuntimeError` from engine or node creation.
 
-Abrupt termination can still lose buffered logs. Dispose engines and nodes normally, and retain the
-guard returned by direct `init_logging` calls until the application no longer needs logging.
+Abrupt termination can still lose buffered logs. Dispose engines and nodes normally, and keep the guard
+returned by direct `init_logging` calls until the application no longer needs logging.
 
 ## Tracing subscriber for external Rust libraries
 
@@ -409,7 +410,7 @@ Example tracing output:
 2026-01-24T05:51:42.810543000Z [DEBUG] hyper_util::client::legacy::pool: pooling idle connection for ("https", api.example.com)
 ```
 
-**Differences from Nautilus logging:**
+**Differences from Nautilus logging**:
 
 - Tracing output goes directly to stdout, not through the Nautilus logging thread.
 - Tracing events are not written to Nautilus log files.
@@ -420,7 +421,7 @@ the Nautilus logger and are filtered by `stdout_level`/`fileout_level` in `Logge
 
 :::tip
 `RUST_LOG` only affects crates using `tracing`. For crates using `log`, configure verbosity through
-`LoggerConfig` or the `NAUTILUS_LOG` environment variable (e.g., `NAUTILUS_LOG=stdout=Debug`).
+`LoggerConfig` or the `NAUTILUS_LOG` environment variable (for example, `NAUTILUS_LOG=stdout=Debug`).
 :::
 
 :::note

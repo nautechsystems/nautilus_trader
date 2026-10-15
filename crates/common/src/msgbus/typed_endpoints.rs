@@ -211,8 +211,8 @@ impl<T: 'static> IntoEndpointMap<T> {
     ///
     /// # Errors
     ///
-    /// Returns `Err(message)` if no handler is registered, allowing the caller
-    /// to recover the message.
+    /// Returns an error if no handler is registered, allowing the caller to recover the message.
+    /// The error contains `message`.
     pub fn try_send(&self, endpoint: MStr<Endpoint>, message: T) -> Result<(), T> {
         if let Some(handler) = self.handlers.get(&endpoint) {
             handler.handle(message);

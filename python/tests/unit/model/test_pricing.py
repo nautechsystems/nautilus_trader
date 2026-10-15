@@ -17,6 +17,7 @@ Test pricing behavior.
 """
 
 import re
+from collections.abc import Callable
 
 import pytest
 
@@ -57,7 +58,7 @@ def test_option_series_id_from_expiry_and_from_str() -> None:
         (
             "DERIBIT:BTC:USD",
             "invalid `OptionSeriesId` value 'DERIBIT:BTC:USD': "
-            "expected format 'VENUE:UNDERLYING:SETTLEMENT:EXPIRY'",
+            "expected format 'VENUE:UNDERLYING:[REFERENCE:]SETTLEMENT:EXPIRY'",
         ),
         (
             ":BTC:USD:1700000000000000000",
@@ -316,3 +317,95 @@ def test_strike_range_delta_kind() -> None:
     strike_range = StrikeRange.delta(0.25, 0.05)
 
     assert strike_range.kind == "Delta"
+
+
+@pytest.mark.parametrize(
+    ("is_call", "db_dr", "expected"),
+    [
+        (True, 1.0, 0.437729301518),
+        (False, 1.0, -0.513500122983),
+        (True, 0.0, -0.075770821464),
+        (False, 0.0, -0.075770821464),
+    ],
+)
+def test_black_scholes_rho_at_zero_carry(is_call: bool, db_dr: float, expected: float) -> None:
+    """
+    Distinguish dividend-linked and fixed-carry rho at equal rates.
+    """
+    result = black_scholes_greeks(100.0, 0.05, 0.0, 0.2, is_call, 100.0, 1.0, db_dr=db_dr)
+
+    assert result.rho == pytest.approx(expected, abs=1e-6)
+
+
+@pytest.mark.parametrize("vol", [0.0, -0.2, float("nan"), float("inf")])
+def test_black_scholes_rejects_invalid_volatility(vol: float) -> None:
+    """
+    Reject volatility values outside the local pricing domain.
+    """
+    with pytest.raises(ValueError, match="Invalid option valuation input: volatility"):
+        black_scholes_greeks(100.0, 0.05, 0.0, vol, True, 100.0, 1.0)
+
+
+@pytest.mark.parametrize("pricing", [imply_vol, imply_vol_and_greeks])
+def test_implied_volatility_rejects_unattainable_price(
+    pricing: Callable[..., float | BlackScholesGreeksResult],
+) -> None:
+    """
+    Reject a premium above the no-arbitrage upper bound.
+    """
+    with pytest.raises(ValueError, match="No finite positive implied volatility"):
+        pricing(100.0, 0.0, 0.0, True, 100.0, 1.0, 200.0)
+
+
+def test_implied_volatility_preserves_a_tiny_premium_solution() -> None:
+    """
+    Keep valid scalar IV solutions independent from fast-kernel repricing.
+    """
+    vol = imply_vol(100.0, 0.05, 0.05, True, 200.0, 1.0, 1e-10)
+
+    assert vol == pytest.approx(0.09942082323383927, abs=1e-12)
+
+
+@pytest.mark.parametrize("pricing", [imply_vol_and_greeks, refine_vol_and_greeks])
+def test_greeks_accept_valid_short_dated_index_option(
+    pricing: Callable[..., BlackScholesGreeksResult],
+) -> None:
+    """
+    Preserve valid index-option valuation when fast-kernel rounding exceeds tolerance.
+    """
+    kwargs = {"initial_vol": 0.2} if pricing is refine_vol_and_greeks else {}
+    result = pricing(
+        5000.0,
+        0.0425,
+        0.0,
+        True,
+        5085.0,
+        1.0 / 365.25,
+        0.14236010628496842,
+        db_dr=1.0,
+        **kwargs,
+    )
+
+    assert (
+        result.price,
+        result.vol,
+        result.delta,
+        result.gamma,
+        result.vega,
+        result.theta,
+        result.itm_prob,
+        result.rho,
+    ) == pytest.approx(
+        (
+            0.14236010628496842,
+            0.141,
+            0.01126789564306093,
+            0.0008016575699433546,
+            0.07736736301301367,
+            -0.5454233444107617,
+            0.011052833335445902,
+            0.001538593240493352,
+        ),
+        rel=1e-8,
+        abs=1e-12,
+    )

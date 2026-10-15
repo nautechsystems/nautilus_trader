@@ -20,7 +20,9 @@ use bytes::Bytes;
 use nautilus_common::{
     cache::{
         CacheConfig,
-        database::{CacheDatabaseAdapter, CacheDatabaseFactory, CacheMap},
+        database::{
+            CacheDatabaseAdapter, CacheDatabaseFactory, CacheMap, register_loaded_currencies,
+        },
     },
     live::get_runtime,
     logging::{log_task_awaiting, log_task_started, log_task_stopped},
@@ -604,10 +606,8 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     }
 
     async fn load_all(&self) -> anyhow::Result<CacheMap> {
-        let currencies = self.load_currencies().await?;
-        for currency in currencies.values() {
-            Currency::register(*currency, false)?;
-        }
+        let mut currencies = self.load_currencies().await?;
+        register_loaded_currencies(&mut currencies)?;
 
         let (instruments, instrument_closes, synthetics, accounts, orders, positions) = try_join!(
             self.load_instruments(),
@@ -1086,7 +1086,13 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         let query = DatabaseQuery::AddPosition(position.id, event);
         self.tx.send(query).map_err(|e| {
             anyhow::anyhow!("Failed to send query add_position to database message handler: {e}")
-        })
+        })?;
+
+        if position.requires_replay_state() {
+            self.add_position_snapshot(&PositionSnapshot::from_replay_state(position, None))?;
+        }
+
+        Ok(())
     }
 
     fn add_position_snapshot(&self, snapshot: &PositionSnapshot) -> anyhow::Result<()> {

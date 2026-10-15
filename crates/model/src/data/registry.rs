@@ -55,7 +55,8 @@ pub type ArrowDecoder = Box<
 ///
 /// # Errors
 ///
-/// Returns an error naming the first opaque byte field.
+/// Returns an error if an unsupported opaque byte field is found. The error names the first such
+/// field.
 #[cfg(feature = "arrow")]
 pub fn validate_custom_arrow_schema(
     type_name: &str,
@@ -146,8 +147,11 @@ pub fn register_json_deserializer(
 /// If the type is already registered, returns `Ok(())` without overwriting (idempotent).
 /// Use this where repeated registration can occur (e.g. module init).
 ///
-/// # Errors
 /// Does not return an error (idempotent insert into `DashMap`).
+#[allow(
+    clippy::missing_errors_doc,
+    reason = "idempotent registration only inserts into a DashMap"
+)]
 pub fn ensure_json_deserializer_registered(
     type_name: &str,
     deserializer: JsonDeserializer,
@@ -240,8 +244,11 @@ pub fn register_arrow(
 /// registered. If the type is already registered, returns `Ok(())` without overwriting (idempotent).
 /// Use this where repeated registration can occur (e.g. module init).
 ///
-/// # Errors
 /// Does not return an error (idempotent insert into `DashMap`).
+#[allow(
+    clippy::missing_errors_doc,
+    reason = "idempotent registration only inserts into a DashMap"
+)]
 #[cfg(feature = "arrow")]
 pub fn ensure_arrow_registered(
     type_name: &str,
@@ -344,8 +351,11 @@ pub fn register_py_extractor(type_name: &str, extractor: PyExtractor) -> Result<
 /// If the type is already registered, returns `Ok(())` without overwriting (idempotent).
 /// Use this where repeated registration can occur (e.g. module init).
 ///
-/// # Errors
 /// Does not return an error (idempotent insert into `DashMap`).
+#[allow(
+    clippy::missing_errors_doc,
+    reason = "idempotent registration only inserts into a DashMap"
+)]
 #[cfg(feature = "python")]
 pub fn ensure_py_extractor_registered(
     type_name: &str,
@@ -381,6 +391,16 @@ fn rust_extractor_factories() -> &'static DashMap<String, RustExtractorFactory> 
     RUST_EXTRACTOR_FACTORIES.get_or_init(DashMap::new)
 }
 
+#[cfg(feature = "python")]
+type RustClassCheck = Box<dyn Fn(&pyo3::Bound<'_, pyo3::PyAny>) -> bool + Send + Sync>;
+
+#[cfg(feature = "python")]
+fn rust_class_checks() -> &'static DashMap<String, RustClassCheck> {
+    static RUST_CLASS_CHECKS: std::sync::OnceLock<DashMap<String, RustClassCheck>> =
+        std::sync::OnceLock::new();
+    RUST_CLASS_CHECKS.get_or_init(DashMap::new)
+}
+
 /// Registers a factory that produces a `PyExtractor` for the given type name.
 /// Crates (e.g. persistence) call this at load time for each Rust custom data type.
 /// When `register_custom_data_class(cls)` is called with that type's class, the factory is invoked
@@ -409,8 +429,11 @@ pub fn register_rust_extractor_factory(
 /// registered. If the type is already registered, returns `Ok(())` without overwriting (idempotent).
 /// Use this where repeated registration can occur (e.g. module load).
 ///
-/// # Errors
 /// Does not return an error (idempotent insert into `DashMap`).
+#[allow(
+    clippy::missing_errors_doc,
+    reason = "idempotent registration only inserts into a DashMap"
+)]
 #[cfg(feature = "python")]
 pub fn ensure_rust_extractor_factory_registered(
     type_name: &str,
@@ -430,9 +453,16 @@ pub fn ensure_rust_extractor_factory_registered(
 #[cfg(feature = "python")]
 pub fn register_rust_extractor<T>() -> Result<(), anyhow::Error>
 where
-    T: CustomDataTrait + for<'a, 'py> pyo3::FromPyObject<'a, 'py> + Send + Sync + 'static,
+    T: CustomDataTrait
+        + pyo3::PyTypeInfo
+        + for<'a, 'py> pyo3::FromPyObject<'a, 'py>
+        + Send
+        + Sync
+        + 'static,
 {
     let type_name = T::type_name_static();
+    ensure_rust_class_registered::<T>(type_name);
+
     let factory: RustExtractorFactory = Box::new(|| {
         Box::new(|obj: &pyo3::Bound<'_, pyo3::PyAny>| {
             obj.extract::<T>()
@@ -447,14 +477,24 @@ where
 /// If the type is already registered, returns `Ok(())` without overwriting (idempotent).
 /// Use this where repeated registration can occur (e.g. module load).
 ///
-/// # Errors
 /// Does not return an error (idempotent insert into `DashMap`).
+#[allow(
+    clippy::missing_errors_doc,
+    reason = "idempotent registration only inserts into a DashMap"
+)]
 #[cfg(feature = "python")]
 pub fn ensure_rust_extractor_registered<T>() -> Result<(), anyhow::Error>
 where
-    T: CustomDataTrait + for<'a, 'py> pyo3::FromPyObject<'a, 'py> + Send + Sync + 'static,
+    T: CustomDataTrait
+        + pyo3::PyTypeInfo
+        + for<'a, 'py> pyo3::FromPyObject<'a, 'py>
+        + Send
+        + Sync
+        + 'static,
 {
     let type_name = T::type_name_static();
+    ensure_rust_class_registered::<T>(type_name);
+
     let factory: RustExtractorFactory = Box::new(|| {
         Box::new(|obj: &pyo3::Bound<'_, pyo3::PyAny>| {
             obj.extract::<T>()
@@ -472,6 +512,25 @@ pub fn get_rust_extractor(type_name: &str) -> Option<PyExtractor> {
     let reg = rust_extractor_factories();
     let factory_ref = reg.get(type_name)?;
     Some(factory_ref.value()())
+}
+
+// Returns `true` when a Rust type registered with a different PyO3 class uses `type_name`
+#[cfg(feature = "python")]
+#[must_use]
+pub(crate) fn conflicts_with_rust_class(
+    type_name: &str,
+    data_class: &pyo3::Bound<'_, pyo3::PyAny>,
+) -> bool {
+    rust_class_checks()
+        .get(type_name)
+        .is_some_and(|check| !check.value()(data_class))
+}
+
+#[cfg(feature = "python")]
+fn ensure_rust_class_registered<T: pyo3::PyTypeInfo>(type_name: &str) {
+    rust_class_checks()
+        .entry(type_name.to_string())
+        .or_insert_with(|| Box::new(|data_class| data_class.is(T::type_object(data_class.py()))));
 }
 
 #[cfg(test)]

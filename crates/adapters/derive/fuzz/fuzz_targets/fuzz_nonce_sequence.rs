@@ -7,10 +7,8 @@ use nautilus_live::fuzz::fuzz_target;
 use parking_lot::Mutex;
 
 const CHUNK_LEN: usize = 17;
-const MAX_DOMAIN_NOW_MS: u64 = 4_102_444_800_000;
 const MAX_STEPS: usize = 256;
-const NONCE_SUFFIX_BASE: u64 = 1_000;
-const NONCE_SUFFIX_MAX: u64 = NONCE_SUFFIX_BASE - 1;
+const NONCE_FUTURE_NS: u64 = 60 * 60 * 1_000_000_000;
 const WALLET_A_LOWER: &str = "0x000000000000000000000000000000000000aaaa";
 const WALLET_A_UPPER: &str = "0x000000000000000000000000000000000000AAAA";
 const WALLET_B_LOWER: &str = "0x000000000000000000000000000000000000bbbb";
@@ -29,21 +27,23 @@ fuzz_target!(|data: &[u8]| {
         let manager = &managers[usize::from(chunk[0] & 1)];
         let wallet = wallet_from_selector(chunk[0] >> 1);
         let subaccount_id = read_u64(chunk, 1) % 4;
-        let now_ms = read_u64(chunk, 9) % (MAX_DOMAIN_NOW_MS + 1);
+        let now_ns = read_u64(chunk, 9);
         let key = (wallet.to_ascii_lowercase(), subaccount_id);
         let last = expected_last.get(&key).copied();
-        let initial = now_ms * NONCE_SUFFIX_BASE;
-        let expected = match last {
-            None => Ok(initial),
-            Some(last) if initial > last => Ok(initial),
-            Some(last) if last % NONCE_SUFFIX_BASE == NONCE_SUFFIX_MAX => {
-                Err(NonceError::SuffixExhausted {
-                    millisecond: last / NONCE_SUFFIX_BASE,
-                })
-            }
-            Some(last) => Ok(last + 1),
+        let candidate = match last {
+            None => Some(now_ns),
+            Some(last) if now_ns > last => Some(now_ns),
+            Some(last) => last.checked_add(1),
         };
-        let actual = manager.next_nonce_at(wallet, subaccount_id, now_ms);
+        let expected = match candidate {
+            _ if now_ns == u64::MAX => Err(NonceError::NonceOverflow),
+            None | Some(u64::MAX) => Err(NonceError::NonceOverflow),
+            Some(nonce) if u128::from(nonce) > u128::from(now_ns) + u128::from(NONCE_FUTURE_NS) => {
+                Err(NonceError::OutsideWindow { nonce, now_ns })
+            }
+            Some(nonce) => Ok(nonce),
+        };
+        let actual = manager.next_nonce_at(wallet, subaccount_id, now_ns);
 
         assert_eq!(actual, expected, "next nonce diverged from model");
         if let Ok(nonce) = actual {

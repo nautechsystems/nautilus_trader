@@ -17,10 +17,20 @@
 
 use std::sync::Arc;
 
-use nautilus_common::{cache::quote::QuoteCache, live::sender::EventSender, messages::DataEvent};
+use nautilus_common::{
+    cache::{fifo::FifoCache, quote::QuoteCache},
+    live::sender::EventSender,
+    messages::DataEvent,
+};
 use nautilus_core::{AtomicMap, AtomicSet, time::AtomicTime};
-use nautilus_model::{identifiers::InstrumentId, instruments::InstrumentAny};
+use nautilus_model::{
+    identifiers::{InstrumentId, TradeId},
+    instruments::InstrumentAny,
+};
 use parking_lot::Mutex;
+
+use super::dispatch::TRADE_DEDUP_CAPACITY;
+use crate::book::sync::BookSyncTracker;
 
 pub(crate) struct WsMessageContext {
     pub(crate) clock: &'static AtomicTime,
@@ -36,5 +46,7 @@ pub(crate) struct WsMessageContext {
     pub(crate) active_funding_subs: Arc<AtomicSet<InstrumentId>>,
     pub(crate) active_greeks_subs: Arc<AtomicSet<InstrumentId>>,
     pub(crate) subscription_lock: Arc<Mutex<()>>,
+    pub(crate) book_sync: BookSyncTracker,
+    pub(crate) trades_emitted: Arc<Mutex<FifoCache<TradeId, TRADE_DEDUP_CAPACITY>>>,
     pub(crate) quote_cache: Arc<Mutex<QuoteCache>>,
 }

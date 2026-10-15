@@ -20,7 +20,7 @@
 //! Split mode reads `HYPERLIQUID_SPLIT_OUTCOME` and `HYPERLIQUID_SPLIT_AMOUNT`
 //! and mints matched Yes + No side tokens. Merge mode reads
 //! `HYPERLIQUID_SPLIT_OUTCOME` and an optional `HYPERLIQUID_SPLIT_AMOUNT`
-//! (omit to merge the maximum balance) and burns the pair back into USDH.
+//! (omit to merge the maximum balance) and burns the pair back into quote tokens.
 //!
 //! Set `HYPERLIQUID_TESTNET=1` to target testnet; otherwise mainnet is used.
 //! Credentials come from the usual `HYPERLIQUID_PK` (or testnet equivalent)

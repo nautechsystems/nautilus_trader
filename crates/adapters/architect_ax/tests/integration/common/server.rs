@@ -84,6 +84,8 @@ pub(crate) struct TestServerState {
     pub cancel_all_fail: Arc<AtomicBool>,
     pub whoami_count: Arc<AtomicUsize>,
     pub whoami_fail: Arc<AtomicBool>,
+    pub whoami_payload: Arc<tokio::sync::Mutex<Option<serde_json::Value>>>,
+    pub order_fill_payload: Arc<tokio::sync::Mutex<Option<serde_json::Value>>>,
     pub instrument_queries: Arc<tokio::sync::Mutex<Vec<GetInstrumentParams>>>,
     pub instrument_payload: Arc<tokio::sync::Mutex<Option<serde_json::Value>>>,
     pub instrument_fail: Arc<AtomicBool>,
@@ -129,6 +131,8 @@ impl Default for TestServerState {
             cancel_all_fail: Arc::new(AtomicBool::new(false)),
             whoami_count: Arc::new(AtomicUsize::new(0)),
             whoami_fail: Arc::new(AtomicBool::new(false)),
+            whoami_payload: Arc::new(tokio::sync::Mutex::new(None)),
+            order_fill_payload: Arc::new(tokio::sync::Mutex::new(None)),
             instrument_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             instrument_payload: Arc::new(tokio::sync::Mutex::new(None)),
             instrument_fail: Arc::new(AtomicBool::new(false)),
@@ -537,16 +541,7 @@ async fn handle_orders_socket(mut socket: WebSocket, state: TestServerState) {
 
                 match msg_type {
                     Some("p") => {
-                        let rid = value.get("rid").and_then(|v| v.as_i64()).unwrap_or(0);
-                        let ack = json!({
-                            "rid": rid,
-                            "res": {
-                                "oid": format!("order-{rid}"),
-                            },
-                        });
-
-                        if socket
-                            .send(Message::Text(ack.to_string().into()))
+                        if send_place_order_response(&mut socket, &state, &value)
                             .await
                             .is_err()
                         {
@@ -608,6 +603,28 @@ async fn handle_orders_socket(mut socket: WebSocket, state: TestServerState) {
 
     let mut count = state.connection_count.lock().await;
     *count = count.saturating_sub(1);
+}
+
+async fn send_place_order_response(
+    socket: &mut WebSocket,
+    state: &TestServerState,
+    request: &serde_json::Value,
+) -> Result<(), axum::Error> {
+    let rid = request.get("rid").and_then(|v| v.as_i64()).unwrap_or(0);
+    let ack = json!({
+        "rid": rid,
+        "res": {"oid": format!("order-{rid}")},
+    });
+    socket.send(Message::Text(ack.to_string().into())).await?;
+    let fill = state.order_fill_payload.lock().await.clone();
+
+    if let Some(mut fill) = fill {
+        fill["o"]["oid"] = json!(format!("order-{rid}"));
+        fill["o"]["cid"] = request["cid"].clone();
+        socket.send(Message::Text(fill.to_string().into())).await?;
+    }
+
+    Ok(())
 }
 
 pub(crate) fn load_test_data(filename: &str) -> serde_json::Value {
@@ -695,7 +712,8 @@ async fn handle_get_whoami(State(state): State<TestServerState>) -> axum::respon
         )
             .into_response()
     } else {
-        Json(load_test_data("http_get_whoami.json")).into_response()
+        let payload = state.whoami_payload.lock().await.clone();
+        Json(payload.unwrap_or_else(|| load_test_data("http_get_whoami.json"))).into_response()
     }
 }
 

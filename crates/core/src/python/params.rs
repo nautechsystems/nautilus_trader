@@ -37,10 +37,10 @@ use crate::{
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if:
-/// - the dict cannot be serialized to JSON
-/// - the JSON is not a valid object
-/// - an integer value is outside the signed or unsigned 64-bit range (`ValueError`)
+/// Returns an error if:
+/// - The dict cannot be serialized to JSON.
+/// - The JSON is not a valid object.
+/// - An integer value is outside the signed or unsigned 64-bit range (`ValueError`).
 pub fn pydict_to_params(py: Python<'_>, dict: &Py<PyDict>) -> PyResult<Option<Params>> {
     let dict_bound = dict.bind(py);
     if dict_bound.is_empty() {
@@ -86,8 +86,8 @@ pub fn pydict_to_params(py: Python<'_>, dict: &Py<PyDict>) -> PyResult<Option<Pa
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if the value type is unsupported, numeric extraction fails,
-/// or conversion fails.
+/// Returns an error if the value type is unsupported, numeric extraction fails, or conversion
+/// fails.
 pub fn value_to_pyobject(py: Python<'_>, val: &Value) -> PyResult<Py<PyAny>> {
     match val {
         Value::Null => Ok(py.None()),
@@ -133,7 +133,7 @@ pub fn value_to_pyobject(py: Python<'_>, val: &Value) -> PyResult<Py<PyAny>> {
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if conversion of any value fails.
+/// Returns an error if conversion of any value fails.
 pub fn params_to_pydict(py: Python<'_>, params: &Params) -> PyResult<Py<PyDict>> {
     let dict = PyDict::new(py);
     for (key, value) in params {

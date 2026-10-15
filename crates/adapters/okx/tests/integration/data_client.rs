@@ -529,7 +529,7 @@ async fn test_option_chain_reference_price_response(
     }));
     let addr = start_test_server(state.clone()).await;
     let (client, mut rx) = create_test_data_client(addr, false);
-    let series_id = OptionSeriesId::new(
+    let series_id = OptionSeriesId::new_derived(
         *OKX_VENUE,
         Ustr::from("BTC"),
         Ustr::from("USD"),

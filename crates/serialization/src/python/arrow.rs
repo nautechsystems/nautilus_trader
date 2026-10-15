@@ -25,7 +25,9 @@ use nautilus_core::python::{to_pyruntime_err, to_pytype_err, to_pyvalue_err};
 use nautilus_model::{
     data::{
         Bar, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus, MarkPriceUpdate, OptionGreeks,
-        OrderBookDelta, OrderBookDepth, QuoteTick, TradeTick, close::InstrumentClose,
+        OrderBookDelta, OrderBookDepth, QuoteTick, TradeTick,
+        close::InstrumentClose,
+        greeks::{GreeksData, PortfolioGreeks},
     },
     python::data::{
         pyobjects_to_bars, pyobjects_to_book_deltas, pyobjects_to_index_prices,
@@ -40,19 +42,20 @@ use pyo3::{
 };
 
 use crate::arrow::{
-    ArrowSchemaProvider, DecodeFromRecordBatch, DecodeTypedFromRecordBatch,
+    ArrowSchemaProvider, DecodeFromRecordBatch, DecodeTypedFromRecordBatch, EncodeToRecordBatch,
     bars_to_arrow_record_batch_bytes, book_deltas_to_arrow_record_batch_bytes,
-    book_depths_to_arrow_record_batch_bytes, index_prices_to_arrow_record_batch_bytes,
-    instrument_closes_to_arrow_record_batch_bytes, instrument_status_to_arrow_record_batch_bytes,
-    mark_prices_to_arrow_record_batch_bytes, option_greeks_to_arrow_record_batch_bytes,
-    quotes_to_arrow_record_batch_bytes, trades_to_arrow_record_batch_bytes,
+    book_depths_to_arrow_record_batch_bytes, encode_batch_with_metadata,
+    index_prices_to_arrow_record_batch_bytes, instrument_closes_to_arrow_record_batch_bytes,
+    instrument_status_to_arrow_record_batch_bytes, mark_prices_to_arrow_record_batch_bytes,
+    option_greeks_to_arrow_record_batch_bytes, quotes_to_arrow_record_batch_bytes,
+    trades_to_arrow_record_batch_bytes,
 };
 
 /// Transforms the given record `batch` into Python `bytes`.
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if writing the Arrow IPC stream fails.
+/// Returns an error if writing the Arrow IPC stream fails.
 pub fn arrow_record_batch_to_pybytes(py: Python, batch: &RecordBatch) -> PyResult<Py<PyBytes>> {
     arrow_record_batches_to_pybytes(py, &batch.schema(), std::slice::from_ref(batch))
 }
@@ -61,7 +64,7 @@ pub fn arrow_record_batch_to_pybytes(py: Python, batch: &RecordBatch) -> PyResul
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if writing the Arrow IPC stream fails.
+/// Returns an error if writing the Arrow IPC stream fails.
 pub fn arrow_record_batches_to_pybytes(
     py: Python,
     schema: &Schema,
@@ -88,7 +91,7 @@ pub fn arrow_record_batches_to_pybytes(
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if creating the PyCapsule fails.
+/// Returns an error if creating the PyCapsule fails.
 pub fn arrow_record_batches_to_pyarrow_stream(
     py: Python<'_>,
     schema: &Schema,
@@ -106,7 +109,7 @@ pub fn arrow_record_batches_to_pyarrow_stream(
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if the class name is not recognized or schema extraction fails.
+/// Returns an error if the class name is not recognized or schema extraction fails.
 #[pyfunction]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.serialization")]
 pub fn get_arrow_schema_map(py: Python<'_>, cls: &Bound<'_, PyType>) -> PyResult<Py<PyAny>> {
@@ -123,6 +126,8 @@ pub fn get_arrow_schema_map(py: Python<'_>, cls: &Bound<'_, PyType>) -> PyResult
         stringify!(InstrumentStatus) => InstrumentStatus::get_schema_map(),
         stringify!(OptionGreeks) => OptionGreeks::get_schema_map(),
         stringify!(InstrumentClose) => InstrumentClose::get_schema_map(),
+        stringify!(GreeksData) => GreeksData::get_schema_map(),
+        stringify!(PortfolioGreeks) => PortfolioGreeks::get_schema_map(),
         _ => {
             return Err(to_pytype_err(format!(
                 "Arrow schema for `{cls_str}` is not currently implemented in Rust."
@@ -137,7 +142,7 @@ pub fn get_arrow_schema_map(py: Python<'_>, cls: &Bound<'_, PyType>) -> PyResult
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if the class name is not recognized or schema serialization fails.
+/// Returns an error if the class name is not recognized or schema serialization fails.
 #[pyfunction]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.serialization")]
 pub fn get_arrow_schema_bytes(py: Python<'_>, cls: &Bound<'_, PyType>) -> PyResult<Py<PyBytes>> {
@@ -154,6 +159,8 @@ pub fn get_arrow_schema_bytes(py: Python<'_>, cls: &Bound<'_, PyType>) -> PyResu
         stringify!(InstrumentStatus) => InstrumentStatus::get_schema(None),
         stringify!(OptionGreeks) => OptionGreeks::get_schema(None),
         stringify!(InstrumentClose) => InstrumentClose::get_schema(None),
+        stringify!(GreeksData) => GreeksData::get_schema(None),
+        stringify!(PortfolioGreeks) => PortfolioGreeks::get_schema(None),
         _ => {
             return Err(to_pytype_err(format!(
                 "Arrow schema for `{cls_str}` is not currently implemented in Rust."
@@ -164,7 +171,15 @@ pub fn get_arrow_schema_bytes(py: Python<'_>, cls: &Bound<'_, PyType>) -> PyResu
     arrow_record_batches_to_pybytes(py, &schema, &[])
 }
 
-/// Converts a vector of `OrderBookDelta` into an Arrow `RecordBatch`.
+/// Encodes supported Nautilus data or record objects as an Arrow IPC stream.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - `data` is empty.
+/// - `data` contains unsupported or incompatible objects.
+/// - `GreeksData` records have different instrument IDs.
+/// - Arrow encoding or IPC serialization fails.
 #[pyfunction]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.serialization")]
 #[expect(clippy::missing_panics_doc)] // Guarded by empty check
@@ -227,10 +242,29 @@ pub fn pyobjects_to_arrow_record_batch_bytes(
             let closes = pyobjects_to_instrument_closes(data)?;
             py_instrument_closes_to_arrow_record_batch_bytes(py, closes)
         }
+        stringify!(GreeksData) => encode_py_records::<GreeksData>(py, data),
+        stringify!(PortfolioGreeks) => encode_py_records::<PortfolioGreeks>(py, data),
         _ => Err(to_pyvalue_err(format!(
             "unsupported data type: {data_type}"
         ))),
     }
+}
+
+fn encode_py_records<T>(py: Python<'_>, data: Vec<Bound<'_, PyAny>>) -> PyResult<Py<PyBytes>>
+where
+    T: EncodeToRecordBatch + pyo3::PyClass + Clone,
+{
+    let values = data
+        .into_iter()
+        .map(|obj| {
+            obj.extract::<PyRef<'_, T>>()
+                .map(|value| (*value).clone())
+                .map_err(PyErr::from)
+        })
+        .collect::<PyResult<Vec<_>>>()?;
+
+    let batch = encode_batch_with_metadata(&values).map_err(to_pyvalue_err)?;
+    arrow_record_batch_to_pybytes(py, &batch)
 }
 
 /// Converts a vector of `OrderBookDelta` into an Arrow `RecordBatch`.
@@ -238,10 +272,9 @@ pub fn pyobjects_to_arrow_record_batch_bytes(
 /// # Errors
 ///
 /// Returns an error if:
-/// - `data` is empty: `EncodingError::EmptyData`.
-/// - Instrument IDs differ, or non-clear precision metadata differs:
-///   `EncodingError::MixedMetadata`.
-/// - Encoding fails: `EncodingError::ArrowError`.
+/// - `data` is empty.
+/// - Instrument IDs differ, or non-clear precision metadata differs.
+/// - Encoding fails.
 #[pyfunction(name = "book_deltas_to_arrow_record_batch_bytes")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.serialization")]
 #[expect(clippy::needless_pass_by_value)]
@@ -260,9 +293,9 @@ pub fn py_book_deltas_to_arrow_record_batch_bytes(
 /// # Errors
 ///
 /// Returns an error if:
-/// - `data` is empty: `EncodingError::EmptyData`.
-/// - Metadata differs between rows: `EncodingError::MixedMetadata`.
-/// - Encoding fails: `EncodingError::ArrowError`.
+/// - `data` is empty.
+/// - Metadata differs between rows.
+/// - Encoding fails.
 #[pyfunction(name = "book_depths_to_arrow_record_batch_bytes")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.serialization")]
 #[expect(clippy::needless_pass_by_value)]
@@ -281,9 +314,9 @@ pub fn py_book_depths_to_arrow_record_batch_bytes(
 /// # Errors
 ///
 /// Returns an error if:
-/// - `data` is empty: `EncodingError::EmptyData`.
-/// - Metadata differs between rows: `EncodingError::MixedMetadata`.
-/// - Encoding fails: `EncodingError::ArrowError`.
+/// - `data` is empty.
+/// - Metadata differs between rows.
+/// - Encoding fails.
 #[pyfunction(name = "quotes_to_arrow_record_batch_bytes")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.serialization")]
 #[expect(clippy::needless_pass_by_value)]
@@ -302,9 +335,9 @@ pub fn py_quotes_to_arrow_record_batch_bytes(
 /// # Errors
 ///
 /// Returns an error if:
-/// - `data` is empty: `EncodingError::EmptyData`.
-/// - Metadata differs between rows: `EncodingError::MixedMetadata`.
-/// - Encoding fails: `EncodingError::ArrowError`.
+/// - `data` is empty.
+/// - Metadata differs between rows.
+/// - Encoding fails.
 #[pyfunction(name = "trades_to_arrow_record_batch_bytes")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.serialization")]
 #[expect(clippy::needless_pass_by_value)]
@@ -323,9 +356,9 @@ pub fn py_trades_to_arrow_record_batch_bytes(
 /// # Errors
 ///
 /// Returns an error if:
-/// - `data` is empty: `EncodingError::EmptyData`.
-/// - Metadata differs between rows: `EncodingError::MixedMetadata`.
-/// - Encoding fails: `EncodingError::ArrowError`.
+/// - `data` is empty.
+/// - Metadata differs between rows.
+/// - Encoding fails.
 #[pyfunction(name = "bars_to_arrow_record_batch_bytes")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.serialization")]
 #[expect(clippy::needless_pass_by_value)]
@@ -341,9 +374,9 @@ pub fn py_bars_to_arrow_record_batch_bytes(py: Python, data: Vec<Bar>) -> PyResu
 /// # Errors
 ///
 /// Returns an error if:
-/// - `data` is empty: `EncodingError::EmptyData`.
-/// - Metadata differs between rows: `EncodingError::MixedMetadata`.
-/// - Encoding fails: `EncodingError::ArrowError`.
+/// - `data` is empty.
+/// - Metadata differs between rows.
+/// - Encoding fails.
 #[pyfunction(name = "mark_prices_to_arrow_record_batch_bytes")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.serialization")]
 #[expect(clippy::needless_pass_by_value)]
@@ -362,9 +395,9 @@ pub fn py_mark_prices_to_arrow_record_batch_bytes(
 /// # Errors
 ///
 /// Returns an error if:
-/// - `data` is empty: `EncodingError::EmptyData`.
-/// - Metadata differs between rows: `EncodingError::MixedMetadata`.
-/// - Encoding fails: `EncodingError::ArrowError`.
+/// - `data` is empty.
+/// - Metadata differs between rows.
+/// - Encoding fails.
 #[pyfunction(name = "index_prices_to_arrow_record_batch_bytes")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.serialization")]
 #[expect(clippy::needless_pass_by_value)]
@@ -383,9 +416,9 @@ pub fn py_index_prices_to_arrow_record_batch_bytes(
 /// # Errors
 ///
 /// Returns an error if:
-/// - `data` is empty: `EncodingError::EmptyData`.
-/// - Metadata differs between rows: `EncodingError::MixedMetadata`.
-/// - Encoding fails: `EncodingError::ArrowError`.
+/// - `data` is empty.
+/// - Metadata differs between rows.
+/// - Encoding fails.
 #[pyfunction(name = "instrument_status_to_arrow_record_batch_bytes")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.serialization")]
 #[expect(clippy::needless_pass_by_value)]
@@ -404,9 +437,9 @@ pub fn py_instrument_status_to_arrow_record_batch_bytes(
 /// # Errors
 ///
 /// Returns an error if:
-/// - `data` is empty: `EncodingError::EmptyData`.
-/// - Metadata differs between rows: `EncodingError::MixedMetadata`.
-/// - Encoding fails: `EncodingError::ArrowError`.
+/// - `data` is empty.
+/// - Metadata differs between rows.
+/// - Encoding fails.
 #[pyfunction(name = "option_greeks_to_arrow_record_batch_bytes")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.serialization")]
 #[expect(clippy::needless_pass_by_value)]
@@ -424,7 +457,7 @@ pub fn py_option_greeks_to_arrow_record_batch_bytes(
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if decoding fails.
+/// Returns an error if decoding fails.
 #[pyfunction(name = "option_greeks_from_arrow_record_batch_bytes")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.serialization")]
 pub fn py_option_greeks_from_arrow_record_batch_bytes(
@@ -450,7 +483,7 @@ pub fn py_option_greeks_from_arrow_record_batch_bytes(
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if decoding fails.
+/// Returns an error if decoding fails.
 #[pyfunction(name = "instrument_status_from_arrow_record_batch_bytes")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.serialization")]
 pub fn py_instrument_status_from_arrow_record_batch_bytes(
@@ -478,9 +511,9 @@ pub fn py_instrument_status_from_arrow_record_batch_bytes(
 /// # Errors
 ///
 /// Returns an error if:
-/// - `data` is empty: `EncodingError::EmptyData`.
-/// - Metadata differs between rows: `EncodingError::MixedMetadata`.
-/// - Encoding fails: `EncodingError::ArrowError`.
+/// - `data` is empty.
+/// - Metadata differs between rows.
+/// - Encoding fails.
 #[pyfunction(name = "instrument_closes_to_arrow_record_batch_bytes")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.serialization")]
 #[expect(clippy::needless_pass_by_value)]

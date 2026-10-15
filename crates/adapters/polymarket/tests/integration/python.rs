@@ -41,7 +41,7 @@ use nautilus_polymarket::{
         PolymarketDataClientConfig, PolymarketExecutionClientConfig,
         PolymarketInstrumentProviderConfig,
     },
-    data_types::PolymarketRtdsCryptoTwap,
+    data_types::PolymarketCryptoTwap,
     factories::{PolymarketDataClientFactory, PolymarketExecutionClientFactory},
     http::{
         models::GammaMarket,
@@ -107,8 +107,9 @@ fn test_polymarket_crypto_twap_python_value_is_exact_decimal_string() {
     Python::attach(|py| {
         let twap = Py::new(
             py,
-            PolymarketRtdsCryptoTwap::new(
-                "alpha/usd".to_string(),
+            PolymarketCryptoTwap::new(
+                "alphausd".to_string(),
+                "chainlink".to_string(),
                 60,
                 dec!(123.456789012345678901),
                 1_772_752_581_815,
@@ -117,7 +118,7 @@ fn test_polymarket_crypto_twap_python_value_is_exact_decimal_string() {
                 UnixNanos::from_millis(1_772_752_582_005),
             ),
         )
-        .expect("PolymarketRtdsCryptoTwap should construct");
+        .expect("PolymarketCryptoTwap should construct");
         let value = twap
             .bind(py)
             .getattr("value")
@@ -127,6 +128,44 @@ fn test_polymarket_crypto_twap_python_value_is_exact_decimal_string() {
         assert_eq!(
             value.extract::<String>().expect("exact decimal string"),
             "123.456789012345678901"
+        );
+        let twap = twap.bind(py);
+        assert_eq!(
+            twap.getattr("symbol").unwrap().extract::<String>().unwrap(),
+            "alphausd"
+        );
+        assert_eq!(
+            twap.getattr("source").unwrap().extract::<String>().unwrap(),
+            "chainlink"
+        );
+        assert_eq!(
+            twap.getattr("window_seconds")
+                .unwrap()
+                .extract::<u32>()
+                .unwrap(),
+            60
+        );
+        assert_eq!(
+            twap.getattr("observation_timestamp_ms")
+                .unwrap()
+                .extract::<u64>()
+                .unwrap(),
+            1_772_752_581_815
+        );
+        assert_eq!(
+            twap.getattr("message_timestamp_ms")
+                .unwrap()
+                .extract::<u64>()
+                .unwrap(),
+            1_772_752_582_004
+        );
+        assert_eq!(
+            twap.getattr("ts_event").unwrap().extract::<u64>().unwrap(),
+            1_772_752_581_815_000_000
+        );
+        assert_eq!(
+            twap.getattr("ts_init").unwrap().extract::<u64>().unwrap(),
+            1_772_752_582_005_000_000
         );
     });
 }

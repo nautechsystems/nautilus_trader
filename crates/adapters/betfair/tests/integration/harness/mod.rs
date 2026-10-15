@@ -238,21 +238,38 @@ pub(crate) fn quote(instrument_id: &InstrumentId, bid: &str, ask: &str) -> Quote
 }
 
 pub(crate) struct StreamFeeder {
-    tx: UnboundedSender<String>,
+    tx: UnboundedSender<StreamCommand>,
 }
 
 impl StreamFeeder {
     fn spawn(listener: TcpListener) -> Self {
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
 
         tokio::spawn(async move {
-            let (_reader, mut write_half) = accept_and_activate(&listener).await;
+            let mut activated: Option<tokio::sync::oneshot::Sender<()>> = None;
 
-            while let Some(frame) = rx.recv().await {
-                write_half
-                    .write_all(format!("{}\r\n", frame.trim()).as_bytes())
-                    .await
-                    .unwrap();
+            loop {
+                let (_reader, mut write_half) = accept_and_activate(&listener).await;
+
+                if let Some(tx) = activated.take() {
+                    tx.send(()).unwrap();
+                }
+
+                loop {
+                    match rx.recv().await {
+                        Some(StreamCommand::Frame(frame)) => {
+                            write_half
+                                .write_all(format!("{}\r\n", frame.trim()).as_bytes())
+                                .await
+                                .unwrap();
+                        }
+                        Some(StreamCommand::Reconnect(tx)) => {
+                            activated = Some(tx);
+                            break;
+                        }
+                        None => return,
+                    }
+                }
             }
         });
         Self { tx }
@@ -261,6 +278,22 @@ impl StreamFeeder {
     pub(crate) fn feed(&self, fixture_rel_path: &str) {
         let mut frame = load_json_fixture(fixture_rel_path);
         frame["id"] = 2.into();
-        self.tx.send(frame.to_string()).unwrap();
+        self.tx
+            .send(StreamCommand::Frame(frame.to_string()))
+            .unwrap();
     }
+
+    pub(crate) async fn reconnect(&self) {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.tx.send(StreamCommand::Reconnect(tx)).unwrap();
+        tokio::time::timeout(Duration::from_secs(5), rx)
+            .await
+            .expect("execution stream did not accept a replacement connection")
+            .unwrap();
+    }
+}
+
+enum StreamCommand {
+    Frame(String),
+    Reconnect(tokio::sync::oneshot::Sender<()>),
 }

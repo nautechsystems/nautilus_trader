@@ -28,7 +28,7 @@
 //! the full pipeline.
 //!
 //! Phase E covers the trading critical path: [`CreateOrderTxInfo`],
-//! [`CancelOrderTxInfo`], [`ModifyOrderTxInfo`], plus
+//! [`CreateGroupedOrdersTxInfo`], [`CancelOrderTxInfo`], [`ModifyOrderTxInfo`], plus
 //! [`ApproveIntegratorTxInfo`] off the hot path. Subsequent tx types follow
 //! the same template once a use case lands.
 
@@ -37,6 +37,7 @@ mod types;
 
 pub use encode::{SignedTx, TX_HASH_BYTES, TxInfoJson, compute_tx_hash, sign_tx};
 pub use types::{
-    ApproveIntegratorTxInfo, CancelAllOrdersTxInfo, CancelOrderTxInfo, CreateOrderTxInfo,
-    L2TxAttributes, LighterTx, ModifyOrderTxInfo, OrderInfo, TxContext, UpdateLeverageTxInfo,
+    ApproveIntegratorTxInfo, CancelAllOrdersTxInfo, CancelOrderTxInfo, CreateGroupedOrdersTxInfo,
+    CreateOrderTxInfo, L2TxAttributes, LighterTx, ModifyOrderTxInfo, OrderInfo, TxContext,
+    UpdateLeverageTxInfo,
 };

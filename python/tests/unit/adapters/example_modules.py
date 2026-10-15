@@ -50,7 +50,11 @@ def load_example_module(adapter: str, module: str) -> ModuleType:
     assert spec.loader is not None
     loaded_module = importlib.util.module_from_spec(spec)
     sys.modules[module_name] = loaded_module
-    spec.loader.exec_module(loaded_module)
+    sys.path.insert(0, str(module_path.parent))
+    try:
+        spec.loader.exec_module(loaded_module)
+    finally:
+        sys.path.pop(0)
     return loaded_module
 
 

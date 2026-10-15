@@ -78,7 +78,7 @@ impl CoinbaseCredential {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::Auth`] if the environment variables are unset or empty.
+    /// Returns an error if the environment variables are unset or empty.
     pub fn from_env() -> Result<Self> {
         let (key_var, secret_var) = credential_env_vars();
         Self::resolve(None, None).ok_or_else(|| {

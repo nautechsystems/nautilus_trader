@@ -85,8 +85,8 @@ impl BinanceInstrumentProviderConfig {
     ///
     /// # Errors
     ///
-    /// Returns an error for malformed IDs, unsupported filters, or a legacy
-    /// callable filter that Binance v2 cannot execute safely.
+    /// Returns an error if IDs are malformed, filters are unsupported, or a legacy callable filter
+    /// cannot run safely in Binance v2.
     pub fn validate(&self, product_type: BinanceProductType) -> anyhow::Result<()> {
         if let Some(filter_callable) = self
             .filter_callable
@@ -282,7 +282,7 @@ impl BinanceDataClientConfig {
     ///
     /// # Errors
     ///
-    /// Returns an error for invalid receive-window, provider, or Binance US settings.
+    /// Returns an error if the receive-window, provider, or Binance US settings are invalid.
     pub fn validate(&self) -> anyhow::Result<()> {
         validate_recv_window(self.recv_window_ms)?;
         validate_retry_config(&self.retry_config())?;
@@ -478,8 +478,8 @@ impl BinanceExecutionClientConfig {
     ///
     /// # Errors
     ///
-    /// Returns an error for invalid receive-window, WS trading setup timeout, provider, or
-    /// Binance US settings.
+    /// Returns an error if the receive-window, WS trading setup timeout, provider, or Binance US
+    /// settings are invalid.
     pub fn validate(&self) -> anyhow::Result<()> {
         validate_recv_window(self.recv_window_ms)?;
         validate_retry_config(&self.retry_config())?;

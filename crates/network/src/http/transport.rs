@@ -73,7 +73,7 @@ impl Client {
             .with_custom_certificate_verifier(verifier)
             .with_no_client_auth();
         let connector = Connector::new(tls.clone(), proxy, use_system_proxy, user_agent)?;
-        let proxies = connector.proxies.clone();
+        let proxies = Arc::clone(&connector.proxies);
         tls.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
         let connector = HttpsConnector::from((connector, tls));
 
@@ -223,12 +223,12 @@ fn platform_verifier(
     let mut cached = VERIFIER.lock();
 
     if let Some(verifier) = &*cached {
-        return Ok(verifier.clone());
+        return Ok(Arc::clone(verifier));
     }
 
-    let verifier = rustls_platform_verifier::Verifier::new(provider.clone())
+    let verifier = rustls_platform_verifier::Verifier::new(Arc::clone(provider))
         .map_err(|e| HttpClientError::ClientBuildError(e.to_string()))?;
-    Ok(cached.insert(Arc::new(verifier)).clone())
+    Ok(Arc::clone(cached.insert(Arc::new(verifier))))
 }
 
 fn retryable(e: &(dyn Error + 'static)) -> bool {

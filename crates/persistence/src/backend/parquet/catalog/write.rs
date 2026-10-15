@@ -115,7 +115,7 @@ impl ParquetDataCatalog {
     ///
     /// # Errors
     ///
-    /// Returns error if batches do not contain `ts_init` or cannot be persisted.
+    /// Returns an error if batches do not contain `ts_init` or cannot be persisted.
     pub fn write_record_batches(
         &mut self,
         record_type: &NautilusRecordType,

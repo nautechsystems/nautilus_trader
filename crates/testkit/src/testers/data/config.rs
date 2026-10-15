@@ -154,8 +154,7 @@ impl<S: data_tester_config_builder::IsComplete> DataTesterConfigBuilder<S> {
     ///
     /// # Errors
     ///
-    /// Returns a [`ConfigError`] if any field fails validation
-    /// (see [`DataTesterConfig::validate`]).
+    /// Returns an error if any field fails validation (see [`DataTesterConfig::validate`]).
     pub fn build(self) -> ConfigResult<DataTesterConfig> {
         let config = self.build_inner();
         config.validate()?;
@@ -168,8 +167,8 @@ impl DataTesterConfig {
     ///
     /// # Errors
     ///
-    /// Returns a [`ConfigError`] (a [`ConfigError::Multiple`] when more than one field is
-    /// invalid) if any field fails validation.
+    /// Returns an error if any field fails validation. Multiple validation failures are collected
+    /// into one error.
     pub fn validate(&self) -> ConfigResult<()> {
         let mut errors = ConfigErrorCollector::new();
 

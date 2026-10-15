@@ -41,6 +41,7 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
 };
 use nautilus_network::{
+    ConnectionUrl,
     http::create_standard_nautilus_headers,
     mode::ConnectionMode,
     websocket::{
@@ -76,7 +77,7 @@ pub const KRAKEN_FUTURES_WS_TOPIC_DELIMITER: char = ':';
 /// WebSocket client for the Kraken Futures v1 streaming API.
 #[derive(Debug)]
 pub struct KrakenFuturesWebSocketClient {
-    url: String,
+    url: ConnectionUrl,
     heartbeat_secs: u64,
     auth_timeout_secs: u64,
     signal: Arc<AtomicBool>,
@@ -160,7 +161,7 @@ impl KrakenFuturesWebSocketClient {
         let connection_mode = Arc::new(ArcSwap::from_pointee(initial_mode));
 
         Self {
-            url,
+            url: url.into(),
             heartbeat_secs,
             auth_timeout_secs: auth_timeout_secs.unwrap_or(AUTHENTICATION_TIMEOUT_SECS),
             signal: Arc::new(AtomicBool::new(false)),
@@ -208,7 +209,7 @@ impl KrakenFuturesWebSocketClient {
     /// Returns the WebSocket URL.
     #[must_use]
     pub fn url(&self) -> &str {
-        &self.url
+        self.url.expose()
     }
 
     /// Returns true if the connection is closed.
@@ -301,7 +302,7 @@ impl KrakenFuturesWebSocketClient {
         let connect_lock = Arc::clone(&self.connect_lock);
         let _connect_guard = connect_lock.lock().await;
 
-        log::debug!("Connecting to Futures WebSocket: {}", self.url);
+        log::debug!("Connecting to Futures WebSocket: {}", self.url.origin());
 
         if !self.handler_tasks.is_open() || !self.handler_tasks.is_empty() {
             self.disconnect_locked().await?;
@@ -327,7 +328,7 @@ impl KrakenFuturesWebSocketClient {
         let headers = create_standard_nautilus_headers();
 
         let ws_config = WebSocketConfig {
-            url: self.url.clone(),
+            url: self.url.expose().to_owned(),
             headers,
             heartbeat_interval_secs: Some(self.heartbeat_secs),
             heartbeat_payload: None, // Use WebSocket ping frames, not text messages
@@ -1232,6 +1233,20 @@ mod tests {
     fn test_credential() -> KrakenCredential {
         let secret = STANDARD.encode(b"test_secret_key_24bytes!");
         KrakenCredential::new("test_key", secret)
+    }
+
+    #[rstest]
+    #[case("wss://stream.example.com/feed", "wss://stream.example.com")]
+    #[case(
+        "wss://SYN-user:SYN-password@stream.example.com:9443/SYN-path?token=SYN-query#SYN-fragment",
+        "wss://stream.example.com:9443"
+    )]
+    fn test_debug_preserves_url_origin(#[case] url: &str, #[case] origin: &str) {
+        let client = KrakenFuturesWebSocketClient::new(url.to_string(), 30, None);
+        let debug = format!("{client:?}");
+        assert!(debug.contains(&format!("url: {origin:?}")));
+        assert!(!debug.contains("SYN-"));
+        assert_eq!(client.url.expose(), url);
     }
 
     #[rstest]

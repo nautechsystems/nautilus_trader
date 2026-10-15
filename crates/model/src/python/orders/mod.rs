@@ -44,7 +44,7 @@ pub mod trailing_stop_market;
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if extraction fails or the order type is unsupported.
+/// Returns an error if extraction fails or the order type is unsupported.
 #[expect(clippy::needless_pass_by_value)]
 pub fn pyobject_to_order_any(py: Python, order: Py<PyAny>) -> PyResult<OrderAny> {
     let order_type = order.getattr(py, "order_type")?.extract::<OrderType>(py)?;
@@ -84,7 +84,7 @@ pub fn pyobject_to_order_any(py: Python, order: Py<PyAny>) -> PyResult<OrderAny>
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if conversion to a Python object fails.
+/// Returns an error if conversion to a Python object fails.
 #[rustfmt::skip]
 pub fn order_any_to_pyobject(py: Python, order: OrderAny) -> PyResult<Py<PyAny>> {
     match order {

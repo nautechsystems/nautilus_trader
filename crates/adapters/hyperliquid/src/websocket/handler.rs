@@ -557,7 +557,7 @@ impl FeedHandler {
                                 return Some(NautilusWsMessage::Reconnected);
                             }
 
-                            match serde_json::from_str::<HyperliquidWsMessage>(&text) {
+                            match super::messages::decode_ws_message(&text) {
                                 Ok(msg) => {
                                     if let HyperliquidWsMessage::Post { data } = msg {
                                         self.post_router.complete(data).await;
@@ -1411,8 +1411,8 @@ impl FeedHandler {
         let impact_prices = match ctx.shared.impact_pxs {
             Some(values) => match values.as_slice() {
                 [bid, ask] => Some(HyperliquidImpactPrices {
-                    bid: bid.parse::<Price>().map_err(anyhow::Error::msg)?,
-                    ask: ask.parse::<Price>().map_err(anyhow::Error::msg)?,
+                    bid: Price::from_decimal(*bid).map_err(anyhow::Error::msg)?,
+                    ask: Price::from_decimal(*ask).map_err(anyhow::Error::msg)?,
                 }),
                 other => {
                     anyhow::bail!("expected 2 impact prices, received {}", other.len());
@@ -1919,7 +1919,7 @@ mod tests {
                     prev_day_px: dec!(49000.0),
                     mark_px: dec!(50000.0),
                     mid_px: Some(dec!(50001.0)),
-                    impact_pxs: Some(vec!["50000.0".to_string(), "50002.0".to_string()]),
+                    impact_pxs: Some(vec![dec!(50000.0), dec!(50002.0)]),
                     day_base_vlm: Some(dec!(100.0)),
                 },
                 funding: dec!(0.0001),
@@ -2581,6 +2581,9 @@ mod tests {
                     .as_any()
                     .downcast_ref::<HyperliquidAllDexsAssetCtxs>()
                     .expect("expected HyperliquidAllDexsAssetCtxs");
+                let btc_impact_prices = payload.entries[0].impact_prices.as_ref().unwrap();
+                let xyz_impact_prices = payload.entries[1].impact_prices.as_ref().unwrap();
+
                 assert_eq!(payload.entries.len(), 2);
                 assert_eq!(
                     payload.entries[0].instrument_id,
@@ -2593,6 +2596,10 @@ mod tests {
                 );
                 assert_eq!(payload.entries[0].mark_price.to_string(), "77562.0");
                 assert_eq!(payload.entries[1].day_base_volume.to_string(), "5135.2458");
+                assert_eq!(btc_impact_prices.bid.as_decimal(), dec!(77558.0));
+                assert_eq!(btc_impact_prices.ask.as_decimal(), dec!(77559.0));
+                assert_eq!(xyz_impact_prices.bid.as_decimal(), dec!(29854.0));
+                assert_eq!(xyz_impact_prices.ask.as_decimal(), dec!(29855.0));
             }
             other => panic!("expected custom data, found {other:?}"),
         }
@@ -2610,7 +2617,7 @@ mod tests {
                             prev_day_px: dec!(76317.0),
                             mark_px: dec!(77562.0),
                             mid_px: Some(dec!(77558.5)),
-                            impact_pxs: Some(vec!["77558.0".to_string(), "77559.0".to_string()]),
+                            impact_pxs: Some(vec![dec!(77558.0), dec!(77559.0)]),
                             day_base_vlm: Some(dec!(19707.77457)),
                         },
                         funding: dec!(-0.0000015186),
@@ -2624,7 +2631,7 @@ mod tests {
                             prev_day_px: dec!(2094.6),
                             mark_px: dec!(2123.7),
                             mid_px: Some(dec!(2123.95)),
-                            impact_pxs: Some(vec!["2123.65".to_string(), "2124.0".to_string()]),
+                            impact_pxs: Some(vec![dec!(2123.65), dec!(2124.0)]),
                             day_base_vlm: Some(dec!(281686.8234999999)),
                         },
                         funding: dec!(0.0000125),

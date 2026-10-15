@@ -179,8 +179,8 @@ impl BookSyncTracker {
     ///
     /// # Errors
     ///
-    /// Returns a retryable error when the snapshot does not bridge the buffered diffs. Returns a
-    /// permanent error when `recovery` no longer owns the book.
+    /// Returns an error if the snapshot does not bridge the buffered diffs (retryable), or if
+    /// `recovery` no longer owns the book (permanent).
     pub(crate) fn accept_snapshot(
         &self,
         instrument_id: InstrumentId,

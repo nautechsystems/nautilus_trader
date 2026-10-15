@@ -1,0 +1,18 @@
+{
+  "result": "success",
+  "openOrders": [
+    {
+      "order_id": "V-TRIGGER",
+      "symbol": "PI_XBTUSD",
+      "side": "sell",
+      "orderType": "take_profit",
+      "stopPrice": 30000.0,
+      "receivedTime": "2023-04-07T14:15:30.250Z",
+      "status": "untouched",
+      "filledSize": 0.0,
+      "reduceOnly": true,
+      "triggerSignal": "last",
+      "lastUpdateTime": "2023-04-07T14:15:30.250Z"
+    }
+  ]
+}

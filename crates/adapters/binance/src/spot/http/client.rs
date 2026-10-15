@@ -727,7 +727,7 @@ impl BinanceRawSpotHttpClient {
 
         let response = self
             .client
-            .request_with_url_redacted(
+            .request(
                 method,
                 url,
                 None::<&HashMap<String, Vec<String>>>,
@@ -1249,9 +1249,8 @@ impl BinanceRawSpotHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if credentials are missing, the request fails, or
-    /// JSON parsing fails. Individual order failures are returned in the
-    /// response array as `BatchOrderResult::Error`.
+    /// Returns an error if credentials are missing, the request fails, or JSON parsing fails.
+    /// Individual order failures are returned in the response array as `BatchOrderResult::Error`.
     pub async fn batch_submit_orders(
         &self,
         orders: &[BatchOrderItem],
@@ -1286,9 +1285,8 @@ impl BinanceRawSpotHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if credentials are missing, the request fails, or
-    /// JSON parsing fails. Individual cancel failures are returned in the
-    /// response array as `BatchCancelResult::Error`.
+    /// Returns an error if credentials are missing, the request fails, or JSON parsing fails.
+    /// Individual cancel failures are returned in the response array as `BatchCancelResult::Error`.
     pub async fn batch_cancel_orders(
         &self,
         cancels: &[BatchCancelItem],
@@ -1351,7 +1349,7 @@ impl BinanceRawSpotHttpClient {
 
         let response = self
             .client
-            .request_with_url_redacted(
+            .request(
                 method,
                 url,
                 None::<&HashMap<String, Vec<String>>>,
@@ -1980,7 +1978,7 @@ impl BinanceRawSpotHttpClient {
 
         let response = self
             .client
-            .request_with_url_redacted(
+            .request(
                 method,
                 url,
                 None::<&HashMap<String, Vec<String>>>,
@@ -3085,7 +3083,8 @@ impl BinanceSpotHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns an error for an invalid depth, missing instrument, request failure, or invalid level.
+    /// Returns an error if the depth is invalid, the instrument is missing, the request fails, or a
+    /// level is invalid.
     pub async fn request_book_snapshot(
         &self,
         instrument_id: InstrumentId,

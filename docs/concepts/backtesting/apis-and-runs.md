@@ -49,9 +49,9 @@ engine.add_data(instrument3_bars)
 engine.run()
 ```
 
-Keep the default `sort=True` unless a batching workflow deliberately manages run readiness. A call
-with `sort=False` marks the engine as not ready to run. Call `sort_data()` before `run()` unless a
-later `add_data(..., sort=True)` call has restored readiness:
+**Run readiness**: Keep the default `sort=True` unless a batching workflow deliberately manages
+readiness. A call with `sort=False` marks the engine as not ready to run. Call `sort_data()` before
+`run()` unless a later `add_data(..., sort=True)` call has restored readiness:
 
 ```python
 engine.add_data(instrument1_bars, sort=False)
@@ -63,8 +63,8 @@ engine.run()
 `sort_data()` marks the independently ordered streams as ready for replay. It is safe to call more
 than once.
 
-The engine copies each input sequence. Clearing or modifying the original Python list after
-`add_data()` does not change the loaded stream.
+**Input ownership**: Clearing or modifying the original Python list after `add_data()` does not
+change the loaded stream.
 
 ### Streaming batches manually
 
@@ -81,12 +81,12 @@ for batch in data_batches:
 engine.end()
 ```
 
-`run(streaming=True)` pauses when the current data is exhausted. It does not finalize the trader or
-advance timers beyond that batch. Call `end()` after the final batch to flush timers to the last
-run boundary, invoke stop handlers, and produce the final result.
+`run(streaming=True)` pauses when the current data is exhausted. It does not finalize the trader or advance
+timers beyond that batch. Call `end()` after the final batch. This flushes timers to the last run boundary,
+invokes stop handlers, and produces the final result.
 
-The low-level API does not expose a generator-based `add_data_iterator()` method. `BacktestNode`
-provides automatic catalog chunking; direct engine users stream with the loop above.
+The low-level API does not expose a generator-based `add_data_iterator()` method. `BacktestNode` provides
+automatic catalog chunking. Direct engine users stream with the loop above.
 
 ## High-level API
 
@@ -142,14 +142,50 @@ node.add_strategy_from_config(config.id, strategy_config)
 results = node.run()
 ```
 
-Fees belong to the venue configuration, not to instruments. Every venue needs an explicit
-`fee_model`, including an explicit zero-rate model for a frictionless baseline. Two accounts can
-trade the same instrument under different schedules without changing the instrument definition.
+Fees belong to the venue configuration, not to instruments. Each venue needs an explicit `fee_model`,
+including an explicit zero-rate model for a frictionless baseline. Two accounts can trade the same instrument
+under different schedules without changing the instrument definition.
 
 Set `chunk_size` to a value in `[1, 1_000_000]` to enable streaming. Leave it as `None` to load all
 data at once.
 
 `BacktestNode` also provides methods for adding actors and built-in strategies to a built run.
+
+### Order book delta replay
+
+`BacktestNode` replays `OrderBookDelta` catalog data as `OrderBookDeltas` batches by default in both
+one-shot and streaming runs. It groups each instrument's deltas in catalog order and closes each
+batch at the `F_LAST` delta, so the batch holds one complete book event.
+
+Each batch takes its flags, sequence, and timestamps from its closing delta and replays at that
+delta's `ts_init`.
+
+Batching changes how the backtest processes book events:
+
+- **Matching**: The matching engine applies a whole event before it matches orders. Thus, an order cannot fill
+  against a book state that exists only partway through an event. Fills can differ from individual delta
+  replay.
+- **Callbacks**: Strategies receive each event in one `on_book_deltas` callback, even when the data
+  engine's `buffer_deltas` is disabled.
+- **Chunk size**: In streaming runs, `chunk_size` counts each batch as one replay item, so a chunk
+  can hold more rows than `chunk_size`.
+
+Each event must end with an `F_LAST` delta. If a query ends with an instrument's deltas still awaiting that
+closing delta, the run fails with an error that names the instrument.
+
+Time bounds and `filter_expr` select individual rows. Choose them to keep events complete: a bound that cuts
+off the start of an event goes undetected.
+
+Set `batch_deltas=False` to replay each delta individually:
+
+```python
+data = BacktestDataConfig(
+    data_type=NautilusDataType.OrderBookDelta,
+    catalog_path="/data/catalog",
+    instrument_id=instrument_id,
+    batch_deltas=False,
+)
+```
 
 ## Shutdown on error
 
@@ -163,8 +199,13 @@ config = BacktestEngineConfig(shutdown_on_error=True)
 ```
 
 The backtest loop observes the request, stops the trader and engines, and returns results collected
-up to that point. It does not abort the process. Error records suppressed by component filters or
-`bypass_logging=True` still request shutdown. Python `logging.error(...)` calls do not.
+up to that point. It does not abort the process.
+
+With `shutdown_on_error=True`:
+
+- Rust logger error records still request shutdown when component filters or `bypass_logging=True`
+  suppress them.
+- Python `logging.error(...)` calls do not request shutdown.
 
 The trigger resets when a new kernel run starts. For final `on_stop` and command-settling behavior,
 see [shutdown semantics](execution-flow.md#shutdown-semantics).
@@ -172,21 +213,20 @@ see [shutdown semantics](execution-flow.md#shutdown-semantics).
 ## Repeated runs
 
 `BacktestEngine.reset()` returns trading state and loaded component state to their initial values.
-It keeps data, instruments, venues, actors, strategies, and execution algorithms registered.
 
-The reset **clears**:
+**Cleared state**:
 
 - Orders, positions, and account balances.
 - Component runtime state.
 - Engine counters and timestamps.
 
-The reset **retains**:
+**Retained data and registrations**:
 
 - Data added through `add_data()`.
-- Instruments and venue configuration.
+- Registered instruments and venues, including venue configuration.
 - Registered actors, strategies, and execution algorithms.
 
-Instruments remain loaded because the default backtest cache configuration sets
+Instruments stay loaded because the default backtest cache configuration sets
 `drop_instruments_on_reset=False`.
 
 ### Use fresh nodes for independent runs

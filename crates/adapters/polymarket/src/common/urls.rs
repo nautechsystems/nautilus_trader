@@ -22,7 +22,7 @@ const CLOB_WS_USER_URL: &str = "wss://ws-subscriptions-clob.polymarket.com/ws/us
 const DATA_API_URL: &str = "https://data-api.polymarket.com";
 const GAMMA_API_URL: &str = "https://gamma-api.polymarket.com";
 const RELAYER_HTTP_URL: &str = "https://relayer-v2.polymarket.com";
-const RTDS_WS_URL: &str = "wss://ws-live-data.polymarket.com";
+const POLYBOLT_WS_URL: &str = "wss://ws-live-v2.polymarket.com/ws";
 
 #[must_use]
 pub const fn clob_http_url() -> &'static str {
@@ -60,6 +60,6 @@ pub const fn relayer_http_url() -> &'static str {
 }
 
 #[must_use]
-pub const fn rtds_ws_url() -> &'static str {
-    RTDS_WS_URL
+pub const fn polybolt_ws_url() -> &'static str {
+    POLYBOLT_WS_URL
 }

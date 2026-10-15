@@ -44,20 +44,22 @@ use axum::{
 use futures_util::StreamExt;
 use nautilus_common::{
     cache::Cache,
-    clients::ExecutionClient,
+    clients::{ExecutionClient, ExecutionReportTask},
+    clock::VirtualClock,
     live::runner::{replace_system_event_sender, set_exec_event_sender},
     messages::{
         ExecutionEvent, ExecutionReport, SystemEvent,
         execution::{
             BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
-            GenerateOrderStatusReport, GenerateOrderStatusReports, ModifyOrder, QueryAccount,
-            QueryOrder, SubmitOrder, SubmitOrderList,
+            GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
+            ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
         },
         system::SocketState,
     },
     testing::wait_until_async,
 };
 use nautilus_core::{Params, UUID4, UnixNanos, time::get_atomic_clock_realtime};
+use nautilus_execution::engine::ExecutionEngine;
 use nautilus_hyperliquid::{
     HyperliquidHttpClient, HyperliquidWebSocketClient,
     common::{
@@ -67,18 +69,22 @@ use nautilus_hyperliquid::{
     },
     config::HyperliquidExecutionClientConfig,
     execution::HyperliquidExecutionClient,
-    http::models::Cloid,
+    http::models::{Cloid, HyperliquidFill},
 };
-use nautilus_live::{ExecutionClientCore, SocketReconnectRegistry, SocketReconnectRequestOutcome};
+use nautilus_live::{
+    ExecutionClientCore, SocketReconnectRegistry, SocketReconnectRequestOutcome,
+    execution::context::OrderContext,
+};
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
     data::QuoteTick,
     enums::{
         AccountType, ContingencyType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType,
-        TimeInForce, TriggerType,
+        PositionSide, TimeInForce, TriggerType,
     },
     events::{
         AccountState, OrderAccepted, OrderEventAny, OrderFilled, OrderInitialized, OrderSubmitted,
+        OrderUpdated,
     },
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, Symbol, TradeId, TraderId,
@@ -86,7 +92,7 @@ use nautilus_model::{
     },
     instruments::{CryptoPerpetual, InstrumentAny},
     orders::{LimitOrder, MarketOrder, Order, OrderAny, OrderList, StopMarketOrder},
-    reports::OrderStatusReport,
+    reports::{FillReport, OrderStatusReport},
     types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 use nautilus_network::{
@@ -94,6 +100,7 @@ use nautilus_network::{
     websocket::TransportBackend,
 };
 use rstest::rstest;
+use rust_decimal_macros::dec;
 use serde_json::{Value, json};
 use ustr::Ustr;
 
@@ -155,6 +162,11 @@ struct TestServerState {
     /// observe the response.
     pause_next_exchange: Arc<std::sync::atomic::AtomicBool>,
     pause_release: Arc<tokio::sync::Notify>,
+    pause_next_info: Arc<std::sync::atomic::AtomicBool>,
+    pause_next_user_fills: Arc<std::sync::atomic::AtomicBool>,
+    info_started: Arc<tokio::sync::Notify>,
+    info_release: Arc<tokio::sync::Notify>,
+    stream_frames: tokio::sync::broadcast::Sender<Value>,
     /// Acknowledges WebSocket subscribe requests while set (the default), as the venue does.
     ack_subscriptions: Arc<std::sync::atomic::AtomicBool>,
     /// Message sent once after the next `userEvents` subscription acknowledgement, standing in
@@ -193,6 +205,11 @@ impl Default for TestServerState {
             rate_limit_after: Arc::new(AtomicUsize::new(usize::MAX)),
             pause_next_exchange: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             pause_release: Arc::new(tokio::sync::Notify::new()),
+            pause_next_info: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            pause_next_user_fills: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            info_started: Arc::new(tokio::sync::Notify::new()),
+            info_release: Arc::new(tokio::sync::Notify::new()),
+            stream_frames: tokio::sync::broadcast::channel(16).0,
             ack_subscriptions: Arc::new(std::sync::atomic::AtomicBool::new(true)),
             frame_after_user_events_ack: Arc::new(tokio::sync::Mutex::new(None)),
         }
@@ -333,6 +350,10 @@ async fn handle_info(State(state): State<TestServerState>, body: axum::body::Byt
         .and_then(|t| t.as_str())
         .unwrap_or("");
     state.info_requests.lock().await.push(request_body.clone());
+    if state.pause_next_info.swap(false, Ordering::AcqRel) {
+        state.info_started.notify_one();
+        state.info_release.notified().await;
+    }
 
     let rejected_dex = request_body.get("dex").and_then(Value::as_str);
     let reject_named_dex = if let Some(dex) = rejected_dex {
@@ -487,6 +508,11 @@ async fn handle_info(State(state): State<TestServerState>, body: axum::body::Byt
 }
 
 async fn handle_info_user_fills(state: &TestServerState) -> Response {
+    if state.pause_next_user_fills.swap(false, Ordering::AcqRel) {
+        state.info_started.notify_one();
+        state.info_release.notified().await;
+    }
+
     if state
         .fail_user_fills_count
         .try_update(Ordering::Relaxed, Ordering::Relaxed, |n| {
@@ -928,7 +954,21 @@ async fn send_ws_subscription_response(
 }
 
 async fn handle_ws_socket(mut socket: WebSocket, state: TestServerState) {
-    while let Some(message) = socket.next().await {
+    let mut frames = state.stream_frames.subscribe();
+
+    loop {
+        let message = tokio::select! {
+            message = socket.next() => {
+                let Some(message) = message else { break };
+                message
+            }
+            Ok(frame) = frames.recv() => {
+                if socket.send(Message::Text(frame.to_string().into())).await.is_err() {
+                    break;
+                }
+                continue;
+            }
+        };
         let Ok(message) = message else { break };
 
         match message {
@@ -3411,14 +3451,14 @@ async fn test_reconnect_reduces_oversized_replacement_after_middle_leg_fill(
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_reconnect_applies_replacement_cancel_once_reduce_and_modify_fail() {
-    // As above, but the venue canceled the oversized replacement while disconnected, so the
-    // corrective reduce sent after the rebind fails, and so does a modify the strategy sends
-    // meanwhile. The replacement's cancel stays held while either can still replace it, then
-    // closes the order.
+    // Recovery finds an open oversized replacement and starts a corrective reduce, then a live
+    // cancel arrives while that reduce and a strategy modify are in flight, both fail before
+    // the held cancellation closes the order.
     let state = TestServerState::default();
     let last_action = state.last_exchange_action.clone();
     let user_fills = state.user_fills_response.clone();
     let historical_orders = state.historical_orders_response.clone();
+    let frame_after_user_events_ack = state.frame_after_user_events_ack.clone();
     let pause_next_exchange = state.pause_next_exchange.clone();
     let pause_release = state.pause_release.clone();
     let inner_order_error_next = state.inner_order_error_next.clone();
@@ -3488,10 +3528,18 @@ async fn test_reconnect_applies_replacement_cancel_once_reduce_and_modify_fail()
     *historical_orders.lock().await = Some(json!([
         leg(12345, "56730.0", "0.0001", "canceled", ts_ms, ts_ms + 1),
         leg(12346, "56800.0", "0.0001", "canceled", ts_ms + 1, ts_ms + 3),
-        leg(12347, "56900.0", "0.0002", "canceled", ts_ms + 3, ts_ms + 4),
+        leg(12347, "56900.0", "0.0002", "open", ts_ms + 3, ts_ms + 3),
         external_canceled_order(999, ts_ms + 5),
     ]));
     *user_fills.lock().await = Some(json!([middle_fill]));
+    *frame_after_user_events_ack.lock().await = Some(order_updates_frame(&[leg(
+        12347,
+        "56900.0",
+        "0.0002",
+        "canceled",
+        ts_ms + 3,
+        ts_ms + 4,
+    )]));
     pause_next_exchange.store(true, Ordering::Relaxed);
     inner_order_error_next.store(true, Ordering::Relaxed);
 
@@ -4917,6 +4965,54 @@ async fn test_modify_order_post_error_preserves_pending_modify() {
     client.disconnect().await.unwrap();
 }
 
+async fn run_report_task<T>(task: ExecutionReportTask<T>) -> anyhow::Result<T> {
+    let core_thread = std::thread::current().id();
+    tokio::spawn(async move {
+        assert_ne!(std::thread::current().id(), core_thread);
+        task.collection.await;
+    })
+    .await
+    .unwrap();
+
+    task.result.await
+}
+
+async fn generate_order_report(
+    client: &HyperliquidExecutionClient,
+    cmd: &GenerateOrderStatusReport,
+    worker: bool,
+) -> anyhow::Result<Option<OrderStatusReport>> {
+    if worker {
+        run_report_task(client.generate_order_status_report_task(cmd).unwrap()).await
+    } else {
+        client.generate_order_status_report(cmd).await
+    }
+}
+
+async fn generate_order_reports(
+    client: &HyperliquidExecutionClient,
+    cmd: &GenerateOrderStatusReports,
+    worker: bool,
+) -> anyhow::Result<Vec<OrderStatusReport>> {
+    if worker {
+        run_report_task(client.generate_order_status_reports_task(cmd).unwrap()).await
+    } else {
+        client.generate_order_status_reports(cmd).await
+    }
+}
+
+async fn generate_fills(
+    client: &HyperliquidExecutionClient,
+    cmd: GenerateFillReports,
+    worker: bool,
+) -> anyhow::Result<Vec<FillReport>> {
+    if worker {
+        run_report_task(client.generate_fill_reports_task(&cmd).unwrap()).await
+    } else {
+        client.generate_fill_reports(cmd).await
+    }
+}
+
 fn make_status_report_cmd(
     client_order_id: Option<ClientOrderId>,
     venue_order_id: Option<VenueOrderId>,
@@ -4935,7 +5031,9 @@ fn make_status_report_cmd(
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_generate_order_status_report_requires_identifier() {
+async fn test_generate_order_status_report_requires_identifier(
+    #[values(false, true)] worker: bool,
+) {
     let state = TestServerState::default();
     let addr = start_mock_server(state).await;
     let (mut client, _rx, cache) = create_test_execution_client(addr);
@@ -4943,7 +5041,7 @@ async fn test_generate_order_status_report_requires_identifier() {
     client.connect().await.unwrap();
 
     let cmd = make_status_report_cmd(None, None);
-    let report = client.generate_order_status_report(&cmd).await.unwrap();
+    let report = generate_order_report(&client, &cmd, worker).await.unwrap();
     assert!(report.is_none());
 
     client.disconnect().await.unwrap();
@@ -4951,7 +5049,9 @@ async fn test_generate_order_status_report_requires_identifier() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_generate_order_status_report_returns_open_order_by_cloid() {
+async fn test_generate_order_status_report_returns_open_order_by_cloid(
+    #[values(false, true)] worker: bool,
+) {
     let coid = ClientOrderId::new("O-20240101-000001");
     let cloid_hex = Cloid::from_client_order_id(coid).to_hex();
 
@@ -4973,8 +5073,7 @@ async fn test_generate_order_status_report_returns_open_order_by_cloid() {
     client.connect().await.unwrap();
 
     let cmd = make_status_report_cmd(Some(coid), Some(VenueOrderId::from("111111")));
-    let report = client
-        .generate_order_status_report(&cmd)
+    let report = generate_order_report(&client, &cmd, worker)
         .await
         .unwrap()
         .expect("cloid-open lookup should resolve the live order");
@@ -4987,7 +5086,9 @@ async fn test_generate_order_status_report_returns_open_order_by_cloid() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_generate_order_status_report_terminal_oid_fallback_returns_report() {
+async fn test_generate_order_status_report_terminal_oid_fallback_returns_report(
+    #[values(false, true)] worker: bool,
+) {
     // Live order no longer in frontendOpenOrders (cloid-open miss), oid fallback
     // finds the terminal record. The returned report carries the API-reported
     // cloid (as hex) on `client_order_id`; downstream Python resolver remaps
@@ -5021,8 +5122,7 @@ async fn test_generate_order_status_report_terminal_oid_fallback_returns_report(
     client.connect().await.unwrap();
 
     let cmd = make_status_report_cmd(Some(coid), Some(VenueOrderId::from("222222")));
-    let report = client
-        .generate_order_status_report(&cmd)
+    let report = generate_order_report(&client, &cmd, worker)
         .await
         .unwrap()
         .expect("terminal oid match should be returned");
@@ -5039,8 +5139,56 @@ async fn test_generate_order_status_report_terminal_oid_fallback_returns_report(
 }
 
 #[rstest]
+#[case::cloid_miss(false)]
+#[case::cloid_error(true)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_generate_order_status_report_uses_cached_oid(
+    #[case] cloid_error: bool,
+    #[values(false, true)] worker: bool,
+) {
+    let state = TestServerState::default();
+    *state.frontend_open_orders_response.lock().await = Some(json!([]));
+    *state.order_status_response.lock().await =
+        Some(json!({"status": "order", "order": historical_order("BTC", 101)}));
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.connect().await.unwrap();
+    let order = open_limit_order_in_cache(&cache, "O-REPORT-CACHED", "101");
+
+    if cloid_error {
+        let mut row = frontend_order("NOCOIN", 202);
+        row["cloid"] = json!(Cloid::from_client_order_id(order.client_order_id()).to_hex());
+        *state.frontend_open_orders_response.lock().await = Some(json!([row]));
+    }
+
+    state.info_requests.lock().await.clear();
+    let cmd = make_status_report_cmd(Some(order.client_order_id()), None);
+    let report = generate_order_report(&client, &cmd, worker)
+        .await
+        .unwrap()
+        .unwrap();
+    let requests = state.info_requests.lock().await;
+    let oid_queries: Vec<_> = requests
+        .iter()
+        .filter(|request| request["type"] == "orderStatus")
+        .map(|request| request["oid"].clone())
+        .collect();
+    assert_eq!(oid_queries, vec![json!(101)]);
+    assert_eq!(report.venue_order_id, VenueOrderId::from("101"));
+    assert_eq!(report.client_order_id, Some(order.client_order_id()));
+    assert_eq!(report.order_status, OrderStatus::Filled);
+    assert_eq!(report.quantity, Quantity::from("0.1"));
+    assert_eq!(report.filled_qty, Quantity::from("0.1"));
+    drop(requests);
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_generate_order_status_report_terminal_mismatched_cloid_still_returned() {
+async fn test_generate_order_status_report_terminal_mismatched_cloid_still_returned(
+    #[values(false, true)] worker: bool,
+) {
     // A cloid mismatch no longer short-circuits the order-status request. The downstream
     // Python resolver uses venue_order_id to rebind the report to the
     // correct logical client_order_id, so the HTTP client forwards the API
@@ -5075,8 +5223,7 @@ async fn test_generate_order_status_report_terminal_mismatched_cloid_still_retur
     client.connect().await.unwrap();
 
     let cmd = make_status_report_cmd(Some(coid), Some(VenueOrderId::from("333333")));
-    let report = client
-        .generate_order_status_report(&cmd)
+    let report = generate_order_report(&client, &cmd, worker)
         .await
         .unwrap()
         .expect("order-status lookup must forward valid oid matches regardless of cloid");
@@ -5088,7 +5235,9 @@ async fn test_generate_order_status_report_terminal_mismatched_cloid_still_retur
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_generate_order_status_report_terminal_missing_cloid_trusts_oid() {
+async fn test_generate_order_status_report_terminal_missing_cloid_trusts_oid(
+    #[values(false, true)] worker: bool,
+) {
     // Orders placed without a cloid (or external/synthetic orders the engine
     // reconciled from the venue) have no cloid on the API response. The
     // order-status lookup must still surface the oid match so downstream reconciliation
@@ -5120,8 +5269,7 @@ async fn test_generate_order_status_report_terminal_missing_cloid_trusts_oid() {
     client.connect().await.unwrap();
 
     let cmd = make_status_report_cmd(Some(coid), Some(VenueOrderId::from("444444")));
-    let report = client
-        .generate_order_status_report(&cmd)
+    let report = generate_order_report(&client, &cmd, worker)
         .await
         .unwrap()
         .expect("oid match with no cloid on response should still resolve");
@@ -5132,7 +5280,9 @@ async fn test_generate_order_status_report_terminal_missing_cloid_trusts_oid() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_generate_order_status_report_oid_only_returns_terminal() {
+async fn test_generate_order_status_report_oid_only_returns_terminal(
+    #[values(false, true)] worker: bool,
+) {
     // When only venue_order_id is supplied, the order-status lookup must still surface a
     // terminal report (no cloid validation applies without a coid to check).
     let state = TestServerState::default();
@@ -5160,8 +5310,7 @@ async fn test_generate_order_status_report_oid_only_returns_terminal() {
     client.connect().await.unwrap();
 
     let cmd = make_status_report_cmd(None, Some(VenueOrderId::from("555555")));
-    let report = client
-        .generate_order_status_report(&cmd)
+    let report = generate_order_report(&client, &cmd, worker)
         .await
         .unwrap()
         .expect("terminal report without cloid guard should be returned");
@@ -5172,11 +5321,10 @@ async fn test_generate_order_status_report_oid_only_returns_terminal() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_generate_order_status_report_suppresses_old_leg_cancel_during_modify() {
-    // Same stale-cancel suppression as the query path, through the single-report
-    // reconcile entry point: a Canceled for the old leg while a modify is in
-    // flight must be dropped (return None) so reconciliation leaves the order
-    // alive for the replacement.
+async fn test_generate_order_status_report_suppresses_old_leg_cancel_during_modify(
+    #[values(false, true)] worker: bool,
+) {
+    // Stale evidence must defer resolution, since Ok(None) proves absence to reconciliation.
     let old_voi = VenueOrderId::from("770001");
 
     let state = TestServerState::default();
@@ -5238,10 +5386,12 @@ async fn test_generate_order_status_report_suppresses_old_leg_cancel_during_modi
     .await;
 
     let cmd = make_status_report_cmd(Some(coid), Some(old_voi));
-    let report = client.generate_order_status_report(&cmd).await.unwrap();
-    assert!(
-        report.is_none(),
-        "stale old-leg Canceled must be suppressed during an in-flight modify, was {report:?}",
+    let error = generate_order_report(&client, &cmd, worker)
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        format!("order status report for superseded leg on {coid}"),
     );
 
     client.disconnect().await.unwrap();
@@ -5249,7 +5399,9 @@ async fn test_generate_order_status_report_suppresses_old_leg_cancel_during_modi
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_generate_order_status_report_forwards_old_leg_fill_during_modify() {
+async fn test_generate_order_status_report_forwards_old_leg_fill_during_modify(
+    #[values(false, true)] worker: bool,
+) {
     // The suppression must stay narrow: a Filled on the old leg during a modify
     // is still returned so reconciliation can recover a dropped fill.
     let old_voi = VenueOrderId::from("770002");
@@ -5313,8 +5465,7 @@ async fn test_generate_order_status_report_forwards_old_leg_fill_during_modify()
     .await;
 
     let cmd = make_status_report_cmd(Some(coid), Some(old_voi));
-    let report = client
-        .generate_order_status_report(&cmd)
+    let report = generate_order_report(&client, &cmd, worker)
         .await
         .unwrap()
         .expect("a fill on the old leg during a modify must be forwarded");
@@ -6212,6 +6363,964 @@ fn make_query_order_cmd(
         None,
         None, // correlation_id
     )
+}
+
+fn query_recovery_order() -> OrderAny {
+    let mut init = OrderInitialized::from(&make_limit_order("O-QUERY-RECOVER"));
+    init.quantity = Quantity::from("0.00100");
+    init.price = Some(Price::from("92000.00"));
+    let mut order = OrderAny::from_events(vec![OrderEventAny::Initialized(init)]).unwrap();
+    let account_id = AccountId::from("HYPERLIQUID-001");
+    order
+        .apply(OrderEventAny::Submitted(OrderSubmitted::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            account_id,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )))
+        .unwrap();
+    order
+        .apply(OrderEventAny::Accepted(OrderAccepted::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            VenueOrderId::from("900029"),
+            account_id,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            false,
+        )))
+        .unwrap();
+    order
+}
+
+fn query_recovery_fills() -> Value {
+    serde_json::from_str(include_str!("../../test_data/http_query_order_fills.json")).unwrap()
+}
+
+async fn query_recovery_state() -> TestServerState {
+    let state = TestServerState::default();
+    *state.frontend_open_orders_response.lock().await = Some(json!([]));
+    *state.order_status_response.lock().await = Some(json!({
+        "status": "order", "order": {
+            "order": {"coin": "BTC", "side": "B", "limitPx": "92000", "sz": "0",
+                "origSz": "0.001", "oid": 900029, "timestamp": 1700000000000u64},
+            "status": "filled", "statusTimestamp": 1700000002000u64
+        }
+    }));
+    *state.user_fills_response.lock().await = Some(query_recovery_fills());
+    state
+}
+
+fn apply_query_events(
+    engine: &mut ExecutionEngine,
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+) -> Vec<FillReport> {
+    let mut fills = Vec::new();
+
+    while let Ok(event) = rx.try_recv() {
+        match event {
+            ExecutionEvent::Report(report) => {
+                if let ExecutionReport::Fill(fill) = &report {
+                    fills.push((**fill).clone());
+                }
+
+                engine.reconcile_execution_report(&report);
+            }
+            ExecutionEvent::Order(event) => engine.process(&event),
+            _ => {}
+        }
+    }
+
+    fills
+}
+
+#[rstest]
+#[case::actual("plain", "0.010", "USDC", "-0.002", "USDC", vec!["0.008 USDC"])]
+#[case::duplicates("duplicate", "0.010", "USDC", "-0.002", "USDC", vec!["0.008 USDC"])]
+#[case::capped("capped", "0.010", "USDC", "-0.002", "USDC", vec!["0.008 USDC"])]
+#[case::zero("plain", "0", "USDC", "0", "USDC", vec!["0 USDC"])]
+#[case::different_currencies("plain", "0.010", "USDC", "-0.000002", "BTC", vec!["0.010 USDC", "-0.000002 BTC"])]
+#[case::cloid("cloid", "0.010", "USDC", "-0.002", "USDC", vec!["0.008 USDC"])]
+#[case::fill_cloid("fill_cloid", "0.010", "USDC", "-0.002", "USDC", vec!["0.008 USDC"])]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_query_order_recovers_actual_fills_in_engine(
+    #[case] history: &str,
+    #[case] fee_a: &str,
+    #[case] token_a: &str,
+    #[case] fee_b: &str,
+    #[case] token_b: &str,
+    #[case] commissions: Vec<&str>,
+) {
+    let state = query_recovery_state().await;
+    let mut fills = query_recovery_fills();
+    fills[0]["fee"] = json!(fee_a);
+    fills[0]["feeToken"] = json!(token_a);
+    fills[1]["fee"] = json!(fee_b);
+    fills[1]["feeToken"] = json!(token_b);
+    if fee_a == "0" {
+        fills[0].as_object_mut().unwrap().remove("builderFee");
+    }
+
+    match history {
+        "duplicate" => {
+            let replay = fills[0].clone();
+            fills.as_array_mut().unwrap().push(replay);
+        }
+        "capped" => {
+            let rows = fills.as_array_mut().unwrap();
+            rows.resize(2000, user_fill("ETH", 123));
+        }
+        "cloid" => {
+            state.order_status_response.lock().await.as_mut().unwrap()["order"]["order"]["cloid"] = json!(
+                Cloid::from_client_order_id(query_recovery_order().client_order_id()).to_hex()
+            );
+        }
+        "fill_cloid" => {
+            let cloid =
+                Cloid::from_client_order_id(query_recovery_order().client_order_id()).to_hex();
+            fills[1]["cloid"] = json!(format!("0x{}", cloid[2..].to_uppercase()));
+        }
+        _ => {}
+    }
+
+    fills.as_array_mut().unwrap().reverse();
+    *state.user_fills_response.lock().await = Some(fills);
+    let order = query_recovery_order();
+    let coid = order.client_order_id();
+    let (mut client, mut rx, cache, mut engine) = query_recovery_client(state.clone(), order).await;
+    let expected_commissions: Vec<_> = commissions.into_iter().map(Money::from).collect();
+    let fees = [
+        (
+            Money::from(format!("{fee_a} {token_a}").as_str()),
+            Currency::USD(),
+        ),
+        (
+            Money::from(format!("{fee_b} {token_b}").as_str()),
+            Currency::USD(),
+        ),
+    ];
+
+    for pass in 0..2 {
+        client
+            .query_order(make_query_order_cmd(
+                coid,
+                Some(VenueOrderId::from("900029")),
+            ))
+            .unwrap();
+        wait_until_async(
+            || async { client.pending_tasks_all_finished() },
+            Duration::from_secs(5),
+        )
+        .await;
+        let reports = apply_query_events(&mut engine, &mut rx);
+        assert_eq!(reports.len(), if pass == 0 { 2 } else { 0 });
+        assert_query_recovery_cache(&cache.borrow(), coid, &expected_commissions, fees);
+    }
+
+    let mut replay = json!({"channel": "user", "data": {"fills": query_recovery_fills()}});
+    let rows = replay["data"]["fills"].as_array_mut().unwrap();
+    rows[0]["fee"] = json!(fee_a);
+    rows[0]["feeToken"] = json!(token_a);
+    rows[1]["fee"] = json!(fee_b);
+    rows[1]["feeToken"] = json!(token_b);
+    state.stream_frames.send(replay).unwrap();
+    apply_query_stream_fills(&mut engine, &mut rx, 2).await;
+    assert_query_recovery_cache(&cache.borrow(), coid, &expected_commissions, fees);
+    let requests = state.info_requests.lock().await;
+    let history_requests: Vec<_> = requests
+        .iter()
+        .filter(|r| r["type"] == "userFills")
+        .collect();
+    assert_eq!(history_requests.len(), 1);
+    assert_eq!(history_requests[0]["aggregateByTime"], json!(false));
+    assert_eq!(
+        history_requests[0]["user"],
+        requests
+            .iter()
+            .find(|r| r["type"] == "orderStatus")
+            .unwrap()["user"]
+    );
+    drop(requests);
+    client.disconnect().await.unwrap();
+}
+
+async fn query_recovery_client(
+    state: TestServerState,
+    order: OrderAny,
+) -> (
+    HyperliquidExecutionClient,
+    tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    Rc<RefCell<Cache>>,
+    ExecutionEngine,
+) {
+    let addr = start_mock_server(state).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    add_test_perp_instrument_to_cache(&cache);
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+    let coid = order.client_order_id();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    cache
+        .borrow_mut()
+        .add_venue_order_id(&coid, &order.venue_order_id().unwrap(), false)
+        .unwrap();
+    let dispatch = client.ws_dispatch_state();
+    dispatch.register_context(OrderContext::from(&order));
+    dispatch.record_venue_order_id(coid, order.venue_order_id().unwrap());
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    let engine = ExecutionEngine::new(clock, cache.clone(), None);
+    (client, rx, cache, engine)
+}
+
+fn assert_query_recovery_cache(
+    cache: &Cache,
+    coid: ClientOrderId,
+    commissions: &[Money],
+    fees: [(Money, Currency); 2],
+) {
+    let order = cache.order(&coid).unwrap();
+    assert_eq!(order.status(), OrderStatus::Filled);
+    assert_eq!(order.quantity(), Quantity::from("0.00100"));
+    assert_eq!(order.filled_qty(), Quantity::from("0.00100"));
+    assert_eq!(order.avg_px(), Some(dec!(90600)));
+    assert_eq!(order.venue_order_id(), Some(VenueOrderId::from("900029")));
+    assert_eq!(order.trade_ids().len(), 2);
+    assert_eq!(order.commissions().len(), commissions.len());
+
+    for commission in commissions {
+        assert_eq!(
+            order.commissions().get(&commission.currency),
+            Some(commission)
+        );
+    }
+
+    let fills: Vec<_> = order
+        .events()
+        .into_iter()
+        .filter_map(|e| {
+            if let OrderEventAny::Filled(fill) = e {
+                Some(fill)
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    assert_eq!(fills.len(), 2);
+    let rows = query_recovery_fills();
+
+    for (i, (qty, px, (fee, currency), liquidity)) in [
+        ("0.00040", "90000.00", fees[0], LiquiditySide::Taker),
+        ("0.00060", "91000.00", fees[1], LiquiditySide::Maker),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let fill = fills[i];
+        let raw: HyperliquidFill = serde_json::from_value(rows[i].clone()).unwrap();
+        assert_eq!(
+            fill.trade_id,
+            make_fill_trade_id(
+                &raw.hash,
+                raw.oid,
+                raw.px,
+                raw.sz,
+                raw.time,
+                raw.start_position
+            )
+        );
+        assert_eq!(fill.trader_id, order.trader_id());
+        assert_eq!(fill.strategy_id, order.strategy_id());
+        assert_eq!(fill.instrument_id, order.instrument_id());
+        assert_eq!(fill.client_order_id, coid);
+        assert_eq!(fill.venue_order_id, VenueOrderId::from("900029"));
+        assert_eq!(fill.account_id, AccountId::from("HYPERLIQUID-001"));
+        assert_eq!(fill.order_side, OrderSide::Buy);
+        assert_eq!(fill.order_type, OrderType::Limit);
+        assert_eq!(fill.last_qty, Quantity::from(qty));
+        assert_eq!(fill.last_px, Price::from(px));
+        assert_eq!(fill.currency, currency);
+        assert_eq!(fill.liquidity_side, liquidity);
+        assert_eq!(fill.commission, Some(fee));
+        assert_eq!(fill.ts_event, UnixNanos::from(raw.time * 1_000_000));
+    }
+
+    let positions = cache.positions_open(None, Some(&order.instrument_id()), None, None, None);
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].side, PositionSide::Long);
+    assert_eq!(positions[0].quantity, Quantity::from("0.00100"));
+    assert_eq!(
+        rust_decimal::Decimal::try_from(positions[0].avg_px_open)
+            .unwrap()
+            .round_dp(u32::from(positions[0].price_precision)),
+        dec!(90600)
+    );
+    let mut actual = positions[0].commissions();
+    let mut expected = commissions.to_vec();
+    actual.sort_by_key(|m| m.currency.code);
+    expected.sort_by_key(|m| m.currency.code);
+    assert_eq!(actual, expected);
+}
+
+async fn apply_query_stream_fills(
+    engine: &mut ExecutionEngine,
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    count: usize,
+) {
+    tokio::time::timeout(Duration::from_secs(5), async {
+        let mut received = 0;
+        while received < count {
+            let event = rx.recv().await.unwrap();
+            match event {
+                ExecutionEvent::Report(report) => {
+                    if matches!(report, ExecutionReport::Fill(_)) {
+                        received += 1;
+                    }
+
+                    engine.reconcile_execution_report(&report);
+                }
+                ExecutionEvent::Order(event) => {
+                    if matches!(event, OrderEventAny::Filled(_)) {
+                        received += 1;
+                    }
+
+                    engine.process(&event);
+                }
+                _ => {}
+            }
+        }
+    })
+    .await
+    .unwrap();
+}
+
+#[rstest]
+#[case::external_stream(false)]
+#[case::tracked_stream(true)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_query_order_fill_during_history_collection_books_once(#[case] tracked: bool) {
+    let state = query_recovery_state().await;
+    let order = query_recovery_order();
+    let coid = order.client_order_id();
+
+    let fees = [
+        (
+            Money::from("0.010 USDC"),
+            if tracked {
+                Currency::USDC()
+            } else {
+                Currency::USD()
+            },
+        ),
+        (Money::from("-0.002 USDC"), Currency::USD()),
+    ];
+
+    let (mut client, mut rx, cache, mut engine) =
+        query_recovery_client(state.clone(), order.clone()).await;
+    if tracked {
+        let init = order.events()[0].clone();
+        let initialized = OrderAny::from_events(vec![init]).unwrap();
+        cache
+            .borrow_mut()
+            .add_order(initialized.clone(), None, None, true)
+            .unwrap();
+        client.ws_dispatch_state().cleanup_terminal(&coid);
+        *state.order_response_override.lock().await = Some(json!({
+            "status": "ok", "response": {"type": "order", "data": {"statuses": [{"resting": {"oid": 900029}}]}}
+        }));
+        client.submit_order(make_submit_cmd(&initialized)).unwrap();
+        wait_until_async(
+            || async { client.pending_tasks_all_finished() },
+            Duration::from_secs(5),
+        )
+        .await;
+        apply_query_events(&mut engine, &mut rx);
+        let mut accepted = historical_order("BTC", 900029);
+        accepted["status"] = json!("open");
+        accepted["order"]["cloid"] = json!(Cloid::from_client_order_id(coid).to_hex());
+        accepted["order"]["origSz"] = json!("0.001");
+        accepted["order"]["sz"] = json!("0.001");
+        accepted["order"]["limitPx"] = json!("92000");
+        state
+            .stream_frames
+            .send(order_updates_frame(&[accepted]))
+            .unwrap();
+        let accepted = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        let ExecutionEvent::Order(OrderEventAny::Accepted(accepted)) = accepted else {
+            panic!("expected streamed acceptance");
+        };
+
+        engine.process(&OrderEventAny::Accepted(accepted));
+        assert_eq!(
+            cache.borrow().order(&coid).unwrap().status(),
+            OrderStatus::Accepted
+        );
+    }
+
+    state.pause_next_user_fills.store(true, Ordering::Release);
+    client
+        .query_order(make_query_order_cmd(
+            coid,
+            Some(VenueOrderId::from("900029")),
+        ))
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(5), state.info_started.notified())
+        .await
+        .unwrap();
+    let mut streamed = query_recovery_fills()[0].clone();
+    if tracked {
+        streamed["cloid"] = json!(Cloid::from_client_order_id(coid).to_hex());
+    }
+
+    state
+        .stream_frames
+        .send(json!({"channel": "user", "data": {"fills": [streamed]}}))
+        .unwrap();
+    apply_query_stream_fills(&mut engine, &mut rx, 1).await;
+    assert_eq!(
+        cache.borrow().order(&coid).unwrap().filled_qty(),
+        Quantity::from("0.00040")
+    );
+
+    if tracked {
+        assert_eq!(
+            client.ws_dispatch_state().previous_filled_qty(&coid),
+            Some(Quantity::from("0.00040"))
+        );
+    }
+
+    state.info_release.notify_one();
+    wait_until_async(
+        || async { client.pending_tasks_all_finished() },
+        Duration::from_secs(5),
+    )
+    .await;
+    let recovered = apply_query_events(&mut engine, &mut rx);
+    assert_eq!(recovered.len(), 2);
+    assert_query_recovery_cache(&cache.borrow(), coid, &[Money::from("0.008 USDC")], fees);
+
+    if tracked {
+        assert_eq!(
+            client.ws_dispatch_state().previous_filled_qty(&coid),
+            Some(Quantity::from("0.00040"))
+        );
+        let mut replay = query_recovery_fills();
+        for fill in replay.as_array_mut().unwrap() {
+            fill["cloid"] = json!(Cloid::from_client_order_id(coid).to_hex());
+        }
+
+        state
+            .stream_frames
+            .send(json!({"channel": "user", "data": {"fills": replay}}))
+            .unwrap();
+        apply_query_stream_fills(&mut engine, &mut rx, 1).await;
+        assert_query_recovery_cache(&cache.borrow(), coid, &[Money::from("0.008 USDC")], fees);
+    }
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::missing("missing")]
+#[case::empty("empty")]
+#[case::conflicting_fee("conflicting_fee")]
+#[case::conflicting_liquidity("conflicting_liquidity")]
+#[case::malformed_fee("malformed_fee")]
+#[case::missing_fee("missing_fee")]
+#[case::fee_currency("fee_currency")]
+#[case::unresolved("unresolved")]
+#[case::instrument("instrument")]
+#[case::side("side")]
+#[case::venue("venue")]
+#[case::zero_qty("zero_qty")]
+#[case::negative_qty("negative_qty")]
+#[case::zero_price("zero_price")]
+#[case::timestamp("timestamp")]
+#[case::quantity_precision("quantity_precision")]
+#[case::price_precision("price_precision")]
+#[case::fee_precision("fee_precision")]
+#[case::capped_missing("capped_missing")]
+#[case::http_failure("http_failure")]
+#[case::fill_cloid("fill_cloid")]
+#[case::fill_cloid_duplicate("fill_cloid_duplicate")]
+#[case::malformed_fill_cloid("malformed_fill_cloid")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_query_order_recovery_fallback_preserves_inference(#[case] failure: &str) {
+    let state = query_recovery_state().await;
+    let mut fills = query_recovery_fills();
+    change_query_recovery_evidence(&mut fills, failure);
+    *state.user_fills_response.lock().await = Some(fills);
+    if failure == "http_failure" {
+        state.fail_user_fills_count.store(1, Ordering::Relaxed);
+    }
+
+    let order = query_recovery_order();
+    let coid = order.client_order_id();
+    let (mut client, mut rx, cache, mut engine) = query_recovery_client(state, order).await;
+    client
+        .query_order(make_query_order_cmd(
+            coid,
+            Some(VenueOrderId::from("900029")),
+        ))
+        .unwrap();
+    wait_until_async(
+        || async { client.pending_tasks_all_finished() },
+        Duration::from_secs(5),
+    )
+    .await;
+    assert!(apply_query_events(&mut engine, &mut rx).is_empty());
+    {
+        let cache = cache.borrow();
+        let order = cache.order(&coid).unwrap();
+        assert_eq!(order.status(), OrderStatus::Filled);
+        assert_eq!(order.filled_qty(), Quantity::from("0.00100"));
+        assert_eq!(order.avg_px(), Some(dec!(92000)));
+        assert_eq!(order.trade_ids().len(), 1);
+        assert!(order.commissions().is_empty());
+        let events = order.events();
+
+        let fills: Vec<_> = events
+            .iter()
+            .filter_map(|event| {
+                if let OrderEventAny::Filled(fill) = event {
+                    Some(fill)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        assert_eq!(fills.len(), 1);
+        assert_eq!(fills[0].last_qty, Quantity::from("0.00100"));
+        assert_eq!(fills[0].last_px, Price::from("92000.00"));
+        assert_eq!(fills[0].commission, None);
+        let positions = cache.positions_open(None, Some(&order.instrument_id()), None, None, None);
+        assert_eq!(positions.len(), 1);
+        assert_eq!(positions[0].quantity, Quantity::from("0.00100"));
+        assert!(positions[0].commissions().is_empty());
+    }
+
+    client.disconnect().await.unwrap();
+}
+
+fn change_query_recovery_evidence(fills: &mut Value, failure: &str) {
+    match failure {
+        "missing" => {
+            fills.as_array_mut().unwrap().pop();
+        }
+        "empty" => fills.as_array_mut().unwrap().clear(),
+        "conflicting_fee" | "conflicting_liquidity" => {
+            let mut replay = fills[0].clone();
+            if failure == "conflicting_fee" {
+                replay["fee"] = json!("0.02");
+            } else {
+                replay["crossed"] = json!(false);
+            }
+
+            fills.as_array_mut().unwrap().push(replay);
+        }
+        "malformed_fee" => fills[1]["fee"] = json!("invalid"),
+        "missing_fee" => {
+            fills[1].as_object_mut().unwrap().remove("fee");
+        }
+        "fee_currency" => fills[1]["feeToken"] = json!("UNKNOWN"),
+        "unresolved" => fills[1]["coin"] = json!("UNKNOWN"),
+        "instrument" => fills[1]["coin"] = json!("ETH"),
+        "side" => fills[1]["side"] = json!("A"),
+        "venue" => fills[1]["oid"] = json!(900030),
+        "zero_qty" => fills[1]["sz"] = json!("0"),
+        "negative_qty" => fills[1]["sz"] = json!("-0.0006"),
+        "zero_price" => fills[1]["px"] = json!("0"),
+        "timestamp" => fills[1]["time"] = json!(u64::MAX),
+        "quantity_precision" => fills[1]["sz"] = json!("0.0006001"),
+        "price_precision" => fills[1]["px"] = json!("91000.123456789"),
+        "fee_precision" => fills[1]["fee"] = json!("-0.002000001"),
+        "capped_missing" => {
+            let rows = fills.as_array_mut().unwrap();
+            rows.pop();
+            rows.resize(2000, user_fill("ETH", 123));
+        }
+        "http_failure" => {}
+        "fill_cloid" => {
+            fills[1]["cloid"] =
+                json!(Cloid::from_client_order_id(ClientOrderId::from("OTHER-ORDER")).to_hex());
+        }
+        "fill_cloid_duplicate" => {
+            let mut replay = fills[0].clone();
+            replay["cloid"] =
+                json!(Cloid::from_client_order_id(ClientOrderId::from("OTHER-ORDER")).to_hex());
+            fills.as_array_mut().unwrap().push(replay);
+        }
+        "malformed_fill_cloid" => fills[1]["cloid"] = json!("invalid"),
+        _ => panic!("unknown failure {failure}"),
+    }
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_query_order_failed_status_leaves_stream_fills_processable() {
+    let state = query_recovery_state().await;
+    *state.order_status_response.lock().await = Some(json!({"status": "invalid"}));
+    let order = query_recovery_order();
+    let coid = order.client_order_id();
+    let fees = [
+        (Money::from("0.010 USDC"), Currency::USD()),
+        (Money::from("-0.002 USDC"), Currency::USD()),
+    ];
+    let (mut client, mut rx, cache, mut engine) = query_recovery_client(state.clone(), order).await;
+    client
+        .query_order(make_query_order_cmd(
+            coid,
+            Some(VenueOrderId::from("900029")),
+        ))
+        .unwrap();
+    wait_until_async(
+        || async { client.pending_tasks_all_finished() },
+        Duration::from_secs(5),
+    )
+    .await;
+    assert!(rx.try_recv().is_err());
+    assert_eq!(
+        cache.borrow().order(&coid).unwrap().status(),
+        OrderStatus::Accepted
+    );
+    state
+        .stream_frames
+        .send(json!({"channel": "user", "data": {"fills": query_recovery_fills()}}))
+        .unwrap();
+    apply_query_stream_fills(&mut engine, &mut rx, 2).await;
+    assert_query_recovery_cache(&cache.borrow(), coid, &[Money::from("0.008 USDC")], fees);
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::pending_modify("pending")]
+#[case::replacement("replacement")]
+#[case::changed_terms("terms")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_query_order_recovery_discards_changed_binding(#[case] transition: &str) {
+    let state = query_recovery_state().await;
+    let order = query_recovery_order();
+    let coid = order.client_order_id();
+    let (mut client, mut rx, cache, mut engine) =
+        query_recovery_client(state.clone(), order.clone()).await;
+    state.pause_next_user_fills.store(true, Ordering::Release);
+    client
+        .query_order(make_query_order_cmd(coid, order.venue_order_id()))
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(5), state.info_started.notified())
+        .await
+        .unwrap();
+    let dispatch = client.ws_dispatch_state();
+    if transition != "terms" {
+        dispatch.mark_pending_modify(
+            coid,
+            VenueOrderId::from("900029"),
+            Quantity::from("0.00200"),
+        );
+    }
+
+    if transition == "replacement" {
+        let update = OrderUpdated::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            coid,
+            Quantity::from("0.00200"),
+            UUID4::new(),
+            UnixNanos::from(1700000003000000000u64),
+            UnixNanos::default(),
+            false,
+            Some(VenueOrderId::from("900030")),
+            order.account_id(),
+            Some(Price::from("93000.00")),
+            None,
+            None,
+            false,
+        );
+        engine.process(&OrderEventAny::Updated(update));
+        let current = cache.borrow().order(&coid).unwrap().clone();
+        dispatch.register_context(OrderContext::from(&current));
+        dispatch.record_venue_order_id(coid, VenueOrderId::from("900030"));
+        dispatch.clear_pending_modify(&coid);
+    }
+
+    if transition == "terms" {
+        let mut update = query_recovery_update(&order, "900029");
+        update.price = Some(Price::from("93000.00"));
+        engine.process(&OrderEventAny::Updated(update));
+        dispatch.update_context_price(&coid, Some(Price::from("93000.00")));
+    }
+
+    state.info_release.notify_one();
+    wait_until_async(
+        || async { client.pending_tasks_all_finished() },
+        Duration::from_secs(5),
+    )
+    .await;
+    let fills = apply_query_events(&mut engine, &mut rx);
+    assert!(fills.is_empty());
+
+    if transition == "replacement" {
+        let cache = cache.borrow();
+        let current = cache.order(&coid).unwrap();
+        assert_eq!(current.venue_order_id(), Some(VenueOrderId::from("900030")));
+        assert_eq!(current.status(), OrderStatus::Accepted);
+        assert_eq!(current.quantity(), Quantity::from("0.00200"));
+        assert_eq!(current.filled_qty(), Quantity::from("0.00000"));
+        assert!(current.commissions().is_empty());
+        assert!(
+            cache
+                .positions_open(None, None, None, None, None)
+                .is_empty()
+        );
+    } else {
+        assert_eq!(
+            cache.borrow().order(&coid).unwrap().status(),
+            OrderStatus::Filled
+        );
+        assert_eq!(dispatch.has_pending_modify(&coid), transition == "pending");
+
+        if transition == "terms" {
+            let cache = cache.borrow();
+            let current = cache.order(&coid).unwrap();
+            assert_eq!(current.venue_order_id(), Some(VenueOrderId::from("900029")));
+            assert_eq!(current.avg_px(), Some(dec!(93000)));
+            assert!(current.commissions().is_empty());
+        }
+    }
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_generated_filled_report_does_not_recover_executions() {
+    let state = query_recovery_state().await;
+    let order = query_recovery_order();
+    let coid = order.client_order_id();
+    let (mut client, mut rx, cache, _) = query_recovery_client(state.clone(), order).await;
+    let cmd = make_status_report_cmd(Some(coid), Some(VenueOrderId::from("900029")));
+    let report = run_report_task(client.generate_order_status_report_task(&cmd).unwrap())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(report.order_status, OrderStatus::Filled);
+    assert!(rx.try_recv().is_err());
+    assert_eq!(
+        cache.borrow().order(&coid).unwrap().status(),
+        OrderStatus::Accepted
+    );
+    assert!(
+        state
+            .info_requests
+            .lock()
+            .await
+            .iter()
+            .all(|r| r["type"] != "userFills")
+    );
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::quote("quote")]
+#[case::reduce_only("reduce_only")]
+#[case::contingent("contingent")]
+#[case::market("market")]
+#[case::modified("modified")]
+#[case::pending_modify("pending_modify")]
+#[case::untracked("untracked")]
+#[case::wrong_bound("wrong_bound")]
+#[case::previous_fill("previous_fill")]
+#[case::partial_status("partial_status")]
+#[case::wrong_report_cloid("wrong_report_cloid")]
+#[case::wrong_account("wrong_account")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_query_order_excluded_orders_keep_existing_path(#[case] exclusion: &str) {
+    let state = query_recovery_state().await;
+    let mut order = query_recovery_order();
+    let coid = order.client_order_id();
+    if matches!(exclusion, "quote" | "reduce_only" | "contingent" | "market") {
+        let mut events: Vec<_> = order.events().into_iter().cloned().collect();
+
+        let OrderEventAny::Initialized(init) = &mut events[0] else {
+            unreachable!()
+        };
+
+        match exclusion {
+            "quote" => init.quote_quantity = true,
+            "reduce_only" => init.reduce_only = true,
+            "contingent" => {
+                init.contingency_type = Some(ContingencyType::Oto);
+                init.linked_order_ids = Some(vec![ClientOrderId::from("O-QUERY-CHILD")]);
+                init.order_list_id = Some(OrderListId::from("OL-QUERY"));
+            }
+            "market" => {
+                init.order_type = OrderType::Market;
+                init.price = None;
+            }
+            _ => unreachable!(),
+        }
+
+        order = OrderAny::from_events(events).unwrap();
+    }
+
+    if exclusion == "modified" {
+        order
+            .apply(OrderEventAny::Updated(query_recovery_update(
+                &order, "900029",
+            )))
+            .unwrap();
+    }
+
+    if exclusion == "partial_status" {
+        state.order_status_response.lock().await.as_mut().unwrap()["order"]["order"]["sz"] =
+            json!("0.0006");
+    }
+
+    if exclusion == "wrong_report_cloid" {
+        state.order_status_response.lock().await.as_mut().unwrap()["order"]["order"]["cloid"] =
+            json!(Cloid::from_client_order_id(ClientOrderId::from("OTHER-ORDER")).to_hex());
+    }
+
+    let (mut client, mut rx, cache, mut engine) = query_recovery_client(state.clone(), order).await;
+    let dispatch = client.ws_dispatch_state();
+
+    match exclusion {
+        "pending_modify" => {
+            dispatch.mark_pending_modify(
+                coid,
+                VenueOrderId::from("900029"),
+                Quantity::from("0.00200"),
+            );
+        }
+        "untracked" => dispatch.cleanup_terminal(&coid),
+        "wrong_bound" => dispatch.record_venue_order_id(coid, VenueOrderId::from("900030")),
+        "previous_fill" => {
+            state
+                .stream_frames
+                .send(json!({"channel": "user", "data": {"fills": [query_recovery_fills()[0]]}}))
+                .unwrap();
+            apply_query_stream_fills(&mut engine, &mut rx, 1).await;
+        }
+        "wrong_account" => {
+            let mut events: Vec<_> = cache
+                .borrow()
+                .order(&coid)
+                .unwrap()
+                .events()
+                .into_iter()
+                .cloned()
+                .collect();
+
+            let OrderEventAny::Accepted(accepted) = &mut events[2] else {
+                unreachable!()
+            };
+
+            accepted.account_id = AccountId::from("HYPERLIQUID-OTHER");
+            let order = OrderAny::from_events(events).unwrap();
+            cache
+                .borrow_mut()
+                .add_order(order, None, None, true)
+                .unwrap();
+        }
+        _ => {}
+    }
+
+    client
+        .query_order(make_query_order_cmd(
+            coid,
+            Some(VenueOrderId::from("900029")),
+        ))
+        .unwrap();
+    wait_until_async(
+        || async { client.pending_tasks_all_finished() },
+        Duration::from_secs(5),
+    )
+    .await;
+    let events: Vec<_> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+    assert_eq!(events.len(), 1);
+    assert!(
+        matches!(&events[0], ExecutionEvent::Report(ExecutionReport::Order(report))
+        if report.venue_order_id == VenueOrderId::from("900029"))
+    );
+    assert!(
+        state
+            .info_requests
+            .lock()
+            .await
+            .iter()
+            .all(|r| r["type"] != "userFills")
+    );
+    client.disconnect().await.unwrap();
+}
+
+fn query_recovery_update(order: &OrderAny, oid: &str) -> OrderUpdated {
+    OrderUpdated::new(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        order.quantity(),
+        UUID4::new(),
+        UnixNanos::from(1700000003000000000u64),
+        UnixNanos::default(),
+        false,
+        Some(VenueOrderId::from(oid)),
+        order.account_id(),
+        order.price(),
+        None,
+        None,
+        false,
+    )
+}
+
+#[rstest]
+fn test_query_order_rest_and_ws_fill_identity_agree() {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    add_test_perp_instrument_to_cache(&cache);
+    let cache = cache.borrow();
+    let instrument = cache
+        .instrument(&InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT))
+        .unwrap();
+
+    for raw in query_recovery_fills().as_array().unwrap() {
+        let rest = serde_json::from_value(raw.clone()).unwrap();
+        let stream = serde_json::from_value(raw.clone()).unwrap();
+        let rest = nautilus_hyperliquid::http::parse::parse_fill_report(
+            &rest,
+            instrument,
+            AccountId::from("HYPERLIQUID-001"),
+            UnixNanos::from(123),
+        )
+        .unwrap();
+        let mut stream = nautilus_hyperliquid::websocket::parse::parse_ws_fill_report(
+            &stream,
+            instrument,
+            AccountId::from("HYPERLIQUID-001"),
+            UnixNanos::from(123),
+        )
+        .unwrap();
+        stream.report_id = rest.report_id;
+        assert_eq!(stream, rest);
+    }
 }
 
 #[rstest]
@@ -9056,7 +10165,9 @@ async fn test_query_account_perp_endpoint_failure_emits_no_state() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_generate_order_status_reports_retains_open_reports_outside_time_range() {
+async fn test_generate_order_status_reports_retains_open_reports_outside_time_range(
+    #[values(false, true)] worker: bool,
+) {
     // Mock a frontendOpenOrders payload with three orders so time bounds can prove that every
     // non-closed report remains authoritative regardless of its last update.
     let state = TestServerState::default();
@@ -9090,8 +10201,7 @@ async fn test_generate_order_status_reports_retains_open_reports_outside_time_ra
         None,
         None,
     );
-    let reports = client
-        .generate_order_status_reports(&cmd_all)
+    let reports = generate_order_reports(&client, &cmd_all, worker)
         .await
         .unwrap();
     assert_eq!(reports.len(), 3);
@@ -9108,8 +10218,7 @@ async fn test_generate_order_status_reports_retains_open_reports_outside_time_ra
         None,
         None,
     );
-    let reports = client
-        .generate_order_status_reports(&cmd_start)
+    let reports = generate_order_reports(&client, &cmd_start, worker)
         .await
         .unwrap();
     assert_eq!(reports.len(), 3);
@@ -9126,8 +10235,7 @@ async fn test_generate_order_status_reports_retains_open_reports_outside_time_ra
         None,
         None,
     );
-    let reports = client
-        .generate_order_status_reports(&cmd_end)
+    let reports = generate_order_reports(&client, &cmd_end, worker)
         .await
         .unwrap();
     assert_eq!(reports.len(), 3);
@@ -9143,8 +10251,7 @@ async fn test_generate_order_status_reports_retains_open_reports_outside_time_ra
         None,
         None,
     );
-    let reports = client
-        .generate_order_status_reports(&cmd_both)
+    let reports = generate_order_reports(&client, &cmd_both, worker)
         .await
         .unwrap();
     assert_eq!(reports.len(), 3);
@@ -9165,7 +10272,7 @@ async fn test_generate_order_status_reports_retains_open_reports_outside_time_ra
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_generate_fill_reports_filters_time_range() {
+async fn test_generate_fill_reports_filters_time_range(#[values(false, true)] worker: bool) {
     let state = TestServerState::default();
     *state.user_fills_response.lock().await = Some(json!([
         {
@@ -9209,7 +10316,7 @@ async fn test_generate_fill_reports_filters_time_range() {
         None,
         None,
     );
-    let reports = client.generate_fill_reports(cmd_none).await.unwrap();
+    let reports = generate_fills(&client, cmd_none, worker).await.unwrap();
     assert_eq!(reports.len(), 3, "no filter must return every fill");
 
     let cmd_start = GenerateFillReports::new(
@@ -9222,7 +10329,7 @@ async fn test_generate_fill_reports_filters_time_range() {
         None,
         None,
     );
-    let reports = client.generate_fill_reports(cmd_start).await.unwrap();
+    let reports = generate_fills(&client, cmd_start, worker).await.unwrap();
     assert_eq!(reports.len(), 2);
 
     let cmd_end = GenerateFillReports::new(
@@ -9235,7 +10342,7 @@ async fn test_generate_fill_reports_filters_time_range() {
         None,
         None,
     );
-    let reports = client.generate_fill_reports(cmd_end).await.unwrap();
+    let reports = generate_fills(&client, cmd_end, worker).await.unwrap();
     assert_eq!(reports.len(), 2);
 
     let cmd_both = GenerateFillReports::new(
@@ -9248,7 +10355,7 @@ async fn test_generate_fill_reports_filters_time_range() {
         None,
         None,
     );
-    let reports = client.generate_fill_reports(cmd_both).await.unwrap();
+    let reports = generate_fills(&client, cmd_both, worker).await.unwrap();
     assert_eq!(reports.len(), 1);
 
     client.disconnect().await.unwrap();
@@ -10096,7 +11203,9 @@ async fn test_generate_mass_status_marks_unusable_spot_balance_incomplete() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_generate_order_status_report_fails_closed_when_cloid_row_unusable() {
+async fn test_generate_order_status_report_fails_closed_when_cloid_row_unusable(
+    #[values(false, true)] worker: bool,
+) {
     // The cloid probe matches a venue row whose instrument cannot be resolved;
     // with no venue_order_id or cached oid to fall back on, the lookup must
     // fail closed rather than convert the failure into "not found"
@@ -10120,8 +11229,7 @@ async fn test_generate_order_status_report_fails_closed_when_cloid_row_unusable(
     client.connect().await.unwrap();
 
     let cmd = make_status_report_cmd(Some(coid), None);
-    let err = client
-        .generate_order_status_report(&cmd)
+    let err = generate_order_report(&client, &cmd, worker)
         .await
         .expect_err("a matched but unusable venue row must fail closed");
 
@@ -10615,5 +11723,748 @@ async fn test_modify_order_missing_asset_emits_rejection() {
             .pending_modify(&order.client_order_id()),
         None
     );
+    client.disconnect().await.unwrap();
+}
+
+#[derive(Clone, Copy, Debug)]
+enum SingleOrderFills {
+    Complete,
+    AtVenueCap,
+    Incomplete,
+    RequestFails,
+    Empty,
+}
+
+fn single_order_fills(kind: SingleOrderFills) -> Value {
+    let mut fills = json!([
+        capped_stop_fill("0.001", 1_754_000_001_000, 4),
+        capped_stop_fill("0.0005", 1_754_000_001_000, 5),
+    ]);
+
+    match kind {
+        SingleOrderFills::AtVenueCap => {
+            let template = user_fill("ETH", 1);
+            pad_to_venue_cap(&mut fills, &template, &["oid"]);
+        }
+        SingleOrderFills::Incomplete => {
+            let mut unusable_fill = capped_stop_fill("0.0005", 1_754_000_001_000, 6);
+            unusable_fill["coin"] = json!("NOCOIN");
+            fills.as_array_mut().unwrap().push(unusable_fill);
+        }
+        SingleOrderFills::Empty => fills = json!([]),
+        SingleOrderFills::Complete | SingleOrderFills::RequestFails => {}
+    }
+    fills
+}
+
+async fn user_fills_reads(state: &TestServerState) -> usize {
+    history_reads(&state.info_requests)
+        .await
+        .iter()
+        .filter(|kind| *kind == "userFills")
+        .count()
+}
+
+// Returns the lookup's report and how many userFills requests it made
+async fn capped_stop_single_report(
+    status_row: Value,
+    fills: SingleOrderFills,
+    worker: bool,
+) -> (OrderStatusReport, usize) {
+    let state = TestServerState::default();
+    *state.frontend_open_orders_response.lock().await = Some(json!([]));
+    *state.order_status_response.lock().await =
+        Some(json!({"status": "order", "order": status_row}));
+    *state.user_fills_response.lock().await = Some(single_order_fills(fills));
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.connect().await.unwrap();
+
+    state.info_requests.lock().await.clear();
+    if matches!(fills, SingleOrderFills::RequestFails) {
+        state.fail_user_fills_count.store(1, Ordering::Relaxed);
+    }
+
+    let cmd = make_status_report_cmd(None, Some(VenueOrderId::from("200004")));
+    let report = generate_order_report(&client, &cmd, worker)
+        .await
+        .unwrap()
+        .expect("terminal stop report");
+    let reads = user_fills_reads(&state).await;
+
+    client.disconnect().await.unwrap();
+    (report, reads)
+}
+
+// The single-order lookup must agree with mass status: a reduce-only stop the venue reports
+// `filled` past its fills is clamped to them when the fill history is complete, and every other
+// outcome keeps the venue quantity. Only a reduce-only `Filled` report requests fills
+#[rstest]
+#[case::complete_fills(true, "filled", "0.0", SingleOrderFills::Complete, ("0.0015", "0.0015"), 1)]
+#[case::fills_at_venue_cap(true, "filled", "0.0", SingleOrderFills::AtVenueCap, ("0.002", "0.002"), 1)]
+#[case::incomplete_fills(true, "filled", "0.0", SingleOrderFills::Incomplete, ("0.002", "0.002"), 1)]
+#[case::fills_request_fails(true, "filled", "0.0", SingleOrderFills::RequestFails, ("0.002", "0.002"), 1)]
+#[case::no_fills(true, "filled", "0.0", SingleOrderFills::Empty, ("0.002", "0.002"), 1)]
+#[case::not_reduce_only(false, "filled", "0.0", SingleOrderFills::Complete, ("0.002", "0.002"), 0)]
+#[case::canceled(true, "canceled", "0.0005", SingleOrderFills::Complete, ("0.002", "0.0015"), 0)]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_generate_order_status_report_clamps_reduce_only_fill_to_fills(
+    #[case] reduce_only: bool,
+    #[case] status: &str,
+    #[case] remaining: &str,
+    #[case] fills: SingleOrderFills,
+    #[case] expected_quantities: (&str, &str),
+    #[case] expected_fills_reads: usize,
+    #[values(false, true)] worker: bool,
+) {
+    let (expected_qty, expected_filled) = expected_quantities;
+    let status_row = capped_stop_history(status, remaining, reduce_only)[0].clone();
+
+    let (report, fills_reads) = capped_stop_single_report(status_row, fills, worker).await;
+
+    assert_eq!(report.reduce_only, reduce_only);
+    assert_eq!(report.quantity, Quantity::from(expected_qty));
+    assert_eq!(report.filled_qty, Quantity::from(expected_filled));
+    assert_eq!(fills_reads, expected_fills_reads);
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_query_order_clamps_reduce_only_fill_to_fills() {
+    let state = TestServerState::default();
+    *state.frontend_open_orders_response.lock().await = Some(json!([]));
+    *state.order_status_response.lock().await = Some(json!({
+        "status": "order",
+        "order": capped_stop_history("filled", "0.0", true)[0].clone(),
+    }));
+    *state.user_fills_response.lock().await = Some(single_order_fills(SingleOrderFills::Complete));
+    let addr = start_mock_server(state).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    client
+        .query_order(make_query_order_cmd(
+            ClientOrderId::new("O-QUERY-STOP"),
+            Some(VenueOrderId::from("200004")),
+        ))
+        .unwrap();
+
+    wait_until_async(
+        || async { client.pending_tasks_all_finished() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let reports = drain_order_status_reports(&mut rx, Duration::from_millis(250)).await;
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].order_status, OrderStatus::Filled);
+    assert_eq!(reports[0].quantity, Quantity::from("0.0015"));
+    assert_eq!(reports[0].filled_qty, Quantity::from("0.0015"));
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[expect(
+    clippy::await_holding_refcell_ref,
+    reason = "worker report tasks must finish without accessing the borrowed live cache"
+)]
+async fn test_report_tasks_match_inline_fields() {
+    let state = TestServerState::default();
+    *state.frontend_open_orders_response.lock().await = Some(json!([
+        frontend_order("BTC", 101),
+        frontend_order("ETH", 102),
+    ]));
+    *state.user_fills_response.lock().await =
+        Some(json!([user_fill("BTC", 101), user_fill("ETH", 102),]));
+    *state.perp_clearinghouse_response.lock().await = Some(clearinghouse_position("BTC"));
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.connect().await.unwrap();
+    let instrument = Some(InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT));
+
+    let orders = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        true,
+        instrument,
+        None,
+        None,
+        None,
+        None,
+    );
+
+    let fills = GenerateFillReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        instrument,
+        None,
+        Some(UnixNanos::from(1_700_000_000_000_000_000u64)),
+        Some(UnixNanos::from(1_700_000_000_000_000_000u64)),
+        None,
+        None,
+    );
+
+    let positions = GeneratePositionStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        instrument,
+        None,
+        None,
+        None,
+        None,
+    );
+    let single = make_status_report_cmd(None, Some(VenueOrderId::from("101")));
+    let inline_single = client
+        .generate_order_status_report(&single)
+        .await
+        .unwrap()
+        .unwrap();
+    let inline_orders = client.generate_order_status_reports(&orders).await.unwrap();
+    let inline_fills = client.generate_fill_reports(fills.clone()).await.unwrap();
+    let inline_positions = client
+        .generate_position_status_reports(&positions)
+        .await
+        .unwrap();
+
+    let single_task = client.generate_order_status_report_task(&single).unwrap();
+    let orders_task = client.generate_order_status_reports_task(&orders).unwrap();
+    let fills_task = client.generate_fill_reports_task(&fills).unwrap();
+    let positions_task = client
+        .generate_position_status_reports_task(&positions)
+        .unwrap();
+    let cache_borrow = cache.borrow_mut();
+    let worker_single = run_report_task(single_task).await.unwrap().unwrap();
+    let worker_orders = run_report_task(orders_task).await.unwrap();
+    let worker_fills = run_report_task(fills_task).await.unwrap();
+    let worker_positions = run_report_task(positions_task).await.unwrap();
+    drop(cache_borrow);
+
+    assert_eq!(inline_orders.len(), 1);
+    assert_eq!(inline_fills.len(), 1);
+    assert_eq!(inline_positions.len(), 1);
+    assert_report_fields(&inline_single, &worker_single, false);
+    assert_report_fields(&inline_orders[0], &worker_orders[0], false);
+    assert_report_fields(&inline_fills[0], &worker_fills[0], false);
+    assert_report_fields(&inline_positions[0], &worker_positions[0], true);
+    client.disconnect().await.unwrap();
+}
+
+fn assert_report_fields<T: serde::Serialize>(inline: &T, worker: &T, position: bool) {
+    let mut inline = serde_json::to_value(inline).unwrap();
+    let mut worker = serde_json::to_value(worker).unwrap();
+    assert_ne!(inline["report_id"], worker["report_id"]);
+    assert_ne!(worker["ts_init"], json!(0));
+
+    if position {
+        assert_eq!(inline["ts_last"], inline["ts_init"]);
+        assert_eq!(worker["ts_last"], worker["ts_init"]);
+        inline.as_object_mut().unwrap().remove("ts_last");
+        worker.as_object_mut().unwrap().remove("ts_last");
+    }
+
+    for value in [&mut inline, &mut worker] {
+        value.as_object_mut().unwrap().remove("report_id");
+        value.as_object_mut().unwrap().remove("ts_init");
+    }
+
+    assert_eq!(worker, inline);
+}
+
+#[rstest]
+#[case::pending("pending", true)]
+#[case::promoted("promoted", false)]
+#[case::released("released", false)]
+#[case::late_fill("fill", false)]
+#[case::newer_cancel("newer", false)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_order_report_task_finishes_with_current_modify_state(
+    #[case] transition: &str,
+    #[case] suppressed: bool,
+) {
+    let state = TestServerState::default();
+
+    let status = if transition == "fill" {
+        "filled"
+    } else {
+        "canceled"
+    };
+
+    let report_oid = if transition == "newer" { 102 } else { 101 };
+    let mut row = historical_order("BTC", report_oid);
+    row["status"] = json!(status);
+
+    if transition == "newer" || transition == "promoted" {
+        row["order"]["sz"] = json!("0.04");
+    }
+
+    *state.order_status_response.lock().await = Some(json!({"status": "order", "order": row}));
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.connect().await.unwrap();
+    let coid = ClientOrderId::from("O-REPORT-CURRENT");
+    let old_oid = VenueOrderId::from("101");
+    let dispatch = client.ws_dispatch_state();
+    dispatch.record_venue_order_id(coid, old_oid);
+    let report_oid = VenueOrderId::from(report_oid.to_string());
+    let command = make_status_report_cmd(Some(coid), Some(report_oid));
+    let task = client.generate_order_status_report_task(&command).unwrap();
+    tokio::spawn(task.collection).await.unwrap();
+
+    dispatch.mark_pending_modify(coid, old_oid, Quantity::from("0.2"));
+
+    if transition != "pending" && transition != "newer" {
+        dispatch.clear_pending_modify(&coid);
+    }
+
+    if transition == "promoted" || transition == "fill" {
+        dispatch.record_venue_order_id(coid, VenueOrderId::from("102"));
+    }
+
+    let result = task.result.await;
+
+    if suppressed {
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            format!("order status report for superseded leg on {coid}"),
+        );
+    } else {
+        let report = result.unwrap().unwrap();
+        assert_eq!(report.venue_order_id, report_oid);
+        assert_eq!(report.quantity, Quantity::from("0.1"));
+        assert_eq!(
+            report.filled_qty,
+            Quantity::from(if transition == "newer" || transition == "promoted" {
+                "0.06"
+            } else {
+                "0.1"
+            }),
+        );
+        assert_eq!(
+            report.order_status,
+            if transition == "fill" {
+                OrderStatus::Filled
+            } else {
+                OrderStatus::Canceled
+            }
+        );
+    }
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::cloid_promotion(false, true)]
+#[case::cloid_superseded(true, true)]
+#[case::oid_active(false, false)]
+#[case::oid_superseded(true, false)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_order_report_task_finishes_accepted_with_current_binding(
+    #[case] superseded: bool,
+    #[case] cloid_lookup: bool,
+) {
+    let state = TestServerState::default();
+    let order = make_limit_order("O-REPORT-PROMOTE");
+    let coid = order.client_order_id();
+    let mut row = frontend_order("BTC", 102);
+
+    if cloid_lookup {
+        row["cloid"] = json!(Cloid::from_client_order_id(coid).to_hex());
+    }
+
+    *state.frontend_open_orders_response.lock().await = Some(json!([row]));
+    let addr = start_mock_server(state).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+    let dispatch = client.ws_dispatch_state();
+    dispatch.register_context(OrderContext::from(&order));
+    dispatch.record_venue_order_id(coid, VenueOrderId::from("101"));
+    let cmd = make_status_report_cmd(
+        Some(coid),
+        (!cloid_lookup).then(|| VenueOrderId::from("102")),
+    );
+    let task = client.generate_order_status_report_task(&cmd).unwrap();
+    tokio::spawn(task.collection).await.unwrap();
+    assert!(rx.try_recv().is_err());
+    let current_oid = VenueOrderId::from(if superseded { "103" } else { "101" });
+    dispatch.record_venue_order_id(coid, current_oid);
+    dispatch.mark_pending_modify(coid, current_oid, Quantity::from("0.2"));
+    let result = task.result.await;
+
+    if superseded {
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            format!("order status report for superseded leg on {coid}"),
+        );
+    } else {
+        assert_eq!(
+            result.unwrap().unwrap().venue_order_id,
+            VenueOrderId::from("102")
+        );
+    }
+
+    assert_eq!(
+        dispatch.cached_venue_order_id(&coid),
+        Some(if cloid_lookup && !superseded {
+            VenueOrderId::from("102")
+        } else {
+            current_oid
+        })
+    );
+    assert_eq!(
+        dispatch.has_pending_modify(&coid),
+        superseded || !cloid_lookup
+    );
+
+    if superseded || !cloid_lookup {
+        assert!(rx.try_recv().is_err());
+    } else {
+        let event = rx.try_recv().unwrap();
+
+        let ExecutionEvent::Order(OrderEventAny::Updated(event)) = event else {
+            panic!("expected replacement update");
+        };
+
+        assert_eq!(event.venue_order_id, Some(VenueOrderId::from("102")));
+        assert_eq!(event.quantity, Quantity::from("0.2"));
+    }
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_order_report_task_defers_cached_older_triggered_leg() {
+    let state = TestServerState::default();
+    *state.frontend_open_orders_response.lock().await = Some(json!([]));
+    let mut row = historical_order("BTC", 101);
+    row["status"] = json!("triggered");
+    *state.order_status_response.lock().await = Some(json!({"status": "order", "order": row}));
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+    let order = open_limit_order_in_cache(&cache, "O-REPORT-CACHED-TRIGGERED", "101");
+    let coid = order.client_order_id();
+    let dispatch = client.ws_dispatch_state();
+    dispatch.record_venue_order_id(coid, VenueOrderId::from("101"));
+    let cmd = make_status_report_cmd(Some(coid), None);
+    let task = client.generate_order_status_report_task(&cmd).unwrap();
+    state.pause_next_info.store(true, Ordering::Release);
+
+    let worker = tokio::spawn(task.collection);
+    tokio::time::timeout(Duration::from_secs(5), state.info_started.notified())
+        .await
+        .unwrap();
+    let newer_oid = VenueOrderId::from("102");
+    cache
+        .borrow_mut()
+        .add_venue_order_id(&coid, &newer_oid, true)
+        .unwrap();
+    dispatch.record_venue_order_id(coid, newer_oid);
+    state.info_release.notify_one();
+    worker.await.unwrap();
+    let result = task.result.await;
+    let requests = state.info_requests.lock().await;
+    let oid_queries: Vec<_> = requests
+        .iter()
+        .filter(|request| request["type"] == "orderStatus")
+        .map(|request| request["oid"].clone())
+        .collect();
+    assert_eq!(oid_queries, vec![json!(101)]);
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        format!("order status report for superseded leg on {coid}"),
+    );
+    assert_eq!(dispatch.cached_venue_order_id(&coid), Some(newer_oid));
+    assert!(rx.try_recv().is_err());
+    drop(requests);
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_report_task_observes_instrument_update_during_collection() {
+    let state = TestServerState::default();
+    *state.frontend_open_orders_response.lock().await = Some(json!([frontend_order("BTC", 101)]));
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.connect().await.unwrap();
+    let cmd = make_status_report_cmd(None, Some(VenueOrderId::from("101")));
+    let task = client.generate_order_status_report_task(&cmd).unwrap();
+    state.pause_next_info.store(true, Ordering::Release);
+
+    let worker = tokio::spawn(task.collection);
+    tokio::time::timeout(Duration::from_secs(5), state.info_started.notified())
+        .await
+        .unwrap();
+    add_test_perp_instrument_to_cache(&cache);
+    let instrument = cache
+        .borrow()
+        .instrument(&InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT))
+        .unwrap()
+        .clone();
+    client.on_instrument(instrument);
+    state.info_release.notify_one();
+    worker.await.unwrap();
+    let report = task.result.await.unwrap().unwrap();
+    assert_eq!(report.quantity.precision, 5);
+    assert_eq!(report.price.unwrap().precision, 2);
+    assert_eq!(report.venue_order_id, VenueOrderId::from("101"));
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::mainnet(HyperliquidEnvironment::Mainnet)]
+#[case::testnet(HyperliquidEnvironment::Testnet)]
+#[ignore = "requires explicit live validation approval and Hyperliquid credentials"]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_live_execution_report_tasks(#[case] environment: HyperliquidEnvironment) {
+    let http = HyperliquidHttpClient::from_env(environment).unwrap();
+    let instrument_client = http.clone();
+    let instruments = tokio::spawn(async move { instrument_client.request_instruments().await })
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(!instruments.is_empty());
+
+    let (mut client, _rx, _cache) =
+        create_test_execution_client_from_config(HyperliquidExecutionClientConfig {
+            environment,
+            ..HyperliquidExecutionClientConfig::default()
+        });
+
+    for instrument in instruments {
+        client.on_instrument(instrument);
+    }
+
+    let instrument = Some(InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT));
+
+    let orders = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        true,
+        instrument,
+        None,
+        None,
+        None,
+        None,
+    );
+
+    let fills = GenerateFillReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        instrument,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+
+    let positions = GeneratePositionStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        instrument,
+        None,
+        None,
+        None,
+        None,
+    );
+    let order_reports =
+        run_report_task(client.generate_order_status_reports_task(&orders).unwrap())
+            .await
+            .unwrap();
+    let fill_reports = run_report_task(client.generate_fill_reports_task(&fills).unwrap())
+        .await
+        .unwrap();
+    let position_reports = run_report_task(
+        client
+            .generate_position_status_reports_task(&positions)
+            .unwrap(),
+    )
+    .await
+    .unwrap();
+    let oid = order_reports
+        .first()
+        .map(|report| report.venue_order_id)
+        .or_else(|| fill_reports.first().map(|report| report.venue_order_id));
+
+    let oid = if let Some(oid) = oid {
+        oid
+    } else {
+        let user = http.get_account_address().unwrap();
+        let history = http.info_historical_orders(&user).await.unwrap();
+        history.first().map_or(VenueOrderId::from("0"), |entry| {
+            VenueOrderId::from(entry.order.oid.to_string())
+        })
+    };
+
+    let single = make_status_report_cmd(None, Some(oid));
+    let report = run_report_task(client.generate_order_status_report_task(&single).unwrap())
+        .await
+        .unwrap();
+
+    if let Some(report) = report {
+        assert_eq!(report.venue_order_id, oid);
+    }
+
+    assert!(
+        order_reports
+            .iter()
+            .all(|report| report.account_id == client.account_id())
+    );
+    assert!(
+        fill_reports
+            .iter()
+            .all(|report| report.account_id == client.account_id())
+    );
+    assert!(
+        position_reports
+            .iter()
+            .all(|report| report.account_id == client.account_id())
+    );
+    println!("{environment:?}: all four execution report task paths complete on workers");
+}
+
+#[rstest]
+#[case::orders("orders", "failed to generate order status reports")]
+#[case::fills("fills", "failed to generate fill reports")]
+#[case::positions("positions", "failed to generate position status reports")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_report_tasks_preserve_collection_errors(#[case] kind: &str, #[case] context: &str) {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.connect().await.unwrap();
+    *state.frontend_open_orders_response.lock().await =
+        Some(json!([frontend_order("UNKNOWN", 101)]));
+    *state.user_fills_response.lock().await = Some(json!([user_fill("UNKNOWN", 101)]));
+    *state.perp_clearinghouse_response.lock().await = Some(clearinghouse_position("UNKNOWN"));
+
+    let (inline, worker) = match kind {
+        "orders" => {
+            let cmd = GenerateOrderStatusReports::new(
+                UUID4::new(),
+                UnixNanos::default(),
+                true,
+                None,
+                None,
+                None,
+                None,
+                None,
+            );
+            (
+                client
+                    .generate_order_status_reports(&cmd)
+                    .await
+                    .unwrap_err(),
+                run_report_task(client.generate_order_status_reports_task(&cmd).unwrap())
+                    .await
+                    .unwrap_err(),
+            )
+        }
+        "fills" => {
+            let cmd = GenerateFillReports::new(
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            );
+            (
+                client.generate_fill_reports(cmd.clone()).await.unwrap_err(),
+                run_report_task(client.generate_fill_reports_task(&cmd).unwrap())
+                    .await
+                    .unwrap_err(),
+            )
+        }
+        "positions" => {
+            let cmd = GeneratePositionStatusReports::new(
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+                None,
+                None,
+                None,
+            );
+            (
+                client
+                    .generate_position_status_reports(&cmd)
+                    .await
+                    .unwrap_err(),
+                run_report_task(client.generate_position_status_reports_task(&cmd).unwrap())
+                    .await
+                    .unwrap_err(),
+            )
+        }
+        _ => unreachable!(),
+    };
+
+    assert_eq!(inline.to_string(), context);
+    assert_eq!(format!("{worker:#}"), format!("{inline:#}"));
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_canceled_report_task_never_promotes_replacement() {
+    let state = TestServerState::default();
+    let order = make_limit_order("O-REPORT-CANCELED");
+    let coid = order.client_order_id();
+    let mut row = frontend_order("BTC", 102);
+    row["cloid"] = json!(Cloid::from_client_order_id(coid).to_hex());
+    *state.frontend_open_orders_response.lock().await = Some(json!([row]));
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+    let dispatch = client.ws_dispatch_state();
+    dispatch.register_context(OrderContext::from(&order));
+    dispatch.record_venue_order_id(coid, VenueOrderId::from("101"));
+    dispatch.mark_pending_modify(coid, VenueOrderId::from("101"), Quantity::from("0.2"));
+    let cmd = make_status_report_cmd(Some(coid), None);
+    let task = client.generate_order_status_report_task(&cmd).unwrap();
+    state.pause_next_info.store(true, Ordering::Release);
+
+    let worker = tokio::spawn(task.collection);
+    tokio::time::timeout(Duration::from_secs(5), state.info_started.notified())
+        .await
+        .unwrap();
+    worker.abort();
+    assert!(worker.await.unwrap_err().is_cancelled());
+    assert_eq!(
+        task.result.await.unwrap_err().to_string(),
+        "report collection stopped without a result"
+    );
+    assert_eq!(
+        dispatch.cached_venue_order_id(&coid),
+        Some(VenueOrderId::from("101"))
+    );
+    assert!(dispatch.has_pending_modify(&coid));
+    assert!(rx.try_recv().is_err());
+    state.info_release.notify_one();
     client.disconnect().await.unwrap();
 }

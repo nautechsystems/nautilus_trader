@@ -1580,7 +1580,8 @@ mod tests {
     use nautilus_model::{
         enums::OrderType,
         instruments::stubs::{
-            audusd_sim, binary_option, crypto_perpetual_ethusdt, futures_spread_es,
+            audusd_sim, binary_option, crypto_perpetual_ethusdt, futures_contract_es,
+            futures_spread_es,
         },
         orders::builder::OrderTestBuilder,
     };
@@ -1972,6 +1973,11 @@ mod tests {
     #[case::zero_disallowed(InstrumentAny::BinaryOption(binary_option()), "0.000", false)]
     #[case::negative_disallowed(InstrumentAny::BinaryOption(binary_option()), "-0.001", false)]
     #[case::negative_allowed(InstrumentAny::FuturesSpread(futures_spread_es()), "-1.00", true)]
+    #[case::negative_allowed_futures(
+        InstrumentAny::FuturesContract(futures_contract_es(None, None)),
+        "-1.00",
+        true
+    )]
     fn test_is_price_tradable_respects_price_sign(
         #[case] instrument: InstrumentAny,
         #[case] price: &str,

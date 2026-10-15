@@ -125,8 +125,7 @@ impl<S: logger_config_builder::IsComplete> LoggerConfigBuilder<S> {
     ///
     /// # Errors
     ///
-    /// Returns a [`ConfigError`](crate::config::ConfigError) if any field fails validation
-    /// (see [`LoggerConfig::validate`]).
+    /// Returns an error if any field fails validation (see [`LoggerConfig::validate`]).
     pub fn build(self) -> ConfigResult<LoggerConfig> {
         let config = self.build_inner();
         config.validate()?;
@@ -180,8 +179,8 @@ impl LoggerConfig {
     ///
     /// # Errors
     ///
-    /// Returns a [`ConfigError`](crate::config::ConfigError) if the file writer configuration
-    /// is invalid (see [`FileWriterConfig::validate`]).
+    /// Returns an error if the file writer configuration is invalid (see
+    /// [`FileWriterConfig::validate`]).
     pub fn validate(&self) -> ConfigResult<()> {
         if let Some(file_config) = &self.file_config {
             file_config.validate()?;

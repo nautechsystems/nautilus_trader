@@ -1157,7 +1157,7 @@ impl BlockchainDataClient {
     ///
     /// # Errors
     ///
-    /// Returns an error when bounded task shutdown fails.
+    /// Returns an error if bounded task shutdown fails.
     pub async fn await_process_task_close(&self) -> anyhow::Result<()> {
         self.session_tasks
             .finish_shutdown(Duration::from_secs(2), Duration::from_secs(2))

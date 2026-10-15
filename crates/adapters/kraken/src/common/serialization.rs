@@ -82,6 +82,25 @@ pub(crate) mod decimal {
     }
 }
 
+/// Deserializes a decimal the venue may send as an empty string when it is absent.
+pub(crate) mod optional_decimal_or_empty {
+    use super::*;
+
+    pub(crate) fn deserialize<'de, D>(deserializer: D) -> Result<Option<Decimal>, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let raw = Box::<RawValue>::deserialize(deserializer)?;
+        if matches!(raw.get(), "null" | "\"\"") {
+            return Ok(None);
+        }
+
+        parse_raw_decimal(raw.get())
+            .map(Some)
+            .map_err(D::Error::custom)
+    }
+}
+
 pub(crate) mod optional_decimal {
     use super::*;
 

@@ -237,7 +237,7 @@ impl EncodeToRecordBatch for CryptoPerpetual {
 ///
 /// # Errors
 ///
-/// Returns an `EncodingError` if the record batch cannot be decoded.
+/// Returns an error if the record batch cannot be decoded.
 ///
 /// [`DecodeFromRecordBatch`]: crate::arrow::DecodeFromRecordBatch
 pub fn decode_crypto_perpetual_batch(

@@ -5,10 +5,10 @@ adjusted price stream. Each underlying contract expires, so the continuous serie
 next contract at a transition point. Each segment is adjusted into a common price frame so contract
 changes do not introduce artificial price jumps.
 
-Nautilus models a continuous future as a target `BarType` plus an explicit list of roll
-transitions supplied in request or subscription params. The data engine selects the real contract
-for each time segment, computes its cumulative price adjustment, and feeds the adjusted source data
-through the normal bar aggregation path.
+Nautilus models a continuous future as a target `BarType` plus an explicit list of roll transitions supplied
+in request or subscription params. For each time segment, the data engine selects the real contract and
+computes its cumulative price adjustment. It feeds the adjusted source data through the normal bar aggregation
+path.
 
 ## Adjustment modes
 
@@ -76,12 +76,12 @@ not supported as continuous targets, but they can serve as the per-segment sourc
 The two optional bounds restrict which transitions contribute to the cumulative adjustment. They
 do not remove contract segments from the request or subscription:
 
-- `last_post_instrument_id` caps the upper end at the first transition whose `post_instrument_id`
-  matches. Backward modes use the matching post contract as the zero-adjustment anchor; forward
-  modes exclude later transitions from the cumulative adjustment.
-- `first_pre_instrument_id` caps the lower end at the first transition whose `pre_instrument_id`
-  matches. Forward modes use the matching pre contract as the zero-adjustment anchor; backward
-  modes exclude earlier transitions from the cumulative adjustment.
+- `last_post_instrument_id` caps the upper end at the first transition whose `post_instrument_id` matches.
+  Backward modes use the matching post contract as the zero-adjustment anchor. Forward modes exclude later
+  transitions from the cumulative adjustment.
+- `first_pre_instrument_id` caps the lower end at the first transition whose `pre_instrument_id` matches.
+  Forward modes use the matching pre contract as the zero-adjustment anchor. Backward modes exclude earlier
+  transitions from the cumulative adjustment.
 
 These bounds let callers pass a wider transition table while choosing the adjustment range.
 
@@ -105,7 +105,7 @@ allocating an aggregator or child segment state:
   the target venue, and appear as a `post_instrument_id` in the transition list. The same
   applies to `first_pre_instrument_id`.
 
-A validation error therefore returns before either path starts an aggregation workflow.
+A validation error thus returns before either path starts an aggregation workflow.
 
 After validation, the request path releases its request-scoped aggregators if setup or the initial
 segment dispatch fails. A failure while dispatching a later segment still ends the request with a
@@ -113,17 +113,16 @@ completion response and normal aggregator cleanup.
 
 ## Target instrument auto-synthesis
 
-The continuous root (for example `ES.XCME`) is a synthetic id with no market data of its own,
-but downstream consumers (aggregators, cache lookups, serialization) still expect an `Instrument`
-in the cache. After validation, both the request and subscription paths ensure the target
-instrument exists:
+The continuous root (for example `ES.XCME`) is a synthetic id with no market data of its own. But downstream
+consumers (aggregators, cache lookups, serialization) still expect an `Instrument` in the cache. After
+validation, both the request and subscription paths ensure the target instrument exists:
 
 - If the target id is already cached, the target setup is a no-op. Callers can pre-register a custom
   continuous instrument and the engine respects it.
-- Otherwise the target setup fetches the first segment's instrument from the cache and clones it,
-  overriding only `id`, `raw_symbol`, and clearing `activation_ns` and `expiration_ns` to `0`.
-  Every other field (currency, precision, increment, multiplier, lot size, underlying, fees,
-  margins, exchange, tick scheme, info) is reused from the segment.
+- Otherwise the target setup fetches the first segment's instrument from the cache and clones it. It overrides
+  only `id` and `raw_symbol`, and clears `activation_ns` and `expiration_ns` to `0`. Each other field
+  (currency, precision, increment, multiplier, lot size, underlying, fees, margins, exchange, tick scheme,
+  info) is reused from the segment.
 - If the first segment is not yet in the cache or is not a `FuturesContract`, the setup logs
   a warning and returns. The caller must then register the continuous instrument manually.
 
@@ -149,11 +148,11 @@ flowchart TD
     Agg2 -->|adjusted bars| MsgBus[(msgbus: data.bars.*)]
 ```
 
-Request-path bars land in the cache; subscription-path bars publish to the message bus.
+Request-path bars land in the cache. Subscription-path bars publish to the message bus.
 
-Both paths use the same segmentation, source resolution, and adjustment calculation. The request
-path processes segments in sequence; the subscription path keeps one source active and switches it
-when the time alert for the next transition fires.
+Both paths use the same segmentation, source resolution, and adjustment calculation. The request path
+processes segments in sequence. The subscription path keeps one source active and switches it when the time
+alert for the next transition fires.
 
 ## Segments
 
@@ -171,10 +170,10 @@ next remaining transition.
 
 ## Request flow
 
-The request path dispatches one child request at a time through the engine's normal request
-handling, so a registered data catalog serves a segment before the client fills any gaps. When a
-child response arrives, the engine aggregates its data and advances to the next segment. A segment
-split across catalog and client data advances only after every part arrives.
+The request path dispatches one child request at a time through the engine's normal request handling. Thus, a
+registered data catalog serves a segment before the client fills any gaps. When a child response arrives, the
+engine aggregates its data and advances to the next segment. A segment split across catalog and client data
+advances only after each part arrives.
 
 ```mermaid
 sequenceDiagram
@@ -196,21 +195,21 @@ sequenceDiagram
 ```
 
 :::info
-Adjusted bars are written to the cache as each child response is processed. The completion response
-signals that the request has finished and reports the source record count; it does not contain a
-combined vector of adjusted bars.
+Adjusted bars are written to the cache as each child response is processed. The completion response signals
+that the request has finished and reports the source record count. It does not contain a combined vector of
+adjusted bars.
 :::
 
 ### Chain aggregators
 
-If a request sets `bar_types = (bar_type_1, bar_type_2)` for multi-level internal aggregation, the
-engine creates an isolated request-scoped aggregator for each level. Segment source responses enter
-the primary continuous target, and its emitted bars feed matching downstream aggregators. Only the
-primary builder receives the adjustment; higher levels re-aggregate already adjusted data.
+If a request sets `bar_types = (bar_type_1, bar_type_2)` for multi-level internal aggregation, the engine
+creates an isolated request-scoped aggregator for each level. Segment source responses enter the primary
+continuous target, and its emitted bars feed matching downstream aggregators. Only the primary builder
+receives the adjustment. Higher levels re-aggregate already adjusted data.
 
 ## Subscription flow
 
-A small state machine drives each active subscription via a single pending time alert:
+A small state machine drives each active subscription through a single pending time alert:
 
 ```mermaid
 stateDiagram-v2
@@ -219,9 +218,12 @@ stateDiagram-v2
     Active --> [*]: unsubscribe(cancel timer, deactivate segment)
 ```
 
-When a transition fires, the engine deactivates the current segment (unsubscribes the source),
-applies the next segment's adjustment, subscribes to the new source, and arms the timer for the
-following transition.
+When a transition fires, the engine:
+
+1. Deactivates the current segment by unsubscribing the source.
+1. Applies the next segment's adjustment.
+1. Subscribes to the new source.
+1. Arms the timer for the following transition.
 
 ## Source resolution
 
@@ -246,9 +248,9 @@ Other price types are not supported by quote aggregation.
 
 ## BarBuilder adjustment
 
-The builder applies the adjustment **at ingress** on every `update(price, ...)` and
-`update_bar(bar, ...)` call. The running OHLC state therefore remains in the adjusted common frame.
-Changing the adjustment during a bar affects only subsequent input.
+The builder applies the adjustment **at ingress** on each `update(price, ...)` and `update_bar(bar, ...)`
+call. The running OHLC state thus stays in the adjusted common frame. Changing the adjustment during a bar
+affects only subsequent input.
 
 ```mermaid
 flowchart LR
@@ -268,16 +270,15 @@ clears per-bar OHLCV state for the next bar but preserves the segment-scoped adj
 
 ## Mid-bar roll boundary
 
-If a roll lands inside an in-progress target bar, the builder keeps the current OHLC state and
-applies the new adjustment only to subsequent updates. The pre-boundary portion stays at the old
-offset; the post-boundary portion uses the new offset. Rewriting the existing OHLC under the new
-adjustment would require raw input that the builder does not retain.
+If a roll lands inside an in-progress target bar, the builder keeps the current OHLC state and applies the new
+adjustment only to subsequent updates. The pre-boundary portion stays at the old offset. The post-boundary
+portion uses the new offset. Rewriting the existing OHLC under the new adjustment would require raw input that
+the builder does not keep.
 
 ## Limitations
 
 - The feature requires supplied transition metadata. The engine does not discover rolls, choose
   contracts, or infer roll prices: that is the caller's responsibility.
-- Ratio adjustment converts the factor and each price through `f64` before rebuilding the adjusted
-  `Price`. For high-precision instruments, the result can differ from equivalent `Decimal`
-  multiplication. Spread adjustment remains exact in the fixed-point representation because it
-  adds directly to `PriceRaw`.
+- Ratio adjustment converts the factor and each price through `f64` before rebuilding the adjusted `Price`.
+  For high-precision instruments, the result can differ from equivalent `Decimal` multiplication. Spread
+  adjustment stays exact in the fixed-point representation because it adds directly to `PriceRaw`.

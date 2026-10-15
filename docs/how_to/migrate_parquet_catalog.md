@@ -36,6 +36,9 @@ local paths, the destination directory itself may be created before the emptines
 The migration preserves the source files: it only reads them, and it rechecks each file's size and version markers
 before converting it.
 
+Conversion also rejects a file when its rows fall outside the timestamp interval in its filename; the schema-only
+dry run does not detect this. Correct the source coverage in a separate copy, then retry into a new empty destination.
+
 The printed report distinguishes migrated files and rows, transcoded rows, path-derived identifier rows, skipped
 files, and unmigrated files; empty coverage files count as migrated files with zero rows. Inspect the report before
 cutting over.
@@ -74,6 +77,22 @@ Physical decimals always use scale 16, while each file's schema metadata carries
 reject values their numeric configuration cannot represent exactly rather than rounding them. Precision metadata above
 16 and `Money` currencies with precision above 16 are rejected, so DeFi precisions such as wei fall outside the
 catalog representation.
+
+### Schema identification and compatibility
+
+Schema fingerprints record ordered field names, Arrow types, and nullability. The migration registry uses exact
+fingerprints for registered legacy transcoders. Current-schema matching checks columns by name and type, accepts plain
+UTF-8 for dictionary strings, and does not require the same field order or nullability. Schema metadata is excluded
+from the fingerprint: `type_name`, identity, and numeric precision remain separate requirements. There is no persisted
+integer schema version. A release version alone does not identify a file's schema.
+
+V2 catalog Arrow schemas differ from v1. Compatible updates preserve the meaning of existing fields, exact numeric
+values, identities, and timestamps. A change to an incompatible schema requires an
+explicit migration and documented source support; readers must not silently reinterpret old files. For files in
+current directory layouts, runtime queries reject recognized legacy schemas in files selected by the query and direct
+callers to migration, even when a SQL predicate would return no rows. Timestamp bounds can exclude files before schema
+validation. Queries also skip older directory layouts; either case can return no rows without a schema error.
+Migrate legacy catalogs before querying them.
 
 ### Nulls and rejected values
 
@@ -114,7 +133,8 @@ migrated files carry the same schema and metadata as files that later writes pro
 that the current decoders reject fail the migration.
 
 Custom-data `ts_event` and `ts_init` columns stored as `uint64` nanoseconds convert to
-`timestamp("ns", tz="UTC")`. Other supported custom-data columns pass through unchanged.
+`timestamp("ns", tz="UTC")`. Legacy dictionary-encoded string columns become plain UTF-8;
+other supported custom-data columns pass through unchanged.
 Custom files whose timestamps are already nanosecond Arrow timestamps pass through unchanged.
 Files whose timestamps use any other physical type (notably `int64` from older pandas-written
 catalogs) fail preflight: recast them to `uint64` nanoseconds before migrating.
@@ -139,14 +159,35 @@ destination format preserves order IDs for subsequent writes.
 
 ### Verified sources and cutover checks
 
-The end-to-end migration fixture comes from develop commit `1602043deb`, built with the `high-precision` feature
+Released-source coverage is limited to the following fixtures from version **1.231.0**:
+
+| Source writer                   | Numeric configuration | Verified families                             |
+| ------------------------------- | --------------------- | --------------------------------------------- |
+| Released Python Linux wheel     | 128-bit               | Quotes, `CurrencyPair`, Binance mark updates  |
+| Rust source at the released tag | 64-bit                | Quotes and `CurrencyPair`                     |
+| Released Python adapter writer  | Precision-independent | Binance mark updates in both fixture catalogs |
+
+The Binance fixture is `BinanceFuturesMarkPriceUpdate`: its prices and funding rate are strings, and the same
+released adapter file is tested with both numeric configurations. Tests compare decoded quote and instrument fields,
+all adapter Arrow fields, partition identities, nanosecond timestamps, known-empty coverage, and source bytes.
+Adapter verification covers migration and raw Arrow queries. It does not promise typed decoding with a changed
+adapter schema. The released Python instrument writer omits tick schemes, so migration cannot restore them.
+Fixture provenance and reproduction instructions accompany the source data in
+`test_data/nautilus/catalog_1_231_0/`.
+
+This matrix does not establish support for every 1.x release, instrument class, or adapter. Other releases and
+families require their own source fixtures and cutover comparisons. Unknown fingerprints and unsupported custom
+timestamp types remain preflight errors.
+
+Additional end-to-end coverage comes from develop commit `1602043deb`, built with the `high-precision` feature
 enabled. It covers quotes, trades, bars, fixed-depth order books, `CurrencyPair` instruments, account-state records,
 and a generic custom data type. The tests compare decoded destination values against the original values and check
 that the source files remain byte-identical. This fixture does not establish a minimum supported release or cover
 every historical catalog format.
 
-Instrument regression tests also cover `CryptoPerpetual` files with legacy `class` metadata, both `uint64` and
-`timestamp("ns", tz="UTC")` timestamps, and with or without the removed `maker_fee` and `taker_fee` columns.
+Synthetic instrument regression tests also cover plain and dictionary-encoded strings in `CryptoPerpetual` files
+with legacy `class` metadata, both `uint64` and `timestamp("ns", tz="UTC")` timestamps, and with or without the removed
+`maker_fee` and `taker_fee` columns.
 Migration drops those fee columns because the current instrument model no longer stores them. Runtime queries reject
 these legacy instrument files and direct users to the migration command; they do not convert files while reading.
 
@@ -154,7 +195,7 @@ Check the destination carefully when the source contains:
 
 - Data written by an older Nautilus release.
 - Instrument types other than `CurrencyPair` and `CryptoPerpetual`.
-- Adapter custom data types with Arrow support, such as Betfair, Binance, Deribit, and Hyperliquid.
+- Adapter custom data outside the Binance fixture above, such as Betfair, Deribit, and Hyperliquid.
 - Deltas, mark and index prices, closes, Greeks, current-shape funding, or record families other than
   `account_state`.
 

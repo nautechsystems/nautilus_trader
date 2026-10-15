@@ -61,6 +61,7 @@ hyper-util = { workspace = true, features = [
   "http1",
   "http2",
 ] }
+jiff = { workspace = true }
 log = { workspace = true }
 parking_lot = { workspace = true }
 percent-encoding = { workspace = true }

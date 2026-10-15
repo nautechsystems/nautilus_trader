@@ -22,7 +22,7 @@ use nautilus_model::{
     types::{Money, Price, Quantity},
 };
 
-use super::admission::AdmittedLeg;
+use super::admission::{AdmittedLeg, TakerFeeBasis};
 
 /// Maximum number of settlement entries created after hydration before the registry faults the
 /// client closed.
@@ -80,6 +80,12 @@ pub(crate) enum LegApplication {
 /// still permits application when it drains. A `report_routed` leg was delivered through a fill
 /// report for an order without captured context, so its application, if core performs it, is
 /// observed through applied events rather than awaited.
+///
+/// Venue evidence remains comparable after core application; reconstructed core events may
+/// contain normalized quantities and cannot establish the original stream economics.
+///
+/// `taker_fee_basis` is copied from the first non-failed taker admission. Maker, failed, and
+/// reconstructed legs leave it unset, so a later schedule can still conflict with their commission.
 #[derive(Debug)]
 pub(crate) struct SettlementLeg {
     pub venue_order_id: VenueOrderId,
@@ -90,12 +96,14 @@ pub(crate) struct SettlementLeg {
     pub last_qty: Quantity,
     pub last_px: Price,
     pub commission: Money,
+    pub taker_fee_basis: Option<TakerFeeBasis>,
     pub ts_event: UnixNanos,
     pub application: LegApplication,
     /// The canonical applied fill as published by core, retained for void construction.
     pub applied_fill: Option<Box<OrderFilled>>,
     pub authorized: bool,
     pub report_routed: bool,
+    pub venue_evidence: bool,
 }
 
 impl SettlementLeg {
@@ -109,11 +117,13 @@ impl SettlementLeg {
             last_qty: leg.last_qty,
             last_px: leg.last_px,
             commission: leg.commission.clone(),
+            taker_fee_basis: leg.taker_fee_basis,
             ts_event: leg.ts_event,
             application: LegApplication::Absent,
             applied_fill: None,
             authorized: false,
             report_routed: false,
+            venue_evidence: true,
         }
     }
 
@@ -125,6 +135,7 @@ impl SettlementLeg {
 
 /// Effects the caller must execute after a registry transition.
 #[derive(Debug)]
+#[cfg_attr(feature = "high-precision", expect(clippy::large_enum_variant))]
 pub(crate) enum SettlementAction {
     /// Apply the leg by emitting an `OrderFilled` through the established emission machinery.
     ApplyLeg {

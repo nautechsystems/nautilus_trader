@@ -212,7 +212,7 @@ pub struct OrderContext {
 ///
 /// # Errors
 ///
-/// Returns `DydxError::Parse` if the provided `expire_time` timestamp is invalid.
+/// Returns an error if the provided `expire_time` timestamp is invalid.
 pub fn calculate_conditional_order_expiration(
     time_in_force: TimeInForce,
     expire_time: Option<i64>,

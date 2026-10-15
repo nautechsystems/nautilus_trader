@@ -157,8 +157,8 @@ impl OrderFilled {
     ///
     /// # Errors
     ///
-    /// Returns an error when `closing_qty` is zero, is not smaller than the fill quantity,
-    /// or the proportional commission cannot be represented.
+    /// Returns an error if `closing_qty` is zero, is not smaller than the fill quantity, or the
+    /// proportional commission cannot be represented.
     pub fn split_for_position_flip(
         &self,
         closing_qty: Quantity,

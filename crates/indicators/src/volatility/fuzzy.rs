@@ -16,6 +16,7 @@
 use std::fmt::{Debug, Display};
 
 use arraydeque::{ArrayDeque, Wrapping};
+use nautilus_core::correctness::FAILED;
 use nautilus_model::data::Bar;
 use strum::Display;
 
@@ -263,17 +264,13 @@ impl Indicator for FuzzyCandlesticks {
 }
 
 impl FuzzyCandlesticks {
-    /// Creates a new [`FuzzyCandle`] instance.
+    /// Creates a new [`FuzzyCandlesticks`] instance.
+    ///
+    /// A zero period is accepted.
     ///
     /// # Panics
     ///
-    /// This function panics if:
-    /// - `period` is greater than `MAX_CAPACITY`.
-    /// - Period: usize : The rolling window period for the indicator (> 0).
-    /// - Threshold1: f64 : The membership function x threshold1 (> 0).
-    /// - Threshold2: f64 : The membership function x threshold2 (> threshold1).
-    /// - Threshold3: f64 : The membership function x threshold3 (> threshold2).
-    /// - Threshold4: f64 : The membership function x threshold4 (> threshold3).
+    /// Panics if `period` exceeds the fixed window capacity.
     #[must_use]
     pub fn new(
         period: usize,
@@ -282,8 +279,21 @@ impl FuzzyCandlesticks {
         threshold3: f64,
         threshold4: f64,
     ) -> Self {
-        assert!(period <= MAX_CAPACITY);
-        Self {
+        Self::new_checked(period, threshold1, threshold2, threshold3, threshold4).expect(FAILED)
+    }
+
+    pub(crate) fn new_checked(
+        period: usize,
+        threshold1: f64,
+        threshold2: f64,
+        threshold3: f64,
+        threshold4: f64,
+    ) -> anyhow::Result<Self> {
+        anyhow::ensure!(
+            period <= MAX_CAPACITY,
+            "period cannot exceed {MAX_CAPACITY}"
+        );
+        Ok(Self {
             period,
             threshold1,
             threshold2,
@@ -307,7 +317,7 @@ impl FuzzyCandlesticks {
             last_high: 0.0,
             last_low: 0.0,
             last_close: 0.0,
-        }
+        })
     }
 
     pub fn update_raw(&mut self, open: f64, high: f64, low: f64, close: f64) {
@@ -514,6 +524,36 @@ mod tests {
         stubs::{fuzzy_candlesticks_1, fuzzy_candlesticks_3, fuzzy_candlesticks_10},
         volatility::fuzzy::FuzzyCandlesticks,
     };
+
+    #[rstest]
+    #[case(MAX_CAPACITY + 1)]
+    #[case(usize::MAX)]
+    fn test_checked_constructor_rejects_invalid_periods(#[case] period: usize) {
+        let error = FuzzyCandlesticks::new_checked(period, 0.1, 0.2, 0.3, 0.4).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            format!("period cannot exceed {MAX_CAPACITY}")
+        );
+    }
+
+    #[rstest]
+    #[case(0)]
+    #[case(MAX_CAPACITY)]
+    fn test_checked_constructor_preserves_period_bounds(#[case] period: usize) {
+        let ind = FuzzyCandlesticks::new_checked(period, 0.1, 0.2, 0.3, 0.4).unwrap();
+        assert_eq!(ind.period, period);
+        assert_eq!(
+            (
+                ind.threshold1,
+                ind.threshold2,
+                ind.threshold3,
+                ind.threshold4
+            ),
+            (0.1, 0.2, 0.3, 0.4)
+        );
+        assert!(!ind.initialized());
+        assert!(!ind.has_inputs());
+    }
 
     #[rstest]
     fn test_fuzzy_candle_display_orders_wicks_upper_then_lower() {

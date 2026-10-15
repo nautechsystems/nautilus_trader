@@ -29,7 +29,7 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
-    types::{AccountBalance, Currency, Money, Quantity},
+    types::{Currency, Quantity},
 };
 use parking_lot::Mutex;
 use rust_decimal::Decimal;
@@ -37,6 +37,7 @@ use ustr::Ustr;
 
 use super::{
     PolymarketExecutionClient,
+    collateral::{AppliedBalance, CollateralLocks},
     parse::{
         parse_balance_allowance, recovered_terminal_order_status, sum_filled_quantity,
         weighted_average_price,
@@ -364,7 +365,7 @@ impl PolymarketExecutionClient {
         );
         report.price = cached_price;
         report.avg_px = avg_px;
-        normalize_terminal_order_report_quantity(&mut report);
+        normalize_terminal_order_report_quantity(&mut report, Quantity::zero(size_prec));
 
         Ok(Some(report))
     }
@@ -374,7 +375,7 @@ impl PolymarketExecutionClient {
         let emitter = self.emitter.clone();
         let clock = self.clock;
         let signature_type = self.config.signature_type;
-        let order_reservations = self.order_reservations.clone();
+        let collateral_locks = self.collateral_locks.clone();
 
         self.spawn_task("query_account", async move {
             fetch_and_emit_account_state(
@@ -382,7 +383,7 @@ impl PolymarketExecutionClient {
                 &emitter,
                 clock,
                 signature_type,
-                &order_reservations,
+                &collateral_locks,
             )
             .await
         });
@@ -574,7 +575,13 @@ impl PolymarketExecutionClient {
             };
 
             settlement.ensure_order_resolved(&venue_order_id, "QueryOrder")?;
-            cap_order_report_filled_qty(&mut report, cached_filled, confirmed_filled);
+            cap_order_report_filled_qty(
+                &mut report,
+                cached_filled,
+                confirmed_filled,
+                cached_order.non_reopened_voided_qty(),
+            );
+
             if report.order_status == OrderStatus::Canceled
                 && ws_dispatch_state
                     .lock()
@@ -681,7 +688,14 @@ impl PolymarketExecutionClient {
                 None
             };
 
-            cap_order_report_filled_qty(&mut report, cached_filled, confirmed_filled);
+            cap_order_report_filled_qty(
+                &mut report,
+                cached_filled,
+                confirmed_filled,
+                cached_authority
+                    .as_ref()
+                    .map_or_else(|| Quantity::zero(size_prec), Order::non_reopened_voided_qty),
+            );
             report
         } else {
             let Some(report) = self
@@ -878,10 +892,7 @@ impl PolymarketExecutionClient {
                 continue;
             }
 
-            let filled_before_leg = promotion
-                .quantity
-                .checked_sub(promotion.leg_quantity)
-                .context("replacement venue-leg quantity exceeds logical quantity")?;
+            let filled_before_leg = promotion.prior_filled;
             report.client_order_id = Some(promotion.client_order_id);
             report.quantity = promotion.quantity;
             report.filled_qty = filled_before_leg
@@ -986,6 +997,11 @@ impl PolymarketExecutionClient {
                 Order::filled_qty,
             );
 
+            let non_reopened_voided = cached_order.as_ref().map_or_else(
+                || Quantity::zero(report.quantity.precision),
+                Order::non_reopened_voided_qty,
+            );
+
             cap_order_report_filled_qty(
                 report,
                 cached_filled,
@@ -993,6 +1009,7 @@ impl PolymarketExecutionClient {
                     .get(&report.venue_order_id)
                     .copied()
                     .map(|filled| filled_before_leg.as_decimal() + filled),
+                non_reopened_voided,
             );
         }
 
@@ -1094,16 +1111,10 @@ impl PolymarketExecutionClient {
     ) -> anyhow::Result<Option<ExecutionMassStatus>> {
         let ctx = self.fill_context();
 
-        let (cached_venue_order_ids, retained_trade_ids) = {
+        let (cached_orders, retained_trade_ids) = {
             let cache = self.core.cache();
 
-            // A reloaded cache indexes only each order's current venue order, not its earlier legs
-            let cached_venue_order_ids: AHashSet<VenueOrderId> = cache
-                .orders(Some(&self.core.venue), None, None, None, None)
-                .iter()
-                .flat_map(|order| order.events())
-                .filter_map(|event| event.venue_order_id())
-                .collect();
+            let cached_orders = super::reconciliation::cached_order_scopes(&cache, self.core.venue);
             let mut retained_trade_ids: AHashMap<InstrumentId, AHashSet<TradeId>> = AHashMap::new();
 
             for position in cache.positions_open(
@@ -1119,7 +1130,7 @@ impl PolymarketExecutionClient {
                     .extend(position.trade_ids.iter().copied());
             }
 
-            (cached_venue_order_ids, retained_trade_ids)
+            (cached_orders, retained_trade_ids)
         };
 
         super::reconciliation::generate_mass_status(
@@ -1132,7 +1143,7 @@ impl PolymarketExecutionClient {
             self.config.reconciliation_load_ids(),
             &self.resolved_balance_scope(),
             &retained_trade_ids,
-            |venue_order_id| cached_venue_order_ids.contains(venue_order_id),
+            &cached_orders,
         )
         .await
     }
@@ -1180,8 +1191,10 @@ pub(super) async fn fetch_and_emit_account_state(
     emitter: &ExecutionEventEmitter,
     clock: &'static AtomicTime,
     signature_type: PolymarketSignatureType,
-    order_reservations: &Mutex<AHashMap<ClientOrderId, Money>>,
+    collateral_locks: &Mutex<CollateralLocks>,
 ) -> anyhow::Result<()> {
+    let ticket = collateral_locks.lock().begin_refresh();
+
     let params = GetBalanceAllowanceParams {
         asset_type: Some(crate::http::query::AssetType::Collateral),
         signature_type: Some(signature_type),
@@ -1196,36 +1209,23 @@ pub(super) async fn fetch_and_emit_account_state(
     let pusd = get_pusd_currency();
     let account_balance =
         parse_balance_allowance(balance, pusd).context("failed to parse balance")?;
-    let account_balance =
-        balance_with_order_reservations(account_balance, &order_reservations.lock())?;
+    let now = clock.get_time_ns();
 
-    let ts_event = clock.get_time_ns();
+    let AppliedBalance::Fresh(account_balance) = collateral_locks
+        .lock()
+        .apply_refresh(ticket, account_balance.total, now)
+        .context("failed to apply Polymarket balance reservations")?
+    else {
+        log::debug!("Skipping stale Polymarket balance refresh");
+        return Ok(());
+    };
+
     log::debug!(
         "Account state updated: balance={} pUSD",
         account_balance.total
     );
-    emitter.emit_account_state(vec![account_balance], vec![], true, ts_event, None);
+    emitter.emit_account_state(vec![account_balance], vec![], true, now, None);
     Ok(())
-}
-
-fn balance_with_order_reservations(
-    balance: AccountBalance,
-    reservations: &AHashMap<ClientOrderId, Money>,
-) -> anyhow::Result<AccountBalance> {
-    let locked =
-        reservations
-            .values()
-            .try_fold(Money::zero(balance.currency), |total, amount| {
-                total
-                    .checked_add(*amount)
-                    .context("invalid Polymarket order reservation total")
-            })?;
-    AccountBalance::from_total_and_locked(
-        balance.total.as_decimal(),
-        locked.as_decimal(),
-        balance.currency,
-    )
-    .map_err(Into::into)
 }
 
 pub(super) async fn fetch_collateral_balance_pusd(
@@ -1249,48 +1249,9 @@ pub(super) async fn fetch_collateral_balance_pusd(
 
 #[cfg(test)]
 mod tests {
-    use nautilus_model::types::money::MONEY_RAW_MAX;
     use rstest::rstest;
 
     use super::*;
-
-    #[rstest]
-    #[case::sufficient("10 pUSD", "7 pUSD", "3 pUSD")]
-    #[case::clamped("5 pUSD", "5 pUSD", "0 pUSD")]
-    #[case::empty_balance("0 pUSD", "0 pUSD", "0 pUSD")]
-    fn test_balance_with_order_reservations(
-        #[case] total: &str,
-        #[case] locked: &str,
-        #[case] free: &str,
-    ) {
-        let total = Money::from(total);
-        let balance = AccountBalance::new(total, Money::zero(total.currency), total);
-        let reservations = AHashMap::from([
-            (ClientOrderId::from("BUY-1"), Money::from("3 pUSD")),
-            (ClientOrderId::from("BUY-2"), Money::from("4 pUSD")),
-        ]);
-        let result = balance_with_order_reservations(balance, &reservations).unwrap();
-        assert_eq!(
-            result,
-            AccountBalance::new(total, Money::from(locked), Money::from(free))
-        );
-    }
-
-    #[rstest]
-    fn test_balance_with_order_reservations_rejects_overflow() {
-        let total = Money::from("100 pUSD");
-        let balance = AccountBalance::new(total, Money::zero(total.currency), total);
-        let amount = Money::from_raw(MONEY_RAW_MAX, total.currency);
-        let reservations = AHashMap::from([
-            (ClientOrderId::from("BUY-1"), amount),
-            (ClientOrderId::from("BUY-2"), amount),
-        ]);
-        let error = balance_with_order_reservations(balance, &reservations).unwrap_err();
-        assert_eq!(
-            error.to_string(),
-            "invalid Polymarket order reservation total"
-        );
-    }
 
     #[rstest]
     #[case::ioc_dust(TimeInForce::Ioc, "5.202910", "5.202897", OrderStatus::Canceled)]

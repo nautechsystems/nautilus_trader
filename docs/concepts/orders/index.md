@@ -20,25 +20,25 @@ target integration's capabilities before relying on an option.
 
 ### Terminology
 
-- An order is **aggressive** if its type is `MARKET` or it executes as a marketable order and takes
-  liquidity.
-- An order is **passive** if it rests without taking liquidity.
-- An order is **active local** if it remains within the local system boundary in one of these
-  non-terminal statuses:
+- **Aggressive**: an order whose type is `MARKET`, or one that executes as a marketable order and
+  takes liquidity.
+- **Passive**: an order that rests without taking liquidity.
+- **Active local**: an order that stays within the local system boundary at one of these non-terminal
+  statuses:
   - `INITIALIZED`
   - `EMULATED`
   - `RELEASED`
-- An order is **in-flight** when at one of the following statuses:
+- **In-flight**: an order at one of the following statuses:
   - `SUBMITTED`
   - `PENDING_UPDATE`
   - `PENDING_CANCEL`
-- An order is **open** when at one of the following (non-terminal) statuses:
+- **Open**: an order at one of the following non-terminal statuses:
   - `ACCEPTED`
   - `TRIGGERED`
   - `PENDING_UPDATE`
   - `PENDING_CANCEL`
   - `PARTIALLY_FILLED`
-- An order is **closed** when at one of the following (terminal) statuses:
+- **Closed**: an order at one of the following terminal statuses:
   - `DENIED`
   - `REJECTED`
   - `CANCELED`
@@ -46,23 +46,25 @@ target integration's capabilities before relying on an option.
   - `FILLED`
   - `VOIDED`
 
-These groups overlap, so open and closed are not opposites. `PENDING_UPDATE` and `PENDING_CANCEL`
-are both open and in-flight: the order is working at the venue while a modify or cancel request is
-outstanding. Four statuses are neither open nor closed: `INITIALIZED`, `EMULATED`, and `RELEASED`
-are active local, and `SUBMITTED` is in-flight until the venue acknowledges the order.
+**Overlapping groups**: open and closed are not opposites.
+
+- `PENDING_UPDATE` and `PENDING_CANCEL` are both open and in-flight: the order is working at the
+  venue while a modify or cancel request is outstanding.
+- Four statuses are neither open nor closed: `INITIALIZED`, `EMULATED`, and `RELEASED` are active
+  local, and `SUBMITTED` is in-flight until the venue acknowledges the order.
 
 :::warning[Open and closed are not complements]
-Test for a finished order with `is_closed`, never by negating `is_open`. An order at one of the four
-statuses above is not open, but it is not finished either. Every order is `SUBMITTED` immediately
-after submission, so code which treats "not open" as done abandons orders the venue is still
-processing. Use `is_inflight` for the awaiting-venue case.
+Test for a finished order with `is_closed`, never by negating `is_open`. An order at one of the four statuses
+above is not open, but it is not finished either. Each order is `SUBMITTED` immediately after submission, so
+code which treats "not open" as done abandons orders the venue is still processing. Use `is_inflight` for the
+awaiting-venue case.
 :::
 
 ### Order state flow
 
-The following diagram illustrates the order lifecycle and primary state transitions. Each status
-appears once, so `PENDING_UPDATE` and `PENDING_CANCEL` are drawn under In-Flight although they are
-also open:
+**Primary transitions**: the diagram shows the order lifecycle and primary state transitions.
+Each status appears once, so `PENDING_UPDATE` and `PENDING_CANCEL` are drawn under In-Flight
+although they are also open.
 
 ```mermaid
 flowchart TB
@@ -129,11 +131,14 @@ set for recovery and venue edge cases. An order status describes local state, no
 produced it. See [Execution policies](../execution/policies.md) for command outcome classes,
 event provenance, delivery limits, and reconciliation policy.
 
-A fill can arrive after an order expires. The fill still updates the order and position. A partial
-fill leaves the order `EXPIRED`; a fill that completes its quantity changes it to `FILLED`.
-If a fill arrives after the most recent expiry and the order is still `EXPIRED` or `FILLED`, the
-next `OrderExpired` leaves its status and timestamps unchanged. The event remains in the order's
-history, and the execution engine publishes it to strategy handlers. Further expiry events are
+**Fills after expiry**: fills still update the order and position.
+
+- A partial fill leaves the order `EXPIRED`.
+- A fill that completes its quantity changes it to `FILLED`.
+
+If a fill arrives after the most recent expiry and the order is still `EXPIRED` or `FILLED`, Nautilus records
+the next `OrderExpired`. This event leaves the order's status and timestamps unchanged. The event stays in the
+order's history, and the execution engine publishes it to strategy handlers. Further expiry events are
 rejected until another fill arrives.
 
 ### Order status definitions
@@ -146,8 +151,8 @@ rejected until another fill arrives.
 | `RELEASED`         | Order was released from the `OrderEmulator` component.                                         |
 | `SUBMITTED`        | Order was submitted to the venue (awaiting acknowledgement).                                   |
 | `ACCEPTED`         | Order was acknowledged by the venue as received and valid (may now be working).                |
-| `REJECTED`         | Order is terminal as rejected; `reconciliation` and `reason` provide the available provenance. |
-| `CANCELED`         | Order is terminal as canceled; status alone does not identify venue, local, or policy cause.   |
+| `REJECTED`         | Order is terminal as rejected. `reconciliation` and `reason` provide the available provenance. |
+| `CANCELED`         | Order is terminal as canceled. Status alone does not identify venue, local, or policy cause.   |
 | `EXPIRED`          | Order reached its GTD expiration (terminal).                                                   |
 | `TRIGGERED`        | A stop-limit, trailing-stop-limit, or limit-if-touched order triggered on the venue.           |
 | `PENDING_UPDATE`   | Order is pending a modification request on the venue.                                          |
@@ -163,16 +168,16 @@ Support varies by venue and adapter.
 
 ### Time in force
 
-Time in force specifies how long an order remains active before any unfilled quantity is canceled.
+Time in force specifies how long an order stays active before any unfilled quantity is canceled.
 
-- `GTC` (Good Till Cancel): The order remains active until canceled by the trader or the venue.
-- `IOC` (Immediate or Cancel / Fill and Kill): The order executes immediately, with any
+- **`GTC` (Good Till Cancel)**: The order stays active until canceled by the trader or the venue.
+- **`IOC` (Immediate or Cancel / Fill and Kill)**: The order executes immediately, with any
   unfilled portion canceled.
-- `FOK` (Fill or Kill): The order executes immediately in full or not at all.
-- `GTD` (Good Till Date): The order remains active until a specified expiration date and time.
-- `DAY` (Good for session/day): The order remains active until the end of the current trading session.
-- `AT_THE_OPEN` (OPG): The order is only active at the open of the trading session.
-- `AT_THE_CLOSE`: The order is only active at the close of the trading session.
+- **`FOK` (Fill or Kill)**: The order executes immediately in full or not at all.
+- **`GTD` (Good Till Date)**: The order stays active until a specified expiration date and time.
+- **`DAY` (Good for session/day)**: The order stays active until the end of the current trading session.
+- **`AT_THE_OPEN` (OPG)**: The order is only active at the open of the trading session.
+- **`AT_THE_CLOSE`**: The order is only active at the close of the trading session.
 
 ### Expire time
 
@@ -190,7 +195,7 @@ maker fees.
 An order marked `reduce_only` may reduce an existing position but must not increase exposure or open
 a position while flat. Exact behavior varies by venue.
 
-The Nautilus `SimulatedExchange` applies these rules:
+**Simulated reduce-only behavior**: the Nautilus `SimulatedExchange` applies these rules.
 
 - It cancels the order when the associated position becomes flat.
 - It reduces the order quantity as the associated position shrinks.
@@ -209,15 +214,15 @@ specifies the market price used to trigger a conditional order.
 
 An absent trigger type is represented by `None` and is invalid for an order that requires one.
 
-- `DEFAULT`: Uses the venue's default trigger type.
-- `LAST_PRICE`: Uses the last traded price.
-- `BID_ASK`: Uses the ask for BUY orders and the bid for SELL orders.
-- `DOUBLE_LAST`: Requires two consecutive matching last prices.
-- `DOUBLE_BID_ASK`: Requires two consecutive matching bid or ask prices, based on the order side.
-- `LAST_OR_BID_ASK`: Uses either the last price or the side-appropriate bid or ask.
-- `MID_POINT`: Uses the midpoint between the bid and ask.
-- `MARK_PRICE`: Uses the venue's mark price for the instrument.
-- `INDEX_PRICE`: Uses the venue's index price for the instrument.
+- **`DEFAULT`**: Uses the venue's default trigger type.
+- **`LAST_PRICE`**: Uses the last traded price.
+- **`BID_ASK`**: Uses the ask for BUY orders and the bid for SELL orders.
+- **`DOUBLE_LAST`**: Requires two consecutive matching last prices.
+- **`DOUBLE_BID_ASK`**: Requires two consecutive matching bid or ask prices, based on the order side.
+- **`LAST_OR_BID_ASK`**: Uses either the last price or the side-appropriate bid or ask.
+- **`MID_POINT`**: Uses the midpoint between the bid and ask.
+- **`MARK_PRICE`**: Uses the venue's mark price for the instrument.
+- **`INDEX_PRICE`**: Uses the venue's index price for the instrument.
 
 ### Trailing offset type
 
@@ -226,10 +231,10 @@ applicable market price.
 
 An absent trailing offset type is represented by `None` and is invalid for a trailing order.
 
-- `PRICE`: Uses a price difference.
-- `BASIS_POINTS`: Uses a percentage difference in basis points, where 100 basis points equals 1%.
-- `TICKS`: Uses a number of ticks.
-- `PRICE_TIER`: Uses a venue-specific price tier.
+- **`PRICE`**: Uses a price difference.
+- **`BASIS_POINTS`**: Uses a percentage difference in basis points, where 100 basis points equals 1%.
+- **`TICKS`**: Uses a number of ticks.
+- **`PRICE_TIER`**: Uses a venue-specific price tier.
 
 ### Contingent orders
 
@@ -239,10 +244,11 @@ their constraints.
 
 ## Order factory
 
-Use the built-in `OrderFactory` to create orders. Each Python `Strategy` exposes one as
-`self.order_factory`; the Rust strategy API exposes it through `self.order()`. The factory assigns
-the trader and strategy IDs, generates client order and initialization IDs when needed, records the
-initial timestamp, and applies defaults for the selected order type.
+Use the built-in `OrderFactory` to create orders. Each Python `Strategy` exposes one as `self.order_factory`.
+The Rust strategy API exposes it through `self.order()`.
+
+The factory assigns the trader and strategy IDs, and generates client order and initialization IDs when
+needed. It records the initial timestamp and applies defaults for the selected order type.
 
 The examples in these guides create orders from a `Strategy` context.
 
@@ -252,8 +258,8 @@ for further details.
 
 ## Order types
 
-NautilusTrader supports the following order types. Each links to a dedicated guide with a code
-example; optional parameters are marked with a comment showing the default value.
+NautilusTrader supports the following order types. Each links to a dedicated guide with a code example.
+Optional parameters are marked with a comment showing the default value.
 
 | Order type                                        | Category             | Description                                                                 |
 | ------------------------------------------------- | -------------------- | --------------------------------------------------------------------------- |
@@ -261,7 +267,7 @@ example; optional parameters are marked with a comment showing the default value
 | [`LIMIT`](limit.md)                               | Passive              | Rests in the book and trades only at the limit price or better.             |
 | [`STOP_MARKET`](stop_market.md)                   | Conditional          | Once the trigger price is hit, places a *Market* order.                     |
 | [`STOP_LIMIT`](stop_limit.md)                     | Conditional          | Once the trigger price is hit, places a *Limit* order at the set price.     |
-| [`MARKET_TO_LIMIT`](market_to_limit.md)           | Hybrid               | Submits as *Market*; any remainder rests as a *Limit* at the fill price.    |
+| [`MARKET_TO_LIMIT`](market_to_limit.md)           | Hybrid               | Submits as *Market*. Any remainder rests as a *Limit* at the fill price.    |
 | [`MARKET_IF_TOUCHED`](market_if_touched.md)       | Conditional          | Once the trigger price is touched, places a *Market* order.                 |
 | [`LIMIT_IF_TOUCHED`](limit_if_touched.md)         | Conditional          | Once the trigger price is touched, places a *Limit* order at the set price. |
 | [`TRAILING_STOP_MARKET`](trailing_stop_market.md) | Conditional trailing | Trails the trigger by an offset, then places a *Market* order.              |
@@ -269,9 +275,9 @@ example; optional parameters are marked with a comment showing the default value
 
 ### FIX OrdType mapping
 
-Each type maps to the nearest FIX 5.0 SP2
+**FIX mapping**: each type maps to the nearest FIX 5.0 SP2
 [`OrdType <40>`](https://www.onixs.biz/fix-dictionary/5.0.sp2/tagnum_40.html) value, where the protocol
-defines one:
+defines one.
 
 | Order type           | FIX `OrdType <40>`                   |
 | -------------------- | ------------------------------------ |
@@ -285,9 +291,9 @@ defines one:
 | Trailing-Stop-Market | `3` (Stop) + trailing peg            |
 | Trailing-Stop-Limit  | `4` (Stop Limit) + trailing peg      |
 
-† FIX defines no dedicated `OrdType` for *Limit-If-Touched*; it is commonly sent as `4` (Stop Limit)
-with a favorable trigger. Trailing stops likewise have no dedicated value and are modeled as `3`/`4`
-plus trailing peg fields.
+† FIX defines no dedicated `OrdType` for *Limit-If-Touched*. It is commonly sent as `4` (Stop Limit) with a
+favorable trigger. Trailing stops likewise have no dedicated value and are modeled as `3`/`4` plus trailing
+peg fields.
 
 ## Advanced orders
 

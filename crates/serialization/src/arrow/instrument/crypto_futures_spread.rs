@@ -251,7 +251,7 @@ impl EncodeToRecordBatch for CryptoFuturesSpread {
 ///
 /// # Errors
 ///
-/// Returns an `EncodingError` if the record batch cannot be decoded.
+/// Returns an error if the record batch cannot be decoded.
 ///
 /// [`DecodeFromRecordBatch`]: crate::arrow::DecodeFromRecordBatch
 pub fn decode_crypto_futures_spread_batch(

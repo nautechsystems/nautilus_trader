@@ -91,6 +91,8 @@ pub enum BybitWsFrame {
     Orderbook(BybitWsOrderbookDepthMsg),
     /// Trade updates.
     Trade(BybitWsTradeMsg),
+    /// Public liquidation updates.
+    Liquidation(BybitWsLiquidationMsg),
     /// Kline updates.
     Kline(BybitWsKlineMsg),
     /// Linear/inverse ticker update.
@@ -124,6 +126,8 @@ pub enum BybitWsMessage {
     Orderbook(BybitWsOrderbookDepthMsg),
     /// Trade updates.
     Trade(BybitWsTradeMsg),
+    /// Public liquidation updates.
+    Liquidation(BybitWsLiquidationMsg),
     /// Kline updates.
     Kline(BybitWsKlineMsg),
     /// Linear/inverse ticker update.
@@ -805,6 +809,34 @@ pub struct BybitWsTradeMsg {
     pub msg_type: Ustr,
     pub ts: i64,
     pub data: Vec<BybitWsTrade>,
+}
+
+/// Liquidation entry from the public `allLiquidation` stream.
+///
+/// `S` is the side of the liquidated position, where `Buy` means a long position was liquidated.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BybitWsLiquidation {
+    #[serde(rename = "T")]
+    pub t: i64,
+    #[serde(rename = "s")]
+    pub s: Ustr,
+    #[serde(rename = "S")]
+    pub side: BybitOrderSide,
+    #[serde(rename = "v")]
+    pub v: String,
+    #[serde(rename = "p")]
+    pub p: String,
+}
+
+/// Envelope for public liquidation updates.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitWsLiquidationMsg {
+    pub topic: Ustr,
+    #[serde(rename = "type")]
+    pub msg_type: Ustr,
+    pub ts: i64,
+    pub data: Vec<BybitWsLiquidation>,
 }
 
 /// Private order stream payload.

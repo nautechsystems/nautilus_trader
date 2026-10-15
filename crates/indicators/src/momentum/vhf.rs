@@ -90,7 +90,7 @@ impl VerticalHorizontalFilter {
     ///
     /// # Panics
     ///
-    /// This function panics if:
+    /// Panics if:
     /// - `period` is less than or equal to 0.
     /// - `period` exceeds `MAX_PERIOD`.
     #[must_use]

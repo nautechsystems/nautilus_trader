@@ -178,6 +178,7 @@ where
 pub struct WsDispatchState {
     pub order_identities: DashMap<ClientOrderId, OrderIdentity>,
     order_contexts: DashMap<ClientOrderId, OrderContext>,
+    pub(crate) algo_order_states: DashMap<ClientOrderId, AlgoOrderState>,
     pub(crate) pending_orders: Arc<DashMap<String, PendingOrderInfo>>,
     pub(crate) pending_cancels: Arc<DashMap<String, PendingOrderInfo>>,
     pub(crate) pending_amends: Arc<DashMap<String, PendingOrderInfo>>,
@@ -192,11 +193,18 @@ pub struct WsDispatchState {
     linked_child_notify: tokio::sync::Notify,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct AlgoOrderState {
+    pub(crate) order_type: OKXAlgoOrderType,
+    pub(crate) ts_last: UnixNanos,
+}
+
 impl Default for WsDispatchState {
     fn default() -> Self {
         Self {
             order_identities: DashMap::new(),
             order_contexts: DashMap::new(),
+            algo_order_states: DashMap::new(),
             pending_orders: Arc::new(DashMap::new()),
             pending_cancels: Arc::new(DashMap::new()),
             pending_amends: Arc::new(DashMap::new()),
@@ -279,9 +287,8 @@ impl WsDispatchState {
     }
 
     pub(crate) fn order_identity(&self, client_order_id: ClientOrderId) -> Option<OrderIdentity> {
-        self.order_contexts
-            .get(&client_order_id)
-            .map(|entry| entry.identity)
+        self.order_context(client_order_id)
+            .map(|context| context.identity)
             .or_else(|| {
                 self.order_identities
                     .get(&client_order_id)
@@ -289,10 +296,17 @@ impl WsDispatchState {
             })
     }
 
+    pub(crate) fn order_context(&self, client_order_id: ClientOrderId) -> Option<OrderContext> {
+        self.order_contexts
+            .get(&client_order_id)
+            .map(|entry| *entry)
+    }
+
     pub(crate) fn remove_order_tracking(&self, client_order_id: ClientOrderId) {
         let pending = self.pending_linked_children.lock();
         let removed_context = self.order_contexts.remove(&client_order_id).is_some();
         self.order_identities.remove(&client_order_id);
+        self.algo_order_states.remove(&client_order_id);
         drop(pending);
 
         if removed_context {
@@ -969,8 +983,13 @@ fn dispatch_tracked_algo_order_message(
     }
 
     if binding.child.is_none() {
-        context = refresh_algo_order_context(msg, context, instrument, account_id, ts_init);
-        state.track_order_context(context);
+        let Some(refreshed) = dispatch_pending_algo_order(
+            msg, context, instrument, account_id, ts_event, ts_init, emitter, state,
+        ) else {
+            return;
+        };
+
+        context = refreshed;
     }
 
     bindings
@@ -978,25 +997,7 @@ fn dispatch_tracked_algo_order_message(
         .insert(parent_venue_order_id, client_order_id);
 
     match msg.state {
-        OKXAlgoOrderStatus::Live | OKXAlgoOrderStatus::Pause => {
-            if binding.child.is_some() {
-                log::debug!(
-                    "Suppressing stale algo parent acceptance for {client_order_id}: algo_id={}",
-                    msg.algo_id,
-                );
-            } else {
-                ensure_accepted_emitted(
-                    client_order_id,
-                    account_id,
-                    parent_venue_order_id,
-                    &context.identity,
-                    emitter,
-                    state,
-                    ts_event,
-                    ts_init,
-                );
-            }
-        }
+        OKXAlgoOrderStatus::Live | OKXAlgoOrderStatus::Pause => {}
         OKXAlgoOrderStatus::Effective
         | OKXAlgoOrderStatus::OrderPlaced
         | OKXAlgoOrderStatus::PartiallyEffective
@@ -1138,13 +1139,47 @@ fn algo_child_venue_order_id(msg: &OKXAlgoOrderMsg) -> Option<VenueOrderId> {
     }
 }
 
-fn refresh_algo_order_context(
+#[expect(clippy::too_many_arguments)]
+fn dispatch_pending_algo_order(
     msg: &OKXAlgoOrderMsg,
     mut context: OrderContext,
     instrument: &InstrumentAny,
     account_id: AccountId,
+    ts_event: UnixNanos,
     ts_init: UnixNanos,
-) -> OrderContext {
+    emitter: &ExecutionEventEmitter,
+    state: &WsDispatchState,
+) -> Option<OrderContext> {
+    if state
+        .algo_order_states
+        .get(&context.identity.client_order_id)
+        .is_some_and(|previous| ts_event < previous.ts_last)
+    {
+        return None;
+    }
+
+    let client_order_id = context.identity.client_order_id;
+    let pending = matches!(
+        msg.state,
+        OKXAlgoOrderStatus::Live | OKXAlgoOrderStatus::Pause
+    );
+    let parent_venue_order_id = VenueOrderId::new(msg.algo_id.as_str());
+
+    if pending {
+        ensure_accepted_emitted(
+            client_order_id,
+            account_id,
+            parent_venue_order_id,
+            &context.identity,
+            emitter,
+            state,
+            ts_event,
+            ts_init,
+        );
+    }
+
+    let previous = context;
+
     match parse_algo_order_status_report(msg, instrument, account_id, ts_init) {
         Ok(report) => {
             if !msg.sz.is_empty() {
@@ -1160,7 +1195,7 @@ fn refresh_algo_order_context(
                 "Failed to refresh tracked algo order context for {}: {e}",
                 context.identity.client_order_id,
             );
-            return context;
+            return Some(context);
         }
     }
 
@@ -1174,7 +1209,33 @@ fn refresh_algo_order_context(
         }
     }
 
-    context
+    state.track_order_context(context);
+    state.algo_order_states.insert(
+        client_order_id,
+        AlgoOrderState {
+            order_type: msg.ord_type,
+            ts_last: ts_event,
+        },
+    );
+
+    if pending
+        && msg.ord_type != OKXAlgoOrderType::MoveOrderStop
+        && (previous.quantity != context.quantity
+            || previous.price != context.price
+            || previous.trigger_price != context.trigger_price)
+    {
+        emit_order_update(
+            client_order_id,
+            parent_venue_order_id,
+            context,
+            account_id,
+            ts_event,
+            ts_init,
+            emitter,
+        );
+    }
+
+    Some(context)
 }
 
 fn refresh_regular_child_context(
@@ -1244,7 +1305,7 @@ fn bind_algo_child_and_emit_transition(
 
     if state.accepted_venue_order_id(&client_order_id) != Some(child_venue_order_id) {
         state.insert_accepted(client_order_id, child_venue_order_id);
-        emit_child_update(
+        emit_order_update(
             client_order_id,
             child_venue_order_id,
             context,
@@ -1303,7 +1364,7 @@ fn refresh_bound_child_and_emit_update(
     }
 
     state.insert_accepted(client_order_id, child_venue_order_id);
-    emit_child_update(
+    emit_order_update(
         client_order_id,
         child_venue_order_id,
         context,
@@ -1314,7 +1375,7 @@ fn refresh_bound_child_and_emit_update(
     );
 }
 
-fn emit_child_update(
+fn emit_order_update(
     client_order_id: ClientOrderId,
     child_venue_order_id: VenueOrderId,
     context: OrderContext,
@@ -2845,7 +2906,10 @@ mod tests {
         pause.u_time += 1;
         let client_order_id = ClientOrderId::new(live.algo_cl_ord_id.as_str());
         let state = WsDispatchState::default();
-        state.track_order_context(test_algo_context(client_order_id));
+        let mut context = test_algo_context(client_order_id);
+        context.identity.order_type = OrderType::StopMarket;
+        context.price = None;
+        state.track_order_context(context);
         let instruments = test_algo_instruments();
         let (emitter, mut receiver) = test_execution_emitter();
 
@@ -2867,6 +2931,191 @@ mod tests {
                 );
             }
             other => panic!("Expected tracked algo acceptance, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    #[case::after_acceptance(false)]
+    #[case::first_acceptance(true)]
+    fn tracked_algo_amend_emits_updated_terms_once(#[case] first_acceptance: bool) {
+        let live = load_algo_order_messages("ws_orders_algo.json").remove(1);
+        let client_order_id = ClientOrderId::new(live.algo_cl_ord_id.as_str());
+        let state = WsDispatchState::default();
+        let mut context = test_algo_context(client_order_id);
+        context.identity.order_side = OrderSide::Buy;
+        context.quantity = Quantity::from("0.02");
+        context.price = Some(Price::from("106000.00"));
+        context.trigger_price = Some(Price::from("105000.00"));
+        context.trigger_type = Some(TriggerType::MarkPrice);
+        state.track_order_context(context);
+        let instruments = test_algo_instruments();
+        let (emitter, mut receiver) = test_execution_emitter();
+
+        if !first_acceptance {
+            dispatch_test_message(
+                OKXWsMessage::AlgoOrders(vec![live.clone()]),
+                &emitter,
+                &state,
+                &instruments,
+            );
+            let events = drain_execution_events(&mut receiver);
+            assert_eq!(events.len(), 1);
+            assert!(matches!(
+                &events[0],
+                ExecutionEvent::Order(OrderEventAny::Accepted(_))
+            ));
+        }
+
+        let mut amended = live.clone();
+        amended.sz = "0.03".into();
+        amended.trigger_px = "104000".into();
+        amended.ord_px = "103000".into();
+        amended.u_time += 2;
+        dispatch_test_message(
+            OKXWsMessage::AlgoOrders(vec![amended.clone(), amended, live]),
+            &emitter,
+            &state,
+            &instruments,
+        );
+        let events = drain_execution_events(&mut receiver);
+        assert_eq!(events.len(), if first_acceptance { 2 } else { 1 });
+
+        if first_acceptance {
+            assert!(matches!(
+                &events[0],
+                ExecutionEvent::Order(OrderEventAny::Accepted(_))
+            ));
+        }
+
+        let ExecutionEvent::Order(OrderEventAny::Updated(updated)) = events.last().unwrap() else {
+            panic!("expected OrderUpdated");
+        };
+
+        assert_eq!(updated.client_order_id, client_order_id);
+        assert_eq!(
+            updated.venue_order_id,
+            Some(VenueOrderId::from("706620792746729473"))
+        );
+        assert_eq!(updated.instrument_id, context.identity.instrument_id);
+        assert_eq!(updated.strategy_id, context.identity.strategy_id);
+        assert_eq!(updated.account_id, Some(AccountId::from("OKX-001")));
+        assert_eq!(updated.quantity, Quantity::from("0.03"));
+        assert_eq!(updated.price, Some(Price::from("103000.00")));
+        assert_eq!(updated.trigger_price, Some(Price::from("104000.00")));
+        let final_context = state.order_context(client_order_id).unwrap();
+        assert_eq!(final_context.quantity, updated.quantity);
+        assert_eq!(final_context.price, updated.price);
+        assert_eq!(final_context.trigger_price, updated.trigger_price);
+        assert_eq!(final_context.trigger_type, Some(TriggerType::MarkPrice));
+    }
+
+    #[rstest]
+    fn tracked_algo_trailing_acceptance_does_not_emit_update() {
+        let message = load_algo_order_messages("ws_orders_algo_states.json").remove(2);
+        let client_order_id = ClientOrderId::new(message.algo_cl_ord_id.as_str());
+        let state = WsDispatchState::default();
+        let mut context = test_algo_context(client_order_id);
+        context.identity.order_type = OrderType::TrailingStopMarket;
+        context.price = None;
+        state.track_order_context(context);
+        let instruments = test_algo_instruments();
+        let (emitter, mut receiver) = test_execution_emitter();
+
+        dispatch_test_message(
+            OKXWsMessage::AlgoOrders(vec![message]),
+            &emitter,
+            &state,
+            &instruments,
+        );
+
+        let events = drain_execution_events(&mut receiver);
+        assert_eq!(events.len(), 1);
+
+        let ExecutionEvent::Order(OrderEventAny::Accepted(accepted)) = &events[0] else {
+            panic!("expected OrderAccepted");
+        };
+
+        assert_eq!(accepted.client_order_id, client_order_id);
+        assert_eq!(
+            accepted.venue_order_id,
+            VenueOrderId::from("706620792746729482")
+        );
+        assert_eq!(
+            state.order_context(client_order_id).unwrap().trigger_price,
+            None
+        );
+    }
+
+    #[rstest]
+    #[case::live(OKXAlgoOrderStatus::Live)]
+    #[case::canceled(OKXAlgoOrderStatus::Canceled)]
+    #[case::failed(OKXAlgoOrderStatus::OrderFailed)]
+    fn tracked_algo_malformed_terms_preserve_lifecycle(#[case] status: OKXAlgoOrderStatus) {
+        let mut message = load_algo_order_messages("ws_orders_algo.json").remove(1);
+        let client_order_id = ClientOrderId::new(message.algo_cl_ord_id.as_str());
+        let state = WsDispatchState::default();
+        let context = test_algo_context(client_order_id);
+        state.track_order_context(context);
+        let instruments = test_algo_instruments();
+        let (emitter, mut receiver) = test_execution_emitter();
+        message.state = status;
+        message.trigger_px = "invalid".into();
+        message.fail_code = "51008".into();
+
+        dispatch_test_message(
+            OKXWsMessage::AlgoOrders(vec![message]),
+            &emitter,
+            &state,
+            &instruments,
+        );
+
+        let events = drain_execution_events(&mut receiver);
+        assert_eq!(
+            events.len(),
+            if status == OKXAlgoOrderStatus::Canceled {
+                2
+            } else {
+                1
+            }
+        );
+
+        match status {
+            OKXAlgoOrderStatus::Live => {
+                assert!(
+                    matches!(&events[0], ExecutionEvent::Order(OrderEventAny::Accepted(event))
+                    if event.client_order_id == client_order_id
+                        && event.venue_order_id == VenueOrderId::from("706620792746729473"))
+                );
+                let retained = state.order_context(client_order_id).unwrap();
+                assert_eq!(retained.quantity, context.quantity);
+                assert_eq!(retained.price, context.price);
+                assert_eq!(retained.trigger_price, context.trigger_price);
+                assert_eq!(retained.trigger_type, context.trigger_type);
+                assert!(!state.contains_terminal(&client_order_id));
+            }
+            OKXAlgoOrderStatus::Canceled => {
+                assert!(matches!(
+                    &events[0],
+                    ExecutionEvent::Order(OrderEventAny::Accepted(_))
+                ));
+                assert!(
+                    matches!(&events[1], ExecutionEvent::Order(OrderEventAny::Canceled(event))
+                    if event.client_order_id == client_order_id
+                        && event.venue_order_id == Some(VenueOrderId::from("706620792746729473")))
+                );
+                assert!(state.contains_terminal(&client_order_id));
+                assert!(state.order_context(client_order_id).is_none());
+            }
+            OKXAlgoOrderStatus::OrderFailed => {
+                assert!(
+                    matches!(&events[0], ExecutionEvent::Order(OrderEventAny::Rejected(event))
+                    if event.client_order_id == client_order_id
+                        && event.reason == Ustr::from("OKX error 51008"))
+                );
+                assert!(state.contains_terminal(&client_order_id));
+                assert!(state.order_context(client_order_id).is_none());
+            }
+            _ => unreachable!(),
         }
     }
 

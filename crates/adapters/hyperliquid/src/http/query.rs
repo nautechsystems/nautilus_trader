@@ -13,10 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use serde::Serialize;
+use serde::{Serialize, ser::SerializeStruct};
 
 use crate::{
-    common::enums::{HyperliquidBarInterval, HyperliquidInfoRequestType},
+    common::{
+        enums::{HyperliquidBarInterval, HyperliquidInfoRequestType},
+        parse::is_false_or_none,
+    },
     http::models::{
         HyperliquidExchangeBuilderFee, HyperliquidExchangeCancelByCloidRequest,
         HyperliquidExchangeGrouping, HyperliquidExchangeModifyOrderRequest,
@@ -65,10 +68,12 @@ pub struct OrderParams {
 }
 
 /// Parameters for canceling orders.
+///
+/// The fast-cancel flag is serialized only when true.
 #[derive(Debug, Clone, Serialize)]
 pub struct CancelParams {
     pub cancels: Vec<HyperliquidExchangeCancelByCloidRequest>,
-    #[serde(rename = "f", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "f", skip_serializing_if = "is_false_or_none")]
     pub fast: Option<bool>,
 }
 
@@ -110,9 +115,21 @@ pub struct RecentTradesParams {
 }
 
 /// Parameters for user fills request.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone)]
 pub struct UserFillsParams {
     pub user: String,
+}
+
+impl Serialize for UserFillsParams {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut state = serializer.serialize_struct("UserFillsParams", 2)?;
+        state.serialize_field("user", &self.user)?;
+        state.serialize_field("aggregateByTime", &false)?;
+        state.end()
+    }
 }
 
 /// Parameters for order status request.
@@ -528,6 +545,40 @@ mod tests {
         HyperliquidExchangeModifyOrderRequest, HyperliquidExchangeOrderKind,
         HyperliquidExchangePlaceOrderRequest, HyperliquidExchangeTif,
     };
+
+    #[rstest]
+    fn test_cancel_action_serialization(
+        #[values(None, Some(false), Some(true))] fast: Option<bool>,
+        #[values(false, true)] by_cloid: bool,
+    ) {
+        let cancels = vec![HyperliquidExchangeCancelByCloidRequest {
+            asset: 7,
+            cloid: Cloid::from_hex("0x0123456789abcdef0123456789abcdef").unwrap(),
+        }];
+
+        let (mut action, name) = if by_cloid {
+            (ExchangeAction::cancel_by_cloid(cancels), "cancel_by_cloid")
+        } else {
+            (ExchangeAction::cancel(cancels), "query_cancel")
+        };
+
+        let ExchangeActionParams::Cancel(params) = &mut action.params else {
+            panic!("Expected cancel parameters");
+        };
+
+        params.fast = fast;
+        let fixtures: serde_json::Value =
+            serde_json::from_str(include_str!("../../test_data/cancel_actions.json")).unwrap();
+        let expected = &fixtures[name][if fast == Some(true) { "fast" } else { "normal" }];
+        let json = serde_json::to_value(&action).unwrap();
+        let msgpack = rmp_serde::to_vec_named(&action).unwrap();
+
+        assert_eq!(json, expected["json"]);
+        assert_eq!(
+            nautilus_core::hex::encode(msgpack),
+            expected["msgpack"].as_str().unwrap()
+        );
+    }
 
     #[rstest]
     fn test_info_request_meta() {

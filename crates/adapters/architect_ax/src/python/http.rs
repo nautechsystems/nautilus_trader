@@ -210,9 +210,9 @@ impl AxHttpClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - No credentials are available from either source
-    /// - The HTTP request fails
-    /// - The credentials are invalid
+    /// - No credentials are available from either source.
+    /// - The HTTP request fails.
+    /// - The credentials are invalid.
     #[pyo3(name = "authenticate_auto")]
     #[pyo3(signature = (expiration_seconds=86400))]
     fn py_authenticate_auto<'py>(

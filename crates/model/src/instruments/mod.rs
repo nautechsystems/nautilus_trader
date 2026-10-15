@@ -78,7 +78,7 @@ pub use crate::instruments::{
     synthetic::{SyntheticInstrument, SyntheticInstrumentError},
     tick_scheme::{
         FixedTickScheme, TickScheme, TickSchemeError, TickSchemeRule, TieredTickScheme,
-        tick_scheme_rule_from_name,
+        get_tick_scheme, list_tick_schemes, register_tick_scheme, tick_scheme_rule_from_name,
     },
     tokenized_asset::TokenizedAsset,
 };
@@ -311,7 +311,10 @@ pub trait Instrument: 'static + Send {
     }
 
     fn allows_negative_price(&self) -> bool {
-        self.instrument_class().allows_negative_price()
+        // Inverse valuation divides by price, so it requires a positive price
+        let instrument_class = self.instrument_class();
+        instrument_class.allows_negative_price()
+            && !instrument_class.divides_notional_by_price(self.is_inverse())
     }
 
     fn is_inverse(&self) -> bool;
@@ -402,7 +405,7 @@ pub trait Instrument: 'static + Send {
     ///
     /// # Errors
     ///
-    /// Returns an error when `price` is a sentinel value or would require rounding.
+    /// Returns an error if `price` is a sentinel value or would require rounding.
     #[inline(always)]
     fn try_normalize_price(&self, price: Price) -> CorrectnessResult<Price> {
         if price == ERROR_PRICE {
@@ -527,7 +530,7 @@ pub trait Instrument: 'static + Send {
     ///
     /// # Errors
     ///
-    /// Returns an error when `quantity` is undefined or would require rounding.
+    /// Returns an error if `quantity` is undefined or would require rounding.
     #[inline(always)]
     fn try_normalize_qty(&self, quantity: Quantity) -> CorrectnessResult<Quantity> {
         if quantity.is_undefined() {
@@ -2240,5 +2243,27 @@ mod tests {
         #[case] expected: bool,
     ) {
         assert_eq!(instrument_class.has_expiration(), expected);
+    }
+
+    #[rstest]
+    #[case::linear(false, true)]
+    #[case::inverse(true, false)]
+    fn test_crypto_future_allows_negative_price(
+        mut crypto_future_btcusdt: CryptoFuture,
+        #[case] is_inverse: bool,
+        #[case] expected: bool,
+    ) {
+        crypto_future_btcusdt.is_inverse = is_inverse;
+
+        assert_eq!(crypto_future_btcusdt.allows_negative_price(), expected);
+    }
+
+    #[rstest]
+    fn test_inverse_crypto_option_allows_negative_price(
+        mut crypto_option_btc_deribit: CryptoOption,
+    ) {
+        crypto_option_btc_deribit.is_inverse = true;
+
+        assert!(crypto_option_btc_deribit.allows_negative_price());
     }
 }

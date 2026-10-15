@@ -22,7 +22,7 @@ Examples include `SPX.XCBO`, `VIX.XCBO`, and venue-specific reference indexes.
 | `tick_scheme`     | `Option<Ustr>`   | `str \| None`  | `None`           | Registered variable tick scheme name.    |
 | `info`            | `Option<Params>` | `dict \| None` | `None`           | Adapter metadata.                        |
 
-*Note: Python constructors use `instrument_id`; Rust stores the same value as `id`.*
+**Note**: Python constructors use `instrument_id`. Rust stores the same value as `id`.
 
 ## Behavior
 
@@ -31,8 +31,8 @@ Examples include `SPX.XCBO`, `VIX.XCBO`, and venue-specific reference indexes.
 - Use option or futures types for tradable derivatives whose underlyings are indexes.
 
 :::warning
-`IndexInstrument` is a reference instrument, not a tradable contract. Do not submit orders
-against it; trade the corresponding futures or option instrument instead.
+`IndexInstrument` is a reference instrument, not a tradable contract. Do not submit orders against it. Trade
+the corresponding futures or option instrument instead.
 :::
 
 ## Example

@@ -17,8 +17,8 @@
 //! [Derive](https://www.derive.xyz).
 //!
 //! The `nautilus-derive` crate provides integration with the Derive self-custodial onchain
-//! options, perpetuals, and spot exchange. Authentication uses an EVM smart-contract wallet
-//! on the Derive Chain together with a session-key signer; orders are EIP-712 typed-data
+//! options, perpetuals, and spot exchange. Authentication uses the owner's EOA or multisig
+//! together with a session-key signer; orders are EIP-712 typed-data
 //! signed against the venue's per-action module contracts.
 //!
 //! # NautilusTrader
@@ -43,6 +43,7 @@
 //!   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
 //!   to use 128-bit value types.
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
+//! - `simulation`: Enables deterministic simulation with `cfg(madsim)`.
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]
@@ -67,8 +68,19 @@ pub mod websocket;
 #[cfg(feature = "python")]
 pub mod python;
 
+mod book;
+
 pub use crate::{
     config::{DeriveDataClientConfig, DeriveExecutionClientConfig},
     execution::DeriveExecutionClient,
     factories::{DeriveDataClientFactory, DeriveExecutionClientFactory},
 };
+
+#[cfg(test)]
+#[allow(
+    dead_code,
+    reason = "shared logging fixture also provides integration-only WebSocket servers"
+)]
+mod client_logging {
+    include!("../../../network/tests/integration/common/client_logging.rs");
+}

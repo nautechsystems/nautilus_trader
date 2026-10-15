@@ -42,7 +42,7 @@ use nautilus_lighter::{
     config::{LighterDataClientConfig, LighterExecutionClientConfig},
     factories::{LighterDataClientFactory, LighterExecutionClientFactory},
 };
-use nautilus_live::node::LiveNode;
+use nautilus_live::node::{LiveNode, config::LiveExecutionEngineConfig};
 use nautilus_model::{
     identifiers::{AccountId, InstrumentId, StrategyId, TraderId},
     types::Quantity,
@@ -122,6 +122,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let mut node = LiveNode::builder(trader_id, environment)?
         .with_name("LIGHTER-NVDA-COMPOSITE-MM-001".to_string())
+        .with_exec_engine_config(LiveExecutionEngineConfig {
+            reconciliation_lookback_mins: Some(60),
+            reconciliation_instrument_ids: Some(vec![instrument_id.to_string()]),
+            ..Default::default()
+        })
         .with_reconciliation(!DRY_RUN)
         .with_delay_post_stop_secs(5)
         .add_data_client(

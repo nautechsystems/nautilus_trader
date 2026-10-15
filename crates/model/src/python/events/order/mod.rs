@@ -46,7 +46,7 @@ pub mod updated;
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if conversion to a Python object fails.
+/// Returns an error if conversion to a Python object fails.
 pub fn order_event_to_pyobject(py: Python, order_event: OrderEventAny) -> PyResult<Py<PyAny>> {
     match order_event {
         OrderEventAny::Initialized(event) => event.into_py_any(py),
@@ -73,7 +73,7 @@ pub fn order_event_to_pyobject(py: Python, order_event: OrderEventAny) -> PyResu
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if extraction fails or the event type is unsupported.
+/// Returns an error if extraction fails or the event type is unsupported.
 #[expect(clippy::needless_pass_by_value)]
 pub fn pyobject_to_order_event(py: Python, order_event: Py<PyAny>) -> PyResult<OrderEventAny> {
     let class = order_event.getattr(py, "__class__")?;

@@ -17,6 +17,7 @@ Test clock behavior.
 """
 
 import datetime as dt
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -270,3 +271,66 @@ def test_clock_cancel_default_handler_does_not_clear_named_callbacks() -> None:
     # a callback succeeds (the clock falls back to the existing named callback)
     clock.cancel_timer("alert")
     clock.set_time_alert_ns("alert", 20, allow_past=False)
+
+
+@pytest.mark.parametrize(
+    ("interval", "start_time", "expected_next_time"),
+    [
+        (
+            "1d",
+            dt.datetime(2026, 10, 31, 9, 30, tzinfo=ZoneInfo("America/New_York")),
+            dt.datetime(2026, 11, 1, 14, 30, tzinfo=dt.UTC),
+        ),
+        (
+            "P1M",
+            dt.datetime(2026, 1, 31, tzinfo=dt.UTC),
+            dt.datetime(2026, 2, 28, tzinfo=dt.UTC),
+        ),
+    ],
+)
+def test_clock_set_timer_zoned_steps_in_start_time_zone(
+    interval: str,
+    start_time: dt.datetime,
+    expected_next_time: dt.datetime,
+) -> None:
+    """
+    Test clock set timer zoned steps in start time zone.
+    """
+    clock = Clock.new_test()
+
+    clock.set_timer_zoned(
+        "zoned",
+        interval,
+        start_time,
+        callback=lambda _: None,
+        allow_past=False,
+    )
+
+    expected_next_time_ns = int(expected_next_time.timestamp()) * 1_000_000_000
+    assert clock.timer_names() == ["zoned"]
+    assert clock.next_time_ns("zoned") == expected_next_time_ns
+
+
+@pytest.mark.parametrize(
+    ("interval", "start_time", "error", "match"),
+    [
+        ("1d", dt.datetime(2026, 10, 31, 9, 30), TypeError, "non-None tzinfo"),  # noqa: DTZ001
+        ("one day", dt.datetime(2026, 10, 31, tzinfo=dt.UTC), ValueError, "duration format"),
+        ("-1d", dt.datetime(2026, 10, 31, tzinfo=dt.UTC), ValueError, "must be positive"),
+    ],
+)
+def test_clock_set_timer_zoned_rejects_invalid_inputs(
+    interval: str,
+    start_time: dt.datetime,
+    error: type[Exception],
+    match: str,
+) -> None:
+    """
+    Test clock set timer zoned rejects invalid inputs.
+    """
+    clock = Clock.new_test()
+
+    with pytest.raises(error, match=match):
+        clock.set_timer_zoned("zoned", interval, start_time, callback=lambda _: None)
+
+    assert clock.timer_count() == 0

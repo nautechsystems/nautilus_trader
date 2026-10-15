@@ -45,6 +45,7 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use nautilus_network::{
+    ConnectionUrl,
     http::create_standard_nautilus_headers,
     mode::ConnectionMode,
     websocket::{
@@ -128,7 +129,7 @@ impl From<&'static str> for AxOrdersWsClientError {
 /// and monitoring order status via WebSocket.
 pub struct AxOrdersWebSocketClient {
     clock: &'static AtomicTime,
-    url: String,
+    url: ConnectionUrl,
     heartbeat: Option<u64>,
     reconnect_headers: Arc<Mutex<Option<ReconnectHeaders>>>,
     connection_mode: Arc<ArcSwap<AtomicU8>>,
@@ -214,7 +215,7 @@ impl AxOrdersWebSocketClient {
 
         Self {
             clock: get_atomic_clock_realtime(),
-            url,
+            url: url.into(),
             heartbeat: Some(heartbeat),
             reconnect_headers: Arc::new(Mutex::new(None)),
             connection_mode,
@@ -250,7 +251,7 @@ impl AxOrdersWebSocketClient {
     /// Returns the WebSocket URL.
     #[must_use]
     pub fn url(&self) -> &str {
-        &self.url
+        self.url.expose()
     }
 
     /// Returns the account ID.
@@ -461,7 +462,7 @@ impl AxOrdersWebSocketClient {
         ));
 
         let config = WebSocketConfig {
-            url: self.url.clone(),
+            url: self.url.expose().to_owned(),
             headers,
             heartbeat_interval_secs: self.heartbeat,
             heartbeat_payload: None, // Ax server sends heartbeats
@@ -493,7 +494,11 @@ impl AxOrdersWebSocketClient {
             .connect()
             .await
             .map_err(|e| {
-                AxOrdersWsClientError::Transport(format!("Failed to connect to {}: {e}", self.url))
+                AxOrdersWsClientError::Transport(format!(
+                    "WebSocket connection failed: {}: {}",
+                    self.url.origin(),
+                    e.redacted_message()
+                ))
             })?;
 
         self.connection_mode.store(client.connection_mode_atomic());
@@ -805,6 +810,27 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    #[case("wss://stream.example.com/feed", "wss://stream.example.com")]
+    #[case(
+        "wss://SYN-user:SYN-password@stream.example.com:9443/SYN-path?token=SYN-query#SYN-fragment",
+        "wss://stream.example.com:9443"
+    )]
+    fn test_debug_preserves_url_origin(#[case] url: &str, #[case] origin: &str) {
+        let client = AxOrdersWebSocketClient::new(
+            url.to_string(),
+            AccountId::from("AX-001"),
+            TraderId::from("TRADER-001"),
+            30,
+            TransportBackend::default(),
+            None,
+        );
+        let debug = format!("{client:?}");
+        assert!(debug.contains(&format!("url: {origin:?}")));
+        assert!(!debug.contains("SYN-"));
+        assert_eq!(client.url.expose(), url);
+    }
 
     #[tokio::test]
     async fn test_drop_aborts_handler_task() {

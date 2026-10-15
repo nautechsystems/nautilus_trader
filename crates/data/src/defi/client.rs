@@ -71,8 +71,8 @@ impl DataClientAdapter {
             return;
         }
 
+        let command_id = cmd.command_id();
         let retained = cmd.clone();
-        let cmd_debug = format!("{cmd:?}");
         #[rustfmt::skip]
         let result = match cmd {
             DefiSubscribeCommand::Blocks(cmd) => self.subscribe_blocks(cmd),
@@ -84,12 +84,20 @@ impl DataClientAdapter {
         };
 
         if let Err(e) = result {
+            let subscription = format!("{key:?}");
+
             if retain_on_failure {
                 self.subscriptions_active_defi
                     .retain(key, retained.command_id(), retained);
             }
 
-            log_command_error(&cmd_debug, &e);
+            log_command_error(
+                &format_args!(
+                    "DefiSubscribe {} {subscription} command {command_id}",
+                    self.client_id()
+                ),
+                &e,
+            );
             return;
         }
 
@@ -130,7 +138,14 @@ impl DataClientAdapter {
         };
 
         if let Err(e) = unsub_result {
-            log_command_error(&command, &e);
+            log_command_error(
+                &format_args!(
+                    "DefiUnsubscribe {} {key:?} command {}",
+                    self.client_id(),
+                    cmd.command_id()
+                ),
+                &e,
+            );
         } else {
             self.subscriptions_active_defi.remove(&key);
         }

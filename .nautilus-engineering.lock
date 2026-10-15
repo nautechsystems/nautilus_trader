@@ -1,6 +1,6 @@
 version = 1
 repository = "https://github.com/nautechsystems/nautilus_engineering"
-revision = "dea872e44275d987e925fc729afc5732db495186"
+revision = "85af65c2b15d8a3c14bed2d09f99c1089fb7c93d"
 manifest_sha256 = "591f89f0394dfd8a02a4c3bda884dbdc02298d2da3a1cb4861ed8d4c6d67e97e"
 marker_file = ".nautilus-engineering.syncing"
 profiles = ["sync"]
@@ -44,7 +44,7 @@ executable = false
 [[file]]
 artifact = "shared-tool-catalog"
 path = ".nautilus-engineering/tools.toml"
-sha256 = "cc8711f0fbab57a3ea0fc5b8e35c57fc3a4373f3d67b61f0416ac04ba4e22cfa"
+sha256 = "6f4295b8774b21485587df90805b850b9db23fa7d3705289a3514a2e1f4ac4e4"
 executable = false
 
 [[file]]

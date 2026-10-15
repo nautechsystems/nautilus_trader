@@ -65,7 +65,7 @@ use rust_decimal_macros::dec;
 const SESSION_KEY: &str = "0x2ae8be44db8a590d20bffbe3b6872df9b569147d3bf6801a35a28281a4816bbd";
 const WALLET: &str = "0x000000000000000000000000000000000000aaaa";
 const SUBACCOUNT_ID: u64 = 30769;
-const NONCE: u64 = 1_700_000_000_000_000;
+const NONCE: u64 = 1_700_000_000_000_000_000;
 const EXPIRY_SEC: i64 = 1_900_000_000; // far-future so the EIP-712 expiry guard passes
 
 fn instrument_id() -> InstrumentId {
@@ -193,6 +193,7 @@ fn bench_submit_limit(c: &mut Criterion) {
             black_box(bytes);
         });
     });
+
     group.finish();
 }
 
@@ -227,6 +228,7 @@ fn bench_submit_market(c: &mut Criterion) {
             black_box(bytes);
         });
     });
+
     group.finish();
 }
 
@@ -240,6 +242,7 @@ fn bench_cancel(c: &mut Criterion) {
             black_box(bytes);
         });
     });
+
     group.finish();
 }
 
@@ -276,6 +279,7 @@ fn bench_modify(c: &mut Criterion) {
             black_box(bytes);
         });
     });
+
     group.finish();
 }
 
@@ -313,7 +317,7 @@ fn bench_dispatch_orders_untracked(c: &mut Criterion) {
         b.iter_batched(
             || {
                 drain(&mut rx);
-                (WsDispatchState::new(), orders_data())
+                (WsDispatchState::new(42), orders_data())
             },
             |(state, data)| {
                 dispatch_orders_payload(black_box(data), &emitter, account_id, clock, &state);
@@ -321,6 +325,7 @@ fn bench_dispatch_orders_untracked(c: &mut Criterion) {
             BatchSize::SmallInput,
         );
     });
+
     group.finish();
 }
 
@@ -335,7 +340,7 @@ fn bench_dispatch_orders_tracked(c: &mut Criterion) {
         b.iter_batched(
             || {
                 drain(&mut rx);
-                let state = WsDispatchState::new();
+                let state = WsDispatchState::new(42);
                 state.register_identity(
                     ClientOrderId::from(fixtures::TRACKED_LABEL),
                     order_identity(),
@@ -348,6 +353,7 @@ fn bench_dispatch_orders_tracked(c: &mut Criterion) {
             BatchSize::SmallInput,
         );
     });
+
     group.finish();
 }
 
@@ -362,7 +368,7 @@ fn bench_dispatch_trades_fill(c: &mut Criterion) {
         b.iter_batched(
             || {
                 drain(&mut rx);
-                let state = WsDispatchState::new();
+                let state = WsDispatchState::new(42);
                 state.register_identity(
                     ClientOrderId::from(fixtures::TRACKED_LABEL),
                     order_identity(),
@@ -375,6 +381,7 @@ fn bench_dispatch_trades_fill(c: &mut Criterion) {
             BatchSize::SmallInput,
         );
     });
+
     group.finish();
 }
 

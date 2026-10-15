@@ -25,7 +25,7 @@ use nautilus_common::{
     cache::CacheConfig, enums::Environment, logging::logger::LoggerConfig,
     msgbus::MessageBusConfig, python::config_error_to_pyvalue_err,
 };
-use nautilus_core::{UUID4, python::to_pyvalue_err};
+use nautilus_core::{UUID4, datetime::get_timezone, python::to_pyvalue_err};
 use nautilus_model::{
     enums::BarIntervalType,
     identifiers::{ClientId, TraderId, Venue},
@@ -188,7 +188,7 @@ impl LiveDataEngineConfig {
         clippy::needless_pass_by_value,
         reason = "PyO3 #[new] requires owned params"
     )]
-    #[pyo3(signature = (time_bars_build_with_no_updates=None, time_bars_timestamp_on_close=None, time_bars_skip_first_non_full_bar=None, time_bars_interval_type=None, time_bars_build_delay=None, time_bars_origin_offset=None, validate_data_sequence=None, buffer_deltas=None, emit_quotes_from_book=None, emit_quotes_from_book_depths=None, external_clients=None, debug=None))]
+    #[pyo3(signature = (time_bars_build_with_no_updates=None, time_bars_timestamp_on_close=None, time_bars_skip_first_non_full_bar=None, time_bars_interval_type=None, time_bars_build_delay=None, time_bars_origin_offset=None, validate_data_sequence=None, buffer_deltas=None, emit_quotes_from_book=None, emit_quotes_from_book_depths=None, external_clients=None, debug=None, time_bars_time_zone=None))]
     fn py_new(
         time_bars_build_with_no_updates: Option<bool>,
         time_bars_timestamp_on_close: Option<bool>,
@@ -202,7 +202,12 @@ impl LiveDataEngineConfig {
         emit_quotes_from_book_depths: Option<bool>,
         external_clients: Option<Vec<ClientId>>,
         debug: Option<bool>,
+        time_bars_time_zone: Option<String>,
     ) -> PyResult<Self> {
+        if let Some(name) = &time_bars_time_zone {
+            get_timezone(name).map_err(to_pyvalue_err)?;
+        }
+
         let default = Self::default();
 
         let time_bars_interval_type = match time_bars_interval_type {
@@ -220,6 +225,7 @@ impl LiveDataEngineConfig {
             time_bars_interval_type,
             time_bars_build_delay: time_bars_build_delay.unwrap_or(default.time_bars_build_delay),
             time_bars_origin_offset: time_bars_origin_offset.unwrap_or_default(),
+            time_bars_time_zone,
             validate_data_sequence: validate_data_sequence
                 .unwrap_or(default.validate_data_sequence),
             buffer_deltas: buffer_deltas.unwrap_or(default.buffer_deltas),
@@ -230,6 +236,12 @@ impl LiveDataEngineConfig {
             debug: debug.unwrap_or(default.debug),
             qsize: default.qsize,
         })
+    }
+
+    #[getter]
+    #[pyo3(name = "time_bars_time_zone")]
+    fn py_time_bars_time_zone(&self) -> Option<String> {
+        self.time_bars_time_zone.clone()
     }
 
     #[getter]

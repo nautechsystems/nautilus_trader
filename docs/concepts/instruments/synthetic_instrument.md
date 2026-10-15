@@ -20,8 +20,8 @@ component instrument prices.
 | `ts_event`        | `UnixNanos`         | `int`                | Required         | Event timestamp in nanoseconds.             |
 | `ts_init`         | `UnixNanos`         | `int`                | Required         | Initialization timestamp in nanoseconds.    |
 
-*Note: Python constructs the instrument ID from `symbol` and the `SYNTH` venue. Rust
-stores the same value as `id`.*
+**Note**: Python constructs the instrument ID from `symbol` and the `SYNTH` venue. Rust
+stores the same value as `id`.
 
 ## Behavior
 

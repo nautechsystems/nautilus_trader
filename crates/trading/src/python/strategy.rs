@@ -4224,7 +4224,7 @@ class IndicatorEventStrategy:
 
     fn sample_option_chain() -> OptionChainSlice {
         OptionChainSlice {
-            series_id: OptionSeriesId::new(
+            series_id: OptionSeriesId::new_derived(
                 Venue::from("SIM"),
                 Ustr::from("AUD"),
                 Ustr::from("USD"),

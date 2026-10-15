@@ -8,6 +8,7 @@ This directory contains API response samples and documented error messages for t
 
 - `http_meta_perp_sample.json` - Perpetuals market metadata (sample of 3 markets)
 - `http_meta_spot_sample.json` - Spot market metadata (sample of 3 markets)
+- `http_outcome_meta.json` - Constructed outcomes with USDC, USDH, and missing quote-token metadata
 - `http_l2_book_btc.json` - BTC order book snapshot (5 levels each side)
 - `http_l2_book_snapshot.json` - Existing order book test data
 
@@ -23,6 +24,21 @@ This directory contains API response samples and documented error messages for t
 [official error reference](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/error-responses).
 These messages are copied from the documentation, including its placeholders, rather than captured
 from live responses. Tests use them in both whole-request and per-order rejection responses.
+
+### Cancel action serialization
+
+`cancel_actions.json` contains independently constructed JSON and named MessagePack vectors for
+cancel actions with absent, false, and true fast flags. These synthetic vectors are not captured
+from the venue.
+
+### Order decimal serialization
+
+`order_decimal_signing.json` contains synthetic JSON, named MessagePack, connection IDs, and signature
+vectors generated with `hyperliquid-python-sdk` 0.24.0. Its signing implementation matches
+[revision 2fdb18f](https://github.com/hyperliquid-dex/hyperliquid-python-sdk/blob/2fdb18f9517675ea03695a0962bd19eece9c83f0/hyperliquid/utils/signing.py).
+The inputs retain decimal trailing zeros for limit orders, trigger orders, and fractional batch
+modifications. The vectors use nonce `1680000000000` and the deterministic key already used by the
+Rust signing tests. They are generated offline rather than captured from the venue.
 
 ## Capturing New Test Data
 

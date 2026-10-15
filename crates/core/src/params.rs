@@ -106,7 +106,7 @@ impl Params {
     ///
     /// # Errors
     ///
-    /// Returns a `PyErr` if conversion of any value fails.
+    /// Returns an error if conversion of any value fails.
     pub fn to_pydict(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::Py<pyo3::types::PyDict>> {
         crate::python::params::params_to_pydict(py, self)
     }
@@ -142,10 +142,10 @@ impl<'a> IntoIterator for &'a Params {
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if:
-/// - the dict cannot be serialized to JSON
-/// - the JSON is not a valid object
-/// - an integer value is outside the signed or unsigned 64-bit range (`ValueError`)
+/// Returns an error if:
+/// - The dict cannot be serialized to JSON.
+/// - The JSON is not a valid object.
+/// - An integer value is outside the signed or unsigned 64-bit range.
 pub fn from_pydict(
     py: pyo3::Python<'_>,
     dict: &pyo3::Py<pyo3::types::PyDict>,

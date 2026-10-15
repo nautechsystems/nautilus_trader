@@ -1,0 +1,70 @@
+{
+  "error": [],
+  "result": {
+    "OBCMZD-JIEE7-77TH3F": {
+      "refid": "None",
+      "userref": 0,
+      "status": "closed",
+      "reason": null,
+      "opentm": 1688665496.7808,
+      "closetm": 1688665499.1922,
+      "starttm": 0,
+      "expiretm": 0,
+      "descr": {
+        "pair": "XBTUSD",
+        "type": "buy",
+        "ordertype": "stop-loss-limit",
+        "price": "27500.0",
+        "price2": "0",
+        "leverage": "none",
+        "order": "buy 1.25000000 XBTUSD @ limit 27500.0",
+        "close": ""
+      },
+      "vol": "1.25000000",
+      "vol_exec": "1.25000000",
+      "cost": "27526.2",
+      "fee": "26.2",
+      "price": "27500.0",
+      "stopprice": "0.00000",
+      "limitprice": "0.00000",
+      "misc": "",
+      "oflags": "fciq",
+      "trigger": "index",
+      "trades": [
+        "TZX2WP-XSEOP-FP7WYR"
+      ]
+    },
+    "OMMDB2-FSB6Z-7W3HPO": {
+      "refid": "None",
+      "userref": 0,
+      "status": "closed",
+      "reason": null,
+      "opentm": 1688592012.2317,
+      "closetm": 1688592012.2335,
+      "starttm": 0,
+      "expiretm": 0,
+      "descr": {
+        "pair": "XBTUSD",
+        "type": "sell",
+        "ordertype": "market",
+        "price": "0",
+        "price2": "0",
+        "leverage": "none",
+        "order": "sell 0.25000000 XBTUSD @ market",
+        "close": ""
+      },
+      "vol": "0.25000000",
+      "vol_exec": "0.25000000",
+      "cost": "7500.0",
+      "fee": "7.5",
+      "price": "30000.0",
+      "stopprice": "0.00000",
+      "limitprice": "0.00000",
+      "misc": "",
+      "oflags": "fcib",
+      "trades": [
+        "TJUW2K-FLX2N-AR2FLU"
+      ]
+    }
+  }
+}

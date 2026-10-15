@@ -7,7 +7,7 @@ system, an ownership model, and predictable performance. Safe Rust prevents data
 memory errors at compile time. `unsafe` code must make explicit the invariants that the compiler
 cannot check.
 
-`rustfmt` and the workspace lints own general Rust style; the rules below supplement them.
+`rustfmt` and the workspace lints own general Rust style. The rules below supplement them.
 
 ## Sources of truth
 
@@ -99,9 +99,22 @@ exception.
   a manifest's meaningful local groups.
 - Keep optional crates in their own blank-line group, except when every crate in the group is a
   `nautilus-*` crate.
-- Keep the standard section order: package, lints, library, features, `cargo-machete` metadata,
-  docs.rs metadata, dependencies, development dependencies, build dependencies, benches, binaries,
-  examples, and tests.
+- Keep the standard section order:
+
+  1. Package.
+  1. Lints.
+  1. Library.
+  1. Features.
+  1. `cargo-machete` metadata.
+  1. docs.rs metadata.
+  1. Dependencies.
+  1. Development dependencies.
+  1. Build dependencies.
+  1. Benches.
+  1. Binaries.
+  1. Examples.
+  1. Tests.
+
 - Add `[lints] workspace = true` to every workspace crate with a library or binary target.
 - Keep adapter dependencies in the `# Adapter dependencies` section of the workspace
   `Cargo.toml`. Core crates must not depend on entries from that section.
@@ -114,8 +127,8 @@ exception.
 - Remove a root `[workspace.package]` field when no crate inherits it.
 - List each `[workspace] members` entry as a literal path. The convention hook resolves
   member manifests directly and does not expand Cargo glob members.
-- Obtain `libfuzzer-sys` in adapter crates through `nautilus-live`; do not add it directly to an
-  adapter manifest.
+- Obtain `libfuzzer-sys` in adapter crates through `nautilus-live`. Do not add it directly to an adapter
+  manifest.
 
 When `crates/pyo3/Cargo.toml` groups adapters separately, keep its `# Adapters` block below the core
 internal crates.
@@ -187,13 +200,14 @@ Leave one blank line:
 
 The control-flow and spawn rules do not apply when the expression starts a block, continues the
 previous operation, or has an attached comment or attribute. Wrapped calls and method chains alone
-do not need a separator. Construction spacing also applies to assignments, explicit returns, and
-calls followed by `?` or `.await`. Construction must span multiple lines after rustfmt layout;
-one-line initializers stay together.
+do not need a separator.
 
-Keep comments and attributes attached to their statement when inserting a separator. Skip macro
-bodies and `rustfmt::skip` regions. Apply the multiline statement rules around changed code; leave
-unrelated code alone. Add only blank lines that `rustfmt` preserves.
+Construction spacing also applies to assignments, explicit returns, and calls followed by `?` or `.await`.
+Construction must span multiple lines after rustfmt layout. One-line initializers stay together.
+
+Keep comments and attributes attached to their statement when inserting a separator. Skip macro bodies and
+`rustfmt::skip` regions. Apply the multiline statement rules around changed code. Leave unrelated code alone.
+Add only blank lines that `rustfmt` preserves.
 
 The formatting hook:
 
@@ -209,8 +223,8 @@ These remain review conventions:
 - Construction spacing.
 - `spawn_local` and `spawn_blocking` spacing.
 
-Keep changed code readable for a human reader, and add further blank lines when those separators
-still leave a dense block hard to follow.
+Keep changed code readable for a human reader. If those separators still leave a dense block hard to follow,
+add more blank lines.
 
 Use inline format arguments for existing variables:
 
@@ -218,9 +232,14 @@ Use inline format arguments for existing variables:
 anyhow::bail!("Failed to subtract {n} months from {datetime}");
 ```
 
-Add `#[must_use]` to constructors, accessors, pure conversions, and consuming `with_*` methods when
-discarding the returned value is almost certainly a mistake. A return type such as `Result` already
-carries its own `must_use` annotation.
+If discarding a returned value is almost certainly a mistake, add `#[must_use]` to these functions:
+
+- Constructors.
+- Accessors.
+- Pure conversions.
+- Consuming `with_*` methods.
+
+A return type such as `Result` already carries its own `must_use` annotation.
 
 When suppressing `missing_panics_doc` or `missing_errors_doc`, include a reason that explains why
 the lint does not apply:
@@ -239,9 +258,9 @@ rejects `fetch_update`.
 
 | Item                          | Convention                                                                  |
 | ----------------------------- | --------------------------------------------------------------------------- |
-| `anyhow`.                     | Import only `anyhow::Context`; fully qualify macros and `Result`.           |
+| `anyhow`.                     | Import only `anyhow::Context`. Fully qualify macros and `Result`.           |
 | Nautilus domain types.        | Import the type, then use its short name.                                   |
-| Tokio time, sync, and tasks.  | Fully qualify the path; use `std::time::Duration`.                          |
+| Tokio time, sync, and tasks.  | Fully qualify the path. Use `std::time::Duration`.                          |
 | `Debug` and `Display`.        | Import the trait.                                                           |
 | `Formatter` and `fmt::Result` | Use `std::fmt::Formatter` and `std::fmt::Result` at the implementation.     |
 | Nautilus macros.              | Import `nautilus_actor!` or `nautilus_strategy!`, then call it unqualified. |
@@ -271,8 +290,8 @@ Place an assertion where the code first relies on the invariant. Never use `debu
 public input validation or a soundness condition because release builds remove it.
 
 Prefix debug assertion messages with `Invariant:` and state the positive rule. The shared
-`Condition failed: ...` prefix marks a caller input violation; `Invariant: ...` marks an internal
-contract bug.
+`Condition failed: ...` prefix marks a caller input violation. `Invariant: ...` marks an internal contract
+bug.
 
 ### Error boundaries
 
@@ -305,12 +324,13 @@ Keep an API infallible when returning `Result` would only require callers to han
 defect. Use an always-on assertion for an invariant that protects soundness or prevents unsafe code
 from continuing with invalid state.
 
-Return `Result` at boundaries that accept untrusted input or can fail because of configuration,
-I/O, external data, task cancellation, or resource lifecycle. These are operational failures even
-when a specific call site expects them never to occur. For validated values, follow the
-[`new()` and `new_checked()` constructor pattern](#constructor-patterns): expose a fallible path for
-untrusted values and use the convenience wrapper where its caller contract permits a panic.
-Document reachable panics in public Rust APIs, and make each panic message name the violated
+Return `Result` at boundaries that accept untrusted input. Also return `Result` at boundaries with failures
+from configuration, I/O, external data, task cancellation, or resource lifecycle. These are operational
+failures even when a specific call site expects them never to occur.
+
+For validated values, follow the [`new()` and `new_checked()` constructor pattern](#constructor-patterns).
+Expose a fallible path for untrusted values. Use the convenience wrapper only where its caller contract
+permits a panic. Document reachable panics in public Rust APIs, and make each panic message name the violated
 invariant.
 
 Treat findings for these lints from `make clippy-strict-audit` as review prompts:
@@ -319,10 +339,10 @@ Treat findings for these lints from `make clippy-strict-audit` as review prompts
 - `clippy::unwrap_used`
 - `clippy::expect_used`
 
-The audit also reports `clippy::panic_in_result_fn`, which the required workspace Clippy gate
-already enforces. Remove a panic when the failure is recoverable; retain a justified invariant
-panic, with a scoped lint reason when needed. The audit uses forced warnings, so its totals include
-deliberate sites with local lint allowances and diagnostics from macro expansions.
+The audit also reports `clippy::panic_in_result_fn`, which the required workspace Clippy gate already
+enforces. Remove a panic when the failure is recoverable. Retain a justified invariant panic, with a scoped
+lint reason when needed. The audit uses forced warnings, so its totals include deliberate sites with local
+lint allowances and diagnostics from macro expansions.
 
 ### Failure contract examples
 
@@ -360,8 +380,8 @@ profile.
 
 - Fully qualify log macros, for example `log::debug!` and `log::info!`.
 - Start messages with a capitalized word and omit terminal periods.
-- Use `// log-period-ok` on the call or within three lines above it when a terminal period is part of
-  the logged value rather than sentence punctuation.
+- A terminal period can be part of a logged value instead of sentence punctuation. For this case, use
+  `// log-period-ok` on the call or within three lines above it.
 - Keep connection and client lifecycle, reconnection, reconciliation, and mass-status summaries at
   `INFO`.
 - Keep subscription detail, per-order confirmations, instrument counts, authentication, and
@@ -391,9 +411,9 @@ get_runtime().spawn(async move {
 
 - Import `get_runtime` through `nautilus_common::live`, not `live::runtime`.
 - Use `get_runtime().block_on()` when synchronous adapter code must call an async function.
-- Use the runtime supplied by `#[tokio::test]` in tests; `tokio::spawn()` is valid there.
-- Put `// tokio-import-ok` on an import or spawn line only when the fully qualified form or shared
-  runtime cannot serve that site.
+- Use the runtime supplied by `#[tokio::test]` in tests. `tokio::spawn()` is valid there.
+- A site can be unable to use the fully qualified form or shared runtime. Only for such sites, put
+  `// tokio-import-ok` on the import or spawn line.
 - Install a custom runtime before `LiveNode::build()` or any adapter use. Build a multi-threaded
   runtime with all drivers enabled.
 - `set_runtime()` bypasses the default initializer, including Python initialization. With the
@@ -409,14 +429,18 @@ blocks on that path.
 
 ### Cache order access
 
-`Cache` hides its `SharedCell` order storage behind lifetime-scoped accessors. Use `order_ref()` or
-`try_order_ref()` for scoped reads, `order_mut()` for an exclusive write borrow, and `order_owned()`
-or `try_order_owned()` when a snapshot must cross a boundary. The `try_*` forms return
-`OrderLookupError` when the order is absent.
+`Cache` hides its `SharedCell` order storage behind lifetime-scoped accessors. Use these lifetime-scoped
+accessors:
 
-`order_mut()` requires `&mut Cache`, so adapter-facing `CacheView` code cannot mutate orders. Drop an
-`OrderRef` or `OrderRefMut` before dispatching events or taking a borrow that can re-enter the same
-order, then look up the order again for post-event state.
+- **Scoped read**: `order_ref()` or `try_order_ref()`.
+- **Exclusive write borrow**: `order_mut()`.
+- **Snapshot across a boundary**: `order_owned()` or `try_order_owned()`.
+
+The `try_*` forms return `OrderLookupError` when the order is absent.
+
+`order_mut()` requires `&mut Cache`, so adapter-facing `CacheView` code cannot mutate orders. Before event
+dispatch or a borrow that can re-enter the same order, drop the `OrderRef` or `OrderRefMut`. Then look up the
+order again for post-event state.
 
 ### Runtime invariants
 
@@ -453,10 +477,10 @@ Use the shared `FAILED` constant with `CorrectnessResultExt::expect_display` so 
 the standard `Condition failed: ...` prefix. Document the error on `new_checked()` and the panic on
 `new()`.
 
-For types with long constructors dominated by optional fields, use a `bon` builder instead of
-public positional `new()` and `new_checked()` methods. Put `#[bon::bon]` on the inherent
-implementation and make the builder's finish method delegate to a private validation function or
-perform the validation directly. Keep one validation and defaulting path.
+If a long constructor mostly has optional fields, use a `bon` builder. For such types, do not expose public
+positional `new()` and `new_checked()` methods. Put `#[bon::bon]` on the inherent implementation. Make the
+builder's finish method delegate to a private validation function or perform validation directly. Keep one
+validation and defaulting path.
 
 ```rust
 #[builder(start_fn = builder, finish_fn = build)]
@@ -520,8 +544,8 @@ reclamation change the identifier contract:
   that contain them.
 - Borrowed or epoch-protected storage requires lifetimes or access guards at string access points.
 - Generational handles permit reclamation but make lookup fallible and invalidate stale handles.
-- A global cache reset is safe only at a proven quiescent point after all handles, references, and
-  foreign pointers have been destroyed and no task or thread can retain one.
+- A global cache reset is safe only at a proven quiescent point. All handles, references, and foreign pointers
+  must be destroyed first. No task or thread can retain one at that point.
 
 ### Storage boundaries
 
@@ -538,16 +562,16 @@ The domain model also contains compatibility exceptions. `ClientOrderId`, `Venue
 Identifier storage participates in the supported by-value C ABI, so a broader redesign depends on
 conversion-based bindings replacing raw layout sharing.
 
-The storage boundary includes an up-front estimate of every unique value and all intermediate
-strings interned during parsing. The cache is shared by every `Ustr` use in the process, so its
-memory cost is the aggregate set rather than a separate budget for each identifier type.
+The storage boundary includes an up-front estimate of each unique value and all intermediate strings interned
+during parsing. All `Ustr` uses in the process share the cache. Thus, its memory cost comes from the aggregate
+set, not a separate budget for each identifier type.
 
 ### Polymarket scale example
 
-A Polymarket instrument symbol combines a 66-byte condition ID with a 77- or 78-byte token ID, for
-a 144- or 145-byte interned symbol. With the 64-bit `ustr` 1.1.0 layout, 600,000 unique
-`InstrumentId` values require roughly 150 MiB for the retained identifier values, cache lookup
-table, and reserved string storage.
+A Polymarket instrument symbol combines a 66-byte condition ID with a 77- or 78-byte token ID, for a 144- or
+145-byte interned symbol. With the 64-bit `ustr` 1.1.0 layout, 600,000 unique `InstrumentId` values need
+approximately 150 MiB. This covers retained identifier values, the cache lookup table, and reserved string
+storage.
 
 The Polymarket parsing path also interns each raw token ID and each condition ID. For 600,000
 instruments from about 300,000 markets, these entries raise the estimate to roughly 300 MiB before
@@ -570,15 +594,20 @@ Choose a hash collection by iteration semantics and trust boundary:
 | Keys chosen by an untrusted third party.       | `HashMap` or `HashSet`.   |
 | External API requires a standard collection.   | `HashMap` or `HashSet`.   |
 
-Default `AHashMap` and `AHashSet` instances randomize their hasher state, so their iteration order is
-not stable. When iteration order affects emitted events, commands and traffic sent to a venue,
-persisted output, or random number consumption, make the order deterministic. An iteration whose
-order no caller observes does not need stabilization.
+Default `AHashMap` and `AHashSet` instances randomize their hasher state, so their iteration order is not
+stable. If iteration order affects any of these outcomes, make that order deterministic:
 
-Use `IndexMap` or `IndexSet` when insertion order is both deterministic and the required sequence.
-Otherwise, keep the hash collection and sort at the point of use. Prefer sorting when ordered
-traversal is infrequent or order-preserving removal is hot. `shift_remove` preserves relative order
-in O(n) average time; `swap_remove` runs in O(1) average time but can move the last entry.
+- Emitted events.
+- Commands and traffic sent to a venue.
+- Persisted output.
+- Random number consumption.
+
+An iteration whose order no caller observes does not need stabilization.
+
+Use `IndexMap` or `IndexSet` when insertion order is both deterministic and the required sequence. Otherwise,
+keep the hash collection and sort at the point of use. Prefer sorting when ordered traversal is infrequent or
+order-preserving removal is hot. `shift_remove` preserves relative order in O(n) average time. `swap_remove`
+runs in O(1) average time but can move the last entry.
 
 `AHash` is not cryptographically secure. Use `HashMap` or `HashSet` where untrusted keys make
 hash-flooding resistance part of the security boundary.
@@ -613,7 +642,12 @@ Use Title Case for Rustdoc section headings:
 - `# Thread Safety`
 - `# Feature Flags`
 
-Use one sentence for a single error or panic condition:
+Start `# Errors` descriptions with `Returns an error if`, or ``Returns `None` if`` for an `Option`
+return. Start `# Panics` descriptions with `Panics if`. Describe the failure conditions without
+repeating concrete error types from the signature. Keep distinctions that affect caller behavior,
+such as retryable versus permanent failures.
+
+Use one sentence ending with a period for a single condition:
 
 ```rust
 /// # Errors
@@ -621,7 +655,10 @@ Use one sentence for a single error or panic condition:
 /// Returns an error if the currency conversion fails.
 ```
 
-Use bullets with terminating periods for multiple conditions:
+For multiple conditions, use the same lead-in followed immediately by a colon:
+`Returns an error if:`, ``Returns `None` if:``, or `Panics if:`. Put each condition in a bullet that
+starts with a capital letter and ends with a period. A wrapped bullet needs its period at the end
+of its final line.
 
 ```rust
 /// # Errors
@@ -631,9 +668,20 @@ Use bullets with terminating periods for multiple conditions:
 /// - The conversion rate calculation fails.
 ```
 
-Use `# Errors` only on a function that returns `Result`, `PyResult`, or `Option`. Use `# Panics` only
-when the function can panic, and remove the section instead of saying that the function does not
-panic.
+```rust
+/// # Panics
+///
+/// Panics if:
+/// - The quantity is zero.
+/// - The quantity exceeds the supported range.
+```
+
+The documentation hook checks these lead-ins and bullet periods in `# Errors` and `# Panics` sections. It
+skips fenced code blocks and stops at the next section heading or the end of the doc block. The suppression
+markers below exempt contract checks only. They do not exempt wording or punctuation checks.
+
+Use `# Errors` only on a function that returns `Result`, `PyResult`, or `Option`. Use `# Panics` only when the
+function can panic. If the function cannot panic, remove the section. Do not state that it does not panic.
 
 The documentation hook recognizes direct panic sites in a `Result`-returning function. Put
 `// panics-doc-ok` immediately above the doc block when a called function supplies the documented
@@ -648,7 +696,7 @@ signature check cannot recognize.
 | -------------- | ------------------------- | ------------------------------------------------------ |
 | `rust`         | Compiled and run.         | Self-contained examples with no external dependencies. |
 | `rust,no_run`  | Compiled, not run.        | Examples needing a catalog, network, or venue.         |
-| `ignore`       | Neither compiled nor run. | Pseudocode; state why it cannot compile.               |
+| `ignore`       | Neither compiled nor run. | Pseudocode. State why it cannot compile.               |
 | `compile_fail` | Must fail to compile.     | Demonstrating a rejected usage.                        |
 | `text`         | Not code.                 | Directory trees, output, or diagrams.                  |
 | `bash`, `json` | Not Rust.                 | Commands or payloads.                                  |
@@ -728,10 +776,10 @@ make py-stubs
 Run the target after changing a Python-exposed Rust item, its stub annotation, its core doc comments,
 or adapter feature wiring. Commit every changed generated artifact with the source change.
 
-The stub generator removes `extension-module` before invoking Cargo. Add a feature that is enabled
-only through `extension-module` explicitly to `cargo_features` in `python/generate_stubs.py`;
-otherwise its exported types disappear from the generated stubs. The Interactive Brokers `gateway`
-feature is the model.
+The stub generator removes `extension-module` before invoking Cargo. If a feature is enabled only through
+`extension-module`, add it explicitly to `cargo_features` in `python/generate_stubs.py`. If you omit it, the
+feature's exported types disappear from the generated stubs. The Interactive Brokers `gateway` feature is the
+model.
 
 The Python targets accept the uv minor series defined by `required-version` in
 `python/pyproject.toml`. `make sync`, `make py-stubs`, and `make build-debug` stop when the installed
@@ -767,9 +815,11 @@ must not keep its target alive.
 - Group assertions after setup and actions unless the test checks stepwise state changes.
 - Do not use Arrange, Act, Assert separator comments.
 
-Every workspace member appears exactly once in `CORE_CRATES`, `ADAPTER_CRATES`, or `NO_TEST_CRATES`
-in the `Makefile`. Add a crate to `NO_TEST_CRATES` only when it defines no Rust test target and
-contains no `#[test]`, `#[rstest]`, or `#[test_case]` function.
+Each workspace member appears exactly once in `CORE_CRATES`, `ADAPTER_CRATES`, or `NO_TEST_CRATES` in the
+`Makefile`. Add a crate to `NO_TEST_CRATES` only when both conditions hold:
+
+- It defines no Rust test target.
+- It contains no `#[test]`, `#[rstest]`, or `#[test_case]` function.
 
 Parametrize cases when the same behavior applies to several inputs:
 
@@ -828,8 +878,15 @@ Unsafe code must make its proof obligations reviewable:
 - Use always-on checks for null, alignment, provenance, and other soundness conditions.
 - Add targeted tests for observable behavior around unsafe code. Tests support the proof but do not
   establish soundness.
-- Treat an unsafe `Send` or `Sync` implementation as a proof over all reachable state, aliases,
-  callbacks, generic parameters, safe methods, cloning, and destruction.
+- An unsafe `Send` or `Sync` implementation needs a proof over all reachable behavior:
+
+  - State.
+  - Aliases.
+  - Callbacks.
+  - Generic parameters.
+  - Safe methods.
+  - Cloning.
+  - Destruction.
 
 For raw vectors crossing FFI, follow the [FFI memory contract](ffi.md). Foreign code owns the
 allocation after transfer and must call the matching `vec_drop_*` function exactly once.
@@ -849,8 +906,8 @@ cargo check -q -p nautilus-model --features ffi,python,high-precision
 The crate-local `cbindgen.toml` files define the header layout for native consumers. Do not add an
 `ffi` feature or `src/ffi` module to another workspace crate.
 
-Run `make check-cbindgen-abi` to generate both headers, verify their public names and compatibility
-enum values, and compile a C11 consumer against them. The scheduled nightly tests run this check.
+Run `make check-cbindgen-abi`. It generates both headers and checks their public names and compatibility enum
+values. It also compiles a C11 consumer against them. The scheduled nightly tests run this check.
 
 ### Cap'n Proto schemas
 

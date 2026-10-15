@@ -13,14 +13,16 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::borrow::Cow;
+
 use ahash::AHashMap;
 use derive_builder::Builder;
 #[cfg(test)]
 use nautilus_core::string::secret::REDACTED;
 use nautilus_core::{
     serialization::{
-        deserialize_decimal, deserialize_decimal_from_str, deserialize_optional_decimal_from_str,
-        serialize_decimal_as_str,
+        decimal, deserialize_decimal, deserialize_decimal_from_str,
+        deserialize_optional_decimal_from_str, serialize_decimal_as_str,
     },
     string::secret::SecretString,
 };
@@ -33,16 +35,20 @@ use nautilus_model::{
     reports::{FillReport, OrderStatusReport},
 };
 use rust_decimal::Decimal;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, de::Error};
+use serde_json::value::RawValue;
 use ustr::Ustr;
 
 use crate::{
-    common::enums::{
-        HyperliquidBarInterval, HyperliquidFillDirection, HyperliquidLiquidationMethod,
-        HyperliquidOrderStatus as HyperliquidOrderStatusEnum, HyperliquidSide,
-        HyperliquidTimeInForce, HyperliquidTpSl, HyperliquidTwapStatus,
+    common::{
+        enums::{
+            HyperliquidBarInterval, HyperliquidFillDirection, HyperliquidLiquidationMethod,
+            HyperliquidOrderStatus as HyperliquidOrderStatusEnum, HyperliquidSide,
+            HyperliquidTimeInForce, HyperliquidTpSl, HyperliquidTwapStatus,
+        },
+        parse::is_false_or_none,
     },
-    http::models::{HyperliquidExchangeAction, HyperliquidExchangeRequest},
+    http::models::{HyperliquidExchangeAction, HyperliquidExchangeRequest, LeverageInfo},
 };
 
 /// Represents an outbound WebSocket message from client to Hyperliquid.
@@ -165,6 +171,8 @@ pub struct SignatureData {
 }
 
 /// Action request types.
+///
+/// Fast-cancel flags are serialized only when true.
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type")]
 #[serde(rename_all = "lowercase")]
@@ -177,13 +185,13 @@ pub enum ActionRequest {
     /// Cancel orders.
     Cancel {
         cancels: Vec<CancelRequest>,
-        #[serde(rename = "f", skip_serializing_if = "Option::is_none")]
+        #[serde(rename = "f", skip_serializing_if = "is_false_or_none")]
         fast: Option<bool>,
     },
     /// Cancel orders by client order ID.
     CancelByCloid {
         cancels: Vec<CancelByCloidRequest>,
-        #[serde(rename = "f", skip_serializing_if = "Option::is_none")]
+        #[serde(rename = "f", skip_serializing_if = "is_false_or_none")]
         fast: Option<bool>,
     },
     /// Modify orders.
@@ -338,7 +346,7 @@ pub struct SubscriptionResponseData {
 
 /// Inbound WebSocket message from Hyperliquid server.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "channel")]
+#[serde(remote = "Self", tag = "channel")]
 #[serde(rename_all = "camelCase")]
 pub enum HyperliquidWsMessage {
     /// Subscription confirmation.
@@ -388,6 +396,36 @@ pub enum HyperliquidWsMessage {
     Error { data: String },
     /// Pong response.
     Pong,
+}
+
+impl<'de> Deserialize<'de> for HyperliquidWsMessage {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let raw = Box::<RawValue>::deserialize(deserializer)?;
+        decode_ws_message(raw.get()).map_err(D::Error::custom)
+    }
+}
+
+pub(crate) fn decode_ws_message(text: &str) -> serde_json::Result<HyperliquidWsMessage> {
+    let header: WsMessageHeader = serde_json::from_str(text)?;
+
+    // Tagged enum buffering loses raw numeric tokens; parse active asset data directly
+    if header.channel == "activeAssetData" {
+        let message: WsActiveAssetDataMessage = serde_json::from_str(text)?;
+        return Ok(HyperliquidWsMessage::ActiveAssetData { data: message.data });
+    }
+
+    HyperliquidWsMessage::deserialize(&mut serde_json::Deserializer::from_str(text))
+}
+
+#[derive(Deserialize)]
+struct WsMessageHeader<'a> {
+    #[serde(borrow)]
+    channel: Cow<'a, str>,
+}
+
+#[derive(Deserialize)]
+struct WsActiveAssetDataMessage {
+    data: WsActiveAssetData,
 }
 
 /// Post response data.
@@ -794,7 +832,7 @@ pub struct SharedAssetCtx {
     )]
     pub mid_px: Option<Decimal>,
     #[serde(rename = "impactPxs")]
-    pub impact_pxs: Option<Vec<String>>,
+    pub impact_pxs: Option<Vec<Decimal>>,
     #[serde(
         rename = "dayBaseVlm",
         default,
@@ -838,19 +876,24 @@ pub struct SpotAssetCtx {
 pub struct WsActiveAssetData {
     pub user: String,
     pub coin: Ustr,
-    pub leverage: LeverageData,
-    #[serde(rename = "maxTradeSzs")]
-    pub max_trade_szs: [f64; 2],
-    #[serde(rename = "availableToTrade")]
-    pub available_to_trade: [f64; 2],
+    pub leverage: LeverageInfo,
+    #[serde(rename = "maxTradeSzs", deserialize_with = "deserialize_trade_limits")]
+    pub max_trade_szs: [Decimal; 2],
+    #[serde(
+        rename = "availableToTrade",
+        deserialize_with = "deserialize_trade_limits"
+    )]
+    pub available_to_trade: [Decimal; 2],
 }
 
-/// Leverage data.
-#[derive(Debug, Clone, Deserialize)]
-pub struct LeverageData {
-    pub value: f64,
-    pub type_: String,
+fn deserialize_trade_limits<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<[Decimal; 2], D::Error> {
+    <[DecimalToken; 2]>::deserialize(deserializer).map(|values| values.map(|value| value.0))
 }
+
+#[derive(Deserialize)]
+struct DecimalToken(#[serde(deserialize_with = "decimal::deserialize_json")] Decimal);
 
 /// WebSocket TWAP slice fills data.
 #[derive(Debug, Clone, Deserialize)]
@@ -933,6 +976,286 @@ mod tests {
     use serde_json;
 
     use super::*;
+    use crate::common::enums::HyperliquidLeverageType;
+
+    #[rstest]
+    fn test_cancel_action_serialization(
+        #[values(None, Some(false), Some(true))] fast: Option<bool>,
+        #[values(false, true)] by_cloid: bool,
+    ) {
+        let (action, name) = if by_cloid {
+            (
+                ActionRequest::CancelByCloid {
+                    cancels: vec![CancelByCloidRequest {
+                        asset: 7,
+                        cloid: "0x0123456789abcdef0123456789abcdef".to_string(),
+                    }],
+                    fast,
+                },
+                "ws_cancel_by_cloid",
+            )
+        } else {
+            (
+                ActionRequest::Cancel {
+                    cancels: vec![CancelRequest { a: 7, o: 12345 }],
+                    fast,
+                },
+                "cancel",
+            )
+        };
+
+        let fixtures: serde_json::Value =
+            serde_json::from_str(include_str!("../../test_data/cancel_actions.json")).unwrap();
+        let expected = &fixtures[name][if fast == Some(true) { "fast" } else { "normal" }];
+        let json = serde_json::to_value(&action).unwrap();
+        let msgpack = rmp_serde::to_vec_named(&action).unwrap();
+
+        assert_eq!(json, expected["json"]);
+        assert_eq!(
+            nautilus_core::hex::encode(msgpack),
+            expected["msgpack"].as_str().unwrap()
+        );
+    }
+
+    #[rstest]
+    #[case("cross", HyperliquidLeverageType::Cross)]
+    #[case("isolated", HyperliquidLeverageType::Isolated)]
+    fn test_ws_active_asset_data_preserves_decimals(
+        #[case] leverage_type: &str,
+        #[case] expected_type: HyperliquidLeverageType,
+        #[values("number", "string", "scientific")] encoding: &str,
+        #[values(false, true)] serde_entry: bool,
+        #[values(false, true)] channel_last: bool,
+    ) {
+        let max_trade_szs = [
+            dec!(9007199254740993.01),
+            dec!(0.0000000000000000000000000001),
+        ];
+        let available_to_trade = [
+            dec!(0.1234567890123456789012345678),
+            dec!(1234567890.1234567890123456789),
+        ];
+        let mut json = include_str!("../../test_data/ws_active_asset_data_decimal.json")
+            .replace("\"cross\"", &format!("\"{leverage_type}\""));
+
+        if encoding != "number" {
+            for value in max_trade_szs.into_iter().chain(available_to_trade) {
+                let text = value.to_string();
+
+                let encoded = match encoding {
+                    "string" => format!("\"{text}\""),
+                    "scientific" => format!("{text}e0"),
+                    _ => unreachable!(),
+                };
+
+                json = json.replace(&text, &encoded);
+            }
+        }
+
+        if channel_last {
+            json = json
+                .replace("  \"channel\": \"activeAssetData\",\n", "")
+                .trim_end()
+                .strip_suffix('}')
+                .unwrap()
+                .to_string()
+                + ",\"channel\":\"activeAssetData\"}";
+        }
+
+        let msg = if serde_entry {
+            serde_json::from_str::<HyperliquidWsMessage>(&json).unwrap()
+        } else {
+            decode_ws_message(&json).unwrap()
+        };
+
+        let HyperliquidWsMessage::ActiveAssetData { data } = msg else {
+            panic!("Expected ActiveAssetData message");
+        };
+
+        assert_eq!(data.user, "0x0000000000000000000000000000000000000001");
+        assert_eq!(data.coin, "BTC");
+        assert_eq!(data.leverage.leverage_type, expected_type);
+        assert_eq!(data.leverage.value, 7);
+        assert_eq!(data.max_trade_szs, max_trade_szs);
+        assert_eq!(data.available_to_trade, available_to_trade);
+    }
+
+    #[rstest]
+    #[case(
+        "[1]",
+        serde_json::error::Category::Data,
+        "invalid length 1, expected an array of length 2"
+    )]
+    #[case(
+        "[1, 2, 3]",
+        serde_json::error::Category::Syntax,
+        "trailing characters"
+    )]
+    #[case(
+        "[null, 2]",
+        serde_json::error::Category::Data,
+        "invalid decimal significand"
+    )]
+    #[case(
+        "[\"not-a-number\", 2]",
+        serde_json::error::Category::Data,
+        "invalid decimal exponent"
+    )]
+    #[case(
+        "[\"\", 2]",
+        serde_json::error::Category::Data,
+        "invalid decimal significand"
+    )]
+    #[case(
+        "[true, 2]",
+        serde_json::error::Category::Data,
+        "invalid decimal exponent"
+    )]
+    #[case(
+        "[{}, 2]",
+        serde_json::error::Category::Data,
+        "invalid decimal significand"
+    )]
+    #[case(
+        "[0.00000000000000000000000000001, 2]",
+        serde_json::error::Category::Data,
+        "Number has a high precision that can not be represented."
+    )]
+    fn test_ws_active_asset_data_rejects_invalid_trade_limits(
+        #[values("maxTradeSzs", "availableToTrade")] field: &str,
+        #[case] values: &str,
+        #[case] category: serde_json::error::Category,
+        #[case] expected: &str,
+    ) {
+        let mut json =
+            include_str!("../../test_data/ws_active_asset_data_decimal.json").to_string();
+        let key = format!("\"{field}\": ");
+        let start = json.find(&key).unwrap() + key.len();
+        let end = start + json[start..].find(']').unwrap() + 1;
+        json.replace_range(start..end, values);
+        let error = decode_ws_message(&json).unwrap_err();
+
+        assert_eq!(error.classify(), category);
+        assert_eq!(
+            error.to_string().split(" at line ").next().unwrap(),
+            expected
+        );
+    }
+
+    #[rstest]
+    #[case(r#"{"channel":"pong"}"#)]
+    #[case(r#"{"channel":"p\u006fng"}"#)]
+    fn test_decode_ws_message_pong(#[case] json: &str) {
+        let message = decode_ws_message(json).unwrap();
+
+        assert!(matches!(message, HyperliquidWsMessage::Pong));
+    }
+
+    #[rstest]
+    #[case("{}", "missing field `channel`")]
+    #[case(r#"{"channel":"activeAssetData"}"#, "missing field `data`")]
+    #[case(
+        r#"{"channel":"pong","channel":"activeAssetData"}"#,
+        "duplicate field `channel`"
+    )]
+    fn test_decode_ws_message_rejects_invalid_envelope(#[case] json: &str, #[case] expected: &str) {
+        let error = decode_ws_message(json).unwrap_err();
+
+        assert_eq!(error.classify(), serde_json::error::Category::Data);
+        assert_eq!(
+            error.to_string().split(" at line ").next().unwrap(),
+            expected
+        );
+    }
+
+    #[rstest]
+    fn test_ws_active_asset_ctx_preserves_decimals() {
+        let json = include_str!("../../test_data/ws_active_asset_ctx_decimal.json");
+        let msg: HyperliquidWsMessage = serde_json::from_str(json).unwrap();
+
+        let HyperliquidWsMessage::ActiveAssetCtx {
+            data: WsActiveAssetCtxData::Perp { coin, ctx },
+        } = msg
+        else {
+            panic!("Expected perpetual ActiveAssetCtx message");
+        };
+
+        assert_eq!(coin, "BTC");
+        assert_eq!(ctx.shared.day_ntl_vlm, dec!(1234567890.1234567890123456789));
+        assert_eq!(ctx.shared.prev_day_px, dec!(49000.12345678901234567890123));
+        assert_eq!(ctx.shared.mark_px, dec!(50000.12345678901234567890123));
+        assert_eq!(ctx.shared.mid_px, Some(dec!(50001.12345678901234567890123)));
+        assert_eq!(
+            ctx.shared.impact_pxs,
+            Some(vec![
+                dec!(50002.12345678901234567890123),
+                dec!(50003.12345678901234567890123),
+            ])
+        );
+        assert_eq!(
+            ctx.shared.day_base_vlm,
+            Some(dec!(12345.12345678901234567890123))
+        );
+        assert_eq!(ctx.funding, dec!(-0.0000000000000000000000000001));
+        assert_eq!(ctx.open_interest, dec!(9007199254740993.01));
+        assert_eq!(ctx.oracle_px, dec!(50004.12345678901234567890123));
+        assert_eq!(ctx.premium, Some(dec!(0.0000000000000000000000000002)));
+    }
+
+    #[rstest]
+    #[case(true)]
+    #[case(false)]
+    fn test_ws_active_asset_ctx_optional_decimals(#[case] explicit_null: bool) {
+        let mut json: serde_json::Value = serde_json::from_str(include_str!(
+            "../../test_data/ws_active_asset_ctx_decimal.json"
+        ))
+        .unwrap();
+        let ctx = json["data"]["ctx"].as_object_mut().unwrap();
+
+        for field in ["midPx", "impactPxs", "dayBaseVlm", "premium"] {
+            if explicit_null {
+                ctx.insert(field.to_string(), serde_json::Value::Null);
+            } else {
+                ctx.remove(field);
+            }
+        }
+
+        let msg: HyperliquidWsMessage = serde_json::from_value(json).unwrap();
+
+        let HyperliquidWsMessage::ActiveAssetCtx {
+            data: WsActiveAssetCtxData::Perp { ctx, .. },
+        } = msg
+        else {
+            panic!("Expected perpetual ActiveAssetCtx message");
+        };
+
+        assert_eq!(ctx.shared.mid_px, None);
+        assert_eq!(ctx.shared.impact_pxs, None);
+        assert_eq!(ctx.shared.day_base_vlm, None);
+        assert_eq!(ctx.premium, None);
+    }
+
+    #[rstest]
+    fn test_ws_active_spot_asset_ctx_preserves_decimals() {
+        let json = include_str!("../../test_data/ws_active_spot_asset_ctx_decimal.json");
+        let msg: HyperliquidWsMessage = serde_json::from_str(json).unwrap();
+
+        let HyperliquidWsMessage::ActiveSpotAssetCtx {
+            data: WsActiveAssetCtxData::Spot { coin, ctx },
+        } = msg
+        else {
+            panic!("Expected spot ActiveAssetCtx message");
+        };
+
+        assert_eq!(coin, "@107");
+        assert_eq!(ctx.shared.day_ntl_vlm, dec!(1234567890.1234567890123456789));
+        assert_eq!(ctx.shared.prev_day_px, dec!(31.12345678901234567890123456));
+        assert_eq!(ctx.shared.mark_px, dec!(32.12345678901234567890123456));
+        assert_eq!(ctx.shared.mid_px, None);
+        assert_eq!(ctx.shared.impact_pxs, None);
+        assert_eq!(ctx.shared.day_base_vlm, None);
+        assert_eq!(ctx.circulating_supply, dec!(9007199254740993.01));
+    }
 
     #[rstest]
     fn test_signature_data_serialization_and_debug_redaction() {

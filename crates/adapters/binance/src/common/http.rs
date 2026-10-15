@@ -17,8 +17,8 @@
 
 use std::{collections::HashMap, time::Duration};
 
-use jiff::{Timestamp, fmt::rfc2822::DateTimeParser};
-use nautilus_network::retry::RetryConfig;
+use jiff::Timestamp;
+use nautilus_network::{http::parse_retry_after, retry::RetryConfig};
 
 use crate::common::consts::BINANCE_RETRY_AFTER_HEADER;
 
@@ -35,20 +35,6 @@ pub(crate) fn retry_config() -> RetryConfig {
     RetryConfig {
         max_elapsed_ms: Some(180_000),
         ..Default::default()
-    }
-}
-
-fn parse_retry_after(value: &str, now: Timestamp) -> Option<Duration> {
-    if let Ok(seconds) = value.parse::<u64>() {
-        return Some(Duration::from_secs(seconds));
-    }
-
-    let retry_at = DateTimeParser::new().parse_timestamp(value).ok()?;
-    let delay = retry_at.duration_since(now);
-    if delay.is_negative() {
-        Some(Duration::ZERO)
-    } else {
-        Some(delay.unsigned_abs())
     }
 }
 

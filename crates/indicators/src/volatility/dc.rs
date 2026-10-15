@@ -81,7 +81,7 @@ impl DonchianChannel {
     ///
     /// # Panics
     ///
-    /// This function panics if:
+    /// Panics if:
     /// - `period` is not in the range of 1 to `MAX_PERIOD` (inclusive).
     #[must_use]
     pub fn new(period: usize) -> Self {

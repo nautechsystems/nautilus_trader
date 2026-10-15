@@ -14,9 +14,9 @@ leave the position open.
 
 ## Example
 
-In the following example we create a *Trailing-Stop-Limit* order on the Currenex FX ECN to BUY 1,250,000 AUD using USD
-at a limit price of 0.71000 USD, activating at 0.72000 USD then trailing at a stop offset of 0.00100 USD
-away from the current ask price, active until further notice:
+**Example**: create a *Trailing-Stop-Limit* order on the Currenex FX ECN to BUY 1,250,000 AUD using USD. It
+starts at a limit price of 0.71000 USD and activates at 0.72000 USD. It then trails at a stop offset of
+0.00100 USD from the current ask price. The order stays active until further notice.
 
 ```rust tab="Rust"
 use nautilus_model::{
@@ -83,8 +83,8 @@ order: TrailingStopLimitOrder = self.order_factory.trailing_stop_limit(
 ```
 
 :::info
-If both `activation_price` and `trigger_price` are omitted, the order activates immediately at the
-current market and its trigger price materializes from `trailing_offset` on the first update.
+If both `activation_price` and `trigger_price` are omitted, the order activates immediately at the current
+market. On the first update, its trigger price materializes from `trailing_offset`.
 :::
 
 See the

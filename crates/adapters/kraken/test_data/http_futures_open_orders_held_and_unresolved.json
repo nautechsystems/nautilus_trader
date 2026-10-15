@@ -1,0 +1,31 @@
+{
+  "result": "success",
+  "openOrders": [
+    {
+      "order_id": "V-HELD",
+      "symbol": "PI_XBTUSD",
+      "side": "buy",
+      "orderType": "lmt",
+      "limitPrice": 27500.5,
+      "unfilledSize": 1000.0,
+      "receivedTime": "2023-04-07T14:15:30.250Z",
+      "status": "untouched",
+      "filledSize": 0.0,
+      "reduceOnly": false,
+      "lastUpdateTime": "2023-04-07T14:15:30.250Z"
+    },
+    {
+      "order_id": "V-UNRESOLVED",
+      "symbol": "PF_UNKNOWNUSD",
+      "side": "buy",
+      "orderType": "lmt",
+      "limitPrice": 27500.5,
+      "unfilledSize": 1000.0,
+      "receivedTime": "2023-04-07T14:15:30.250Z",
+      "status": "untouched",
+      "filledSize": 0.0,
+      "reduceOnly": false,
+      "lastUpdateTime": "2023-04-07T14:15:30.250Z"
+    }
+  ]
+}

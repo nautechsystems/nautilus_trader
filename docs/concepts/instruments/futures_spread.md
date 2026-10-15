@@ -36,7 +36,7 @@ Examples include listed futures calendar spreads and exchange-supported spread m
 | `ts_event`        | `UnixNanos`        | `int`              | Required         | Event timestamp in nanoseconds.           |
 | `ts_init`         | `UnixNanos`        | `int`              | Required         | Initialization timestamp in nanoseconds.  |
 
-*Note: Python constructors use `instrument_id`; Rust stores the same value as `id`.*
+**Note**: Python constructors use `instrument_id`. Rust stores the same value as `id`.
 
 ## Behavior
 
@@ -115,7 +115,7 @@ es_spread = FuturesSpread(
 
 ## Adapters
 
-Representative adapters that create or consume `FuturesSpread` instruments include:
+**Adapters that create or consume `FuturesSpread` instruments include**:
 
 - [Databento](../../integrations/databento.md) for listed futures spread markets.
 - [Interactive Brokers](../../integrations/interactive_brokers.md) for exchange-defined futures strategies.

@@ -20,20 +20,7 @@ use nautilus_model::enums::OrderSide;
 use rust_decimal::Decimal;
 
 use super::parse::CachedL3Order;
-
-/// Formats a decimal string per Kraken L3 checksum rules.
-///
-/// Removes the decimal point then strips leading zeros, so `"0.12730000"` → `"12730000"`
-/// and `"79754.0"` → `"797540"`.
-fn format_raw(raw: &str) -> String {
-    let no_dot = raw.replace('.', "");
-    let trimmed = no_dot.trim_start_matches('0');
-    if trimmed.is_empty() {
-        "0".to_string()
-    } else {
-        trimmed.to_string()
-    }
-}
+use crate::websocket::spot_v2::checksum::{crc32_ieee, format_raw};
 
 /// Builds the checksum input string from the open-order cache.
 ///
@@ -86,22 +73,6 @@ fn append_top_10_levels(sorted: &[(Decimal, u64, &str, &str)], s: &mut String) {
         s.push_str(&format_raw(price_raw));
         s.push_str(&format_raw(size_raw));
     }
-}
-
-/// IEEE CRC32 polynomial (reflected), inline to avoid adding a new dependency.
-fn crc32_ieee(data: &[u8]) -> u32 {
-    let mut crc: u32 = 0xFFFF_FFFF;
-    for &byte in data {
-        crc ^= u32::from(byte);
-        for _ in 0..8 {
-            if crc & 1 != 0 {
-                crc = (crc >> 1) ^ 0xEDB8_8320;
-            } else {
-                crc >>= 1;
-            }
-        }
-    }
-    !crc
 }
 
 #[cfg(test)]

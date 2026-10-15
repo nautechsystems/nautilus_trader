@@ -59,6 +59,7 @@
 
 #![warn(rustc::all)]
 #![warn(clippy::pedantic)]
+#![warn(clippy::clone_on_ref_ptr)]
 #![deny(unsafe_code)]
 #![deny(unsafe_op_in_unsafe_fn)]
 #![deny(nonstandard_style)]
@@ -116,6 +117,7 @@ mod writer;
 #[cfg(feature = "python")]
 pub mod python;
 
+pub use logging::{ConnectionUrl, url_origin};
 pub use sink::{SocketState, SocketStateSink};
 pub use transport::{Message, TransportError};
 pub use writer::WriterSender;

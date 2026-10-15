@@ -95,7 +95,7 @@ impl PortfolioAnalyzer {
     ///
     /// # Errors
     ///
-    /// Returns an error if PnL calculations fail, for example due to:
+    /// Returns an error if:
     ///
     /// - No currency specified for a multi-currency portfolio.
     /// - Unrealized PnL currency not matching the specified currency.

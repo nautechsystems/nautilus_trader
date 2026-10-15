@@ -149,7 +149,8 @@ impl BookStreamChecker {
     ///
     /// # Errors
     ///
-    /// Returns the first contract violation the batch causes.
+    /// Returns an error if the batch violates the book contract. The error reports the first
+    /// violation.
     pub fn apply(&mut self, deltas: &OrderBookDeltas) -> Result<(), BookContractViolation> {
         let checked = self
             .books
@@ -188,8 +189,7 @@ impl BookStreamChecker {
     ///
     /// # Errors
     ///
-    /// Returns [`BookContractViolation::TruthMismatch`] when either side differs, or
-    /// [`BookContractViolation::Unsynced`] before a snapshot since the book opened.
+    /// Returns an error if either side differs or no snapshot has arrived since the book opened.
     pub fn verify(
         &mut self,
         instrument_id: InstrumentId,

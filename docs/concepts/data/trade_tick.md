@@ -21,8 +21,8 @@ size, aggressor side, and venue trade identifier.
 - Information-driven bars require `TradeTick` data because they use `aggressor_side`.
 - Trade bars use `LAST` price type.
 - `trade_id` should be stable for the venue event when the venue provides one.
-- Parsing and deserialization accept the deprecated `BUYER`/`SELLER` values; string output is always
-  canonical `BUY`/`SELL`.
+- Parsing and deserialization accept the deprecated `BUYER`/`SELLER` values. String output is always canonical
+  `BUY`/`SELL`.
 
 ## Example
 

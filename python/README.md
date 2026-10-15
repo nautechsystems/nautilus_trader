@@ -45,7 +45,7 @@ make pytest       # Run Python tests
 ### Prerequisites
 
 - Rust toolchain (via `rustup`)
-- Python 3.12-3.14
+- Python 3.13-3.14
 - `patchelf` (Linux only) for setting rpath on the compiled extension
 
 ### Quick start
@@ -96,10 +96,10 @@ uv pip install --pre --index-url=https://packages.nautechsystems.io/simple/ naut
 
 | Platform           | Python    | Develop | Nightly |
 | :----------------- | :-------- | :------ | :------ |
-| `Linux (x86_64)`   | 3.12-3.14 | ✓       | ✓       |
-| `Linux (ARM64)`    | 3.12-3.14 | -       | ✓       |
-| `macOS (ARM64)`    | 3.12-3.14 | -       | ✓       |
-| `Windows (x86_64)` | 3.12-3.14 | -       | ✓       |
+| `Linux (x86_64)`   | 3.13-3.14 | ✓       | ✓       |
+| `Linux (ARM64)`    | 3.13-3.14 | -       | ✓       |
+| `macOS (ARM64)`    | 3.13-3.14 | -       | ✓       |
+| `Windows (x86_64)` | 3.13-3.14 | -       | ✓       |
 
 The nightly merge builds and tests wheels on every listed platform.
 

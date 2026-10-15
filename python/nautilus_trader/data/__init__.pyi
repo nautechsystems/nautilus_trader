@@ -37,6 +37,8 @@ class DataEngineConfig:
     def external_clients(self) -> list[model.ClientId] | None: ...
     @property
     def debug(self) -> bool: ...
+    @property
+    def time_bars_time_zone(self) -> str | None: ...
     def __new__(
         cls,
         time_bars_build_with_no_updates: bool | None = None,
@@ -52,4 +54,5 @@ class DataEngineConfig:
         external_clients: typing.Sequence[model.ClientId] | None = None,
         debug: bool | None = None,
         disable_historical_cache: bool | None = None,
+        time_bars_time_zone: str | None = None,
     ) -> DataEngineConfig: ...

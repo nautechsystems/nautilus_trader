@@ -78,8 +78,8 @@ impl Verifier {
     ///
     /// # Errors
     ///
-    /// Returns [`VerifyError::Backend`] when the underlying backend rejects the open
-    /// (file missing, run still `Running`, header corruption).
+    /// Returns an error if the underlying backend rejects the open (file missing, run still
+    /// `Running`, header corruption).
     pub fn open_redb(
         base_dir: impl AsRef<Path>,
         instance_id: &str,
@@ -100,8 +100,8 @@ impl Verifier {
     ///
     /// # Errors
     ///
-    /// Returns [`VerifyError::Backend`] when the underlying backend rejects the open
-    /// (file missing, run still `Running`, header corruption).
+    /// Returns an error if the underlying backend rejects the open (file missing, run still
+    /// `Running`, header corruption).
     pub fn open_redb_file(path: impl AsRef<Path>) -> Result<Self, VerifyError> {
         let backend = RedbBackend::open_sealed_file(path.as_ref().to_path_buf())?;
         Ok(Self {
@@ -125,8 +125,8 @@ impl Verifier {
     ///
     /// # Errors
     ///
-    /// Returns [`VerifyError::Backend`] when the backend refuses a read-side
-    /// operation (no run open, disk pressure, manifest decode failure).
+    /// Returns an error if the backend refuses a read-side operation (no run open, disk pressure,
+    /// manifest decode failure).
     pub fn verify(&self) -> Result<VerifyReport, VerifyError> {
         let manifest = self.backend.manifest()?;
         let high_watermark = self.backend.high_watermark()?;

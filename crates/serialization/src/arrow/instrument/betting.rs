@@ -296,7 +296,7 @@ impl EncodeToRecordBatch for BettingInstrument {
 ///
 /// # Errors
 ///
-/// Returns an `EncodingError` if the RecordBatch cannot be decoded.
+/// Returns an error if the RecordBatch cannot be decoded.
 pub fn decode_betting_instrument_batch(
     #[allow(unused)] metadata: &HashMap<String, String>,
     record_batch: &RecordBatch,

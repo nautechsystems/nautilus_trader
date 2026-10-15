@@ -37,7 +37,7 @@ Examples include non-crypto perpetual contracts and venue-specific synthetic swa
 | `ts_event`            | `UnixNanos`        | `int`              | Required         | Event timestamp in nanoseconds.          |
 | `ts_init`             | `UnixNanos`        | `int`              | Required         | Initialization timestamp in nanoseconds. |
 
-*Note: Python constructors use `instrument_id`; Rust stores the same value as `id`.*
+**Note**: Python constructors use `instrument_id`. Rust stores the same value as `id`.
 
 ## Behavior
 
@@ -114,7 +114,7 @@ eurusd_perp = PerpetualContract(
 
 ## Adapters
 
-Representative adapters that create or consume `PerpetualContract` instruments include:
+**Adapters that create or consume `PerpetualContract` instruments include**:
 
 - [Architect AX](../../integrations/architect_ax.md) for venue-defined perpetual contracts.
 - [Binance](../../integrations/binance.md) for USD-M TradFi perpetual contracts.

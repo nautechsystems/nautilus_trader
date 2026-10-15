@@ -179,7 +179,15 @@ async fn handle_get_instruments(query: Query<HashMap<String, String>>) -> impl I
         }
     };
 
-    let instruments = load_test_data(filename);
+    let mut instruments = load_test_data(filename);
+    if category == Some("linear") {
+        let list = instruments["result"]["list"].as_array_mut().unwrap();
+        let mut sol = list[1].clone();
+        sol["symbol"] = json!("SOLUSDT");
+        sol["baseCoin"] = json!("SOL");
+        list.push(sol);
+    }
+
     Json(instruments).into_response()
 }
 

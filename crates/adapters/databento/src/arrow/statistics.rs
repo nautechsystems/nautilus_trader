@@ -180,7 +180,7 @@ impl DecodeDataFromRecordBatch for DatabentoStatistics {
 ///
 /// # Errors
 ///
-/// Returns an `EncodingError` if decoding fails.
+/// Returns an error if decoding fails.
 pub fn decode_statistics_batch(
     metadata: &HashMap<String, String>,
     record_batch: &RecordBatch,

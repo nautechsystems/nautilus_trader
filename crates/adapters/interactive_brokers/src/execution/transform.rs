@@ -15,10 +15,7 @@
 
 //! Order transformation utilities for converting Nautilus orders to IB orders.
 
-use ibapi::{
-    contracts::Contract,
-    orders::{Action, Order as IBOrder, TimeInForce},
-};
+use ibapi::orders::{Action, Order as IBOrder, TimeInForce};
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     enums::{
@@ -29,7 +26,7 @@ use nautilus_model::{
 };
 
 use crate::{
-    common::enums::{IbOrderType, IbTimeInForce, IbTriggerMethod},
+    common::enums::{IbAction, IbOrderType, IbTimeInForce, IbTriggerMethod},
     providers::instruments::InteractiveBrokersInstrumentProvider,
 };
 
@@ -38,8 +35,8 @@ mod tags;
 
 use self::{
     policy::{
-        apply_account_policy, apply_display_quantity_policy, apply_expire_time_policy,
-        apply_order_list_policy, apply_quantity_policy, apply_trailing_order_policy,
+        apply_display_quantity_policy, apply_expire_time_policy, apply_quantity_policy,
+        apply_trailing_order_policy,
     },
     tags::apply_ib_order_tags,
 };
@@ -51,7 +48,6 @@ use self::{
 /// Returns an error if the transformation fails.
 pub fn nautilus_order_to_ib_order(
     order: &OrderAny,
-    _contract: &Contract,
     instrument_provider: &InteractiveBrokersInstrumentProvider,
     order_id: i32,
     order_ref: &str,
@@ -71,7 +67,7 @@ pub fn nautilus_order_to_ib_order(
         order.trigger_price(),
         price_magnifier,
     );
-    let tif = transform_time_in_force(order.time_in_force(), order.expire_time());
+    let tif = transform_time_in_force(order.time_in_force());
 
     let mut ib_order = IBOrder {
         order_id,
@@ -87,18 +83,23 @@ pub fn nautilus_order_to_ib_order(
     };
 
     apply_expire_time_policy(&mut ib_order, order);
-    apply_account_policy(&mut ib_order, order);
-    apply_quantity_policy(&mut ib_order, order, instrument_provider)?;
     apply_trailing_order_policy(&mut ib_order, order, price_magnifier)?;
     apply_display_quantity_policy(&mut ib_order, order);
 
-    // Note: Parent ID in Nautilus is ClientOrderId, but IB expects order_id.
-    // Parent order ID mapping requires client_order_id -> IB order_id tracking,
-    // which is handled at the execution client layer.
-    let _parent_order_id = order.parent_order_id();
-
     apply_ib_order_tags(&mut ib_order, order.tags())?;
-    apply_order_list_policy(&mut ib_order, order);
+
+    // Tracking checks each execution against the Nautilus side, so a tag may change the IB
+    // action only within that side (for example SELL to SSHORT)
+    let tagged_action = IbAction::from(ib_order.action);
+    if tagged_action.order_side() != order.order_side() {
+        anyhow::bail!(
+            "IBOrderTags action {tagged_action} conflicts with the {} order side",
+            order.order_side(),
+        );
+    }
+
+    // Runs after the tags so it validates the order type IB receives
+    apply_quantity_policy(&mut ib_order, order, instrument_provider)?;
 
     Ok(ib_order)
 }
@@ -112,6 +113,7 @@ fn transform_order_type(
     price_magnifier: f64,
 ) -> (&'static str, Option<f64>, Option<f64>) {
     let ib_order_type = IbOrderType::from_nautilus(order_type, time_in_force);
+
     let (limit_price, aux_price) = match order_type {
         NautilusOrderType::Market | NautilusOrderType::MarketToLimit => (None, None),
         NautilusOrderType::Limit => (convert_price_opt(price, price_magnifier), None),
@@ -130,10 +132,7 @@ fn transform_order_type(
 }
 
 /// Transform Nautilus time in force to IB time in force.
-fn transform_time_in_force(
-    tif: NautilusTimeInForce,
-    _expire_time: Option<nautilus_core::UnixNanos>,
-) -> TimeInForce {
+fn transform_time_in_force(tif: NautilusTimeInForce) -> TimeInForce {
     IbTimeInForce::from_nautilus(tif).ibapi_time_in_force()
 }
 
@@ -169,15 +168,28 @@ pub(super) fn trigger_type_to_ib_trigger_method(
     value.ibapi_trigger_method()
 }
 
+pub(super) const fn ib_trigger_method_to_trigger_type(
+    trigger_method: ibapi::orders::conditions::TriggerMethod,
+) -> TriggerType {
+    match trigger_method {
+        ibapi::orders::conditions::TriggerMethod::Default => TriggerType::Default,
+        ibapi::orders::conditions::TriggerMethod::DoubleBidAsk => TriggerType::DoubleBidAsk,
+        ibapi::orders::conditions::TriggerMethod::Last => TriggerType::LastPrice,
+        ibapi::orders::conditions::TriggerMethod::DoubleLast => TriggerType::DoubleLast,
+        ibapi::orders::conditions::TriggerMethod::BidAsk => TriggerType::BidAsk,
+        ibapi::orders::conditions::TriggerMethod::LastOrBidAsk => TriggerType::LastOrBidAsk,
+        ibapi::orders::conditions::TriggerMethod::Midpoint => TriggerType::MidPoint,
+        ibapi::orders::conditions::TriggerMethod::Unknown(_) => TriggerType::Default,
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use ibapi::{
-        contracts::{Contract, Currency, Exchange, SecurityType, Symbol},
-        orders::OrderCondition,
-    };
+    use ibapi::orders::OrderCondition;
     use nautilus_model::{
         enums::{OrderSide, OrderType, TimeInForce as NautilusTimeInForce, TrailingOffsetType},
         identifiers::{InstrumentId, OrderListId, Symbol as NautilusSymbol, Venue},
+        instruments::{InstrumentAny, stubs::btcusd_inverse_perp},
         orders::OrderTestBuilder,
         types::{Price, Quantity},
     };
@@ -188,10 +200,240 @@ mod tests {
     use super::*;
     use crate::config::InteractiveBrokersInstrumentProviderConfig;
 
+    fn create_quote_quantity_order(
+        side: OrderSide,
+        order_type: OrderType,
+        time_in_force: NautilusTimeInForce,
+        tags_json: Option<&str>,
+    ) -> (OrderAny, InteractiveBrokersInstrumentProvider) {
+        let instrument = btcusd_inverse_perp(1, 0, Price::from("0.5"), Quantity::from("1"));
+        let instrument_id = instrument.id;
+        let provider = InteractiveBrokersInstrumentProvider::new(
+            InteractiveBrokersInstrumentProviderConfig::default(),
+        );
+        provider.insert_test_instrument(InstrumentAny::CryptoPerpetual(instrument), 4242, 1);
+
+        let mut builder = OrderTestBuilder::new(order_type);
+        builder
+            .instrument_id(instrument_id)
+            .side(side)
+            .quantity(Quantity::from("20"))
+            .time_in_force(time_in_force)
+            .quote_quantity(true);
+
+        if order_type == OrderType::Limit {
+            builder.price(Price::from("87306.5"));
+        }
+
+        if let Some(tags_json) = tags_json {
+            builder.tags(vec![Ustr::from(&format!("IBOrderTags:{tags_json}"))]);
+        }
+
+        (builder.build(), provider)
+    }
+
+    #[rstest]
+    fn test_quote_quantity_inverse_market_buy_maps_to_cash_qty() {
+        let (order, provider) = create_quote_quantity_order(
+            OrderSide::Buy,
+            OrderType::Market,
+            NautilusTimeInForce::Gtc,
+            None,
+        );
+
+        let ib_order = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
+            .expect("cash quantity is valid for an inverse MARKET BUY");
+
+        assert_eq!(ib_order.cash_qty, Some(20.0));
+        assert_eq!(ib_order.total_quantity, 0.0);
+    }
+
+    #[rstest]
+    // IB rejects `cashQty` on non-MKT orders with error 10244, so these are denied locally
+    #[case::limit(
+        OrderSide::Buy,
+        OrderType::Limit,
+        NautilusTimeInForce::Gtc,
+        None,
+        "(IB error 10244 for LIMIT sent as LMT)"
+    )]
+    #[case::market_at_the_close(
+        OrderSide::Buy,
+        OrderType::Market,
+        NautilusTimeInForce::AtTheClose,
+        None,
+        "(IB error 10244 for MARKET sent as MOC)"
+    )]
+    #[case::market_tagged_limit(
+        OrderSide::Buy,
+        OrderType::Market,
+        NautilusTimeInForce::Gtc,
+        Some(r#"{"orderType":"LMT"}"#),
+        "(IB error 10244 for MARKET sent as LMT)"
+    )]
+    #[case::sell(
+        OrderSide::Sell,
+        OrderType::Market,
+        NautilusTimeInForce::Gtc,
+        None,
+        "only accepts a quote quantity (`cash_qty`) for BUY orders"
+    )]
+    #[case::sell_tagged_buy(
+        OrderSide::Sell,
+        OrderType::Market,
+        NautilusTimeInForce::Gtc,
+        Some(r#"{"action":"BUY"}"#),
+        "IBOrderTags action BUY conflicts with the SELL order side"
+    )]
+    #[case::buy_tagged_sell(
+        OrderSide::Buy,
+        OrderType::Market,
+        NautilusTimeInForce::Gtc,
+        Some(r#"{"action":"SELL"}"#),
+        "IBOrderTags action SELL conflicts with the BUY order side"
+    )]
+    #[case::tagged_cash_qty(
+        OrderSide::Buy,
+        OrderType::Market,
+        NautilusTimeInForce::Gtc,
+        Some(r#"{"cashQty":5.0}"#),
+        "IBOrderTags cannot set cash_qty"
+    )]
+    fn test_quote_quantity_order_is_denied_before_submission(
+        #[case] side: OrderSide,
+        #[case] order_type: OrderType,
+        #[case] time_in_force: NautilusTimeInForce,
+        #[case] tags_json: Option<&str>,
+        #[case] expected: &str,
+    ) {
+        let (order, provider) =
+            create_quote_quantity_order(side, order_type, time_in_force, tags_json);
+
+        let err = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
+            .expect_err("the quote quantity order must be denied");
+
+        let message = format!("{err:#}");
+        assert!(message.contains(expected), "unexpected reason: {message}");
+    }
+
+    #[rstest]
+    fn test_quote_quantity_without_inverse_instrument_is_rejected() {
+        let instrument_id = InstrumentId::new(NautilusSymbol::from("AAPL"), Venue::from("NASDAQ"));
+        let provider = InteractiveBrokersInstrumentProvider::new(
+            InteractiveBrokersInstrumentProviderConfig::default(),
+        );
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument_id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1000"))
+            .quote_quantity(true)
+            .build();
+
+        let err = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
+            .expect_err("quote quantity needs an inverse instrument");
+
+        assert_eq!(
+            format!("{err:#}"),
+            "Interactive Brokers only accepts a quote quantity (`cash_qty`) for inverse \
+             instruments; AAPL.NASDAQ must use the base quantity"
+        );
+    }
+
+    #[rstest]
+    #[case::sell_short(OrderSide::Sell, r#"{"action":"SSHORT"}"#, Action::SellShort)]
+    #[case::sell_long(OrderSide::Sell, r#"{"action":"SLONG"}"#, Action::SellLong)]
+    #[case::same_side(OrderSide::Buy, r#"{"action":"BUY"}"#, Action::Buy)]
+    fn test_tagged_action_within_order_side_is_applied(
+        #[case] side: OrderSide,
+        #[case] tags_json: &str,
+        #[case] expected: Action,
+    ) {
+        let order = create_test_order_with_side_and_tags(side, tags_json);
+        let provider = InteractiveBrokersInstrumentProvider::new(
+            InteractiveBrokersInstrumentProviderConfig::default(),
+        );
+
+        let ib_order = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
+            .expect("an action within the order side is valid");
+
+        assert_eq!(ib_order.action, expected);
+    }
+
+    #[rstest]
+    #[case::sell_tagged_buy(
+        OrderSide::Sell,
+        r#"{"action":"BUY"}"#,
+        "IBOrderTags action BUY conflicts with the SELL order side"
+    )]
+    #[case::buy_tagged_sell_short(
+        OrderSide::Buy,
+        r#"{"action":"SSHORT"}"#,
+        "IBOrderTags action SSHORT conflicts with the BUY order side"
+    )]
+    #[case::order_id(OrderSide::Buy, r#"{"orderId":99}"#, "IBOrderTags cannot set order_id")]
+    #[case::client_id(
+        OrderSide::Buy,
+        r#"{"clientId":7}"#,
+        "IBOrderTags cannot set client_id"
+    )]
+    #[case::perm_id(
+        OrderSide::Buy,
+        r#"{"permId":12345}"#,
+        "IBOrderTags cannot set perm_id"
+    )]
+    #[case::order_ref(
+        OrderSide::Buy,
+        r#"{"orderRef":"OTHER"}"#,
+        "IBOrderTags cannot set order_ref"
+    )]
+    #[case::total_quantity(
+        OrderSide::Buy,
+        r#"{"totalQuantity":500}"#,
+        "IBOrderTags cannot set total_quantity"
+    )]
+    #[case::parent_id(
+        OrderSide::Buy,
+        r#"{"parentId":3}"#,
+        "IBOrderTags cannot set parent_id"
+    )]
+    #[case::transmit(
+        OrderSide::Buy,
+        r#"{"transmit":false}"#,
+        "IBOrderTags cannot set transmit"
+    )]
+    fn test_tags_that_break_order_tracking_are_rejected(
+        #[case] side: OrderSide,
+        #[case] tags_json: &str,
+        #[case] expected: &str,
+    ) {
+        let order = create_test_order_with_side_and_tags(side, tags_json);
+        let provider = InteractiveBrokersInstrumentProvider::new(
+            InteractiveBrokersInstrumentProviderConfig::default(),
+        );
+
+        let err = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
+            .expect_err("the tag must be rejected");
+
+        let message = format!("{err:#}");
+        assert!(message.contains(expected), "unexpected reason: {message}");
+    }
+
+    fn create_test_order_with_side_and_tags(side: OrderSide, tags_json: &str) -> OrderAny {
+        let instrument_id = InstrumentId::new(NautilusSymbol::from("AAPL"), Venue::from("NASDAQ"));
+
+        OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_id)
+            .side(side)
+            .quantity(Quantity::from(100))
+            .price(Price::from("150.00"))
+            .tags(vec![Ustr::from(&format!("IBOrderTags:{tags_json}"))])
+            .build()
+    }
+
     fn create_test_order_with_tags(tags_json: &str) -> OrderAny {
         let instrument_id = InstrumentId::new(NautilusSymbol::from("AAPL"), Venue::from("NASDAQ"));
 
-        let tag = Ustr::from(&format!("IBOrderTags:{}", tags_json));
+        let tag = Ustr::from(&format!("IBOrderTags:{tags_json}"));
         OrderTestBuilder::new(OrderType::Limit)
             .instrument_id(instrument_id)
             .side(OrderSide::Buy)
@@ -205,18 +447,10 @@ mod tests {
     fn test_active_start_time_encoding() {
         let tags_json = r#"{"activeStartTime": "20250101 09:30:00 UTC"}"#;
         let order = create_test_order_with_tags(tags_json);
-        let contract = Contract {
-            contract_id: 0,
-            symbol: Symbol::from("AAPL"),
-            security_type: SecurityType::Stock,
-            exchange: Exchange::from("NASDAQ"),
-            currency: Currency::from("USD"),
-            ..Default::default()
-        };
         let config = InteractiveBrokersInstrumentProviderConfig::default();
         let provider = InteractiveBrokersInstrumentProvider::new(config);
 
-        let result = nautilus_order_to_ib_order(&order, &contract, &provider, 1, "TEST-001");
+        let result = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001");
         assert!(result.is_ok());
         let ib_order = result.unwrap();
 
@@ -227,18 +461,10 @@ mod tests {
     fn test_active_stop_time_encoding() {
         let tags_json = r#"{"activeStopTime": "20250101 16:00:00 UTC"}"#;
         let order = create_test_order_with_tags(tags_json);
-        let contract = Contract {
-            contract_id: 0,
-            symbol: Symbol::from("AAPL"),
-            security_type: SecurityType::Stock,
-            exchange: Exchange::from("NASDAQ"),
-            currency: Currency::from("USD"),
-            ..Default::default()
-        };
         let config = InteractiveBrokersInstrumentProviderConfig::default();
         let provider = InteractiveBrokersInstrumentProvider::new(config);
 
-        let result = nautilus_order_to_ib_order(&order, &contract, &provider, 1, "TEST-001");
+        let result = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001");
         assert!(result.is_ok());
         let ib_order = result.unwrap();
 
@@ -249,18 +475,10 @@ mod tests {
     fn test_both_active_times_encoding() {
         let tags_json = r#"{"activeStartTime": "20250101 09:30:00 UTC", "activeStopTime": "20250101 16:00:00 UTC"}"#;
         let order = create_test_order_with_tags(tags_json);
-        let contract = Contract {
-            contract_id: 0,
-            symbol: Symbol::from("AAPL"),
-            security_type: SecurityType::Stock,
-            exchange: Exchange::from("NASDAQ"),
-            currency: Currency::from("USD"),
-            ..Default::default()
-        };
         let config = InteractiveBrokersInstrumentProviderConfig::default();
         let provider = InteractiveBrokersInstrumentProvider::new(config);
 
-        let result = nautilus_order_to_ib_order(&order, &contract, &provider, 1, "TEST-001");
+        let result = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001");
         assert!(result.is_ok());
         let ib_order = result.unwrap();
 
@@ -279,19 +497,12 @@ mod tests {
             .quantity(Quantity::from(100))
             .time_in_force(NautilusTimeInForce::AtTheOpen)
             .build();
-        let contract = Contract {
-            contract_id: 0,
-            symbol: Symbol::from("AAPL"),
-            security_type: SecurityType::Stock,
-            exchange: Exchange::from("NASDAQ"),
-            currency: Currency::from("USD"),
-            ..Default::default()
-        };
+
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
         );
 
-        let ib_order = nautilus_order_to_ib_order(&order, &contract, &provider, 1, "TEST-001")
+        let ib_order = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
             .expect("order transform should succeed");
 
         assert_eq!(ib_order.tif, TimeInForce::OnOpen);
@@ -301,19 +512,12 @@ mod tests {
     fn test_tags_apply_market_on_open_alias() {
         let tags_json = r#"{"orderType":"MarketOnOpen"}"#;
         let order = create_test_order_with_tags(tags_json);
-        let contract = Contract {
-            contract_id: 0,
-            symbol: Symbol::from("AAPL"),
-            security_type: SecurityType::Stock,
-            exchange: Exchange::from("NASDAQ"),
-            currency: Currency::from("USD"),
-            ..Default::default()
-        };
+
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
         );
 
-        let ib_order = nautilus_order_to_ib_order(&order, &contract, &provider, 1, "TEST-001")
+        let ib_order = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
             .expect("order transform should succeed");
 
         assert_eq!(ib_order.order_type, "MKT");
@@ -321,22 +525,32 @@ mod tests {
     }
 
     #[rstest]
-    fn test_tags_apply_at_auction_alias() {
-        let tags_json = r#"{"orderType":"AtAuction","limitPrice":150.0}"#;
+    #[case::gtd(r#"{"timeInForce":"GTD"}"#, TimeInForce::GoodTillDate)]
+    #[case::lowercase(r#"{"tif":"ioc"}"#, TimeInForce::ImmediateOrCancel)]
+    #[case::snake_key(r#"{"time_in_force":"DTC"}"#, TimeInForce::DayTillCanceled)]
+    fn test_tags_apply_time_in_force(#[case] tags_json: &str, #[case] expected: TimeInForce) {
         let order = create_test_order_with_tags(tags_json);
-        let contract = Contract {
-            contract_id: 0,
-            symbol: Symbol::from("AAPL"),
-            security_type: SecurityType::Stock,
-            exchange: Exchange::from("NASDAQ"),
-            currency: Currency::from("USD"),
-            ..Default::default()
-        };
+
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
         );
 
-        let ib_order = nautilus_order_to_ib_order(&order, &contract, &provider, 1, "TEST-001")
+        let ib_order = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
+            .expect("order transform should succeed");
+
+        assert_eq!(ib_order.tif, expected);
+    }
+
+    #[rstest]
+    fn test_tags_apply_at_auction_alias() {
+        let tags_json = r#"{"orderType":"AtAuction","limitPrice":150.0}"#;
+        let order = create_test_order_with_tags(tags_json);
+
+        let provider = InteractiveBrokersInstrumentProvider::new(
+            InteractiveBrokersInstrumentProviderConfig::default(),
+        );
+
+        let ib_order = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
             .expect("order transform should succeed");
 
         assert_eq!(ib_order.order_type, "MTL");
@@ -348,7 +562,6 @@ mod tests {
     fn test_tags_apply_auction_limit_fields() {
         let tags_json = r#"{
             "orderType": "AuctionLimit",
-            "auctionStrategy": "Improvement",
             "startingPrice": 1.25,
             "stockRefPrice": 150.25,
             "delta": 0.5,
@@ -356,26 +569,15 @@ mod tests {
             "stockRangeUpper": 155.0
         }"#;
         let order = create_test_order_with_tags(tags_json);
-        let contract = Contract {
-            contract_id: 0,
-            symbol: Symbol::from("AAPL"),
-            security_type: SecurityType::Stock,
-            exchange: Exchange::from("NASDAQ"),
-            currency: Currency::from("USD"),
-            ..Default::default()
-        };
+
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
         );
 
-        let ib_order = nautilus_order_to_ib_order(&order, &contract, &provider, 1, "TEST-001")
+        let ib_order = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
             .expect("order transform should succeed");
 
         assert_eq!(ib_order.order_type, "LMT");
-        assert_eq!(
-            ib_order.auction_strategy,
-            Some(ibapi::orders::AuctionStrategy::Improvement)
-        );
         assert_eq!(ib_order.starting_price, Some(1.25));
         assert_eq!(ib_order.stock_ref_price, Some(150.25));
         assert_eq!(ib_order.delta, Some(0.5));
@@ -387,19 +589,12 @@ mod tests {
     fn test_tags_apply_auction_relative_fields() {
         let tags_json = r#"{"orderType":"AuctionRelative","auxPrice":0.01}"#;
         let order = create_test_order_with_tags(tags_json);
-        let contract = Contract {
-            contract_id: 0,
-            symbol: Symbol::from("AAPL"),
-            security_type: SecurityType::Stock,
-            exchange: Exchange::from("NASDAQ"),
-            currency: Currency::from("USD"),
-            ..Default::default()
-        };
+
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
         );
 
-        let ib_order = nautilus_order_to_ib_order(&order, &contract, &provider, 1, "TEST-001")
+        let ib_order = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
             .expect("order transform should succeed");
 
         assert_eq!(ib_order.order_type, "REL");
@@ -432,7 +627,6 @@ mod tests {
             "algoStrategy": "Adaptive",
             "algoParams": [{"tag": "adaptivePriority", "value": "Normal"}],
             "notHeld": true,
-            "cashQty": 1000.0,
             "mifid2DecisionMaker": "maker",
             "autoCancelParent": true,
             "minTradeQty": 5,
@@ -454,19 +648,12 @@ mod tests {
             "softDollarTier": {"name": "tier", "value": "val", "display_name": "display"}
         }"#;
         let order = create_test_order_with_tags(tags_json);
-        let contract = Contract {
-            contract_id: 0,
-            symbol: Symbol::from("AAPL"),
-            security_type: SecurityType::Stock,
-            exchange: Exchange::from("NASDAQ"),
-            currency: Currency::from("USD"),
-            ..Default::default()
-        };
+
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
         );
 
-        let ib_order = nautilus_order_to_ib_order(&order, &contract, &provider, 1, "TEST-001")
+        let ib_order = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
             .expect("order transform should succeed");
 
         assert_eq!(ib_order.display_size, Some(25));
@@ -508,7 +695,6 @@ mod tests {
         assert_eq!(ib_order.algo_params[0].tag, "adaptivePriority");
         assert_eq!(ib_order.algo_params[0].value, "Normal");
         assert!(ib_order.not_held);
-        assert_eq!(ib_order.cash_qty, Some(1000.0));
         assert_eq!(ib_order.mifid2_decision_maker, "maker");
         assert!(ib_order.auto_cancel_parent);
         assert_eq!(ib_order.min_trade_qty, Some(5));
@@ -541,19 +727,12 @@ mod tests {
     fn test_invalid_tag_set_rejects_order_transform() {
         let tags_json = r#"{"whatIf": true, "displaySize": "invalid"}"#;
         let order = create_test_order_with_tags(tags_json);
-        let contract = Contract {
-            contract_id: 0,
-            symbol: Symbol::from("AAPL"),
-            security_type: SecurityType::Stock,
-            exchange: Exchange::from("NASDAQ"),
-            currency: Currency::from("USD"),
-            ..Default::default()
-        };
+
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
         );
 
-        let result = nautilus_order_to_ib_order(&order, &contract, &provider, 1, "TEST-001");
+        let result = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001");
 
         assert!(result.is_err());
         assert!(
@@ -568,19 +747,12 @@ mod tests {
     fn test_non_utc_datetime_tag_rejects_order_transform() {
         let tags_json = r#"{"activeStartTime": "20250101 09:30:00 EST"}"#;
         let order = create_test_order_with_tags(tags_json);
-        let contract = Contract {
-            contract_id: 0,
-            symbol: Symbol::from("AAPL"),
-            security_type: SecurityType::Stock,
-            exchange: Exchange::from("NASDAQ"),
-            currency: Currency::from("USD"),
-            ..Default::default()
-        };
+
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
         );
 
-        let result = nautilus_order_to_ib_order(&order, &contract, &provider, 1, "TEST-001");
+        let result = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001");
 
         assert!(result.is_err());
         assert!(
@@ -609,22 +781,15 @@ mod tests {
             .time_in_force(NautilusTimeInForce::Gtd)
             .expire_time(expire_time)
             .build();
-        let contract = Contract {
-            contract_id: 0,
-            symbol: Symbol::from("AAPL"),
-            security_type: SecurityType::Stock,
-            exchange: Exchange::from("NASDAQ"),
-            currency: Currency::from("USD"),
-            ..Default::default()
-        };
+
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
         );
 
-        let ib_order = nautilus_order_to_ib_order(&order, &contract, &provider, 1, "TEST-001")
+        let ib_order = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
             .expect("order transform should succeed");
 
-        assert_eq!(ib_order.tif, TimeInForce::GoodTilDate);
+        assert_eq!(ib_order.tif, TimeInForce::GoodTillDate);
         assert_eq!(ib_order.good_till_date, "20250115 14:30:00 UTC");
     }
 
@@ -641,19 +806,12 @@ mod tests {
             .trailing_offset(dec!(0.5))
             .trailing_offset_type(TrailingOffsetType::Price)
             .build();
-        let contract = Contract {
-            contract_id: 0,
-            symbol: Symbol::from("AAPL"),
-            security_type: SecurityType::Stock,
-            exchange: Exchange::from("NASDAQ"),
-            currency: Currency::from("USD"),
-            ..Default::default()
-        };
+
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
         );
 
-        let ib_order = nautilus_order_to_ib_order(&order, &contract, &provider, 1, "TEST-001")
+        let ib_order = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
             .expect("order transform should succeed");
 
         assert_eq!(ib_order.aux_price, Some(0.5));
@@ -674,19 +832,12 @@ mod tests {
             .trailing_offset(dec!(25))
             .trailing_offset_type(TrailingOffsetType::BasisPoints)
             .build();
-        let contract = Contract {
-            contract_id: 0,
-            symbol: Symbol::from("AAPL"),
-            security_type: SecurityType::Stock,
-            exchange: Exchange::from("NASDAQ"),
-            currency: Currency::from("USD"),
-            ..Default::default()
-        };
+
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
         );
 
-        let ib_order = nautilus_order_to_ib_order(&order, &contract, &provider, 1, "TEST-001")
+        let ib_order = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
             .expect("order transform should succeed");
 
         assert_eq!(ib_order.aux_price, None);
@@ -707,19 +858,12 @@ mod tests {
             .trailing_offset(dec!(5))
             .trailing_offset_type(TrailingOffsetType::Ticks)
             .build();
-        let contract = Contract {
-            contract_id: 0,
-            symbol: Symbol::from("AAPL"),
-            security_type: SecurityType::Stock,
-            exchange: Exchange::from("NASDAQ"),
-            currency: Currency::from("USD"),
-            ..Default::default()
-        };
+
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
         );
 
-        let err = nautilus_order_to_ib_order(&order, &contract, &provider, 1, "TEST-001")
+        let err = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
             .expect_err("unsupported trailing offset type should fail");
 
         assert_eq!(
@@ -753,25 +897,19 @@ mod tests {
             ]
         }"#;
         let order = create_test_order_with_tags(tags_json);
-        let contract = Contract {
-            contract_id: 0,
-            symbol: Symbol::from("AAPL"),
-            security_type: SecurityType::Stock,
-            exchange: Exchange::from("NASDAQ"),
-            currency: Currency::from("USD"),
-            ..Default::default()
-        };
+
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
         );
 
-        let ib_order = nautilus_order_to_ib_order(&order, &contract, &provider, 1, "TEST-001")
+        let ib_order = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
             .expect("order transform should succeed");
 
         assert!(ib_order.outside_rth);
         assert!(ib_order.what_if);
         assert!(ib_order.conditions_cancel_order);
         assert_eq!(ib_order.conditions.len(), 2);
+
         match &ib_order.conditions[0] {
             OrderCondition::Price(condition) => {
                 assert_eq!(condition.contract_id, 265598);
@@ -805,19 +943,12 @@ mod tests {
             .price(Price::from("150.00"))
             .order_list_id(OrderListId::from("OL-001"))
             .build();
-        let contract = Contract {
-            contract_id: 0,
-            symbol: Symbol::from("AAPL"),
-            security_type: SecurityType::Stock,
-            exchange: Exchange::from("NASDAQ"),
-            currency: Currency::from("USD"),
-            ..Default::default()
-        };
+
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
         );
 
-        let ib_order = nautilus_order_to_ib_order(&order, &contract, &provider, 1, "TEST-001")
+        let ib_order = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
             .expect("order transform should succeed");
 
         assert!(ib_order.oca_group.is_empty());
@@ -838,19 +969,12 @@ mod tests {
                 r#"IBOrderTags:{"ocaGroup":"CUSTOM-GROUP","ocaType":1}"#,
             )])
             .build();
-        let contract = Contract {
-            contract_id: 0,
-            symbol: Symbol::from("AAPL"),
-            security_type: SecurityType::Stock,
-            exchange: Exchange::from("NASDAQ"),
-            currency: Currency::from("USD"),
-            ..Default::default()
-        };
+
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
         );
 
-        let ib_order = nautilus_order_to_ib_order(&order, &contract, &provider, 1, "TEST-001")
+        let ib_order = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
             .expect("order transform should succeed");
 
         assert_eq!(ib_order.oca_group, "CUSTOM-GROUP");

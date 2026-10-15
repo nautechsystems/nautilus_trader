@@ -38,7 +38,7 @@ Examples include listed crypto futures calendar spreads.
 | `ts_event`            | `UnixNanos`        | `int`              | Required         | Event timestamp in nanoseconds.          |
 | `ts_init`             | `UnixNanos`        | `int`              | Required         | Initialization timestamp in nanoseconds. |
 
-*Note: Python constructors use `instrument_id`; Rust stores the same value as `id`.*
+**Note**: Python constructors use `instrument_id`. Rust stores the same value as `id`.
 
 ## Behavior
 
@@ -47,7 +47,7 @@ Examples include listed crypto futures calendar spreads.
 - The venue publishes the spread as a single tradable instrument.
 - The strategy can be linear, inverse, or quanto, depending on the currency set.
 - Spread prices can be zero or negative, and the `RiskEngine` accepts non-positive prices
-  for this instrument class.
+  for this instrument class, except for inverse spreads.
 - Store venue-specific leg details in `info` when the adapter provides them.
 
 ## Example
@@ -125,7 +125,7 @@ btc_spread = CryptoFuturesSpread(
 
 ## Adapters
 
-Representative adapters that create or consume `CryptoFuturesSpread` instruments include:
+**Adapters that create or consume `CryptoFuturesSpread` instruments include**:
 
 - [Deribit](../../integrations/deribit.md) for crypto futures combos.
 - [OKX](../../integrations/okx.md) for crypto futures spread markets.

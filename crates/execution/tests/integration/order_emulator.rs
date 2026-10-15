@@ -19,7 +19,10 @@ use nautilus_common::{
     cache::Cache,
     clock::{Clock, VirtualClock},
     messages::execution::{ModifyOrder, SubmitOrder, TradingCommand},
-    msgbus::{self, MessagingSwitchboard, TypedHandler},
+    msgbus::{
+        self, MessagingSwitchboard, TypedHandler,
+        stubs::{get_typed_into_message_saving_handler, get_typed_message_saving_handler},
+    },
 };
 use nautilus_core::UUID4;
 use nautilus_execution::{
@@ -29,7 +32,7 @@ use nautilus_execution::{
 use nautilus_model::{
     data::QuoteTick,
     enums::{OrderSide, OrderStatus, OrderType, TrailingOffsetType, TriggerType},
-    events::OrderEventAny,
+    events::{OrderEventAny, OrderInitialized},
     identifiers::{AccountId, ClientOrderId, VenueOrderId},
     instruments::{CryptoPerpetual, Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
     orders::{Order, OrderAny, OrderTestBuilder, stubs::TestOrderEventStubs},
@@ -249,5 +252,101 @@ fn test_trailing_stop_activation_does_not_rewrite_order_events(
         !events
             .iter()
             .any(|event| matches!(event, OrderEventAny::Initialized(_)))
+    );
+}
+
+#[rstest]
+fn test_release_continues_after_transformed_order_persistence_fails(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+    #[values(OrderType::StopLimit, OrderType::StopMarket)] order_type: OrderType,
+) {
+    let (database, control) = FailNthAddOrderDatabase::create();
+    let cache = Rc::new(RefCell::new(Cache::new(None, Some(Box::new(database)))));
+    let instrument_id = crypto_perpetual_ethusdt.id();
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt))
+        .unwrap();
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+    let emulator = Rc::new(RefCell::new(OrderEmulator::new(clock, cache.clone())));
+    OrderEmulator::register_msgbus_handlers(&emulator);
+    let (exec_handler, exec_commands) =
+        get_typed_into_message_saving_handler::<TradingCommand>(None);
+    msgbus::register_trading_command_endpoint(
+        MessagingSwitchboard::exec_engine_queue_execute(),
+        exec_handler,
+    );
+    let (risk_handler, risk_events) = get_typed_into_message_saving_handler::<OrderEventAny>(None);
+    msgbus::register_order_event_endpoint(
+        MessagingSwitchboard::risk_engine_process(),
+        risk_handler,
+    );
+    let order = OrderTestBuilder::new(order_type)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Buy)
+        .price(Price::from("5102.00"))
+        .trigger_price(Price::from("5100.00"))
+        .quantity(Quantity::from(3))
+        .emulation_trigger(TriggerType::BidAsk)
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    msgbus::send_trading_command(
+        MessagingSwitchboard::order_emulator_execute(),
+        submit_command(&order),
+    );
+    let client_order_id = order.client_order_id();
+    let held_order = cache.borrow().order_owned(&client_order_id).unwrap();
+    let (order_handler, order_events) = get_typed_message_saving_handler::<OrderEventAny>(None);
+    let topic = format!("events.order.{}", order.strategy_id());
+    msgbus::subscribe_order_events((&topic).into(), order_handler.clone(), None);
+    risk_events.clear();
+    control.set_fail_add_order_on(Some(1));
+
+    emulator.borrow_mut().on_quote_tick(QuoteTick::new(
+        instrument_id,
+        Price::from("5099.00"),
+        Price::from("5101.00"),
+        Quantity::from(1),
+        Quantity::from(1),
+        0.into(),
+        0.into(),
+    ));
+    msgbus::unsubscribe_order_events((&topic).into(), &order_handler);
+
+    let cache = cache.borrow();
+    let cached_order = cache.order(&client_order_id).unwrap();
+    let events = cached_order.events();
+    let released = cached_order.last_event().clone();
+    let commands = exec_commands.get_messages();
+
+    let [TradingCommand::SubmitOrder(command)] = commands.as_slice() else {
+        panic!("Expected one released SubmitOrder, was {commands:?}");
+    };
+
+    assert_eq!(cached_order.status(), OrderStatus::Released);
+    assert_eq!(events.len(), held_order.events().len() + 2);
+    assert_eq!(&events[..held_order.events().len()], held_order.events());
+    assert!(matches!(
+        events[events.len() - 2],
+        OrderEventAny::Initialized(_)
+    ));
+    assert_eq!(
+        order_events.get_messages().as_slice(),
+        std::slice::from_ref(&released)
+    );
+    assert_eq!(risk_events.get_messages(), [released]);
+    assert_eq!(command.client_order_id, client_order_id);
+    assert_eq!(command.order_init, OrderInitialized::from(&*cached_order));
+    assert!(emulator.borrow().get_submit_order_commands().is_empty());
+    assert!(
+        emulator
+            .borrow()
+            .get_matching_core(&instrument_id)
+            .unwrap()
+            .get_orders()
+            .is_empty()
     );
 }

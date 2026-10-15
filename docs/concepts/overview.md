@@ -5,9 +5,8 @@
 NautilusTrader is an open-source, production-grade, Rust-native engine for multi-asset,
 multi-venue trading systems.
 
-The system spans research, deterministic simulation, and live execution within a single
-event-driven architecture, with Python serving as the control plane for strategy logic,
-configuration, and orchestration.
+The system spans research, deterministic simulation, and live execution within a single event-driven
+architecture. Python serves as the control plane for strategy logic, configuration, and orchestration.
 
 This separation provides the performance and safety of a compiled trading engine with
 the flexibility of Python for system composition and strategy development.
@@ -55,8 +54,8 @@ execution, while Python serves as the control plane. The same architecture, exec
 semantics, and time model operate across both environments, allowing strategies to move
 from research to production without reimplementation.
 
-Python bindings for the Rust-native runtime are provided via [PyO3](https://pyo3.rs). Installing an
-official prebuilt Python wheel does not require a Rust toolchain.
+The Rust-native runtime exposes Python bindings through [PyO3](https://pyo3.rs). Installing an official
+prebuilt Python wheel does not require a Rust toolchain.
 
 ## Use cases
 
@@ -79,11 +78,14 @@ The sandbox adapter supplies simulated execution for a `sandbox` environment.
 
 ## Distributed
 
-The platform integrates into larger distributed systems. The
-[external message bus](message_bus.md#encoding) supports JSON and MessagePack payloads, plus
-Cap'n Proto and Simple Binary Encoding (SBE) for schema-covered market data. Apache Arrow and
-Parquet provide columnar interchange and persistence through the
-[data catalog](data/catalog.md). Format support varies by payload type.
+The platform integrates into larger distributed systems:
+
+- The [external message bus](message_bus.md#encoding) supports JSON and MessagePack payloads, plus Cap'n Proto
+  and Simple Binary Encoding (SBE) for schema-covered market data.
+- Apache Arrow and Parquet provide columnar interchange and persistence through the [data
+  catalog](data/catalog.md).
+
+Format support varies by payload type.
 
 ## Common core
 
@@ -100,11 +102,12 @@ Feed data to a `BacktestEngine` either directly or through a higher-level `Backt
 
 ## Live trading
 
-A `LiveNode` ingests data and events from multiple data and execution clients, supporting
-demo, paper, and real accounts. The Rust-native node, including its PyO3 interface, runs the kernel
-event loop on the calling thread, while asynchronous I/O and background tasks use a shared
-multi-threaded Tokio runtime. See [Live trading](live.md) for the node lifecycle and risk considerations, and
-[Execution reconciliation](execution/reconciliation.md) for state recovery.
+A `LiveNode` ingests data and events from multiple data and execution clients, supporting demo, paper, and
+real accounts. The Rust-native node, including its PyO3 interface, runs the kernel event loop on the calling
+thread. Asynchronous I/O and background tasks use a shared multi-threaded Tokio runtime.
+
+See [Live trading](live.md) for the node lifecycle and risk considerations, and [Execution
+reconciliation](execution/reconciliation.md) for state recovery.
 
 ## Domain model
 
@@ -155,7 +158,7 @@ historical requests and live subscriptions depends on the provider and adapter. 
 
 - `OrderBookDelta` (single order book change)
 - `OrderBookDeltas` (container type)
-- `OrderBookDepth` (variable-depth snapshots; ten levels stay inline)
+- `OrderBookDepth` (variable-depth snapshots with inline capacity for ten levels)
 - `QuoteTick`
 - `TradeTick`
 - `Bar`
@@ -205,10 +208,9 @@ The following `BarAggregation` methods are available:
 All listed aggregations are implemented for internal aggregation.
 Information-driven aggregations require `TradeTick` data.
 
-A `BarSpecification` combines a price type, aggregation method, and positive step size.
-Fixed-subunit time bars have divisibility limits; see [Bar types](data/index.md#bar-types) for the
-validation rules. Internal aggregation can run during live trading when the required input data is
-available.
+A `BarSpecification` combines a price type, aggregation method, and positive step size. Fixed-subunit time
+bars have divisibility limits. See [Bar types](data/index.md#bar-types) for the validation rules. Internal
+aggregation can run during live trading when the required input data is available.
 
 ## Account types
 
@@ -220,7 +222,7 @@ live and backtest environments:
 - `Margin` single-currency (base currency)
 - `Margin` multi-currency
 - `Betting` single-currency
-- `Wallet` multi-currency (blockchain wallets; execution client in development)
+- `Wallet` multi-currency (blockchain wallets, with execution client in development)
 
 ## Order types
 

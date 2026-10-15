@@ -166,6 +166,37 @@ def test_register_custom_data_class_accepts_surface_compatible_class() -> None:
     assert register_custom_data_class(SurfaceCustomData) is None
 
 
+def test_register_custom_data_class_rejects_rust_type_name() -> None:
+    """
+    Test registration rejects a Python class reusing a Rust custom data type name.
+    """
+
+    class YieldCurve:
+        """
+        Python class named like the Rust yield curve type.
+        """
+
+        @classmethod
+        def from_json(cls, _data: object) -> object:
+            """
+            From json.
+            """
+            return cls()
+
+        @classmethod
+        def decode_record_batch_py(cls, _metadata: object, _batch: object) -> object:
+            """
+            Decode record batch py.
+            """
+            return []
+
+    with pytest.raises(
+        ValueError,
+        match='Custom data type "YieldCurve" is already registered for a different Rust class',
+    ):
+        register_custom_data_class(YieldCurve)
+
+
 def test_deserialize_custom_from_json() -> None:
     """
     Test deserialize custom from json.

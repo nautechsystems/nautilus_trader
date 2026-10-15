@@ -147,10 +147,12 @@ impl FeedHandler {
 
     /// Main processing loop for the handler.
     ///
-    /// # Panics
-    ///
-    /// This method will not panic. The `expect` call on `iter.next()` is safe
-    /// because we explicitly check that `msgs` is not empty before calling it.
+    /// Message extraction cannot panic because the message buffer and decoded message vector are
+    /// checked for emptiness first.
+    #[allow(
+        clippy::missing_panics_doc,
+        reason = "message buffers are checked for emptiness before extraction"
+    )]
     pub async fn run(&mut self) {
         log::debug!("WebSocket handler started");
 

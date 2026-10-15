@@ -40,7 +40,7 @@ impl TcpStream {
     /// Connects to a peer inside the active simulation.
     ///
     /// # Errors
-    /// Returns an error when the simulated peer cannot be reached.
+    /// Returns an error if the simulated peer cannot be reached.
     pub async fn connect(addr: impl ToSocketAddrs) -> io::Result<Self> {
         Ok(Self {
             inner: madsim::net::TcpStream::connect(addr).await?,
@@ -97,7 +97,7 @@ impl TcpListener {
     /// Binds an address inside the active simulation.
     ///
     /// # Errors
-    /// Returns an error when the address cannot be bound.
+    /// Returns an error if the address cannot be bound.
     pub async fn bind(addr: impl ToSocketAddrs) -> io::Result<Self> {
         Ok(Self(madsim::net::TcpListener::bind(addr).await?))
     }
@@ -105,7 +105,7 @@ impl TcpListener {
     /// Accepts a simulated byte stream.
     ///
     /// # Errors
-    /// Returns an error when the listener cannot accept a connection.
+    /// Returns an error if the listener cannot accept a connection.
     pub async fn accept(&self) -> io::Result<(TcpStream, SocketAddr)> {
         let (inner, peer) = self.0.accept().await?;
         Ok((

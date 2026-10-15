@@ -19,7 +19,6 @@ use bytes::Bytes;
 use http::StatusCode;
 use http_body_util::BodyExt;
 use hyper::body::Incoming;
-use url::Url;
 
 use super::{HttpClientError, client::REQUEST_TIMEOUT_MESSAGE, error::transport_error};
 use crate::dst::time::Instant;
@@ -33,7 +32,7 @@ use crate::dst::time::Instant;
 pub struct HttpResponseStream {
     pub(super) response: http::Response<Incoming>,
     pub(super) deadline: Option<Instant>,
-    pub(super) url: Option<Url>,
+    pub(super) origin: Option<String>,
     #[cfg(all(feature = "simulation", madsim))]
     pub(super) _connection: super::simulation::Connection,
 }
@@ -49,11 +48,11 @@ impl HttpResponseStream {
     ///
     /// # Errors
     ///
-    /// Returns an error on a transport failure or when the original request deadline expires.
+    /// Returns an error if the transport fails or the original request deadline expires.
     pub async fn chunk(&mut self) -> Result<Option<Bytes>, HttpClientError> {
         read_chunk(self.response.body_mut(), self.deadline)
             .await
-            .map_err(|e| response_error(e, self.url.as_ref()))
+            .map_err(|e| response_error(e, self.origin.as_deref()))
     }
 }
 
@@ -91,10 +90,10 @@ where
     }
 }
 
-pub(super) fn response_error(error: HttpClientError, url: Option<&Url>) -> HttpClientError {
-    match (error, url) {
-        (HttpClientError::TransportError(message), Some(url)) => {
-            HttpClientError::TransportError(format!("{message} for url ({url})"))
+pub(super) fn response_error(error: HttpClientError, origin: Option<&str>) -> HttpClientError {
+    match (error, origin) {
+        (HttpClientError::TransportError(message), Some(origin)) => {
+            HttpClientError::TransportError(format!("{message} for origin ({origin})"))
         }
         (error, _) => error,
     }

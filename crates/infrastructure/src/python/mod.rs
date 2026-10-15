@@ -27,7 +27,7 @@ use pyo3::{prelude::*, pymodule};
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if the module initialization fails, e.g., when adding classes to the module.
+/// Returns an error if the module initialization fails, e.g., when adding classes to the module.
 #[pymodule]
 pub fn infrastructure(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     #[cfg(not(any(feature = "redis", feature = "postgres")))]

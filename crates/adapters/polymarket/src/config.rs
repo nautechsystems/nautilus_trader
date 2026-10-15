@@ -33,6 +33,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     common::{
+        credential::{Credential, credential_env_vars},
         enums::{PolymarketSignatureType, PolymarketSignerType},
         urls,
     },
@@ -287,8 +288,16 @@ pub struct PolymarketDataClientConfig {
     pub filters: Vec<Arc<dyn InstrumentFilter>>,
     pub base_url_http: Option<String>,
     pub base_url_ws: Option<String>,
-    pub base_url_rtds: Option<String>,
+    pub base_url_reference_prices: Option<String>,
     pub base_url_gamma: Option<String>,
+    /// CLOB API key for PolyBolt reference-price channels; falls back to `POLYMARKET_API_KEY`.
+    pub api_key: Option<SecretString>,
+    /// CLOB API secret for PolyBolt reference-price channels; falls back to
+    /// `POLYMARKET_API_SECRET`.
+    pub api_secret: Option<SecretString>,
+    /// CLOB API passphrase for PolyBolt reference-price channels; falls back to
+    /// `POLYMARKET_PASSPHRASE`.
+    pub passphrase: Option<SecretString>,
     pub base_url_data_api: Option<String>,
     /// Optional HTTP or HTTPS proxy URL for all HTTP and WebSocket transports.
     pub proxy_url: Option<SecretString>,
@@ -395,7 +404,7 @@ nautilus_core::impl_pyo3_config_getters!(PolymarketDataClientConfig {
     resolve_poll_interval_secs: u64,
     resolve_poll_grace_secs: u64,
     resolve_poll_max_wait_secs: u64,
-    base_url_rtds: Option<String>,
+    base_url_reference_prices: Option<String>,
     transport_backend: TransportBackend,
     drop_quotes_missing_side: bool,
     compute_effective_deltas: bool,
@@ -423,7 +432,7 @@ impl PolymarketDataClientConfig {
     ///
     /// # Errors
     ///
-    /// Returns an error when the URL is malformed, has no host, or does not use HTTP or HTTPS.
+    /// Returns an error if the URL is malformed, has no host, or does not use HTTP or HTTPS.
     pub fn validated_proxy_url(&self) -> Result<Option<ProxyUrl>, TransportError> {
         validated_proxy_url(self.proxy_url.as_ref())
     }
@@ -448,10 +457,54 @@ impl PolymarketDataClientConfig {
     }
 
     #[must_use]
-    pub fn rtds_url(&self) -> String {
-        self.base_url_rtds
+    pub fn reference_prices_url(&self) -> String {
+        self.base_url_reference_prices
             .clone()
-            .unwrap_or_else(|| urls::rtds_ws_url().to_string())
+            .unwrap_or_else(|| urls::polybolt_ws_url().to_string())
+    }
+
+    /// Resolves the CLOB API credential used for PolyBolt reference-price channels.
+    ///
+    /// Explicit `api_key`, `api_secret`, or `passphrase` fields are validated strictly.
+    /// Otherwise the `POLYMARKET_*` environment variables are used only when all three are
+    /// set and non-empty; a partial set is ignored with a warning so a data client that never
+    /// subscribes to reference prices still starts. Returns `None` when no credential applies.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if an explicitly configured credential is incomplete or malformed,
+    /// or if a complete environment credential is malformed.
+    pub fn polybolt_credential(&self) -> anyhow::Result<Option<Credential>> {
+        let explicit =
+            self.api_key.is_some() || self.api_secret.is_some() || self.passphrase.is_some();
+
+        if !explicit {
+            let (api_key_var, api_secret_var, passphrase_var, _, _) = credential_env_vars();
+            let present: Vec<&str> = [api_key_var, api_secret_var, passphrase_var]
+                .into_iter()
+                .filter(|var| std::env::var(var).is_ok_and(|value| !value.trim().is_empty()))
+                .collect();
+
+            if present.is_empty() {
+                return Ok(None);
+            }
+
+            if present.len() < 3 {
+                log::warn!(
+                    "Ignoring partial Polymarket CLOB credentials in the environment \
+                     (set: {present:?}); PolyBolt price subscriptions will be rejected"
+                );
+                return Ok(None);
+            }
+        }
+
+        Credential::resolve(
+            self.api_key.clone(),
+            self.api_secret.clone(),
+            self.passphrase.clone(),
+        )
+        .map(Some)
+        .map_err(|e| anyhow::anyhow!("Invalid Polymarket CLOB credentials for PolyBolt: {e}"))
     }
 
     #[must_use]
@@ -590,7 +643,7 @@ impl PolymarketExecutionClientConfig {
     ///
     /// # Errors
     ///
-    /// Returns an error when the URL is malformed, has no host, or does not use HTTP or HTTPS.
+    /// Returns an error if the URL is malformed, has no host, or does not use HTTP or HTTPS.
     pub fn validated_proxy_url(&self) -> Result<Option<ProxyUrl>, TransportError> {
         validated_proxy_url(self.proxy_url.as_ref())
     }
@@ -982,6 +1035,40 @@ load_ids = ["0xabc-123.POLYMARKET"]
         assert_eq!(
             config.validate_signer().unwrap_err().to_string(),
             "Session signers require POLY_1271"
+        );
+    }
+
+    #[rstest]
+    fn polybolt_credential_resolves_explicit_fields() {
+        let config = PolymarketDataClientConfig {
+            api_key: Some(SecretString::from("fixture-key")),
+            api_secret: Some(SecretString::from("Zml4dHVyZS1zZWNyZXQ=")),
+            passphrase: Some(SecretString::from("fixture-passphrase")),
+            ..PolymarketDataClientConfig::default()
+        };
+
+        let credential = config
+            .polybolt_credential()
+            .expect("explicit credentials resolve")
+            .expect("credential present");
+
+        assert_eq!(credential.api_key_str(), "fixture-key");
+    }
+
+    #[rstest]
+    fn polybolt_credential_rejects_malformed_explicit_secret() {
+        let config = PolymarketDataClientConfig {
+            api_key: Some(SecretString::from("fixture-key")),
+            api_secret: Some(SecretString::from("not base64!")),
+            passphrase: Some(SecretString::from("fixture-passphrase")),
+            ..PolymarketDataClientConfig::default()
+        };
+
+        let error = config.polybolt_credential().unwrap_err().to_string();
+
+        assert!(
+            error.starts_with("Invalid Polymarket CLOB credentials for PolyBolt"),
+            "{error}"
         );
     }
 }

@@ -17,7 +17,7 @@ end-of-session closes and contract-expiry close events.
 
 - End-of-session closes provide session-level close prices.
 - Contract-expiry closes mark expiration events for dated contracts.
-- The close price is reference data; it does not imply a trade occurred at that price.
+- The close price is reference data. It does not imply a trade occurred at that price.
 
 ## Example
 

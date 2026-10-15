@@ -134,8 +134,7 @@ impl PoolProfiler {
     ///
     /// # Errors
     ///
-    /// Returns [`PoolProfilerError::AlreadyInitialized`] if the profiler has already been
-    /// initialized, or [`PoolProfilerError::InitialTickMismatch`] if the pool config carries
+    /// Returns an error if the profiler has already been initialized, or if the pool config carries
     /// an `initial_tick` that disagrees with the tick derived from `price_sqrt_ratio_x96`.
     pub fn initialize(&mut self, price_sqrt_ratio_x96: U160) -> Result<(), PoolProfilerError> {
         if self.is_initialized {
@@ -172,8 +171,8 @@ impl PoolProfiler {
     ///
     /// # Errors
     ///
-    /// Returns [`PoolProfilerError::NotInitialized`] when [`Self::initialize`] or
-    /// [`Self::restore_from_snapshot`] has not been called yet.
+    /// Returns an error if [`Self::initialize`] or [`Self::restore_from_snapshot`] has not been
+    /// called yet.
     pub fn check_if_initialized(&self, event_kind: PoolEventKind) -> Result<(), PoolProfilerError> {
         if !self.is_initialized {
             return Err(PoolProfilerError::NotInitialized {
@@ -298,8 +297,8 @@ impl PoolProfiler {
     /// Returns an error if:
     /// - Pool initialization checks fail.
     /// - Swap simulation fails (see [`Self::simulate_swap_through_ticks`] errors).
-    /// - A structural mismatch involves simulated crossings or anchoring across an
-    ///   initialized tick ([`PoolProfilerError::SwapReplayMismatch`]).
+    /// - A structural mismatch involves simulated crossings or anchoring across an initialized
+    ///   tick.
     pub fn process_swap(&mut self, swap: &PoolSwap) -> anyhow::Result<()> {
         self.check_if_initialized(PoolEventKind::Swap)?;
 
@@ -425,10 +424,12 @@ impl PoolProfiler {
     ///
     /// # Errors
     ///
-    /// Returns errors from [`Self::simulate_swap_through_ticks`]:
-    /// - Pool metadata missing or invalid
-    /// - Price limit violations
-    /// - Arithmetic overflow in fee or liquidity calculations
+    /// Returns an error if:
+    /// - Pool metadata is missing or invalid.
+    /// - The price limit is violated.
+    /// - Fee or liquidity calculations overflow.
+    ///
+    /// Propagates failures from [`Self::simulate_swap_through_ticks`].
     pub fn execute_swap(
         &mut self,
         sender: Address,
@@ -478,7 +479,6 @@ impl PoolProfiler {
     /// a [`SwapQuote`] containing all swap results and profiling data,
     /// including a complete audit trail of crossed ticks.
     ///
-    ///
     /// # Algorithm Overview
     ///
     /// 1. **Iterative price curve traversal**: Walks through liquidity ranges until
@@ -500,10 +500,10 @@ impl PoolProfiler {
     ///
     /// # Errors
     ///
-    /// Returns error if:
-    /// - Pool fee is not configured
-    /// - Fee growth arithmetic overflows when scaling by liquidity
-    /// - Swap step calculations fail
+    /// Returns an error if:
+    /// - Pool fee is not configured.
+    /// - Fee growth arithmetic overflows when scaling by liquidity.
+    /// - Swap step calculations fail.
     ///
     /// # Panics
     ///
@@ -767,10 +767,10 @@ impl PoolProfiler {
     ///
     /// # Errors
     ///
-    /// Returns error if:
-    /// - Pool fee is not configured
-    /// - Fee growth arithmetic overflows when scaling by liquidity
-    /// - Swap step calculations fail
+    /// Returns an error if:
+    /// - Pool fee is not configured.
+    /// - Fee growth arithmetic overflows when scaling by liquidity.
+    /// - Swap step calculations fail.
     pub fn quote_swap(
         &self,
         amount_specified: I256,
@@ -801,7 +801,7 @@ impl PoolProfiler {
     /// Simulates an exact input swap (know input amount, calculate output amount).
     ///
     /// # Errors
-    /// Returns error if pool is not initialized, input is zero, or price limit is invalid
+    /// Returns an error if pool is not initialized, input is zero, or price limit is invalid.
     pub fn swap_exact_in(
         &self,
         amount_in: U256,
@@ -818,8 +818,8 @@ impl PoolProfiler {
     /// Simulates an exact output swap (know output amount, calculate required input amount).
     ///
     /// # Errors
-    /// Returns error if pool is not initialized, output is zero, price limit is invalid,
-    /// or insufficient liquidity exists to fulfill the exact output amount
+    /// Returns an error if pool is not initialized, output is zero, price limit is invalid, or
+    /// insufficient liquidity exists to fulfill the exact output amount.
     pub fn swap_exact_out(
         &self,
         amount_out: U256,
@@ -837,7 +837,7 @@ impl PoolProfiler {
     /// Simulates a swap to move the pool price down to a target price.
     ///
     /// # Errors
-    /// Returns error if pool is not initialized or price limit is invalid.
+    /// Returns an error if pool is not initialized or price limit is invalid.
     pub fn swap_to_lower_sqrt_price(
         &self,
         sqrt_price_limit_x96: U160,
@@ -848,7 +848,7 @@ impl PoolProfiler {
     /// Simulates a swap to move the pool price up to a target price.
     ///
     /// # Errors
-    /// Returns error if pool is not initialized or price limit is invalid.
+    /// Returns an error if pool is not initialized or price limit is invalid.
     pub fn swap_to_higher_sqrt_price(
         &self,
         sqrt_price_limit_x96: U160,
@@ -866,10 +866,10 @@ impl PoolProfiler {
     /// The maximum trade size (U256) that produces the target slippage
     ///
     /// # Errors
-    /// Returns error if:
-    /// - Impact is zero or exceeds 100% (10000 bps)
-    /// - Pool is not initialized
-    /// - Swap simulations fail
+    /// Returns an error if:
+    /// - Impact is zero or exceeds 100% (10000 bps).
+    /// - Pool is not initialized.
+    /// - Swap simulations fail.
     pub fn size_for_impact_bps(&self, impact_bps: u32, zero_for_one: bool) -> anyhow::Result<U256> {
         let config = size_estimator::EstimationConfig::default();
         size_estimator::size_for_impact_bps(self, impact_bps, zero_for_one, &config)
@@ -884,10 +884,10 @@ impl PoolProfiler {
     /// Detailed result with size and search diagnostics
     ///
     /// # Errors
-    /// Returns error if:
-    /// - Impact is zero or exceeds 100% (10000 bps)
-    /// - Pool is not initialized
-    /// - Swap simulations fail
+    /// Returns an error if:
+    /// - Impact is zero or exceeds 100% (10000 bps).
+    /// - Pool is not initialized.
+    /// - Swap simulations fail.
     pub fn size_for_impact_bps_detailed(
         &self,
         impact_bps: u32,
@@ -901,7 +901,7 @@ impl PoolProfiler {
     /// inside the `(MIN_SQRT_RATIO, MAX_SQRT_RATIO)` range, matching the Uniswap V3 `SPL` check.
     ///
     /// # Errors
-    /// Returns error if price limit violates swap direction or range constraints.
+    /// Returns an error if price limit violates swap direction or range constraints.
     fn validate_price_limit(
         &self,
         limit_price_sqrt: U160,
@@ -943,7 +943,7 @@ impl PoolProfiler {
     ///
     /// # Errors
     ///
-    /// This function returns an error if:
+    /// Returns an error if:
     /// - Pool is not initialized.
     /// - Tick range is invalid or not properly spaced.
     /// - Position updates fail.
@@ -1029,7 +1029,7 @@ impl PoolProfiler {
     ///
     /// # Errors
     ///
-    /// This function returns an error if:
+    /// Returns an error if:
     /// - Pool is not initialized.
     /// - Tick range is invalid.
     /// - Amount calculations fail.
@@ -1089,7 +1089,7 @@ impl PoolProfiler {
     ///
     /// # Errors
     ///
-    /// This function returns an error if:
+    /// Returns an error if:
     /// - Pool is not initialized.
     /// - Tick range is invalid.
     /// - Position updates fail.
@@ -1148,7 +1148,7 @@ impl PoolProfiler {
     ///
     /// # Errors
     ///
-    /// This function returns an error if:
+    /// Returns an error if:
     /// - Pool is not initialized.
     /// - Tick range is invalid.
     /// - Amount calculations fail.
@@ -1220,7 +1220,7 @@ impl PoolProfiler {
     ///
     /// # Errors
     ///
-    /// This function returns an error if:
+    /// Returns an error if:
     /// - Pool is not initialized.
     pub fn process_collect(&mut self, collect: &PoolFeeCollect) -> anyhow::Result<()> {
         self.check_if_initialized(PoolEventKind::Collect)?;
@@ -1270,8 +1270,7 @@ impl PoolProfiler {
     ///
     /// # Errors
     ///
-    /// This function does not currently return an error; the `Result` keeps the signature uniform
-    /// with the other `process_*` event handlers.
+    /// Returns an error if a Uniswap V3 fee protocol update cannot be packed into one byte.
     pub fn process_fee_protocol_update(
         &mut self,
         update: &PoolFeeProtocolUpdate,
@@ -1313,10 +1312,12 @@ impl PoolProfiler {
     /// against replay accrual lagging behind the on-chain balance. Not gated on pool initialization,
     /// since the protocol-fee balances are independent of the pool's price/liquidity state.
     ///
-    /// # Errors
-    ///
-    /// This function does not currently return an error; the `Result` keeps the signature uniform
-    /// with the other `process_*` event handlers.
+    /// This function does not return an error; the `Result` keeps the signature uniform with the
+    /// other `process_*` event handlers.
+    #[allow(
+        clippy::missing_errors_doc,
+        reason = "protocol fee collection only updates in-memory state"
+    )]
     pub fn process_fee_protocol_collect(
         &mut self,
         collect: &PoolFeeProtocolCollect,
@@ -1452,9 +1453,9 @@ impl PoolProfiler {
     ///
     /// # Errors
     ///
-    /// Returns error if:
-    /// - No active liquidity in pool
-    /// - Fee growth arithmetic overflows
+    /// Returns an error if:
+    /// - No active liquidity in pool.
+    /// - Fee growth arithmetic overflows.
     fn update_flash_state(&mut self, paid0: U256, paid1: U256) -> anyhow::Result<()> {
         let liquidity = self.tick_map.liquidity;
         if liquidity == 0 {
@@ -1673,7 +1674,7 @@ impl PoolProfiler {
     ///
     /// # Errors
     ///
-    /// This function returns an error if:
+    /// Returns an error if:
     /// - `tick_lower >= tick_upper` (invalid range).
     /// - Ticks are not multiples of pool's tick spacing.
     /// - Ticks are outside `MIN_TICK/MAX_TICK` bounds.

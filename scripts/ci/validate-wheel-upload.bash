@@ -41,7 +41,7 @@ if [ -z "$expected_version" ] || [ "$wheel_version" != "$expected_version" ]; th
   echo "Error: Wheel version $wheel_version does not match package version $expected_version" >&2
   exit 1
 fi
-if [[ ! "$python_tag" =~ ^cp(312|313|314)$ ]] || [ "$abi_tag" != "$python_tag" ]; then
+if [[ ! "$python_tag" =~ ^cp(313|314)$ ]] || [ "$abi_tag" != "$python_tag" ]; then
   echo "Error: Wheel has unsupported Python or ABI tags: $python_tag-$abi_tag" >&2
   exit 1
 fi

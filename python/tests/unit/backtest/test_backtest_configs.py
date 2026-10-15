@@ -767,6 +767,28 @@ def test_data_config_readback_redacts_storage_option_values() -> None:
 
 
 @pytest.mark.parametrize(
+    ("kwargs", "expected"),
+    [
+        ({}, True),
+        ({"batch_deltas": False}, False),
+        ({"batch_deltas": True}, True),
+    ],
+)
+def test_data_config_batch_deltas(kwargs: dict[str, bool], expected: bool) -> None:
+    """
+    Test data config batches book deltas by default and accepts an explicit setting.
+    """
+    config = BacktestDataConfig(
+        data_type=NautilusDataType.OrderBookDelta,
+        catalog_path="/data/catalog",
+        instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
+        **kwargs,
+    )
+
+    assert config.batch_deltas is expected
+
+
+@pytest.mark.parametrize(
     "value",
     [
         1_700_000_000_000_000_000,

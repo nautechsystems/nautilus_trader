@@ -46,7 +46,7 @@ async fn rejected_redirect_preserves_response_without_contacting_destination(#[c
     let destination = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let target = destination.local_addr().unwrap();
     let destination_requests = Arc::new(AtomicUsize::new(0));
-    let requests = destination_requests.clone();
+    let requests = Arc::clone(&destination_requests);
 
     let destination_task = tokio::spawn(async move {
         let (mut stream, _) = destination.accept().await.unwrap();
@@ -315,7 +315,10 @@ async fn redirect_rejects_unsupported_scheme() {
 #[case::buffered(false)]
 #[case::streamed(true)]
 #[tokio::test]
-async fn truncated_body_returns_transport_error(#[case] streamed: bool) {
+async fn truncated_body_returns_transport_error(
+    #[case] streamed: bool,
+    #[values(false, true)] redact_url: bool,
+) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let peer = tokio::spawn(async move {
@@ -328,14 +331,14 @@ async fn truncated_body_returns_transport_error(#[case] streamed: bool) {
         stream.shutdown().await.unwrap();
     });
     let client = HttpClient::builder()
+        .redact_url(redact_url)
         .use_system_proxy(false)
         .timeout_secs(3)
         .build()
         .unwrap();
     let url = format!("http://{addr}/truncated");
-
     let error = if streamed {
-        let mut response = client.get_stream(url.clone()).await.unwrap();
+        let mut response = client.get_stream(url).await.unwrap();
         loop {
             match response.chunk().await {
                 Ok(Some(_)) => {}
@@ -344,9 +347,7 @@ async fn truncated_body_returns_transport_error(#[case] streamed: bool) {
             }
         }
     } else {
-        send(&client, Method::GET, url.clone(), None)
-            .await
-            .unwrap_err()
+        send(&client, Method::GET, url, None).await.unwrap_err()
     };
     peer.await.unwrap();
 
@@ -357,35 +358,55 @@ async fn truncated_body_returns_transport_error(#[case] streamed: bool) {
         message.contains("end of file before message length reached"),
         "{message}"
     );
-    assert!(message.ends_with(&format!(" for url ({url})")), "{message}");
+    assert_eq!(
+        message.contains(&format!(" for origin (http://{addr})")),
+        !redact_url,
+        "{message}"
+    );
+    assert_eq!(
+        message.contains(&addr.to_string()),
+        !redact_url,
+        "{message}"
+    );
+    assert!(!message.contains("/truncated"), "{message}");
 }
 
+#[rstest]
 #[tokio::test]
-async fn streamed_truncated_body_error_omits_query_string_by_default() {
+async fn streamed_response_url_policy_redacts_debug_and_body_errors(
+    #[values(false, true)] redact_url: bool,
+) {
+    const USERINFO_SECRET: &str = "stream-userinfo-secret";
+    const PATH_SECRET: &str = "stream-path-secret";
+    const FRAGMENT_SECRET: &str = "stream-fragment-secret";
     const QUERY_SECRET: &str = "stream-query-secret";
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
 
     let peer = tokio::spawn(async move {
         let (mut stream, _) = listener.accept().await.unwrap();
-        read_headers(&mut stream).await;
+        let request = read_headers(&mut stream).await;
         stream
             .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 8\r\n\r\nshort")
             .await
             .unwrap();
         stream.shutdown().await.unwrap();
+        request
     });
 
     let client = HttpClient::builder()
+        .redact_url(redact_url)
         .use_system_proxy(false)
         .timeout_secs(3)
         .build()
         .unwrap();
 
     let mut response = client
-        .get_stream(format!("http://{addr}/stream?api_key={QUERY_SECRET}"))
+        .get_stream(format!("http://stream-user:{USERINFO_SECRET}@{addr}/{PATH_SECRET}?api_key={QUERY_SECRET}#{FRAGMENT_SECRET}"))
         .await
         .unwrap();
+
+    let debug = format!("{response:?}");
 
     let error = loop {
         match response.chunk().await {
@@ -395,15 +416,42 @@ async fn streamed_truncated_body_error_omits_query_string_by_default() {
         }
     };
 
-    peer.await.unwrap();
+    let request = peer.await.unwrap();
 
-    let rendered = error.to_string();
-    assert!(
-        rendered.contains(&format!("for url (http://{addr}/stream)")),
-        "{rendered}"
+    assert!(request.starts_with(&format!(
+        "GET /{PATH_SECRET}?api_key={QUERY_SECRET} HTTP/1.1\r\n"
+    )));
+
+    let authorization = request
+        .lines()
+        .find_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            name.eq_ignore_ascii_case("authorization")
+                .then_some(value.trim())
+        })
+        .unwrap();
+
+    let expected_authorization = format!(
+        "Basic {}",
+        BASE64.encode(format!("stream-user:{USERINFO_SECRET}"))
     );
-    assert!(!rendered.contains("api_key="), "{rendered}");
-    assert!(!rendered.contains(QUERY_SECRET), "{rendered}");
+    assert_eq!(authorization, expected_authorization);
+    assert!(
+        matches!(error, HttpClientError::TransportError(_)),
+        "{error:?}"
+    );
+
+    for rendered in [debug, error.to_string(), format!("{error:?}")] {
+        assert_eq!(
+            rendered.contains(&format!("http://{addr}")),
+            !redact_url,
+            "{rendered}"
+        );
+
+        for secret in [USERINFO_SECRET, PATH_SECRET, QUERY_SECRET, FRAGMENT_SECRET] {
+            assert!(!rendered.contains(secret), "{rendered}");
+        }
+    }
 }
 
 #[tokio::test]
@@ -636,8 +684,8 @@ fn platform_tls_http2_and_protocol_retries() {
                     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
                     let addr = listener.local_addr().unwrap();
                     let attempts = Arc::new(AtomicUsize::new(0));
-                    let count = attempts.clone();
-                    let acceptor = tokio_rustls::TlsAcceptor::from(config.clone());
+                    let count = Arc::clone(&attempts);
+                    let acceptor = tokio_rustls::TlsAcceptor::from(Arc::clone(&config));
 
                     let peer = tokio::spawn(async move {
                         let (stream, _) = listener.accept().await.unwrap();

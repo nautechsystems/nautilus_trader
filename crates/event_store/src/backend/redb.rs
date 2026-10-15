@@ -138,7 +138,7 @@ impl RedbBackend {
     ///
     /// # Errors
     ///
-    /// Returns [`EventStoreError::Backend`] when no run is open.
+    /// Returns an error if no run is open.
     pub fn current_path(&self) -> Result<&Path, EventStoreError> {
         Ok(self.state()?.file_path.as_path())
     }
@@ -171,10 +171,9 @@ impl RedbBackend {
     ///
     /// # Errors
     ///
-    /// Returns [`EventStoreError::Backend`] when the run file does not exist or its
-    /// status is not a sealed terminal state (use [`EventStore::open_run`] for that
-    /// path); [`EventStoreError::Corrupted`] when the run file lacks a manifest or
-    /// fails to decode.
+    /// Returns an error if the run file does not exist or its status is not a sealed terminal state
+    /// (use [`EventStore::open_run`] for that path); if the run file lacks a manifest or fails to
+    /// decode.
     pub fn open_sealed(
         base_dir: impl Into<PathBuf>,
         instance_id: &str,
@@ -189,10 +188,9 @@ impl RedbBackend {
     ///
     /// # Errors
     ///
-    /// Returns [`EventStoreError::Backend`] when the run file does not exist or its
-    /// status is not a sealed terminal state (use [`EventStore::open_run`] for that
-    /// path); [`EventStoreError::Corrupted`] when the run file lacks a manifest or
-    /// fails to decode.
+    /// Returns an error if the run file does not exist or its status is not a sealed terminal state
+    /// (use [`EventStore::open_run`] for that path); if the run file lacks a manifest or fails to
+    /// decode.
     pub fn open_sealed_file(path: impl Into<PathBuf>) -> Result<Self, EventStoreError> {
         let path = path.into();
         let base = path
@@ -258,8 +256,8 @@ impl RedbBackend {
     ///
     /// # Errors
     ///
-    /// Returns [`EventStoreError::Backend`] when the directory iterator fails, or
-    /// [`EventStoreError::Corrupted`] when a run file uses an unsupported store format.
+    /// Returns an error if the directory iterator fails, or if a run file uses an unsupported store
+    /// format.
     pub fn list_runs(
         base_dir: &Path,
         instance_id: &str,

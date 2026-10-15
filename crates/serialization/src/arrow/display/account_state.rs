@@ -87,7 +87,7 @@ fn margins_to_json(state: &AccountState) -> String {
 ///
 /// # Errors
 ///
-/// Returns an [`ArrowError`] if the Arrow `RecordBatch` cannot be constructed.
+/// Returns an error if the Arrow `RecordBatch` cannot be constructed.
 pub fn encode_account_states(data: &[AccountState]) -> Result<RecordBatch, ArrowError> {
     let mut account_id = StringBuilder::new();
     let mut account_type = StringBuilder::new();

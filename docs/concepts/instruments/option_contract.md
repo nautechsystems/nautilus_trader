@@ -37,7 +37,7 @@ Examples include equity options, index options, and futures options.
 | `ts_event`        | `UnixNanos`        | `int`              | Required         | Event timestamp in nanoseconds.          |
 | `ts_init`         | `UnixNanos`        | `int`              | Required         | Initialization timestamp in nanoseconds. |
 
-*Note: Python constructors use `instrument_id`; Rust stores the same value as `id`.*
+**Note**: Python constructors use `instrument_id`. Rust stores the same value as `id`.
 
 ## Behavior
 
@@ -117,7 +117,7 @@ aapl_call = OptionContract(
 
 ## Adapters
 
-Representative adapters that create or consume `OptionContract` instruments include:
+**Adapters that create or consume `OptionContract` instruments include**:
 
 - [Databento](../../integrations/databento.md) for listed options data.
 - [Interactive Brokers](../../integrations/interactive_brokers.md) for listed option contracts.

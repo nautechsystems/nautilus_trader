@@ -377,7 +377,7 @@ impl<V: StressVenue> Session<V> {
     ///
     /// # Panics
     ///
-    /// Panics with the book and fault state if `limit` elapses first.
+    /// Panics if `limit` elapses first. The panic includes the book and fault state.
     pub(crate) async fn until(
         &mut self,
         limit: Duration,

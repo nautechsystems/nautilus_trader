@@ -19,14 +19,16 @@ Use it when a venue publishes a self-contained depth snapshot rather than increm
 
 ## Behavior
 
-- Rust and PyO3 Python constructors accept variable-length sides. Each side requires one count
-  per order; bid and ask sides can have different lengths.
-- Empty sides use empty sequences. The inline capacity is ten; larger snapshots allocate as needed.
+- Rust and PyO3 Python constructors accept variable-length sides. Each side requires one count per order. Bid
+  and ask sides can have different lengths.
+- Empty sides use empty sequences. The inline capacity is ten. Larger snapshots allocate as needed.
 - This type is not interchangeable with incremental `OrderBookDelta` streams.
 
-The former `OrderBookDepth10` type name is gone. Catalog directories named `order_book_depth10`
-still migrate, and Arrow files that stored that type in schema metadata still transcode. The
-legacy C FFI and the fixed-depth SBE encoding require exactly ten levels per side.
+**Legacy compatibility**:
+
+- The former `OrderBookDepth10` type name is gone. Catalog directories named `order_book_depth10`
+  still migrate, and Arrow files that stored that type in schema metadata still transcode.
+- The legacy C FFI and fixed-depth SBE encoding require exactly ten levels per side.
 
 ## Example
 

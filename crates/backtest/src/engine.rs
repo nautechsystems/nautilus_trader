@@ -444,7 +444,7 @@ impl BacktestEngine {
     ///
     /// # Errors
     ///
-    /// Returns an error under the same conditions as [`add_data`](Self::add_data).
+    /// Returns an error if [`add_data`](Self::add_data) fails.
     pub fn add_data_batch(
         &mut self,
         data: DataBatch,

@@ -1,0 +1,35 @@
+{
+  "type": "book_l3",
+  "symbol_id": "COINBASE_SPOT_BCH_USD",
+  "sequence": 2323346,
+  "time_exchange": "2020-08-26T12:36:04.3464706Z",
+  "time_coinapi": "2020-08-26T12:36:04.2807750Z",
+  "is_snapshot": false,
+  "asks": [
+    {
+      "id": "520269d4-c085-47ed-8825-6d787af90800",
+      "price": 273.01,
+      "size": 1.81940502,
+      "update_type": "ADD"
+    },
+    {
+      "id": "0ac891c7-8360-462c-8d9a-d8b217d3fca2",
+      "price": 273.02,
+      "size": 1.0,
+      "update_type": "DELETE"
+    }
+  ],
+  "bids": [
+    {
+      "id": "6340ec1e-8be8-404e-b9a4-a14120ec179e",
+      "price": 272.94,
+      "size": 1.81940502,
+      "update_type": "UPDATE"
+    },
+    {
+      "price": 272.93,
+      "size": 4.5,
+      "update_type": "MATCH"
+    }
+  ]
+}

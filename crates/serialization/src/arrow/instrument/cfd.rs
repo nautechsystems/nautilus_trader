@@ -235,7 +235,7 @@ impl EncodeToRecordBatch for Cfd {
 ///
 /// # Errors
 ///
-/// Returns an `EncodingError` if the record batch cannot be decoded.
+/// Returns an error if the record batch cannot be decoded.
 ///
 /// [`DecodeFromRecordBatch`]: crate::arrow::DecodeFromRecordBatch
 pub fn decode_cfd_batch(

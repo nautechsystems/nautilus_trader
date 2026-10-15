@@ -7,9 +7,9 @@ For example, a fill model determines simulated fill eligibility and liquidity, w
 calculates the commission on a fill. The engine calls the configured model through a defined
 interface, so users can change these rules without modifying the engine or their strategy.
 
-Models are supplied as objects in configuration or through runtime APIs. Users can select a
-built-in implementation, configure its parameters, or supply a custom implementation where the
-model family and API support it. Here, pluggable means replacing behavior through these interfaces;
+Models are supplied as objects in configuration or through runtime APIs. Users can select a built-in
+implementation, configure its parameters, or supply a custom implementation where the model family and API
+support it. Here, pluggable means that users replace behavior through these interfaces.
 [runtime loading of native libraries](#native-extension-boundary) is a separate capability.
 
 ## Model families
@@ -26,16 +26,16 @@ partial-fill, size-aware, competition-aware, volume-sensitive, or market-hours b
 [fill models](backtesting/fill-models.md) for the complete built-in list and the effect of book type
 on fill simulation.
 
-Fee models also include `ProbabilityPriceFeeModel`, `CappedOptionFeeModel`, and
-`TieredNotionalOptionFeeModel` for probability-priced instruments and option fee schedules.
-`StaticLatencyModel` adds a base delay to separately configured insert, update, and cancel delays.
-The [margin models](backtesting/accounts-and-margin.md#margin-models) select whether instrument
-margin requirements are reduced by account leverage.
+Fee models also include `ProbabilityPriceFeeModel`, `CappedOptionFeeModel`, and `TieredNotionalOptionFeeModel`
+for probability-priced instruments and option fee schedules.
 
-Fill and latency models control simulated execution; they do not determine whether or when a live
-venue fills an order. Model behavior applies at the engine or account boundary that consumes it.
-Changing a model does not replace order-state validation, execution routing, or the rest of the
-runtime.
+`StaticLatencyModel` adds a base delay to separately configured insert, update, and cancel delays. The [margin
+models](backtesting/accounts-and-margin.md#margin-models) select whether instrument margin requirements are
+reduced by account leverage.
+
+Fill and latency models control simulated execution. They do not determine whether or when a live venue fills
+an order. Model behavior applies at the engine or account boundary that consumes it. Changing a model does not
+replace order-state validation, execution routing, or the rest of the runtime.
 
 ## Simulation modules
 
@@ -57,10 +57,10 @@ handle. Python support depends on **both the family and the configuration API**:
 | Latency | `StaticLatencyModel`.                                | `StaticLatencyModel`.                                |
 | Margin  | `StandardMarginModel` or `LeveragedMarginModel`.     | `StandardMarginModel` or `LeveragedMarginModel`.     |
 
-A custom Python fill model implements the [fill-model protocol](backtesting/fill-models.md#configuration).
-A custom Python fee model supplies `get_commission`; it can also provide
-`get_commission_with_context` when its calculation needs the underlying price.
-The engine invokes these methods when it needs the corresponding decision or calculation.
+A custom Python fill model implements the [fill-model protocol](backtesting/fill-models.md#configuration). A
+custom Python fee model supplies `get_commission`. It can also provide `get_commission_with_context` when its
+calculation needs the underlying price. The engine invokes these methods when it needs the corresponding
+decision or calculation.
 
 ## Model family structure
 
@@ -80,10 +80,11 @@ these concrete model objects directly rather than using separate model configura
 wrappers.
 
 Adapter-specific models live in their adapter crate when a core enum variant would create a reverse
-dependency. Low-level Rust code passes these models through the corresponding handle. Python
-exposure uses an explicit bridge for the model family, either as an enum variant or as a trait
-implementation passed through the handle, depending on the storage boundary. Latency and margin
-configuration accept built-in models only from Python.
+dependency. Low-level Rust code passes these models through the corresponding handle.
+
+Python exposure uses an explicit bridge for the model family. Depending on the storage boundary, this is an
+enum variant or a trait implementation passed through the handle. Latency and margin configuration accept
+built-in models only from Python.
 
 ## Dispatch boundary
 
@@ -93,11 +94,12 @@ configuration accept built-in models only from Python.
 | `<Family>ModelAny`       | Declared built-ins and bridge variants | Enum match   | Built-in and bridge configuration or storage. |
 | `<Family>ModelHandle`    | Any accepted Rust trait implementation | Trait object | Shared runtime storage and custom types.      |
 
-`<Family>ModelAny` uses enum dispatch. `<Family>ModelHandle` uses dynamic dispatch through a trait
-object, so a built-in converted from the enum into a handle crosses a vtable before its enum match.
-Built-in-only storage remains typed as `<Family>ModelAny` where avoiding trait-object dispatch
-matters. The handle has no separate built-in fast path; the simpler single representation remains
-because no measured performance case justifies the additional variant and dispatch complexity.
+`<Family>ModelAny` uses enum dispatch. `<Family>ModelHandle` uses dynamic dispatch through a trait object, so
+a built-in converted from the enum into a handle crosses a vtable before its enum match. Built-in-only storage
+stays typed as `<Family>ModelAny` where avoiding trait-object dispatch matters.
+
+The handle has no separate built-in fast path. The handle uses the simpler single representation because no
+measured performance case justifies the additional variant and dispatch complexity.
 
 ## Native extension boundary
 

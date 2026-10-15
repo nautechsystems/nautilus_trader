@@ -23,15 +23,17 @@ moves while still picking up signal updates between target ticks.
 
 Each target instrument quote tick triggers the following:
 
+1. When signal skew is enabled, wait for a valid signal quote and baseline.
 1. Compute the anchor as the mid-price of the latest quote.
-2. Skip the requote if both the anchor and the signal residual's price impact
-   have moved less than `requote_threshold_bps` since the last placement.
-3. Cancel all existing orders on the target instrument.
-4. Read the current net position and worst-case per-side exposure (open
+1. Skip the requote if target orders are still open or in flight and both the
+   anchor and the signal residual's price impact have moved less than
+   `requote_threshold_bps` since the last placement.
+1. Cancel this strategy's orders on the target instrument.
+1. Read the current net position and worst-case per-side exposure (open
    positions plus all pending buy or sell orders) from the cache.
-5. Compute bid and ask prices, apply inventory and signal skew, and enforce
+1. Compute bid and ask prices, apply inventory and signal skew, and enforce
    `max_position` before submitting each side.
-6. Submit surviving sides as `post_only` limit orders.
+1. Submit surviving sides as `post_only` limit orders.
 
 Signal instrument quotes update an internal `last_signal` value passively and
 never trigger requoting on their own. The next target tick reads the latest
@@ -40,7 +42,7 @@ will pull through the requote gate even when the anchor has not moved.
 
 ### Inventory skew
 
-```
+```text
 inventory_shift = inventory_skew_factor * net_position
 ```
 
@@ -51,7 +53,7 @@ where the spread sits relative to the anchor.
 
 ### Signal skew
 
-```
+```text
 residual = (signal_mid - baseline) / baseline
 signal_shift = signal_skew_factor * residual
 ```
@@ -59,7 +61,13 @@ signal_shift = signal_skew_factor * residual
 When `signal_skew_factor` is positive and the residual is positive, both
 sides lift equally, which is what you want if the signal anticipates upward
 drift in the target. The baseline is either the configured `signal_baseline`
-(deterministic for backtests) or the first observed signal mid when unset.
+(deterministic for backtests) or the first valid signal mid when unset.
+
+With nonzero `signal_skew_factor`, quoting requires a signal quote with positive,
+uncrossed bid and ask prices, a finite, positive baseline, and a finite residual.
+An explicit baseline still requires a valid signal quote. Invalid signal quotes
+leave the last valid signal and baseline unchanged. Setting `signal_skew_factor=0`
+allows quoting without a signal or baseline.
 
 ### Position limits
 
@@ -75,19 +83,19 @@ position back down is the only exit path.
 
 ## Configuration
 
-| Parameter               | Type               | Default    | Description                                                                          |
-| ----------------------- | ------------------ | ---------- | ------------------------------------------------------------------------------------ |
-| `instrument_id`         | `InstrumentId`     | *required* | Target instrument the strategy quotes on.                                            |
-| `signal_instrument_id`  | `InstrumentId`     | *required* | Signal instrument (typically a synthetic) whose mid drives the signal residual.      |
-| `max_position`          | `Quantity`         | *required* | Hard cap on net exposure (long or short).                                            |
-| `trade_size`            | `Option<Quantity>` | `None`     | Size per quote. When `None`, resolves from the instrument's `min_quantity`.          |
-| `half_spread_bps`       | `u32`              | `5`        | Half the desired quoted spread, in basis points of the anchor.                       |
-| `inventory_skew_factor` | `f64`              | `0.0`      | Price units per unit of net position. Both sides shift down by this times position.  |
-| `signal_skew_factor`    | `f64`              | `0.0`      | Price units per unit of normalized signal residual. Both sides shift up.             |
-| `signal_baseline`       | `Option<f64>`      | `None`     | Baseline price for the signal residual. When `None`, captured from the first signal. |
-| `requote_threshold_bps` | `u32`              | `5`        | Minimum anchor or signal-residual price-impact move in bps before re-quoting.        |
-| `expire_time_secs`      | `Option<u64>`      | `None`     | Order expiry in seconds. When set, orders use GTD time-in-force.                     |
-| `on_cancel_resubmit`    | `bool`             | `false`    | Resubmit on the next quote after an external cancel.                                 |
+| Parameter               | Type               | Default    | Description                                                                         |
+| ----------------------- | ------------------ | ---------- | ----------------------------------------------------------------------------------- |
+| `instrument_id`         | `InstrumentId`     | *required* | Target instrument the strategy quotes on.                                           |
+| `signal_instrument_id`  | `InstrumentId`     | *required* | Signal instrument (typically a synthetic) whose mid drives the signal residual.     |
+| `max_position`          | `Quantity`         | *required* | Hard cap on net exposure (long or short).                                           |
+| `trade_size`            | `Option<Quantity>` | `None`     | Size per quote. When `None`, resolves from the instrument's `min_quantity`.         |
+| `half_spread_bps`       | `u32`              | `5`        | Half the desired quoted spread, in basis points of the anchor.                      |
+| `inventory_skew_factor` | `f64`              | `0.0`      | Price units per unit of net position. Both sides shift down by this times position. |
+| `signal_skew_factor`    | `f64`              | `0.0`      | Price units per unit of normalized signal residual. Both sides shift up.            |
+| `signal_baseline`       | `Option<f64>`      | `None`     | Baseline price for the residual. When `None`, captured from the first valid signal. |
+| `requote_threshold_bps` | `u32`              | `5`        | Minimum anchor or signal-residual price-impact move in bps before re-quoting.       |
+| `expire_time_secs`      | `Option<u64>`      | `None`     | Order expiry in seconds. When set, orders use GTD time-in-force.                    |
+| `on_cancel_resubmit`    | `bool`             | `false`    | Resubmit on the next quote after an external cancel.                                |
 
 ### Tuning guidelines
 

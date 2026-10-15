@@ -1,0 +1,39 @@
+{
+  "outcomes": [
+    {
+      "outcome": 1,
+      "name": "USDC binary",
+      "description": "class:priceBinary|underlying:BTC|expiry:20261008-0600",
+      "quoteToken": "USDC",
+      "sideSpecs": [
+        {
+          "name": "Yes"
+        },
+        {
+          "name": "No"
+        }
+      ]
+    },
+    {
+      "outcome": 2,
+      "name": "USDH binary",
+      "description": "class:priceBinary|underlying:ETH|expiry:20261009-0600",
+      "quoteToken": "USDH",
+      "sideSpecs": [
+        {
+          "name": "Yes"
+        },
+        {
+          "name": "No"
+        }
+      ]
+    },
+    {
+      "outcome": 3,
+      "name": "Legacy metadata",
+      "description": "",
+      "sideSpecs": []
+    }
+  ],
+  "questions": []
+}

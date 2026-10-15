@@ -102,9 +102,14 @@ nautilus-testkit = { workspace = true, default-features = false, features = [
 nautilus-trading = { workspace = true }
 
 axum = { workspace = true }
+criterion = { workspace = true }
 rstest = { workspace = true }
 rust_decimal_macros = { workspace = true }
 toml = { workspace = true }
+
+[[bench]]
+name = "market_data"
+harness = false
 
 [[bin]]
 name = "dydx-http-public"

@@ -26,7 +26,7 @@ mod serial_tests {
         signal::Signal,
         testing::{wait_until, wait_until_async},
     };
-    use nautilus_core::{Params, UnixNanos};
+    use nautilus_core::{Params, UUID4, UnixNanos};
     use nautilus_infrastructure::sql::{
         cache::{PostgresCacheDatabase, get_pg_cache_database},
         pg::{connect_pg, get_postgres_connect_options, init_postgres},
@@ -38,7 +38,7 @@ mod serial_tests {
             CustomData, DataType, InstrumentClose,
             stubs::{quote_ethusdt_binance, stub_bar, stub_trade_ethusdt_buy},
         },
-        enums::{CurrencyType, InstrumentCloseType, OrderSide, OrderStatus, OrderType},
+        enums::{CurrencyType, InstrumentCloseType, OmsType, OrderSide, OrderStatus, OrderType},
         events::{
             OrderEventAny, OrderFilled, OrderSnapshot,
             account::stubs::{
@@ -2202,6 +2202,66 @@ mod serial_tests {
 
         reset_test_database(&restarted).await;
         restarted.close().unwrap();
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_virtual_hedging_flip_survives_cache_restart(
+        #[values("none", "source", "destination")] reopen: &str,
+        #[values(false, true)] void_fill: bool,
+    ) {
+        let trader_id = TraderId::from(format!("flip-{}", UUID4::new()));
+        let database = get_test_pg_cache_database_for_trader(trader_id)
+            .await
+            .unwrap();
+        let mut cache = Cache::default();
+        cache.set_database(Box::new(database));
+        let (order_id, source_id, destination_id) =
+            crate::position_flip::populate_flip_cache(&mut cache, trader_id, reopen, void_fill);
+        let expected_order =
+            serde_json::to_value(cache.order(&order_id).unwrap().cloned()).unwrap();
+        let expected_source =
+            serde_json::to_value(cache.position(&source_id).unwrap().cloned()).unwrap();
+        let expected_destination =
+            serde_json::to_value(cache.position(&destination_id).unwrap().cloned()).unwrap();
+        cache.dispose();
+
+        let database = get_test_pg_cache_database_for_trader(trader_id)
+            .await
+            .unwrap();
+        cache.set_database(Box::new(database));
+        cache.cache_all().await.unwrap();
+        cache.build_index();
+        assert_eq!(
+            serde_json::to_value(cache.position(&source_id).unwrap().cloned()).unwrap(),
+            expected_source,
+        );
+        assert_eq!(
+            serde_json::to_value(cache.position(&destination_id).unwrap().cloned()).unwrap(),
+            expected_destination,
+        );
+        assert_eq!(
+            serde_json::to_value(cache.order(&order_id).unwrap().cloned()).unwrap(),
+            expected_order
+        );
+        assert_eq!(cache.oms_type(&source_id), Some(OmsType::Hedging));
+        let route = cache.hedging_flip_position_ids(order_id);
+
+        let expected_id = if void_fill { source_id } else { destination_id };
+        if reopen == "destination" && void_fill {
+            assert!(route.is_err());
+            assert_eq!(cache.position_id(&order_id), None);
+        } else {
+            assert_eq!(route.unwrap().unwrap()[1], expected_id);
+            assert_eq!(cache.position_id(&order_id), Some(&expected_id));
+        }
+
+        assert_eq!(
+            serde_json::to_value(cache.order(&order_id).unwrap().cloned()).unwrap(),
+            expected_order
+        );
+        cache.flush_db().unwrap();
+        cache.dispose();
     }
 
     async fn get_test_pg_cache_database_for_trader(

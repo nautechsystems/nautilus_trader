@@ -39,9 +39,9 @@ use std::fmt::Write;
 use base64::{Engine, engine::general_purpose::STANDARD as B64};
 
 use super::types::{
-    ApproveIntegratorTxInfo, CancelAllOrdersTxInfo, CancelOrderTxInfo, CreateOrderTxInfo,
-    L2TxAttributes, LighterTx, ModifyOrderTxInfo, NB_ATTRIBUTES_PER_TX, OrderInfo, TxContext,
-    UpdateLeverageTxInfo,
+    ApproveIntegratorTxInfo, CancelAllOrdersTxInfo, CancelOrderTxInfo, CreateGroupedOrdersTxInfo,
+    CreateOrderTxInfo, L2TxAttributes, LighterTx, ModifyOrderTxInfo, NB_ATTRIBUTES_PER_TX,
+    OrderInfo, TxContext, UpdateLeverageTxInfo,
 };
 use crate::signing::{
     field::{Fp, Fp5},
@@ -178,6 +178,34 @@ impl TxInfoJson {
         out.push('{');
         write_ctx_lead(&mut out, tx.context);
         write_order_info(&mut out, &tx.order);
+        write_ctx_tail(&mut out, tx.context);
+        write_sig(&mut out, signed);
+        write_attributes_with_integrator(&mut out, &tx.attributes);
+        out.push('}');
+        out
+    }
+
+    /// Render a signed `CreateGroupedOrders` to its JSON payload.
+    #[must_use]
+    pub fn create_grouped_orders(tx: &CreateGroupedOrdersTxInfo, signed: &SignedTx) -> String {
+        let mut out = String::with_capacity(256 + tx.orders.len() * 256);
+        out.push('{');
+        write_ctx_lead(&mut out, tx.context);
+        write_kv_u64(&mut out, "GroupingType", u64::from(tx.grouping_type as u8));
+        out.push_str("\"Orders\":[");
+
+        for (index, order) in tx.orders.iter().enumerate() {
+            if index != 0 {
+                out.push(',');
+            }
+
+            out.push('{');
+            write_order_info(&mut out, order);
+            out.pop();
+            out.push('}');
+        }
+
+        out.push_str("],");
         write_ctx_tail(&mut out, tx.context);
         write_sig(&mut out, signed);
         write_attributes_with_integrator(&mut out, &tx.attributes);
@@ -603,6 +631,74 @@ mod tests {
             assert_oracle_sig_verifies(&tx, v);
             assert_round_trip_sign(&tx, v);
         }
+    }
+
+    #[rstest]
+    #[case(1, false)]
+    #[case(1, true)]
+    #[case(2, false)]
+    #[case(2, true)]
+    #[case(3, false)]
+    #[case(3, true)]
+    fn grouped_orders_match_sdk_oracle(#[case] grouping: u8, #[case] attributes: bool) {
+        let suite: OracleFile = serde_json::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/test_data/signing_grouped_tx_oracle.json",
+        )))
+        .unwrap();
+
+        let matching: Vec<_> = suite
+            .vectors
+            .iter()
+            .filter(|vector| {
+                vector.fields["grouping_type"].as_u64() == Some(u64::from(grouping))
+                    && vector.fields["skip_nonce"].as_u64() == Some(u64::from(attributes))
+            })
+            .collect();
+
+        assert_eq!(matching.len(), 1);
+        let vector = matching[0];
+
+        let mut tx = CreateGroupedOrdersTxInfo {
+            context: ctx_for(vector),
+            grouping_type: serde_json::from_value(vector.fields["grouping_type"].clone()).unwrap(),
+            orders: vector.fields["orders"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|body| OrderInfo {
+                    market_index: body["MarketIndex"].as_i64().unwrap(),
+                    client_order_index: body["ClientOrderIndex"].as_i64().unwrap(),
+                    base_amount: body["BaseAmount"].as_i64().unwrap(),
+                    price: body["Price"].as_u64().unwrap() as u32,
+                    is_ask: body["IsAsk"].as_u64().unwrap() == 1,
+                    order_type: body["Type"].as_u64().unwrap() as u8,
+                    time_in_force: body["TimeInForce"].as_u64().unwrap() as u8,
+                    reduce_only: body["ReduceOnly"].as_u64().unwrap() == 1,
+                    trigger_price: body["TriggerPrice"].as_u64().unwrap() as u32,
+                    order_expiry: body["OrderExpiry"].as_i64().unwrap(),
+                })
+                .collect(),
+            attributes: attrs_from(&vector.fields),
+        };
+
+        assert_eq!(vector.tx_type, 28);
+        assert_eq!(tx.orders.len(), if grouping == 3 { 3 } else { 2 });
+        assert_hash_matches(&tx, vector);
+        assert_oracle_sig_verifies(&tx, vector);
+        assert_round_trip_sign(&tx, vector);
+        let signed = sign_tx(
+            &tx,
+            vector.chain_id,
+            &PrivateKey::from_le_bytes_reduce(decode_scalar_bytes(&vector.sk)),
+            Scalar::ONE,
+        );
+        assert_eq!(
+            redact_sig(&TxInfoJson::create_grouped_orders(&tx, &signed)),
+            redact_sig(&vector.tx_info)
+        );
+        tx.orders.swap(0, 1);
+        assert_ne!(compute_tx_hash(&tx, vector.chain_id), signed.tx_hash);
     }
 
     #[rstest]

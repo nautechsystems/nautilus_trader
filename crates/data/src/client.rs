@@ -230,7 +230,8 @@ impl DataClientAdapter {
             return;
         }
 
-        let cmd_debug = format!("{cmd:?}");
+        let command_id = cmd.command_id();
+
         let result = match cmd {
             SubscribeCommand::Data(cmd) => self.subscribe(cmd),
             SubscribeCommand::Instrument(cmd) => self.subscribe_instrument(cmd),
@@ -251,13 +252,21 @@ impl DataClientAdapter {
         };
 
         if let Err(e) = result {
+            let subscription = key.log_context();
+
             // Engine-owned intent survives failure until its matching release
             if retain_on_failure {
                 self.subscriptions_active
                     .retain(key, retained.command_id(), retained);
             }
 
-            log_command_error(&cmd_debug, &e);
+            log_command_error(
+                &format_args!(
+                    "Subscribe {} {subscription} command {command_id}",
+                    self.client_id()
+                ),
+                &e,
+            );
             return;
         }
 
@@ -349,7 +358,15 @@ impl DataClientAdapter {
             UnsubscribeCommand::OptionGreeks(cmd) => self.unsubscribe_option_greeks(cmd),
             UnsubscribeCommand::OptionChain(_) => Ok(()), // Handled internally by engine
         } {
-            log_command_error(&command, &e);
+            log_command_error(
+                &format_args!(
+                    "Unsubscribe {} {} command {}",
+                    self.client_id(),
+                    key.log_context(),
+                    cmd.command_id()
+                ),
+                &e,
+            );
         } else {
             self.subscriptions_active.remove(&key);
         }

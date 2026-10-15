@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+#![warn(clippy::clone_on_ref_ptr)]
+
 use std::{
     any::Any,
     env,

@@ -726,14 +726,14 @@ mod tests {
         };
         let manager = RetryManager::new(config);
         let attempts = Arc::new(AtomicU32::new(0));
-        let attempts_clone = attempts.clone();
+        let attempts_clone = Arc::clone(&attempts);
         let start = time::Instant::now();
 
         let result = manager
             .invocation(
                 "test_error_delay",
                 move || {
-                    let attempts = attempts_clone.clone();
+                    let attempts = Arc::clone(&attempts_clone);
                     async move {
                         if attempts.fetch_add(1, Ordering::SeqCst) == 0 {
                             Err(TestError::Retryable("rate limit".to_string()))
@@ -779,7 +779,7 @@ mod tests {
         };
         let manager = RetryManager::new(config);
         let attempts = Arc::new(AtomicU32::new(0));
-        let attempts_clone = attempts.clone();
+        let attempts_clone = Arc::clone(&attempts);
         let token = CancellationToken::new();
         let cancel = token.clone();
 
@@ -792,7 +792,7 @@ mod tests {
             .invocation(
                 "test_error_delay_cancellation",
                 move || {
-                    let attempts = attempts_clone.clone();
+                    let attempts = Arc::clone(&attempts_clone);
                     async move {
                         attempts.fetch_add(1, Ordering::SeqCst);
                         Err::<i32, TestError>(TestError::Retryable("rate limit".to_string()))
@@ -830,13 +830,13 @@ mod tests {
         };
         let manager = RetryManager::new(config);
         let attempts = Arc::new(AtomicU32::new(0));
-        let attempts_clone = attempts.clone();
+        let attempts_clone = Arc::clone(&attempts);
 
         let error = manager
             .invocation(
                 "test_error_delay_budget",
                 move || {
-                    let attempts = attempts_clone.clone();
+                    let attempts = Arc::clone(&attempts_clone);
                     async move {
                         attempts.fetch_add(1, Ordering::SeqCst);
                         Err::<i32, TestError>(TestError::Retryable("rate limit".to_string()))
@@ -876,15 +876,15 @@ mod tests {
         };
         let manager = RetryManager::new(config);
         let attempts = Arc::new(AtomicU32::new(0));
-        let attempts_clone = attempts.clone();
-        let attempts_wait = attempts.clone();
+        let attempts_clone = Arc::clone(&attempts);
+        let attempts_wait = Arc::clone(&attempts);
 
         let handle = spawn(async move {
             manager
                 .invocation(
                     "test_error_delay_overshoot",
                     move || {
-                        let attempts = attempts_clone.clone();
+                        let attempts = Arc::clone(&attempts_clone);
                         async move {
                             attempts.fetch_add(1, Ordering::SeqCst);
                             Err::<i32, TestError>(TestError::Retryable("rate limit".to_string()))
@@ -1204,14 +1204,14 @@ mod tests {
         let manager = RetryManager::new(config);
 
         let attempt_count = Arc::new(AtomicU32::new(0));
-        let count_clone = attempt_count.clone();
+        let count_clone = Arc::clone(&attempt_count);
 
         let handle = spawn(async move {
             manager
                 .invocation(
                     "test_first_attempt",
                     move || {
-                        let count = count_clone.clone();
+                        let count = Arc::clone(&count_clone);
                         async move {
                             count.fetch_add(1, Ordering::SeqCst);
                             Err::<i32, TestError>(TestError::Retryable("test".to_string()))
@@ -1343,7 +1343,10 @@ mod tests {
         assert!(matches!(result.unwrap_err(), TestError::Timeout(_)));
     }
 
-    #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(start_paused = true)
+    )]
     #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
     async fn test_timeout_retries_when_predicate_allows() {
         let config = RetryConfig {
@@ -1358,16 +1361,14 @@ mod tests {
         };
         let manager = RetryManager::new(config);
 
-        // Test with retry predicate that allows timeouts
         let should_retry_timeouts = |error: &TestError| matches!(error, TestError::Timeout(_));
-
-        let start = time::Instant::now();
+        let mut attempts = 0;
         let result = manager
             .invocation(
                 "test_timeout_retryable",
-                || async {
-                    time::sleep(Duration::from_millis(100)).await;
-                    Ok::<i32, TestError>(42)
+                || {
+                    attempts += 1;
+                    std::future::pending::<Result<i32, TestError>>()
                 },
                 should_retry_timeouts,
                 create_test_error,
@@ -1375,13 +1376,12 @@ mod tests {
             .execute()
             .await;
 
-        let elapsed = start.elapsed();
+        let TestError::Timeout(reason) = result.unwrap_err() else {
+            panic!("expected operation timeout");
+        };
 
-        // Should fail after retries (not immediately)
-        assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), TestError::Timeout(_)));
-        // Should have taken time for retries (at least 2 timeouts + delays)
-        assert!(elapsed.as_millis() > 80); // More than just one timeout
+        assert_eq!(reason, RetryError::OperationTimeout { timeout_ms: 50 });
+        assert_eq!(attempts, 3);
     }
 
     #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
@@ -1400,13 +1400,13 @@ mod tests {
         let manager = RetryManager::new(config);
 
         let attempt_counter = Arc::new(AtomicU32::new(0));
-        let counter_clone = attempt_counter.clone();
+        let counter_clone = Arc::clone(&attempt_counter);
 
         let result = manager
             .invocation(
                 "test_eventual_success",
                 move || {
-                    let counter = counter_clone.clone();
+                    let counter = Arc::clone(&counter_clone);
                     async move {
                         let attempts = counter.fetch_add(1, Ordering::SeqCst);
                         if attempts < 2 {
@@ -1445,17 +1445,17 @@ mod tests {
         let manager = RetryManager::new(config);
 
         let attempt_times = Arc::new(parking_lot::Mutex::new(Vec::new()));
-        let times_clone = attempt_times.clone();
+        let times_clone = Arc::clone(&attempt_times);
         let start = time::Instant::now();
 
         let handle = spawn({
-            let times_clone = times_clone.clone();
+            let times_clone = Arc::clone(&times_clone);
             async move {
                 let _ = manager
                     .invocation(
                         "test_immediate",
                         move || {
-                            let times = times_clone.clone();
+                            let times = Arc::clone(&times_clone);
                             async move {
                                 times.lock().push(start.elapsed());
                                 Err::<i32, TestError>(TestError::Retryable("fail".to_string()))
@@ -1543,13 +1543,13 @@ mod tests {
         let manager = RetryManager::new(config);
 
         let attempt_counter = Arc::new(AtomicU32::new(0));
-        let counter_clone = attempt_counter.clone();
+        let counter_clone = Arc::clone(&attempt_counter);
 
         let result = manager
             .invocation(
                 "test_no_retries",
                 move || {
-                    let counter = counter_clone.clone();
+                    let counter = Arc::clone(&counter_clone);
                     async move {
                         counter.fetch_add(1, Ordering::SeqCst);
                         Err::<i32, TestError>(TestError::Retryable("fail".to_string()))
@@ -1585,19 +1585,19 @@ mod tests {
         let manager = RetryManager::new(config);
 
         let delays = Arc::new(parking_lot::Mutex::new(Vec::new()));
-        let delays_clone = delays.clone();
+        let delays_clone = Arc::clone(&delays);
         let last_time = Arc::new(parking_lot::Mutex::new(time::Instant::now()));
-        let last_time_clone = last_time.clone();
+        let last_time_clone = Arc::clone(&last_time);
 
         let handle = spawn({
-            let delays_clone = delays_clone.clone();
+            let delays_clone = Arc::clone(&delays_clone);
             async move {
                 let _ = manager
                     .invocation(
                         "test_jitter",
                         move || {
-                            let delays = delays_clone.clone();
-                            let last_time = last_time_clone.clone();
+                            let delays = Arc::clone(&delays_clone);
+                            let last_time = Arc::clone(&last_time_clone);
                             async move {
                                 let now = time::Instant::now();
                                 let delay = {
@@ -1650,14 +1650,14 @@ mod tests {
         let manager = RetryManager::new(config);
 
         let attempt_counter = Arc::new(AtomicU32::new(0));
-        let counter_clone = attempt_counter.clone();
+        let counter_clone = Arc::clone(&attempt_counter);
 
         let start = time::Instant::now();
         let result = manager
             .invocation(
                 "test_elapsed_limit",
                 move || {
-                    let counter = counter_clone.clone();
+                    let counter = Arc::clone(&counter_clone);
                     async move {
                         counter.fetch_add(1, Ordering::SeqCst);
                         Err::<i32, TestError>(TestError::Retryable("fail".to_string()))
@@ -1695,13 +1695,13 @@ mod tests {
         let manager = RetryManager::new(config);
 
         let attempt_counter = Arc::new(AtomicU32::new(0));
-        let counter_clone = attempt_counter.clone();
+        let counter_clone = Arc::clone(&attempt_counter);
 
         let result = manager
             .invocation(
                 "test_mixed_errors",
                 move || {
-                    let counter = counter_clone.clone();
+                    let counter = Arc::clone(&counter_clone);
                     async move {
                         let attempts = counter.fetch_add(1, Ordering::SeqCst);
                         match attempts {
@@ -1751,14 +1751,14 @@ mod tests {
         });
 
         let attempt_counter = Arc::new(AtomicU32::new(0));
-        let counter_clone = attempt_counter.clone();
+        let counter_clone = Arc::clone(&attempt_counter);
 
         let start = time::Instant::now();
         let result = manager
             .invocation(
                 "test_cancellation",
                 move || {
-                    let counter = counter_clone.clone();
+                    let counter = Arc::clone(&counter_clone);
                     async move {
                         counter.fetch_add(1, Ordering::SeqCst);
                         Err::<i32, TestError>(TestError::Retryable("fail".to_string()))
@@ -1956,12 +1956,12 @@ mod proptest_tests {
 
             let manager = RetryManager::new(config);
             let attempt_counter = Arc::new(AtomicU32::new(0));
-            let counter_clone = attempt_counter.clone();
+            let counter_clone = Arc::clone(&attempt_counter);
 
             let _result = rt.block_on(manager.invocation(
                 "prop_test",
                 move || {
-                    let counter = counter_clone.clone();
+                    let counter = Arc::clone(&counter_clone);
                     async move {
                         counter.fetch_add(1, Ordering::SeqCst);
                         Err::<i32, TestError>(TestError::Retryable("fail".to_string()))
@@ -1998,14 +1998,14 @@ mod proptest_tests {
 
             let manager = RetryManager::new(config(selected_ms + 1));
             let attempts = Arc::new(AtomicU32::new(0));
-            let attempts_clone = attempts.clone();
+            let attempts_clone = Arc::clone(&attempts);
             let (result, elapsed) = rt.block_on(async {
                 let start = time::Instant::now();
                 let result = manager
                     .invocation(
                         "prop_error_delay_selection",
                         move || {
-                            let attempts = attempts_clone.clone();
+                            let attempts = Arc::clone(&attempts_clone);
                             async move {
                                 if attempts.fetch_add(1, Ordering::SeqCst) == 0 {
                                     Err(TestError::Retryable("rate limit".to_string()))
@@ -2036,14 +2036,14 @@ mod proptest_tests {
 
             let manager = RetryManager::new(config(selected_ms));
             let attempts = Arc::new(AtomicU32::new(0));
-            let attempts_clone = attempts.clone();
+            let attempts_clone = Arc::clone(&attempts);
             let (error, elapsed) = rt.block_on(async {
                 let start = time::Instant::now();
                 let error = manager
                     .invocation(
                         "prop_error_delay_budget",
                         move || {
-                            let attempts = attempts_clone.clone();
+                            let attempts = Arc::clone(&attempts_clone);
                             async move {
                                 attempts.fetch_add(1, Ordering::SeqCst);
                                 Err::<i32, TestError>(TestError::Retryable(
@@ -2132,13 +2132,13 @@ mod proptest_tests {
 
             let manager = RetryManager::new(config);
             let attempt_counter = Arc::new(AtomicU32::new(0));
-            let counter_clone = attempt_counter.clone();
+            let counter_clone = Arc::clone(&attempt_counter);
 
             let result = rt.block_on(async {
                 let operation_future = manager.invocation(
                     "elapsed_test",
                     move || {
-                        let counter = counter_clone.clone();
+                        let counter = Arc::clone(&counter_clone);
                         async move {
                             counter.fetch_add(1, Ordering::SeqCst);
                             Err::<i32, TestError>(TestError::Retryable("fail".to_string()))
@@ -2183,13 +2183,13 @@ mod proptest_tests {
 
             let manager = RetryManager::new(config);
             let attempt_times = Arc::new(parking_lot::Mutex::new(Vec::new()));
-            let attempt_times_for_block = attempt_times.clone();
+            let attempt_times_for_block = Arc::clone(&attempt_times);
 
             rt.block_on(async move {
                 #[cfg(not(all(feature = "simulation", madsim)))]
-                let attempt_times_for_wait = attempt_times_for_block.clone();
+                let attempt_times_for_wait = Arc::clone(&attempt_times_for_block);
                 let handle = spawn({
-                    let attempt_times_for_task = attempt_times_for_block.clone();
+                    let attempt_times_for_task = Arc::clone(&attempt_times_for_block);
                     let manager = manager;
                     async move {
                         let start_time = time::Instant::now();
@@ -2197,7 +2197,7 @@ mod proptest_tests {
                             .invocation(
                                 "jitter_test",
                                 move || {
-                                    let attempt_times_inner = attempt_times_for_task.clone();
+                                    let attempt_times_inner = Arc::clone(&attempt_times_for_task);
                                     async move {
                                         attempt_times_inner
                                             .lock()
@@ -2280,13 +2280,13 @@ mod proptest_tests {
 
             let manager = RetryManager::new(config);
             let attempt_times = Arc::new(parking_lot::Mutex::new(Vec::new()));
-            let attempt_times_for_block = attempt_times.clone();
+            let attempt_times_for_block = Arc::clone(&attempt_times);
 
             rt.block_on(async move {
                 #[cfg(not(all(feature = "simulation", madsim)))]
-                let attempt_times_for_wait = attempt_times_for_block.clone();
+                let attempt_times_for_wait = Arc::clone(&attempt_times_for_block);
                 let handle = spawn({
-                    let attempt_times_for_task = attempt_times_for_block.clone();
+                    let attempt_times_for_task = Arc::clone(&attempt_times_for_block);
                     let manager = manager;
                     async move {
                         let start = time::Instant::now();
@@ -2294,7 +2294,7 @@ mod proptest_tests {
                             .invocation(
                                 "immediate_test",
                                 move || {
-                                    let attempt_times_inner = attempt_times_for_task.clone();
+                                    let attempt_times_inner = Arc::clone(&attempt_times_for_task);
                                     async move {
                                         let elapsed = start.elapsed();
                                         attempt_times_inner.lock().push(elapsed);
@@ -2357,12 +2357,12 @@ mod proptest_tests {
 
             let manager = RetryManager::new(config);
             let attempt_counter = Arc::new(AtomicU32::new(0));
-            let counter_clone = attempt_counter.clone();
+            let counter_clone = Arc::clone(&attempt_counter);
 
             let result: Result<i32, TestError> = rt.block_on(manager.invocation(
                 "non_retryable_test",
                 move || {
-                    let counter = counter_clone.clone();
+                    let counter = Arc::clone(&counter_clone);
                     async move {
                         let attempts = counter.fetch_add(1, Ordering::SeqCst) as usize;
                         if attempts == attempt_before_non_retryable {
@@ -2515,7 +2515,7 @@ mod proptest_tests {
 
             let manager = RetryManager::new(config);
             let attempt_counter = Arc::new(AtomicU32::new(0));
-            let counter_clone = attempt_counter.clone();
+            let counter_clone = Arc::clone(&attempt_counter);
             let target_k = k;
 
             let (result, _elapsed) = rt.block_on(async {
@@ -2524,7 +2524,7 @@ mod proptest_tests {
                 let operation_future = manager.invocation(
                     "kth_attempt_test",
                     move || {
-                        let counter = counter_clone.clone();
+                        let counter = Arc::clone(&counter_clone);
                         async move {
                             let attempt = counter.fetch_add(1, Ordering::SeqCst) as usize;
                             if attempt + 1 == target_k {
