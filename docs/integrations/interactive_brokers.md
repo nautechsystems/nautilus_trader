@@ -339,6 +339,8 @@ Set `batch_quotes=False` to prefer tick-by-tick bid/ask subscriptions. The clien
 The quote cache assembles bid and ask updates into complete quote ticks. IB no-quote sentinels
 (price `-1` without a size, or a zero price with zero size) are filtered before ticks are built
 and clear the affected book side, so a one-sided market emits nothing rather than stale values.
+For a contract with a price magnifier, IB sends the `-1` multiplied by it (`-100` for a ZC
+option), and the adapter filters that the same way.
 Genuine zero and negative prices, including a `-1` price with a size, which calendar spreads
 produce routinely, flow through.
 

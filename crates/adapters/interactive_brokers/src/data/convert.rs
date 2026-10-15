@@ -35,6 +35,8 @@ use nautilus_model::{
 use rust_decimal::{Decimal, RoundingStrategy};
 use time::OffsetDateTime;
 
+use super::cache::is_sentinel_price;
+
 /// Converts the prices IB reports for an instrument into the instrument's prices.
 ///
 /// IB reports a magnified contract's prices in a sub-unit of its currency (CBOT grains in cents,
@@ -92,6 +94,15 @@ impl IbPriceConverter {
     #[must_use]
     pub const fn precision(&self) -> u8 {
         self.precision
+    }
+
+    /// Returns whether `ib_price` is IB's no-quote value for a side: -1 without a size, which IB
+    /// reports multiplied by the price magnifier for a magnified contract (-100 for a ZC
+    /// option on delayed data).
+    #[must_use]
+    pub fn is_sentinel(&self, ib_price: f64, size: Option<f64>) -> bool {
+        is_sentinel_price(ib_price, size)
+            || is_sentinel_price(ib_price / f64::from(self.magnifier), size)
     }
 
     /// Converts a price reported by IB into the instrument's price, rounding to the nearest
@@ -1485,6 +1496,26 @@ mod tests {
         let prices = IbPriceConverter::new(2).with_price_magnifier(magnifier);
 
         assert_eq!(prices.price(150.25).unwrap(), Price::from("150.25"));
+    }
+
+    #[rstest]
+    #[case::magnified_sentinel(100, -100.0, None, true)]
+    #[case::magnified_sentinel_zero_size(100, -100.0, Some(0.0), true)]
+    #[case::magnified_price_with_size(100, -100.0, Some(5.0), false)]
+    #[case::unmagnified_sentinel(100, -1.0, None, true)]
+    #[case::magnified_price(100, 5.5, None, false)]
+    #[case::other_negative_price(100, -1.25, None, false)]
+    #[case::plain_sentinel(1, -1.0, None, true)]
+    #[case::plain_negative_price(1, -100.0, None, false)]
+    fn test_price_converter_detects_magnified_sentinel(
+        #[case] magnifier: i32,
+        #[case] ib_price: f64,
+        #[case] size: Option<f64>,
+        #[case] expected: bool,
+    ) {
+        let prices = IbPriceConverter::new(5).with_price_magnifier(magnifier);
+
+        assert_eq!(prices.is_sentinel(ib_price, size), expected);
     }
 
     #[rstest]

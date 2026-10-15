@@ -116,7 +116,7 @@ impl QuoteCache {
         ts_event: UnixNanos,
         ts_init: UnixNanos,
     ) -> Option<QuoteTick> {
-        if is_sentinel_price(price, size) {
+        if prices.is_sentinel(price, size) {
             if let Some(cached) = self.quotes.get_mut(&instrument_id) {
                 cached.bid_price = None;
                 cached.bid_size = None;
@@ -153,7 +153,7 @@ impl QuoteCache {
         ts_event: UnixNanos,
         ts_init: UnixNanos,
     ) -> Option<QuoteTick> {
-        if is_sentinel_price(price, size) {
+        if prices.is_sentinel(price, size) {
             if let Some(cached) = self.quotes.get_mut(&instrument_id) {
                 cached.ask_price = None;
                 cached.ask_size = None;
@@ -539,6 +539,74 @@ mod tests {
         #[case] expected: bool,
     ) {
         assert_eq!(is_sentinel_price(price, size), expected);
+    }
+
+    #[rstest]
+    fn test_quote_cache_clears_side_on_magnified_sentinel() {
+        // IB sends a magnified option's missing bid as -100 (OZC, magnifier 100, delayed data)
+        let mut cache = QuoteCache::new();
+        let instrument_id = instrument_id();
+        let prices = IbPriceConverter::new(5).with_price_magnifier(100);
+
+        cache.update_bid_price(
+            instrument_id,
+            5.5,
+            None,
+            prices,
+            0,
+            UnixNanos::new(1),
+            UnixNanos::new(1),
+        );
+        cache.update_ask_price(
+            instrument_id,
+            5.875,
+            None,
+            prices,
+            0,
+            UnixNanos::new(1),
+            UnixNanos::new(1),
+        );
+        cache.update_bid_size(
+            instrument_id,
+            10.0,
+            prices,
+            0,
+            UnixNanos::new(1),
+            UnixNanos::new(1),
+        );
+        let quote = cache
+            .update_ask_size(
+                instrument_id,
+                12.0,
+                prices,
+                0,
+                UnixNanos::new(1),
+                UnixNanos::new(1),
+            )
+            .unwrap();
+        assert_eq!(quote.bid_price.as_f64(), 0.055);
+        assert_eq!(quote.ask_price.as_f64(), 0.05875);
+
+        let cleared = cache.update_bid_price(
+            instrument_id,
+            -100.0,
+            None,
+            prices,
+            0,
+            UnixNanos::new(2),
+            UnixNanos::new(2),
+        );
+        let after = cache.update_ask_size(
+            instrument_id,
+            12.0,
+            prices,
+            0,
+            UnixNanos::new(3),
+            UnixNanos::new(3),
+        );
+
+        assert!(cleared.is_none());
+        assert!(after.is_none());
     }
 
     #[rstest]

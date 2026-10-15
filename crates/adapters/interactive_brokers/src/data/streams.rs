@@ -52,7 +52,7 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     config::InteractiveBrokersDataClientConfig,
     data::{
-        cache::{OptionGreeksCache, QuoteCache, is_sentinel_price},
+        cache::{OptionGreeksCache, QuoteCache},
         convert::{
             IbPriceConverter, bar_type_to_ib_bar_size, ib_bar_to_nautilus_bar,
             ib_timestamp_to_unix_nanos,
@@ -1501,8 +1501,8 @@ where
                     Some(Ok(SubscriptionItem::Data(bid_ask))) => {
                         monitor.received_data();
 
-                        if is_sentinel_price(bid_ask.bid_price, Some(bid_ask.bid_size))
-                            || is_sentinel_price(bid_ask.ask_price, Some(bid_ask.ask_size))
+                        if prices.is_sentinel(bid_ask.bid_price, Some(bid_ask.bid_size))
+                            || prices.is_sentinel(bid_ask.ask_price, Some(bid_ask.ask_size))
                             || !bid_ask.bid_size.is_finite()
                             || bid_ask.bid_size <= 0.0
                             || !bid_ask.ask_size.is_finite()
@@ -1779,7 +1779,7 @@ where
                     Some(Ok(SubscriptionItem::Data(tick))) => {
                         monitor.received_data();
 
-                        if is_sentinel_price(tick.price, Some(tick.size))
+                        if prices.is_sentinel(tick.price, Some(tick.size))
                             || !tick.size.is_finite()
                             || tick.size <= 0.0
                         {
@@ -2425,7 +2425,7 @@ where
         Ok(SubscriptionItem::Data(TickTypes::Price(price)))
             if matches!(price.tick_type, TickType::Last) =>
         {
-            if is_sentinel_price(price.price, None) {
+            if prices.is_sentinel(price.price, None) {
                 tracing::debug!(
                     "Ignoring IB index price sentinel for {}: {}",
                     instrument_id,
@@ -2451,7 +2451,7 @@ where
         Ok(SubscriptionItem::Data(TickTypes::PriceSize(price_size)))
             if matches!(price_size.price_tick_type, TickType::Last) =>
         {
-            if is_sentinel_price(price_size.price, Some(price_size.size)) {
+            if prices.is_sentinel(price_size.price, Some(price_size.size)) {
                 tracing::debug!(
                     "Ignoring IB index price sentinel for {}: {}",
                     instrument_id,
