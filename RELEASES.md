@@ -1,6 +1,6 @@
 # NautilusTrader 2.0.0rc7
 
-Released on TBD (UTC).
+Released on 15th October 2026 (UTC).
 
 > [!NOTE]
 > This release removes support for Python 3.12 and supports Python 3.13 and 3.14 (#4676).
@@ -68,6 +68,7 @@ Released on TBD (UTC).
 - Changed Interactive Brokers contract and security filters to reject unknown values (#5041), thanks @faysou
 - Changed Interactive Brokers provider loaders; use `load_with_return_async` (#5041), thanks @faysou
 - Changed `KrakenDataClientConfig` literals; add `validate_l2_checksum: true` (#5219), thanks @zhaow-de
+- Changed Kraken futures edit request literals; add `qty_mode: None` (#5314), thanks @zhaow-de
 - Changed `OKXAmendAlgoOrderRequest` literals to require `new_trigger_px_type`; use `None` to omit it
 - Changed Polymarket reference prices to PolyBolt; configure CLOB L2 credentials (#5296), thanks @yashwardhan-gautam
 - Changed Polymarket crypto reference symbols to lowercase USD pairs such as `btcusd` (#5296)
@@ -77,6 +78,7 @@ Released on TBD (UTC).
 
 - Fixed provider text and URL secret exposure in client diagnostics, thanks for reporting @Strategizm
 - Fixed Interactive Brokers gateway passwords appearing in debug and serialized output (#5041), thanks @faysou
+- Fixed Kraken Spot L3 malformed WebSocket messages aborting the process (#5319), thanks @zifulifufu
 
 ### Fixes
 
@@ -85,6 +87,7 @@ Released on TBD (UTC).
 - Fixed Python indicator constructors aborting the process on invalid periods or oversized capacities
 - Fixed cached custom currencies and their dependents missing after Redis restart (#5195), thanks @zhaow-de
 - Fixed cache open-order queries retaining submitted orders after cancel or modify rejections
+- Fixed instrument purging hiding order and position history and breaking PnL queries (#5304), thanks @imbolc
 - Fixed Parquet catalog row order for equal `ts_init` timestamps (#5267), thanks @ragen1337
 - Fixed streaming Parquet promotion of `OrderBookDelta.clear()` snapshots (#5268), thanks for reporting @hellow-star
 - Fixed monthly time bars drifting after a clamped month-end origin offset
@@ -135,6 +138,12 @@ Released on TBD (UTC).
 - Fixed Interactive Brokers account balances and margins remaining stale after connect (#5041), thanks @faysou
 - Fixed Interactive Brokers execution queries replaying historical fills as live fills (#5041), thanks @faysou
 - Fixed Interactive Brokers spread fills arriving before their leg fills (#5041), thanks @faysou
+- Fixed Interactive Brokers invalid single orders staying initialized (#5274), thanks @faysou
+- Fixed Interactive Brokers order tags overriding tracked order fields and sides (#5274), thanks @faysou
+- Fixed Interactive Brokers quote-sized order validation after applying tags (#5274), thanks @faysou
+- Fixed Interactive Brokers duplicate position reports inflating startup quantities (#5274), thanks @faysou
+- Fixed Interactive Brokers entry price recovery across flat crossings and combo fills (#5274), thanks @faysou
+- Fixed Interactive Brokers connecting with order IDs above the client partition (#5306), thanks @honvl
 - Fixed Kraken spot and futures wallets retaining balances reported at zero (#5186), thanks @zhaow-de
 - Fixed Kraken futures margin currencies, aggregation, and maintenance requirements (#5199), thanks @zhaow-de
 - Fixed Kraken spot order lookups failing on unrelated pairs (#5295), thanks @zhaow-de
@@ -145,6 +154,9 @@ Released on TBD (UTC).
 - Fixed Kraken futures startup reconciliation omitting order history (#5114), thanks @zhaow-de
 - Fixed Kraken futures quotes repeating when only timestamps change
 - Fixed Kraken futures quotes using stale books when joining an existing order book subscription
+- Fixed Kraken futures edits increasing partially filled orders by their filled quantity (#5314), thanks @zhaow-de
+- Fixed Kraken spot reports using fill prices as limit prices (#5315), thanks @zhaow-de
+- Fixed Kraken spot and futures lookups reporting absent orders from partial reads (#5311), thanks @zhaow-de
 - Fixed Lighter transaction nonce send ordering under concurrent preparation
 - Fixed Lighter `CancelAllOrders` to select cached orders only from the execution account
 - Fixed Lighter batch cancel outcome recovery and overlapping cancellation rejection handling
@@ -170,6 +182,7 @@ Released on TBD (UTC).
 - Improved Lighter execution race coverage and grouped-order signer validation
 - Refined backtest replay with shared ordered batch consumption, thanks @faysou
 - Refined shared pointer cloning in data, infrastructure, CLI, and event store code (#5236, #5289), thanks @mirooon
+- Refined shared pointer cloning in network clients and transports (#5294), thanks @mirooon
 - Refined Hyperliquid unified account tests to use JSON fixtures (#5220), thanks @XBeg9
 - Optimized core string formatting, precision parsing, and API key masking allocations (#5225), thanks @sunlei
 - Optimized hexadecimal encoding and decoding (#5227), thanks @sunlei
@@ -182,10 +195,10 @@ Released on TBD (UTC).
 - Optimized Python `Portfolio` queries to avoid copying account event history (#5260), thanks @XBeg9
 - Optimized dYdX order book delta processing
 - Upgraded Rust (MSRV) to 1.99.0
+- Upgraded Socket CLI tool to v1.5.0
 - Upgraded `cargo-hawk` tool to v0.1.15
 - Upgraded `cargo-nextest` tool to v0.9.148
 - Upgraded `prek` tool to v0.5.5
-- Upgraded Socket CLI tool to v1.5.0
 - Upgraded `uv` tool and pre-commit hook to v0.12.24
 - Upgraded `typos` pre-commit hook to v1.51.1
 - Upgraded `databento` crate to v0.63.0
@@ -194,7 +207,7 @@ Released on TBD (UTC).
 - Upgraded `h2` crate to v0.4.20
 - Upgraded `hyper` crate to v1.12.0
 - Upgraded `hyper-util` crate to v0.1.21
-- Upgraded `ibapi` crate to v5.0.0 (#5041), thanks @faysou
+- Upgraded `ibapi` crate to v5.0.0
 - Upgraded `implied-vol` crate to v2.1.0
 - Upgraded `jiff` crate to v0.2.38
 - Upgraded `libc` crate to v0.2.190
@@ -213,9 +226,10 @@ Released on TBD (UTC).
 
 ### Documentation Updates
 
-- Clarified `Portfolio` equity rules for calculated and reported margin accounts
 - Fixed Binance and Hyperliquid custom data examples to unwrap `CustomData` (#5246), thanks @Martingale42
+- Fixed Hyperliquid all-DEX example to unwrap `CustomData` and read dictionary entries (#5307), thanks @Martingale42
 - Updated Derive integration guide for API v3 setup, margin models, and recovery limits
+- Clarified `Portfolio` equity rules for calculated and reported margin accounts
 - Clarified Hyperliquid modify replacement rules and individual batch results
 - Clarified Kraken cached and external closing-order recovery (#5208), thanks @zhaow-de
 - Clarified Lighter cancel-all scope and batch cancellation failure handling
