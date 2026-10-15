@@ -5989,3 +5989,69 @@ fn test_fill_report_collector_moves_combo_leg_fills_to_evidence() {
     assert_eq!(combo_executions.len(), 1);
     assert_eq!(combo_executions[0].execution.execution_id, "exec-combo-001");
 }
+
+#[rstest]
+fn instrument_cached_after_client_creation_prices_orders_with_its_magnifier() {
+    let (client, _exec_receiver, cache) = create_test_execution_client();
+    let instrument_id = InstrumentId::from("ZCZ6.CBOT");
+    let contract = Contract {
+        contract_id: 815824252,
+        symbol: IBSymbol::from("ZC"),
+        security_type: SecurityType::Future,
+        exchange: Exchange::from("CBOT"),
+        currency: IBCurrency::from("USD"),
+        ..Default::default()
+    };
+    let mut info = Params::new();
+    info.insert(
+        "contract".to_string(),
+        crate::common::contract_to_json_value(&contract),
+    );
+    info.insert("priceMagnifier".to_string(), serde_json::Value::from(100));
+    let instrument = FuturesContract::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(Symbol::from("ZCZ6"))
+        .asset_class(AssetClass::Commodity)
+        .exchange(Ustr::from("CBOT"))
+        .underlying(Ustr::from("ZC"))
+        .activation_ns(UnixNanos::default())
+        .expiration_ns(UnixNanos::from(1_797_638_400_000_000_000))
+        .currency(Currency::USD())
+        .price_precision(4)
+        .price_increment(Price::from("0.0025"))
+        .multiplier(Quantity::from(5000))
+        .lot_size(Quantity::from(1))
+        .info(info)
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap();
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::FuturesContract(instrument))
+        .unwrap();
+    assert_eq!(
+        client.instrument_provider.price_magnifier(&instrument_id),
+        None
+    );
+
+    client.seed_price_magnifiers_from_cache([instrument_id]);
+
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Buy)
+        .price(Price::from("4.8625"))
+        .quantity(Quantity::from(1))
+        .build();
+    let ib_order =
+        nautilus_order_to_ib_order(&order, &client.instrument_provider, 1, "O-1").unwrap();
+    assert_eq!(ib_order.limit_price, Some(486.25));
+    assert_eq!(
+        client
+            .instrument_provider
+            .resolve_contract_for_instrument(instrument_id)
+            .unwrap()
+            .contract_id,
+        815824252
+    );
+}

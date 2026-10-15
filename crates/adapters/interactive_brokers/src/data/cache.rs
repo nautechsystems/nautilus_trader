@@ -989,6 +989,7 @@ mod tests {
         // OZCX6 C0480 (priceMagnifier 100) on the IB paper Gateway: quotes in cents (bid 5.5),
         // while the model computation is in dollars (option price 0.056, underlying 4.81)
         let mut cache = OptionGreeksCache::new();
+
         let computation = OptionComputation {
             field: TickType::DelayedModelOption,
             implied_volatility: Some(0.168_589_714_471_248_57),

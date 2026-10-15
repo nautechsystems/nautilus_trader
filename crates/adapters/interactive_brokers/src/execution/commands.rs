@@ -83,6 +83,15 @@ impl InteractiveBrokersExecutionClient {
             anyhow::bail!("{reason}");
         }
 
+        // Every price sent and reported for the order is converted by the price magnifier, so an
+        // order whose magnifier is unknown is denied rather than priced at the wrong scale
+        if let Err(e) = instrument_provider
+            .ensure_price_magnifier_async(client, cmd.instrument_id)
+            .await
+        {
+            return Self::deny_unpreparable_order(cmd, &e, exec_sender, clock);
+        }
+
         // An order that cannot be prepared for IB never leaves the client, so it is denied
         // like an unpreparable order list rather than left INITIALIZED with only a log line
         let contract =
@@ -203,6 +212,10 @@ impl InteractiveBrokersExecutionClient {
         ib_account: Ustr,
         request_timeout_secs: u64,
     ) -> anyhow::Result<()> {
+        instrument_provider
+            .ensure_price_magnifier_async(client, cmd.instrument_id)
+            .await?;
+
         let target_ib_order_id = Self::target_ib_order_id_for_modify(
             cmd,
             client,
@@ -462,6 +475,27 @@ impl InteractiveBrokersExecutionClient {
     ) -> anyhow::Result<()> {
         let num_orders = orders.len();
         anyhow::ensure!(!orders.is_empty(), "Cannot submit an empty order list");
+
+        let mut instrument_ids: Vec<_> = orders.iter().map(OrderAny::instrument_id).collect();
+        instrument_ids.sort_unstable();
+        instrument_ids.dedup();
+
+        for instrument_id in instrument_ids {
+            if let Err(e) = instrument_provider
+                .ensure_price_magnifier_async(client, instrument_id)
+                .await
+            {
+                let reason = coded_denial_reason(DENIAL_ORDER_LIST_INVALID, &format!("{e:#}"));
+                Self::deny_unsubmitted_order_list(
+                    orders,
+                    &reason,
+                    strategy_id,
+                    exec_sender,
+                    clock,
+                )?;
+                return Err(e);
+            }
+        }
 
         let _submit_guard = order_submit_lock.lock().await;
         let mut ib_order_ids = AHashMap::with_capacity(num_orders);

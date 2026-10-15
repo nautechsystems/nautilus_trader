@@ -620,16 +620,7 @@ impl InteractiveBrokersInstrumentProvider {
     /// Returns the price magnifier if found, otherwise 1.
     #[must_use]
     pub fn get_price_magnifier(&self, instrument_id: &InstrumentId) -> i32 {
-        // First try dedicated price magnifier cache for fast lookup
-        if let Some(magnifier) = self.price_magnifiers.get(instrument_id) {
-            return normalize_price_magnifier(*magnifier.value());
-        }
-
-        // Fall back to contract details lookup
-        if let Some(details) = self.contract_details.get(instrument_id) {
-            let magnifier = normalize_price_magnifier(details.value().price_magnifier);
-            // Cache it for future fast lookups
-            self.price_magnifiers.insert(*instrument_id, magnifier);
+        if let Some(magnifier) = self.price_magnifier(instrument_id) {
             return magnifier;
         }
 
@@ -648,6 +639,93 @@ impl InteractiveBrokersInstrumentProvider {
 
         // Default to 1 if not found
         1
+    }
+
+    /// Returns the price magnifier the provider holds for an instrument, from its IB contract
+    /// details or cached instrument metadata, or `None` when it holds none.
+    #[must_use]
+    pub fn price_magnifier(&self, instrument_id: &InstrumentId) -> Option<i32> {
+        if let Some(magnifier) = self.price_magnifiers.get(instrument_id) {
+            return Some(normalize_price_magnifier(*magnifier.value()));
+        }
+
+        let magnifier = normalize_price_magnifier(
+            self.contract_details
+                .get(instrument_id)?
+                .value()
+                .price_magnifier,
+        );
+        self.price_magnifiers.insert(*instrument_id, magnifier);
+        Some(magnifier)
+    }
+
+    /// Seeds an instrument's IB contract and price magnifier from the Nautilus cache when the
+    /// provider holds no price magnifier for it, and returns the magnifier the provider then
+    /// holds.
+    ///
+    /// An instrument another client loads after this provider was seeded reaches the cache, with
+    /// its contract and magnifier in `info`, but not this provider.
+    pub(crate) fn seed_price_magnifier_from_cache(
+        &self,
+        cache: &Cache,
+        instrument_id: &InstrumentId,
+    ) -> Option<i32> {
+        if let Some(magnifier) = self.price_magnifier(instrument_id) {
+            return Some(magnifier);
+        }
+
+        if let Some(instrument) = cache.instrument(instrument_id) {
+            self.add_cached_instruments([instrument.clone()]);
+        }
+
+        self.price_magnifier(instrument_id)
+    }
+
+    /// Returns an instrument's price magnifier, requesting its contract details from IB when the
+    /// provider holds none.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or IB returns no contract details for the
+    /// instrument, so its price magnifier is unknown.
+    pub async fn ensure_price_magnifier_async(
+        &self,
+        client: &ibapi::Client,
+        instrument_id: InstrumentId,
+    ) -> anyhow::Result<i32> {
+        self.ensure_price_magnifier_with(instrument_id, || async {
+            if is_spread_instrument_id(&instrument_id) {
+                self.fetch_spread_instrument(client, instrument_id, true, None)
+                    .await
+                    .map(|_| ())
+            } else {
+                self.fetch_contract_details(client, instrument_id, true, None)
+                    .await
+            }
+        })
+        .await
+    }
+
+    async fn ensure_price_magnifier_with<F, Fut>(
+        &self,
+        instrument_id: InstrumentId,
+        load: F,
+    ) -> anyhow::Result<i32>
+    where
+        F: FnOnce() -> Fut,
+        Fut: std::future::Future<Output = anyhow::Result<()>>,
+    {
+        if let Some(magnifier) = self.price_magnifier(&instrument_id) {
+            return Ok(magnifier);
+        }
+
+        load()
+            .await
+            .with_context(|| format!("Failed to load IB contract details for {instrument_id}"))?;
+
+        self.price_magnifier(&instrument_id).with_context(|| {
+            format!("IB price magnifier for {instrument_id} is unknown: no contract details loaded")
+        })
     }
 
     /// Get an instrument by IB Contract.
@@ -3328,5 +3406,127 @@ mod tests {
         );
         assert_eq!(provider.add_cached_instruments([instrument]), 0);
         assert_eq!(provider.find(&instrument_id), None);
+    }
+
+    #[rstest]
+    fn price_magnifier_is_none_until_contract_metadata_is_loaded() {
+        let provider = InteractiveBrokersInstrumentProvider::new(Default::default());
+        let instrument_id = InstrumentId::from("ZCZ6.CBOT");
+        provider
+            .instruments
+            .insert(instrument_id, create_test_instrument(instrument_id));
+
+        assert_eq!(provider.price_magnifier(&instrument_id), None);
+        assert_eq!(provider.get_price_magnifier(&instrument_id), 1);
+
+        let details = ibapi::contracts::ContractDetails {
+            price_magnifier: 100,
+            ..Default::default()
+        };
+        provider.contract_details.insert(instrument_id, details);
+
+        assert_eq!(provider.price_magnifier(&instrument_id), Some(100));
+        assert_eq!(provider.get_price_magnifier(&instrument_id), 100);
+    }
+
+    #[rstest]
+    fn instrument_cached_after_seeding_supplies_its_price_magnifier() {
+        let provider = InteractiveBrokersInstrumentProvider::new(Default::default());
+        let mut cache = Cache::default();
+        let instrument_id = InstrumentId::from("ZCZ6.CBOT");
+        assert_eq!(provider.seed_from_cache(&cache), 0);
+        assert_eq!(
+            provider.seed_price_magnifier_from_cache(&cache, &instrument_id),
+            None
+        );
+
+        let contract = Contract {
+            contract_id: 815824252,
+            symbol: ibapi::contracts::Symbol::from("ZC"),
+            security_type: SecurityType::Future,
+            exchange: Exchange::from("CBOT"),
+            currency: ibapi::contracts::Currency::from("USD"),
+            ..Default::default()
+        };
+        let instrument = create_test_instrument_with_info(
+            instrument_id,
+            Some(create_contract_info(&contract, Some(100))),
+        );
+        cache.add_instrument(instrument).unwrap();
+
+        assert_eq!(
+            provider.seed_price_magnifier_from_cache(&cache, &instrument_id),
+            Some(100)
+        );
+        assert_eq!(
+            provider
+                .resolve_contract_for_instrument(instrument_id)
+                .unwrap(),
+            contract
+        );
+    }
+
+    #[tokio::test]
+    async fn ensure_price_magnifier_skips_the_request_when_the_magnifier_is_known() {
+        let provider = InteractiveBrokersInstrumentProvider::new(Default::default());
+        let instrument_id = InstrumentId::from("ZCZ6.CBOT");
+        provider.price_magnifiers.insert(instrument_id, 100);
+        let requests = AtomicUsize::new(0);
+
+        let magnifier = provider
+            .ensure_price_magnifier_with(instrument_id, || async {
+                requests.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(magnifier, 100);
+        assert_eq!(requests.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn ensure_price_magnifier_takes_it_from_requested_contract_details() {
+        let provider = InteractiveBrokersInstrumentProvider::new(Default::default());
+        let instrument_id = InstrumentId::from("ZCZ6.CBOT");
+
+        let magnifier = provider
+            .ensure_price_magnifier_with(instrument_id, || async {
+                let details = ibapi::contracts::ContractDetails {
+                    price_magnifier: 100,
+                    ..Default::default()
+                };
+                provider.contract_details.insert(instrument_id, details);
+                Ok(())
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(magnifier, 100);
+    }
+
+    #[rstest]
+    #[case::no_details(false, "IB price magnifier for ZCZ6.CBOT is unknown")]
+    #[case::request_failed(true, "Failed to load IB contract details for ZCZ6.CBOT")]
+    #[tokio::test]
+    async fn ensure_price_magnifier_fails_when_ib_supplies_none(
+        #[case] request_fails: bool,
+        #[case] expected: &str,
+    ) {
+        let provider = InteractiveBrokersInstrumentProvider::new(Default::default());
+        let instrument_id = InstrumentId::from("ZCZ6.CBOT");
+
+        let error = provider
+            .ensure_price_magnifier_with(instrument_id, || async {
+                if request_fails {
+                    anyhow::bail!("Socket disconnected");
+                }
+                Ok(())
+            })
+            .await
+            .unwrap_err();
+
+        assert!(format!("{error:#}").starts_with(expected), "{error:#}");
+        assert_eq!(provider.price_magnifier(&instrument_id), None);
     }
 }

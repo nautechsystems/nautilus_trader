@@ -1191,6 +1191,7 @@ mod tests {
             None,
             avg_px_open,
         )];
+
         let evidence = FillEvidence {
             reports: vec![fill],
             ..Default::default()
@@ -2699,6 +2700,7 @@ mod tests {
     #[rstest]
     fn test_parse_execution_to_fill_report_divides_magnified_price() {
         let (provider, instrument_id) = create_magnified_provider();
+
         let execution = Execution {
             order_id: 12345,
             client_id: 0,
@@ -2741,6 +2743,7 @@ mod tests {
     #[rstest]
     fn test_parse_order_status_to_report_divides_magnified_prices() {
         let (provider, instrument_id) = create_magnified_provider();
+
         let order = Order {
             action: Action::Buy,
             total_quantity: 10.0,
@@ -2792,6 +2795,7 @@ mod tests {
     #[rstest]
     fn test_parse_order_status_to_report_divides_magnified_trailing_prices() {
         let (provider, instrument_id) = create_magnified_provider();
+
         let order = Order {
             action: Action::Sell,
             total_quantity: 10.0,

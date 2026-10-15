@@ -689,6 +689,35 @@ Position average cost is a price in the contract's currency times the multiplier
 divides it by the multiplier only. IB reports a magnified option's computation (the underlying price
 and the greeks) in the contract's currency already, so the adapter publishes it unchanged.
 
+The execution client needs an instrument's magnifier before it submits or modifies an order for it.
+When its provider has not loaded the instrument, for example one a data client loaded after the
+execution client was created, the client takes the contract and magnifier from the instrument in
+the cache, or else requests the contract details from IB. It denies the order, or rejects the
+modify, when neither supplies the magnifier.
+
+#### Upgrading with magnified contracts
+
+Earlier versions converted a magnified contract's prices differently on each path. Before
+upgrading a node that trades or records contracts with a magnifier above 1:
+
+- **Flatten positions and cancel working orders in those contracts.** Earlier versions reported
+  fills and order prices at the magnifier squared times the price this version reports, reported
+  position average prices divided by the magnifier, and divided the prices of orders they sent by
+  it. A position opened before the upgrade and closed after it, or an order placed before it and
+  modified after it, mixes the two scales.
+- **Rebuild cached magnified options.** A magnified option's strike is now divided by the magnifier,
+  but an option instrument cached by an earlier version loads unchanged and keeps its strike in
+  IB's units beside prices in the contract's currency. Delete the provider's instrument cache file
+  (`cache_path`), and remove those instruments from any cache database the node loads instruments
+  from, so the adapter loads them again from IB. Other instruments are unchanged: their price
+  increment is IB's `minTick` in both versions.
+- **Convert recorded live data, not history.** Data from history requests (`request_bars`,
+  `request_quotes`, `request_trades`, and `HistoricalInteractiveBrokersClient`) and index prices
+  were already divided by the magnifier, so they match this version. Data recorded from
+  subscriptions was not: divide tick-by-tick quotes by the magnifier squared, and other quotes,
+  trades, bars, and order book data by the magnifier. Recorded fills, orders, and positions follow
+  the scales in the first item.
+
 ## Configuration reference
 
 ### Data client

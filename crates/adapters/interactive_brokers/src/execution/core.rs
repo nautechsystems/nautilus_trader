@@ -591,6 +591,7 @@ impl InteractiveBrokersExecutionClient {
         orders: Vec<OrderAny>,
     ) -> anyhow::Result<()> {
         let client = self.ib_client.as_ref().context("IB client not connected")?;
+        self.seed_price_magnifiers_from_cache(orders.iter().map(OrderAny::instrument_id));
 
         let order_tracker = self.orders.clone();
         let next_order_id = Arc::clone(&self.next_order_id);
@@ -629,6 +630,21 @@ impl InteractiveBrokersExecutionClient {
             .context("failed to register IB execution command task")?;
 
         Ok(())
+    }
+
+    // The provider is seeded from the cache when the client is created, so an instrument loaded
+    // later (by a data client, say) reaches the cache with its price magnifier but not the
+    // provider. The command handlers request any magnifier still missing from IB.
+    pub(super) fn seed_price_magnifiers_from_cache(
+        &self,
+        instrument_ids: impl IntoIterator<Item = InstrumentId>,
+    ) {
+        let cache = self.core.cache();
+
+        for instrument_id in instrument_ids {
+            self.instrument_provider
+                .seed_price_magnifier_from_cache(&cache, &instrument_id);
+        }
     }
 
     pub(super) fn reserve_next_local_order_id(
@@ -997,6 +1013,8 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
             self.deny_submit_order_not_ready(&cmd, &reason)?;
             return Ok(());
         }
+
+        self.seed_price_magnifiers_from_cache([cmd.instrument_id]);
 
         let client = self.ib_client.as_ref().context("IB client not connected")?;
 
@@ -1825,6 +1843,8 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
             )?;
             return Ok(());
         }
+
+        self.seed_price_magnifiers_from_cache([cmd.instrument_id]);
 
         let client = self.ib_client.as_ref().context("IB client not connected")?;
 
