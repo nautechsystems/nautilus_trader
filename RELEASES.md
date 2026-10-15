@@ -156,6 +156,8 @@ Released on 15th October 2026 (UTC).
 - Fixed Bybit failed quote subscriptions retaining shared order book references (#5258), thanks @Martingale42
 - Fixed Bybit incomplete position reports causing held positions to reconcile as flat
 - Fixed Bybit option quotes repeating when only timestamps change
+- Fixed Bybit option order responses failing to parse without TP/SL limit prices
+- Fixed Bybit cancel-all leaving cached orders open after venue cancellation
 - Fixed Databento data client intraday requests failing to resolve price precision
 - Fixed Deribit position reports failing on fractional leverage (#5240), thanks @abhijeetvichare76
 - Fixed Deribit duplicate fills from order responses and user trade subscriptions

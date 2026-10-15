@@ -916,7 +916,9 @@ pub struct BybitOrder {
     pub smp_group: i32,
     pub smp_order_id: Ustr,
     pub tpsl_mode: Option<BybitTpSlMode>,
+    #[serde(default)]
     pub tp_limit_price: String,
+    #[serde(default)]
     pub sl_limit_price: String,
     pub place_type: Ustr,
     pub created_time: String,
@@ -2001,6 +2003,45 @@ mod tests {
         assert_eq!(order.order_type, BybitOrderType::Limit);
         assert_eq!(order.smp_type, BybitSmpType::None);
         assert_eq!(order.smp_group, 0);
+    }
+
+    #[rstest]
+    #[case::both_missing(true, true)]
+    #[case::tp_missing(true, false)]
+    #[case::sl_missing(false, true)]
+    fn deserialize_option_order_response_without_tp_sl_limit_prices(
+        #[case] omit_tp_limit_price: bool,
+        #[case] omit_sl_limit_price: bool,
+    ) {
+        let mut json: serde_json::Value =
+            serde_json::from_str(&load_test_json("http_get_orders_history.json")).unwrap();
+        let order = json["result"]["list"][0].as_object_mut().unwrap();
+        order.insert(
+            "symbol".to_string(),
+            serde_json::json!("BTC-25SEP26-86500-C-USDT"),
+        );
+        order.insert("orderIv".to_string(), serde_json::json!("0.45"));
+        order.insert("tpLimitPrice".to_string(), serde_json::json!("31000"));
+        order.insert("slLimitPrice".to_string(), serde_json::json!("29000"));
+        if omit_tp_limit_price {
+            order.remove("tpLimitPrice");
+        }
+
+        if omit_sl_limit_price {
+            order.remove("slLimitPrice");
+        }
+
+        let mut expected = serde_json::Value::Object(order.clone());
+        expected["tpLimitPrice"] =
+            serde_json::json!(if omit_tp_limit_price { "" } else { "31000" });
+        expected["slLimitPrice"] =
+            serde_json::json!(if omit_sl_limit_price { "" } else { "29000" });
+
+        let response: BybitOrderHistoryResponse = serde_json::from_value(json).unwrap();
+        let actual = serde_json::to_value(&response.result.list[0]).unwrap();
+
+        assert_eq!(response.result.list.len(), 1);
+        assert_eq!(actual, expected);
     }
 
     #[rstest]
