@@ -367,6 +367,32 @@ def test_portfolio_analyzer_add_return_and_stats() -> None:
     assert len(stats) > 0
 
 
+def test_portfolio_analyzer_stats_are_ordered_by_name() -> None:
+    """
+    Test portfolio analyzer stats are ordered by name.
+    """
+    analyzer = PortfolioAnalyzer()
+
+    for statistic in (
+        ReturnsAverage(),
+        ReturnsVolatility(),
+        SharpeRatio(),
+        SortinoRatio(),
+        ProfitFactor(),
+        RiskReturnRatio(),
+        ReturnsAverageWin(),
+        ReturnsAverageLoss(),
+    ):
+        analyzer.register_statistic(statistic)
+
+    analyzer.add_return(1_000_000_000, 0.01)
+    analyzer.add_return(2_000_000_000, -0.005)
+
+    stats = analyzer.get_performance_stats_returns()
+
+    assert list(stats) == sorted(stats)
+
+
 def test_portfolio_analyzer_add_position_return() -> None:
     """
     Test portfolio analyzer add position return.
