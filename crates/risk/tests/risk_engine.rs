@@ -6177,6 +6177,7 @@ fn test_submit_order_list_check_order_uses_each_orders_own_instrument(
     process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
     cash_account_state_million_usd: AccountState,
     mut simple_cache: Cache,
+    #[values(false, true)] previously_dispatched: bool,
 ) {
     let instrument_a: InstrumentAny = audusd_sim.into();
     let instrument_b: InstrumentAny = gbpusd_sim.into();
@@ -6217,6 +6218,10 @@ fn test_submit_order_list_check_order_uses_each_orders_own_instrument(
             .unwrap();
     }
 
+    if previously_dispatched {
+        simple_cache.mark_orders_dispatched([order_a.client_order_id()]);
+    }
+
     let mut risk_engine =
         get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
 
@@ -6245,18 +6250,24 @@ fn test_submit_order_list_check_order_uses_each_orders_own_instrument(
     risk_engine.execute(TradingCommand::SubmitOrderList(submit));
 
     let saved = get_process_order_event_handler_messages(&process_order_event_handler);
-    // The second order is denied for price precision; the first order is not denied
-    // (no event emitted for the still-pending entry).
+    assert_eq!(
+        saved.len(),
+        orders.len() - usize::from(previously_dispatched)
+    );
     assert!(saved.iter().any(|event| {
         event.event_type() == OrderEventType::Denied
             && event.client_order_id() == order_b.client_order_id()
+            && event
+                .message()
+                .unwrap()
+                .starts_with("PRICE_PRECISION_EXCEEDS_MAXIMUM:")
     }));
-    assert!(
-        !saved.iter().any(|event| {
+    assert_eq!(
+        saved.iter().any(|event| {
             event.event_type() == OrderEventType::Denied
                 && event.client_order_id() == order_a.client_order_id()
         }),
-        "first order should not be denied; check_order is per-order: {saved:?}",
+        !previously_dispatched,
     );
 }
 
