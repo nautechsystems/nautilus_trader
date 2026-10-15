@@ -781,8 +781,8 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
             .await?;
         name_reports_by_cached_order(&self.core.cache(), &mut reports);
 
-        let matched = queried.find_report(&reports)?;
-        let mut stray_rows = queried.has_stray_report(&reports);
+        let matched = queried.find_report(&self.core.cache(), &reports)?;
+        let mut stray_rows = queried.has_stray_report(&self.core.cache(), &reports);
 
         if let Some(mut report) = matched {
             // A terminal history match is priced from its fills; short of them the query fails so
@@ -841,8 +841,8 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
             .await?;
         name_reports_by_cached_order(&self.core.cache(), &mut recent_reports);
 
-        let matched_recent = queried.find_report(&recent_reports)?;
-        stray_rows |= queried.has_stray_report(&recent_reports);
+        let matched_recent = queried.find_report(&self.core.cache(), &recent_reports)?;
+        stray_rows |= queried.has_stray_report(&self.core.cache(), &recent_reports);
 
         // Window filled reports have no avg_px; price them from fills below
         if matched_recent
@@ -865,10 +865,10 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
             .await?;
         name_fills_by_cached_order(&self.core.cache(), &mut fills);
 
-        match (
-            synthesize_filled_order_status_report(&queried, &order, &fills),
-            matched_recent,
-        ) {
+        let synthesized =
+            synthesize_filled_order_status_report(&self.core.cache(), &queried, &order, &fills);
+
+        match (synthesized, matched_recent) {
             (Some(report), _) => Ok(Some(report)),
             // Unpriced filled reports would close at the order price
             (None, Some(_)) => anyhow::bail!(
@@ -876,7 +876,7 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
                  fills; deferring until the fills feed prices it",
                 order.client_order_id(),
             ),
-            (None, None) if stray_rows || queried.has_stray_fill(&fills) => {
+            (None, None) if stray_rows || queried.has_stray_fill(&self.core.cache(), &fills) => {
                 anyhow::bail!(
                     "No report names order {}, yet a venue row or fill that may be its own carries \
                      its client order ID; deferring rather than reporting it missing",
@@ -1994,7 +1994,8 @@ fn cached_order_for_report(cache: &Cache, report: &OrderStatusReport) -> Option<
 /// before the order's creation: an older row is another order whose ID shortens alike or that
 /// reused the ID. A fill carries no placement time, so its fill time stands in, which rules out
 /// only a fill executed before the order's creation. Without a cached order to check against, the
-/// echo alone ties a row to it.
+/// echo alone ties a row to it. A row of a venue order the cache indexes for another order is that
+/// order's whatever it echoes, since another order's full ID can be this order's shortened one.
 struct QueriedOrder {
     venue_order_id: Option<VenueOrderId>,
     client_order_id: Option<ClientOrderId>,
@@ -2040,24 +2041,33 @@ impl QueriedOrder {
                 })
     }
 
-    fn echoes_report(&self, report: &OrderStatusReport) -> bool {
-        report.order_side.is_some_and(|side| {
-            self.echoes(
-                report.client_order_id,
-                report.instrument_id,
-                side,
-                report.ts_accepted,
-            )
-        })
+    /// Whether the cache indexes `venue_order_id` for an order other than this one.
+    fn indexed_for_another(&self, cache: &Cache, venue_order_id: &VenueOrderId) -> bool {
+        cache
+            .client_order_id(venue_order_id)
+            .is_some_and(|owner| Some(*owner) != self.client_order_id)
     }
 
-    fn echoes_fill(&self, fill: &FillReport) -> bool {
-        self.echoes(
-            fill.client_order_id,
-            fill.instrument_id,
-            fill.order_side,
-            fill.ts_event,
-        )
+    fn echoes_report(&self, cache: &Cache, report: &OrderStatusReport) -> bool {
+        !self.indexed_for_another(cache, &report.venue_order_id)
+            && report.order_side.is_some_and(|side| {
+                self.echoes(
+                    report.client_order_id,
+                    report.instrument_id,
+                    side,
+                    report.ts_accepted,
+                )
+            })
+    }
+
+    fn echoes_fill(&self, cache: &Cache, fill: &FillReport) -> bool {
+        !self.indexed_for_another(cache, &fill.venue_order_id)
+            && self.echoes(
+                fill.client_order_id,
+                fill.instrument_id,
+                fill.order_side,
+                fill.ts_event,
+            )
     }
 
     /// The report of this order, named by its client order ID when matched by it.
@@ -2068,6 +2078,7 @@ impl QueriedOrder {
     /// rather than take one of them.
     fn find_report(
         &self,
+        cache: &Cache,
         reports: &[OrderStatusReport],
     ) -> anyhow::Result<Option<OrderStatusReport>> {
         if let Some(venue_order_id) = self.venue_order_id {
@@ -2077,7 +2088,9 @@ impl QueriedOrder {
                 .cloned());
         }
 
-        let mut candidates = reports.iter().filter(|report| self.echoes_report(report));
+        let mut candidates = reports
+            .iter()
+            .filter(|report| self.echoes_report(cache, report));
         let Some(first) = candidates.next() else {
             return Ok(None);
         };
@@ -2097,21 +2110,21 @@ impl QueriedOrder {
 
     /// Whether a report of another venue order can be this order, which leaves absence open:
     /// the venue may hold the order under that report.
-    fn has_stray_report(&self, reports: &[OrderStatusReport]) -> bool {
+    fn has_stray_report(&self, cache: &Cache, reports: &[OrderStatusReport]) -> bool {
         self.venue_order_id.is_some_and(|venue_order_id| {
-            reports
-                .iter()
-                .any(|report| report.venue_order_id != venue_order_id && self.echoes_report(report))
+            reports.iter().any(|report| {
+                report.venue_order_id != venue_order_id && self.echoes_report(cache, report)
+            })
         })
     }
 
     /// Whether a fill other than one of this order's known venue order can be this order's, which
     /// leaves absence open. With the venue order ID unknown, any fill echoing the order counts: it
     /// may be this order's, short of its quantity or beside another venue order's.
-    fn has_stray_fill(&self, fills: &[FillReport]) -> bool {
-        fills
-            .iter()
-            .any(|fill| Some(fill.venue_order_id) != self.venue_order_id && self.echoes_fill(fill))
+    fn has_stray_fill(&self, cache: &Cache, fills: &[FillReport]) -> bool {
+        fills.iter().any(|fill| {
+            Some(fill.venue_order_id) != self.venue_order_id && self.echoes_fill(cache, fill)
+        })
     }
 }
 
@@ -2443,6 +2456,7 @@ fn price_from_fills(
 }
 
 fn synthesize_filled_order_status_report(
+    cache: &Cache,
     queried: &QueriedOrder,
     order: &OrderAny,
     fills: &[FillReport],
@@ -2459,7 +2473,7 @@ fn synthesize_filled_order_status_report(
         None => {
             let matched: Vec<&FillReport> = fills
                 .iter()
-                .filter(|fill| queried.echoes_fill(fill))
+                .filter(|fill| queried.echoes_fill(cache, fill))
                 .collect();
             let first_venue_order_id = matched.first()?.venue_order_id;
 
@@ -2667,6 +2681,7 @@ mod tests {
         ];
 
         let report = synthesize_filled_order_status_report(
+            &Cache::default(),
             &QueriedOrder::new(&cmd, Some(&order)),
             &order,
             &fills,
@@ -2703,6 +2718,7 @@ mod tests {
 
         assert!(
             synthesize_filled_order_status_report(
+                &Cache::default(),
                 &QueriedOrder::new(&cmd, Some(&order)),
                 &order,
                 &fills
@@ -2758,6 +2774,7 @@ mod tests {
             .collect();
 
         let report = synthesize_filled_order_status_report(
+            &Cache::default(),
             &QueriedOrder::new(&cmd, Some(&order)),
             &order,
             &fills,

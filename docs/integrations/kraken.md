@@ -898,7 +898,9 @@ in either form, on the order's instrument and side, placed no more than five
 seconds before the order's creation; an older row is another order whose ID
 shortens alike or that reused the ID. A fill carries no placement time, so its
 fill time stands in, which rules out only a fill executed before the order's
-creation. With the venue order ID unknown, the query fails when one read holds
+creation. A row or fill of a venue order the cache indexes for another order
+never fits, whatever it echoes, since that order's full ID can be this order's
+shortened one. With the venue order ID unknown, the query fails when one read holds
 rows of two venue orders that fit or, no row fitting, the recent fills that fit
 belong to two venue orders or fall short of the order's quantity; with it known,
 the query fails when no row or fill carries it and a fitting row or fill of
