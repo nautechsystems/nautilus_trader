@@ -25,11 +25,14 @@ use async_trait::async_trait;
 use futures_util::{StreamExt, pin_mut};
 use nautilus_common::{
     clients::ExecutionClient,
-    live::runner::get_exec_event_sender,
-    messages::execution::{
-        BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
-        GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
-        ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
+    live::{runner::get_exec_event_sender, sender::EventSender},
+    messages::{
+        ExecutionEvent,
+        execution::{
+            BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
+            GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
+            ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
+        },
     },
 };
 use nautilus_core::{
@@ -173,6 +176,10 @@ impl AxExecutionClient {
             pending_tasks,
             shutdown_errors: Vec::new(),
         })
+    }
+
+    pub(crate) fn set_event_sender(&mut self, sender: EventSender<ExecutionEvent>) {
+        self.emitter.set_sender(sender);
     }
 
     async fn authenticate(&self, credential: &Credential) -> anyhow::Result<SecretString> {
@@ -2224,12 +2231,14 @@ mod tests {
     use dashmap::DashMap;
     use nautilus_common::{
         cache::Cache,
+        live::runner::replace_exec_event_sender,
         messages::{ExecutionEvent, ExecutionReport},
     };
     use nautilus_core::time::get_atomic_clock_realtime;
     use nautilus_live::ExecutionClientCore;
     use nautilus_model::{
         enums::AssetClass,
+        events::order::spec::OrderSubmittedSpec,
         identifiers::{
             AccountId, ClientOrderId, InstrumentId, StrategyId, Symbol, TraderId, VenueOrderId,
         },
@@ -2255,6 +2264,61 @@ mod tests {
             orders::OrdersCaches,
         },
     };
+
+    #[rstest]
+    fn test_start_replaces_sender_for_emitter_clone() {
+        std::thread::spawn(|| {
+            let core = ExecutionClientCore::new(
+                TraderId::from("TESTER-002"),
+                *AX_CLIENT_ID,
+                *AX_VENUE,
+                OmsType::Netting,
+                AccountId::from("AX-002"),
+                AccountType::Margin,
+                None,
+                Rc::new(RefCell::new(Cache::default())),
+            );
+            let mut client =
+                AxExecutionClient::new(core, AxExecutionClientConfig::default()).unwrap();
+            let emitter = client.emitter.clone();
+            let (sender_initial, mut receiver_initial) = tokio::sync::mpsc::unbounded_channel();
+            let (sender_current, mut receiver_current) = tokio::sync::mpsc::unbounded_channel();
+            let event = OrderEventAny::Submitted(
+                OrderSubmittedSpec::builder()
+                    .trader_id(TraderId::from("TESTER-002"))
+                    .account_id(AccountId::from("AX-002"))
+                    .client_order_id(ClientOrderId::from("O-SENDER-002"))
+                    .build(),
+            );
+
+            client.set_event_sender(sender_initial.into());
+            emitter.send_order_event(event.clone());
+
+            let ExecutionEvent::Order(received) = receiver_initial.try_recv().unwrap() else {
+                panic!("Expected order event");
+            };
+            assert_eq!(received, event);
+
+            replace_exec_event_sender(sender_current);
+            client.start().unwrap();
+            emitter.send_order_event(event.clone());
+
+            let ExecutionEvent::Order(received) = receiver_current.try_recv().unwrap() else {
+                panic!("Expected order event");
+            };
+            assert_eq!(received, event);
+            assert_eq!(
+                receiver_initial.try_recv().unwrap_err(),
+                tokio::sync::mpsc::error::TryRecvError::Disconnected
+            );
+            assert_eq!(
+                receiver_current.try_recv().unwrap_err(),
+                tokio::sync::mpsc::error::TryRecvError::Empty
+            );
+        })
+        .join()
+        .unwrap();
+    }
 
     fn test_caches() -> OrdersCaches {
         OrdersCaches {
