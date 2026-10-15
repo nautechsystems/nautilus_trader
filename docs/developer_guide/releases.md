@@ -204,6 +204,8 @@ Wrong trusted-publishing repositories and checksum or sparse-index mismatches al
 - [ ] Ensure versions are set in `python/pyproject.toml` and the `Cargo.toml` workspace
 - [ ] Ensure crates.io Trusted Publishing is configured for every crate that CI publishes:
   `bash scripts/ci/check-crates-io-trusted-publishing.sh`
+- [ ] Run `make check-features` locally on the final release candidate
+- [ ] Run `make check-docsrs` locally on the final release candidate
 - [ ] Ensure all CI checks pass on `develop`
 
 ### Release

@@ -1199,8 +1199,8 @@ jobs:
         with:
           tool: cargo-hack
 
-      - name: Run docsrs-check
-        run: make docsrs-check
+      - name: Run check-docsrs
+        run: make check-docsrs
 
       - name: Run check-features
         run: make check-features

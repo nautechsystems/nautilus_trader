@@ -227,7 +227,7 @@ CARGO_BUILD_JOB_TARGETS := install install-debug build build-debug build-wheel p
 	check-code-sim check-code-standard-precision \
 	check-all-targets clippy clippy-fix clippy-fix-nightly clippy-pedantic-crate-% \
 	clippy-strict-audit \
-	docs docs-rust docsrs-check cargo-build cargo-check check-features check-features-defi \
+	docs docs-rust check-docsrs cargo-build cargo-check check-features check-features-defi \
 	hawk cargo-test \
 	cargo-test-extras cargo-test-postgres-ci cargo-test-doc cargo-test-core-local cargo-test-core-selected \
 	cargo-test-core cargo-test-adapters cargo-test-sim cargo-test-core-debug \
@@ -656,10 +656,10 @@ docs-rust: export RUSTDOCFLAGS=--enable-index-page -Zunstable-options $(if $(RUS
 docs-rust: check-cargo-cooldown  #-- Build Rust documentation with cargo doc
 	cargo +nightly doc --locked --all-features --no-deps --workspace
 
-.PHONY: docsrs-check
-docsrs-check: export DOCS_RS=1
-docsrs-check: export RUSTDOCFLAGS=--cfg docsrs -D warnings
-docsrs-check: check-cargo-cooldown check-hack-installed #-- Check documentation builds for docs.rs compatibility
+.PHONY: check-docsrs
+check-docsrs: export DOCS_RS=1
+check-docsrs: export RUSTDOCFLAGS=--cfg docsrs -D warnings
+check-docsrs: check-cargo-cooldown check-hack-installed #-- Check documentation builds for docs.rs compatibility
 	cargo +$(DOCSRS_TOOLCHAIN) hack --workspace --ignore-private --ignore-unknown-features \
 		--features arrow,arrow-display,capnp,cloud,defi \
 		--features example-databento,examples,ffi,high-precision,host \
@@ -701,8 +701,8 @@ LYCHEE_FLAGS = \
 	--max-concurrency 10 \
 	--accept "100..=103,200..=299,429,502..=504"
 
-.PHONY: docs-check-links
-docs-check-links:  #-- Check for broken links in documentation (periodic audit)
+.PHONY: check-docs-links
+check-docs-links:  #-- Check for broken links in documentation (periodic audit)
 	$(info $(M) Checking documentation links...)
 	@git ls-files -- '*.rs' ':(exclude)patches/**' \
 		| python3 -B scripts/extract-doc-links.py $(DOC_LINKS)

@@ -354,8 +354,8 @@ jobs:
       - name: Dry-run Cargo crate publishing
         run: bash scripts/ci/publish-cargo-crates.sh --dry-run
 
-  docsrs-check:
-    name: docsrs-check
+  check-docsrs:
+    name: check-docsrs
     runs-on: [self-hosted, Linux, X64, self-hosted-linux-x86]
     env:
       # Outside the workspace so it survives actions/checkout's git clean -ffdx,
@@ -394,8 +394,8 @@ jobs:
         with:
           tool: cargo-hack
 
-      - name: Run docsrs-check
-        run: make docsrs-check
+      - name: Run check-docsrs
+        run: make check-docsrs
 
   check-features:
     name: check-features
