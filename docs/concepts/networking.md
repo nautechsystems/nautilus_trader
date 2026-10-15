@@ -93,10 +93,12 @@ value `false` or an unset variable keeps the fixed windows, and any other value 
 
 Buffered responses contain the status, only the header names selected when the client was built, and the raw
 body bytes. The client rejects a declared body larger than 100 MiB before reading it. For chunked
-or unbounded responses, it stops as soon as accumulated bytes would cross the same limit. Transport
-error messages carry the request URL without its query string or fragment, so query credentials
-cannot leak through errors. Endpoints whose path can also contain credentials can use the redacted
-request path, which omits the URL from transport errors.
+or unbounded responses, it stops as soon as accumulated bytes would cross the same limit.
+
+The client adds only the request origin (scheme, host, and port) to transport errors and response-stream
+diagnostics. It excludes userinfo, paths, queries, and fragments from this URL context. Set
+`HttpClient::builder().redact_url(true)` to omit the added origin. Requests and diagnostic messages
+from lower layers are unchanged; TLS certificate errors and dependency logs can still include the hostname.
 
 `HttpClient::get_stream` returns status and body chunks without accumulating the complete response
 or applying the buffered size limit. One absolute deadline covers headers and the whole body,

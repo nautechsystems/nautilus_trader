@@ -727,7 +727,7 @@ impl BinanceRawSpotHttpClient {
 
         let response = self
             .client
-            .request_with_url_redacted(
+            .request(
                 method,
                 url,
                 None::<&HashMap<String, Vec<String>>>,
@@ -1349,7 +1349,7 @@ impl BinanceRawSpotHttpClient {
 
         let response = self
             .client
-            .request_with_url_redacted(
+            .request(
                 method,
                 url,
                 None::<&HashMap<String, Vec<String>>>,
@@ -1978,7 +1978,7 @@ impl BinanceRawSpotHttpClient {
 
         let response = self
             .client
-            .request_with_url_redacted(
+            .request(
                 method,
                 url,
                 None::<&HashMap<String, Vec<String>>>,

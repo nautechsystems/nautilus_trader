@@ -3842,10 +3842,9 @@ pub(crate) mod serial_tests {
             .expect_err("data client disconnect should fail");
         node.dispose();
 
-        assert!(
-            err.to_string()
-                .contains("simulated data client disconnect failure"),
-            "unexpected error: {err:#}"
+        assert_eq!(
+            err.to_string(),
+            "Failed to disconnect data clients: FAILING-DISCONNECT-DATA"
         );
         assert!(data_state.disconnect_attempted.load(Ordering::Relaxed));
         assert!(exec_state.disconnect_attempted.load(Ordering::Relaxed));

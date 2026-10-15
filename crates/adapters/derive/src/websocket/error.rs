@@ -107,6 +107,23 @@ impl DeriveWsError {
     pub fn transport(msg: impl Into<String>) -> Self {
         Self::Transport(msg.into())
     }
+
+    pub(crate) fn redacted_message(&self) -> String {
+        match self {
+            Self::JsonRpc { code, .. } => format!("JSON-RPC error {code}"),
+            Self::RateLimited { retry_after } => {
+                format!("rate limited, retry after {retry_after:?}")
+            }
+            Self::Transport(_) => "transport error".to_string(),
+            Self::Serde(_) => "JSON error".to_string(),
+            Self::RequestCancelled { .. } => "request cancelled".to_string(),
+            Self::Timeout { .. } => "request timed out".to_string(),
+            Self::Auth(_) | Self::Authentication { .. } => "authentication error".to_string(),
+            Self::Subscription { .. } => "subscription failed".to_string(),
+            Self::MissingCredentials { .. } => "missing credentials".to_string(),
+            Self::NotConnected => "not connected".to_string(),
+        }
+    }
 }
 
 #[cfg(test)]

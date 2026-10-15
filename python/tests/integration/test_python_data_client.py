@@ -1679,11 +1679,13 @@ def test_failed_lifecycle_releases_background_tasks_and_cache(operation, launch)
     message = (
         "readiness timeout while waiting for engine connections"
         if operation == "connect"
-        else "Adapter disconnection failed"
+        else "Failed to disconnect data clients: PYTHON"
     )
-    with pytest.raises(RuntimeError, match=message):
+    with pytest.raises(RuntimeError, match=message) as error:
         run()
 
+    assert "Adapter connection failed" not in str(error.value)
+    assert "Adapter disconnection failed" not in str(error.value)
     assert calls == ["background_closed"]
     assert clients[0]._runtime.complete is True
     # A failed disconnect must not report a successfully disconnected transport

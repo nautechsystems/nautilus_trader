@@ -75,3 +75,12 @@ pub use crate::{
     execution::DeriveExecutionClient,
     factories::{DeriveDataClientFactory, DeriveExecutionClientFactory},
 };
+
+#[cfg(test)]
+#[allow(
+    dead_code,
+    reason = "shared logging fixture also provides integration-only WebSocket servers"
+)]
+mod client_logging {
+    include!("../../../network/tests/integration/common/client_logging.rs");
+}

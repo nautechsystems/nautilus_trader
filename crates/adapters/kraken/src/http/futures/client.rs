@@ -46,6 +46,7 @@ use nautilus_model::{
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
 use nautilus_network::{
+    ConnectionUrl,
     http::{
         HttpClient, HttpRedirectPolicy, HttpResponse, Method, create_standard_nautilus_headers,
     },
@@ -108,7 +109,7 @@ const NEXT_CONTINUATION_TOKEN_HEADER: &str = "Next-Continuation-Token";
 /// This client handles request/response operations with the Kraken Futures API,
 /// returning venue-specific response types. It does not parse to Nautilus domain types.
 pub struct KrakenFuturesRawHttpClient {
-    base_url: String,
+    base_url: ConnectionUrl,
     client: HttpClient,
     credential: Option<KrakenCredential>,
     retry_manager: RetryManager<KrakenHttpError>,
@@ -173,7 +174,7 @@ impl KrakenFuturesRawHttpClient {
         });
 
         Ok(Self {
-            base_url,
+            base_url: base_url.into(),
             client: HttpClient::builder()
                 .headers(Self::default_headers())
                 .header_keys(vec![NEXT_CONTINUATION_TOKEN_HEADER.to_string()])
@@ -222,7 +223,7 @@ impl KrakenFuturesRawHttpClient {
         });
 
         Ok(Self {
-            base_url,
+            base_url: base_url.into(),
             client: HttpClient::builder()
                 .redirect_policy(HttpRedirectPolicy::Reject)
                 .headers(Self::default_headers())
@@ -251,7 +252,7 @@ impl KrakenFuturesRawHttpClient {
 
     /// Returns the base URL for this client.
     pub fn base_url(&self) -> &str {
-        &self.base_url
+        self.base_url.expose()
     }
 
     /// Returns the credential for this client, if set.
@@ -345,9 +346,9 @@ impl KrakenFuturesRawHttpClient {
                         KrakenHttpError::AuthenticationError(format!("Failed to sign request: {e}"))
                     })?;
 
-                    let base_url = &self.base_url;
                     log::debug!(
-                        "Kraken Futures auth: endpoint={endpoint}, nonce={nonce}, base_url={base_url}"
+                        "Kraken Futures auth: endpoint={endpoint}, nonce={nonce}, base_url={}",
+                        self.base_url.origin()
                     );
 
                     headers.insert("APIKey".to_string(), cred.api_key().to_string());
@@ -369,7 +370,12 @@ impl KrakenFuturesRawHttpClient {
                         Some(rate_limit_keys),
                     )
                     .await
-                    .map_err(|e| KrakenHttpError::NetworkError(e.to_string()))?;
+                    .map_err(|e| {
+                        KrakenHttpError::NetworkError(format!(
+                            "Request to {} failed: {e}",
+                            self.base_url.origin()
+                        ))
+                    })?;
 
                 let status = response.status.as_u16();
                 if status >= 400 {
@@ -479,7 +485,12 @@ impl KrakenFuturesRawHttpClient {
                 Some(rate_limit_keys),
             )
             .await
-            .map_err(|e| KrakenHttpError::NetworkError(e.to_string()))?;
+            .map_err(|e| {
+                KrakenHttpError::NetworkError(format!(
+                    "Request to {} failed: {e}",
+                    self.base_url.origin()
+                ))
+            })?;
 
         let status = response.status.as_u16();
         if status >= 400 {
@@ -571,7 +582,7 @@ impl KrakenFuturesRawHttpClient {
                 KrakenHttpError::RequestNotStarted(format!("Failed to sign request: {e}"))
             })?;
 
-        let url = format!("{}{endpoint}", self.base_url);
+        let url = format!("{}{endpoint}", self.base_url.expose());
         let mut headers = Self::default_headers();
         headers.insert(
             "Content-Type".to_string(),
@@ -656,7 +667,9 @@ impl KrakenFuturesRawHttpClient {
                 }
             }
             response = &mut request => response
-                .map_err(|e| KrakenHttpError::NetworkError(e.to_string())),
+                .map_err(|e| KrakenHttpError::NetworkError(
+                    format!("Request to {} failed: {e}", self.base_url.origin())
+                )),
         }
     }
 
@@ -665,7 +678,7 @@ impl KrakenFuturesRawHttpClient {
         &self,
     ) -> anyhow::Result<FuturesInstrumentsResponse, KrakenHttpError> {
         let endpoint = "/derivatives/api/v3/instruments";
-        let url = format!("{}{endpoint}", self.base_url);
+        let url = format!("{}{endpoint}", self.base_url.expose());
 
         self.send_request(Method::GET, endpoint, url, false).await
     }
@@ -673,7 +686,7 @@ impl KrakenFuturesRawHttpClient {
     /// Requests ticker information for all futures instruments.
     pub async fn get_tickers(&self) -> anyhow::Result<FuturesTickersResponse, KrakenHttpError> {
         let endpoint = "/derivatives/api/v3/tickers";
-        let url = format!("{}{endpoint}", self.base_url);
+        let url = format!("{}{endpoint}", self.base_url.expose());
 
         self.send_request(Method::GET, endpoint, url, false).await
     }
@@ -684,7 +697,7 @@ impl KrakenFuturesRawHttpClient {
         symbol: &str,
     ) -> anyhow::Result<FuturesOrderBookResponse, KrakenHttpError> {
         let endpoint = format!("/derivatives/api/v3/orderbook?symbol={symbol}");
-        let url = format!("{}{endpoint}", self.base_url);
+        let url = format!("{}{endpoint}", self.base_url.expose());
 
         self.send_request(Method::GET, &endpoint, url, false).await
     }
@@ -695,7 +708,7 @@ impl KrakenFuturesRawHttpClient {
         symbol: &str,
     ) -> anyhow::Result<FuturesHistoricalFundingRatesResponse, KrakenHttpError> {
         let endpoint = format!("/derivatives/api/v4/historicalfundingrates?symbol={symbol}");
-        let url = format!("{}{endpoint}", self.base_url);
+        let url = format!("{}{endpoint}", self.base_url.expose());
 
         self.send_request(Method::GET, &endpoint, url, false).await
     }
@@ -711,7 +724,7 @@ impl KrakenFuturesRawHttpClient {
     ) -> anyhow::Result<FuturesCandlesResponse, KrakenHttpError> {
         let endpoint = format!("/api/charts/v1/{tick_type}/{symbol}/{resolution}");
 
-        let mut url = format!("{}{endpoint}", self.base_url);
+        let mut url = format!("{}{endpoint}", self.base_url.expose());
 
         let mut query_params = Vec::new();
 
@@ -742,7 +755,7 @@ impl KrakenFuturesRawHttpClient {
     ) -> anyhow::Result<FuturesPublicExecutionsResponse, KrakenHttpError> {
         let endpoint = format!("/api/history/v3/market/{symbol}/executions");
 
-        let mut url = format!("{}{endpoint}", self.base_url);
+        let mut url = format!("{}{endpoint}", self.base_url.expose());
 
         let mut query_params = Vec::new();
 
@@ -781,7 +794,7 @@ impl KrakenFuturesRawHttpClient {
         }
 
         let endpoint = "/derivatives/api/v3/openorders";
-        let url = format!("{}{endpoint}", self.base_url);
+        let url = format!("{}{endpoint}", self.base_url.expose());
 
         self.send_request(Method::GET, endpoint, url, true).await
     }
@@ -821,10 +834,11 @@ impl KrakenFuturesRawHttpClient {
 
         // Build URL with query params
         let query_string = query_params.join("&");
+
         let url = if query_string.is_empty() {
-            format!("{}{endpoint}", self.base_url)
+            format!("{}{endpoint}", self.base_url.expose())
         } else {
-            format!("{}{endpoint}?{query_string}", self.base_url)
+            format!("{}{endpoint}?{query_string}", self.base_url.expose())
         };
 
         // For signing: query params go in postData, not endpoint
@@ -904,9 +918,9 @@ impl KrakenFuturesRawHttpClient {
             .unwrap_or_default();
 
         let url = if query_string.is_empty() {
-            format!("{}{endpoint}", self.base_url)
+            format!("{}{endpoint}", self.base_url.expose())
         } else {
-            format!("{}{endpoint}?{query_string}", self.base_url)
+            format!("{}{endpoint}?{query_string}", self.base_url.expose())
         };
 
         // Query params go in postData for signing
@@ -924,7 +938,7 @@ impl KrakenFuturesRawHttpClient {
         }
 
         let endpoint = "/derivatives/api/v3/openpositions";
-        let url = format!("{}{endpoint}", self.base_url);
+        let url = format!("{}{endpoint}", self.base_url.expose());
 
         self.send_request(Method::GET, endpoint, url, true).await
     }
@@ -938,7 +952,7 @@ impl KrakenFuturesRawHttpClient {
         }
 
         let endpoint = "/derivatives/api/v3/accounts";
-        let url = format!("{}{endpoint}", self.base_url);
+        let url = format!("{}{endpoint}", self.base_url.expose());
 
         self.send_request(Method::GET, endpoint, url, true).await
     }

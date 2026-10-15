@@ -48,6 +48,7 @@ use nautilus_model::{
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
 use nautilus_network::{
+    ConnectionUrl,
     http::{
         HttpClient, HttpRedirectPolicy, HttpResponse, Method, create_standard_nautilus_headers,
     },
@@ -112,7 +113,7 @@ const BATCH_SUBMIT_LIMIT: usize = 15;
 /// This client handles request/response operations with the Kraken Spot API,
 /// returning venue-specific response types. It does not parse to Nautilus domain types.
 pub struct KrakenSpotRawHttpClient {
-    base_url: String,
+    base_url: ConnectionUrl,
     client: HttpClient,
     credential: Option<KrakenCredential>,
     retry_manager: RetryManager<KrakenHttpError>,
@@ -177,7 +178,7 @@ impl KrakenSpotRawHttpClient {
         });
 
         Ok(Self {
-            base_url,
+            base_url: base_url.into(),
             client: HttpClient::builder()
                 .headers(Self::default_headers())
                 .keyed_quotas(Self::rate_limiter_quotas(max_requests_per_second)?)
@@ -225,7 +226,7 @@ impl KrakenSpotRawHttpClient {
         });
 
         Ok(Self {
-            base_url,
+            base_url: base_url.into(),
             client: HttpClient::builder()
                 .redirect_policy(HttpRedirectPolicy::Reject)
                 .headers(Self::default_headers())
@@ -253,7 +254,7 @@ impl KrakenSpotRawHttpClient {
 
     /// Returns the base URL for this client.
     pub fn base_url(&self) -> &str {
-        &self.base_url
+        self.base_url.expose()
     }
 
     /// Returns the credential for this client, if set.
@@ -524,7 +525,7 @@ impl KrakenSpotRawHttpClient {
             self.send_order_request(method, endpoint, headers, final_body, cancellation_token)
                 .await?
         } else {
-            let url = format!("{}{endpoint}", self.base_url);
+            let url = format!("{}{endpoint}", self.base_url.expose());
             let rate_limit_keys = Self::rate_limit_keys(endpoint);
             self.client
                 .request(
@@ -537,7 +538,12 @@ impl KrakenSpotRawHttpClient {
                     Some(rate_limit_keys),
                 )
                 .await
-                .map_err(|e| KrakenHttpError::NetworkError(e.to_string()))?
+                .map_err(|e| {
+                    KrakenHttpError::NetworkError(format!(
+                        "Request to {} failed: {e}",
+                        self.base_url.origin()
+                    ))
+                })?
         };
 
         let status = response.status.as_u16();
@@ -581,7 +587,7 @@ impl KrakenSpotRawHttpClient {
         }
 
         let request_started = AtomicBool::new(false);
-        let url = format!("{}{endpoint}", self.base_url);
+        let url = format!("{}{endpoint}", self.base_url.expose());
         let rate_limit_keys = Self::rate_limit_keys(endpoint);
         let request = async {
             request_started.store(true, Ordering::Relaxed);
@@ -613,7 +619,7 @@ impl KrakenSpotRawHttpClient {
                 }
             }
             response = &mut request => response
-                .map_err(|e| KrakenHttpError::NetworkError(e.to_string())),
+                .map_err(|e| KrakenHttpError::NetworkError(format!("Request to {} failed: {e}", self.base_url.origin()))),
         }
     }
 
@@ -1102,7 +1108,7 @@ impl KrakenSpotRawHttpClient {
         headers.insert("API-Sign".to_string(), signature);
         headers.insert("Content-Type".to_string(), "application/json".to_string());
 
-        let url = format!("{}{endpoint}", self.base_url);
+        let url = format!("{}{endpoint}", self.base_url.expose());
         let rate_limit_keys = Self::rate_limit_keys(endpoint);
 
         let response = self
@@ -1117,7 +1123,12 @@ impl KrakenSpotRawHttpClient {
                 Some(rate_limit_keys),
             )
             .await
-            .map_err(|e| KrakenHttpError::NetworkError(e.to_string()))?;
+            .map_err(|e| {
+                KrakenHttpError::NetworkError(format!(
+                    "Request to {} failed: {e}",
+                    self.base_url.origin()
+                ))
+            })?;
 
         if response.status.as_u16() >= 400 {
             let status = response.status.as_u16();

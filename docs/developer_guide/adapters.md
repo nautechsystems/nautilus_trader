@@ -464,31 +464,38 @@ methods.
 Classify a value before choosing its type and diagnostic output. Apply the more restrictive rule
 when a venue gives one value more than one role.
 
-| Value class                  | Examples                                                                                                      | Diagnostic output                                                                       |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Secret material              | Passwords, private keys, API secrets, passphrases, bearer and session tokens, refresh tokens, and signatures. | Always show `<redacted>`.                                                               |
-| Credential identity          | API keys, client IDs, usernames, and account identifiers used during authentication.                          | Redact by default. Use a masked API key only when operational correlation requires it.  |
-| Secret-bearing location      | Proxy URLs, RPC URLs, request paths, and query parameters that can contain credentials.                       | Redact the complete location from logs and errors.                                      |
-| Deliberately public identity | Wallet addresses, vault addresses, and public account names that the venue exposes publicly.                  | Show only when the type and adapter contract deliberately classify the value as public. |
+| Value class                  | Examples                                                                                                      | Diagnostic output                                                                              |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Secret material              | Passwords, private keys, API secrets, passphrases, bearer and session tokens, refresh tokens, and signatures. | Always show `<redacted>`.                                                                      |
+| Credential identity          | API keys, client IDs, usernames, and account identifiers used during authentication.                          | Redact by default. Use a masked API key only when operational correlation requires it.         |
+| Secret-bearing location      | Proxy URLs, RPC URLs, request paths, and query parameters that can contain credentials.                       | Show at most a public origin (see below); redact the whole location when its origin is secret. |
+| Deliberately public identity | Wallet addresses, vault addresses, and public account names that the venue exposes publicly.                  | Show only when the type and adapter contract deliberately classify the value as public.        |
 
 An API key, username, or URL can be insufficient to authenticate by itself. Do not infer from this that it is
 safe to print. Configs often cross logging, exception, and Python representation boundaries where partial
 credential identity stays sensitive.
 
+When the adapter classifies a URL's scheme, host, and port as public, diagnostics may show only that
+origin. Omit user information, paths, queries, and fragments. If the origin itself contains a credential
+identity, as some RPC URLs do, redact the whole URL with `SecretString` or `REDACTED`.
+
 #### Use the common secret types
 
-Use `nautilus_core::string::secret` and `zeroize` instead of defining adapter-local redaction or
-zeroization conventions.
+Use `nautilus_core::string::secret`, `nautilus_network`, and `zeroize` instead of defining adapter-local
+redaction or zeroization conventions.
 
-| Mechanism                     | Use                                                                                                                                   |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `SecretString`                | Own a string that must zeroize on drop and render as `<redacted>` with `Debug`.                                                       |
-| `REDACTED`                    | Replace an unconditional secret field in a custom `Debug` or `Display` implementation.                                                |
-| `redact_option`               | Preserve `Some` versus `None` while redacting an optional field in a custom `Debug`.                                                  |
-| `mask_api_key`                | Correlate an API key only through an explicit masked-identity method. Do not use it for secret material.                              |
-| `Zeroizing<T>`                | Bound the lifetime of an owned plaintext `String`, byte buffer, decoded key, canonical payload, or serialized authentication message. |
-| `Zeroize` and `ZeroizeOnDrop` | Clear secret-bearing fields in structs that cannot use `SecretString`, including byte arrays and signing types.                       |
-| `zeroize_json_value`          | Clear owned strings in a mutable JSON value after serializing secret-bearing fields.                                                  |
+| Mechanism                          | Use                                                                                                                                   |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `SecretString`                     | Own a string that must zeroize on drop and render as `<redacted>` with `Debug`.                                                       |
+| `ConnectionUrl`                    | Store a URL with a public origin; `Debug` shows that origin. Borrow the original value with `expose()` only where required.           |
+| `url_origin`                       | Format the public HTTP or WebSocket origin of a URL, including compatible stored `String` fields; otherwise show `<redacted>`.        |
+| `TransportError::redacted_message` | Keep a typed transport category, I/O kind, and HTTP rejection status while omitting arbitrary error payloads.                         |
+| `REDACTED`                         | Replace an unconditional secret field in a custom `Debug` or `Display` implementation.                                                |
+| `redact_option`                    | Preserve `Some` versus `None` while redacting an optional field in a custom `Debug`.                                                  |
+| `mask_api_key`                     | Correlate an API key only through an explicit masked-identity method. Do not use it for secret material.                              |
+| `Zeroizing<T>`                     | Bound the lifetime of an owned plaintext `String`, byte buffer, decoded key, canonical payload, or serialized authentication message. |
+| `Zeroize` and `ZeroizeOnDrop`      | Clear secret-bearing fields in structs that cannot use `SecretString`, including byte arrays and signing types.                       |
+| `zeroize_json_value`               | Clear owned strings in a mutable JSON value after serializing secret-bearing fields.                                                  |
 
 #### Use `SecretString` safely
 
@@ -527,7 +534,8 @@ zeroization conventions.
 - Convert credential strings accepted by a Python constructor to `SecretString` at the Rust
   boundary.
 - Apply the Rust `Debug` and `Display` redaction rules to Python `__repr__` and `__str__`.
-- Expose only a presence check for secret material and secret-bearing locations.
+- Expose only a presence check for secret material and secret-bearing locations, except for an
+  existing endpoint URL getter required for caller compatibility. Keep that raw value out of diagnostics.
 - Return credential identity, such as a username, only when an existing public API or another
   explicit caller needs it. Document the choice and keep the value out of diagnostics.
 - Never expose passwords, private keys, API secrets, passphrases, tokens, or signatures through
@@ -546,8 +554,8 @@ zeroization conventions.
 
 #### Redact diagnostics and transport errors
 
-- Never include credentials, signatures, secret material, or secret-bearing URLs in errors or logs
-  at any level.
+- Never include credentials, signatures, secret material, or secret-bearing URL components in errors
+  or logs at any level. Show at most an origin classified as public under the location rule above.
 - Log request metadata such as the method, field count, and byte lengths instead of credentials or
   authentication payloads. Shared transports log metadata rather than payload contents.
 - Treat TRACE as developer-facing diagnostic output. Raw inbound payloads are allowed when their
@@ -559,14 +567,19 @@ zeroization conventions.
 - Never log a raw authentication request or response, or any frame whose schema can contain secret
   material.
 
-| Surface                      | Required handling                                                                                                | Zeroization boundary                                                   |
+| Surface                      | Required handling                                                                                                | Boundary                                                               |
 | ---------------------------- | ---------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
 | HTTP secret body             | Use `HttpClient::request_with_secret_body`.                                                                      | The client retains the zeroizing owner. Lower layers may copy it.      |
-| HTTP path or `HashMap` query | Use `HttpClient::request_with_url_redacted`.                                                                     | The URL is omitted from transport errors.                              |
-| HTTP typed query             | Use `HttpClient::request_with_params_url_redacted`.                                                              | The URL is omitted from transport errors.                              |
+| HTTP path or `HashMap` query | Use `HttpClient::request`.                                                                                       | The client adds only the request origin as URL context.                |
+| HTTP typed query             | Use `HttpClient::request_with_params`.                                                                           | The client adds only the request origin as URL context.                |
+| HTTP secret origin           | Set `HttpClient::builder().redact_url(true)` for endpoints whose origin is secret.                               | The client adds no URL context.                                        |
 | HTTP headers and proxy       | Create credential-bearing strings at the client boundary, avoid clones, and do not retain them in adapter state. | The shared client or transport may retain copies.                      |
 | WebSocket authentication     | Keep fields and serialized frames in `SecretString`. Create the final `String` immediately before `send_text`.   | The shared client has no secret-owner-preserving send method.          |
 | Unsupported combination      | Extend the common client instead of implementing adapter-local URL or error scrubbing.                           | The common API must define the resulting ownership and redaction rule. |
+
+The HTTP URL policy controls the URL context added by `HttpClient`. Diagnostic messages from
+lower layers are unchanged. For example, TLS certificate verification can include the hostname
+in its errors and dependency logs, even when `redact_url(true)` is set.
 
 :::warning Disable redirects for authenticated requests
 
@@ -588,7 +601,8 @@ Test the secret-handling contract as well as successful authentication:
 - Assert that serialization and transport preserve the exact wire value where the venue requires
   plaintext.
 - Force transport failures for credential-bearing URLs and assert that both `Display` and `Debug`
-  error output omit the URL, path secret, and query secret.
+  error output omit user information, path secrets, query secrets, and fragments. Assert that a
+  permitted public origin remains visible; otherwise assert complete redaction.
 - Use compile-time trait assertions for `Zeroize` or `ZeroizeOnDrop`, and test explicit clearing for
   mutable request and response models.
 - Keep deterministic signature vectors so redaction and zeroization changes cannot alter signing
@@ -1584,6 +1598,11 @@ Two conditions are easy to misfile:
 Preserve a structured diagnostic error through classification and logging. Derive a
 strategy-facing reason only at the execution event boundary, after the outcome and retry decisions.
 
+For opaque errors from client traits, log only the operation and trusted public command metadata.
+Keep typed status, venue code, or transport category at the adapter boundary where their types are known.
+Do not format arbitrary error payloads to recover those details. Shared command loggers retain their error
+parameter for caller compatibility and omit its text.
+
 | Representation         | Consumers                                          | Required content                                                                                         |
 | ---------------------- | -------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
 | Diagnostic error       | Classification, retry control, logs, and operators | Typed source plus available status, venue code, endpoint, backoff, transport, and decode context.        |
@@ -2005,8 +2024,9 @@ external execution ownership remains a client decision.
 
 When reporting malformed frames, log the parse error separately from a sanitized, bounded payload excerpt.
 Never log a raw authentication frame or a frame whose schema can contain secret material. Log a peer close
-code and reason at the transport layer that receives it. The adapter should not duplicate the shared transport
-log.
+code at the transport layer that receives it. Keep arbitrary server-controlled reasons out of diagnostics,
+but preserve them for retry classification or delivery when required. The adapter should not duplicate the
+shared transport log.
 
 Dispatch module layout, intermediate enum names, context registries, venue bindings, and state containers stay
 adapter-specific. Prefer the smallest design that makes protocol ownership and state transitions testable.

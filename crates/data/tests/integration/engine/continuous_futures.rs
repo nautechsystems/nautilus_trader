@@ -1019,13 +1019,12 @@ fn test_continuous_future_request_cleans_up_after_first_dispatch_error(
     );
     let result = data_engine.execute_request(RequestCommand::Bars(request));
 
-    assert!(result.is_err());
-    assert!(
-        result
-            .unwrap_err()
-            .to_string()
-            .contains("request dispatch failed")
+    let err = result.expect_err("first child dispatch should fail");
+    assert_eq!(
+        err.to_string(),
+        format!("Data client {client_id} request failed")
     );
+    assert!(format!("{err:#}").contains("request dispatch failed"));
 
     data_engine.deregister_client(&client_id);
     let test_clock: Rc<RefCell<VirtualClock>> = Rc::new(RefCell::new(VirtualClock::new()));

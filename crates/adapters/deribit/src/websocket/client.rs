@@ -43,6 +43,7 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
 };
 use nautilus_network::{
+    ConnectionUrl,
     http::create_standard_nautilus_headers,
     mode::ConnectionMode,
     websocket::{
@@ -83,7 +84,7 @@ type CommandSender = tokio::sync::mpsc::UnboundedSender<HandlerCommand>;
 /// WebSocket client for connecting to Deribit.
 #[derive(Clone)]
 pub struct DeribitWebSocketClient {
-    url: String,
+    url: ConnectionUrl,
     environment: DeribitEnvironment,
     heartbeat_interval: Option<u64>,
     auth_timeout_secs: u64,
@@ -190,7 +191,7 @@ impl DeribitWebSocketClient {
         let subscriptions_state = SubscriptionState::new('.');
 
         Ok(Self {
-            url,
+            url: url.into(),
             environment,
             heartbeat_interval: Some(heartbeat_interval),
             auth_timeout_secs: auth_timeout_secs.unwrap_or(AUTHENTICATION_TIMEOUT_SECS),
@@ -337,7 +338,7 @@ impl DeribitWebSocketClient {
     /// Returns the WebSocket URL.
     #[must_use]
     pub fn url(&self) -> &str {
-        &self.url
+        self.url.expose()
     }
 
     /// Returns the environment for this client.
@@ -522,7 +523,7 @@ impl DeribitWebSocketClient {
 
         log_debug!(
             "Connecting to WebSocket: {}",
-            self.url,
+            self.url.origin(),
             color = LogColor::Blue
         );
 
@@ -556,7 +557,7 @@ impl DeribitWebSocketClient {
         let headers = create_standard_nautilus_headers();
 
         let config = WebSocketConfig {
-            url: self.url.clone(),
+            url: self.url.expose().to_owned(),
             headers,
             heartbeat_interval_secs: self.heartbeat_interval,
             heartbeat_payload: None, // Deribit uses JSON-RPC heartbeat, not text ping

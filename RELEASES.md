@@ -18,6 +18,7 @@ Released on TBD (UTC).
 - Added WebSocket peer-close callbacks to control automatic reconnection
 - Added Rust `QuoteTick::has_same_bid_ask` to compare prices and sizes independently of instrument IDs and timestamps
 - Added `YieldCurve` custom data for catalog storage and backtest replay, including Python, thanks @faysou
+- Added `HttpClient` builder `redact_url` to omit the request origin from client-added diagnostics
 - Added Bybit public liquidation custom data for linear and inverse contracts (#5152), thanks @Martingale42
 - Added Databento live bars, book depth, statistics, and imbalance subscriptions (#5201), thanks @faysou
 - Added Derive adapter support for API v3
@@ -29,6 +30,8 @@ Released on TBD (UTC).
 
 ### Breaking Changes
 
+- Removed `HttpClient::request_with_url_redacted`; use `request` with builder `redact_url(true)`
+- Removed `HttpClient::request_with_params_url_redacted`; use `request_with_params` with builder `redact_url(true)`
 - Removed `TickSchemeError::TickNotFinite`; remove this arm from tick error matches
 - Removed Interactive Brokers connection wrappers; use `ibapi::Client` (#5041), thanks @faysou
 - Removed Interactive Brokers `ErrorCategory` and `InteractiveBrokersErrorKind` exports (#5041), thanks @faysou
@@ -72,6 +75,7 @@ Released on TBD (UTC).
 
 ### Security
 
+- Fixed provider text and URL secret exposure in client diagnostics, thanks for reporting @Strategizm
 - Fixed Interactive Brokers gateway passwords appearing in debug and serialized output (#5041), thanks @faysou
 
 ### Fixes

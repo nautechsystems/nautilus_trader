@@ -754,13 +754,18 @@ impl ExecutionEngine {
         let futures: Vec<_> = self
             .get_clients_mut()
             .into_iter()
-            .map(ExecutionClientAdapter::connect)
+            .map(|client| async move {
+                let client_id = client.client_id;
+                (client_id, client.connect().await)
+            })
             .collect();
 
         let results = join_all(futures).await;
 
-        for error in results.into_iter().filter_map(Result::err) {
-            log::error!("Failed to connect execution client: {error:#}");
+        for (client_id, result) in results {
+            if result.is_err() {
+                log::error!("Failed to connect execution client {client_id}: connection failed");
+            }
         }
     }
 
@@ -773,19 +778,24 @@ impl ExecutionEngine {
         let futures: Vec<_> = self
             .get_clients_mut()
             .into_iter()
-            .map(ExecutionClientAdapter::disconnect)
+            .map(|client| async move {
+                let client_id = client.client_id;
+                (client_id, client.disconnect().await)
+            })
             .collect();
 
         let results = join_all(futures).await;
-        let errors: Vec<_> = results.into_iter().filter_map(Result::err).collect();
+        let failed_clients: Vec<_> = results
+            .into_iter()
+            .filter_map(|(client_id, result)| result.err().map(|_| client_id.to_string()))
+            .collect();
 
-        if errors.is_empty() {
+        if failed_clients.is_empty() {
             Ok(())
         } else {
-            let error_msgs: Vec<_> = errors.iter().map(ToString::to_string).collect();
             anyhow::bail!(
                 "Failed to disconnect execution clients: {}",
-                error_msgs.join("; ")
+                failed_clients.join(", ")
             )
         }
     }
@@ -2078,8 +2088,8 @@ impl ExecutionEngine {
     /// Starts the execution engine and all registered execution clients.
     pub fn start(&mut self) {
         for client in self.get_clients_mut() {
-            if let Err(e) = client.start() {
-                log::error!("{e}");
+            if client.start().is_err() {
+                log::error!("Failed to start execution client {}", client.client_id());
             }
         }
 
@@ -2096,8 +2106,8 @@ impl ExecutionEngine {
     /// sequence calls `stop()` more than once per run.
     pub fn stop(&mut self) {
         for client in self.get_clients_mut() {
-            if let Err(e) = client.stop() {
-                log::error!("{e}");
+            if client.stop().is_err() {
+                log::error!("Failed to stop execution client {}", client.client_id());
             }
         }
 
@@ -2110,8 +2120,8 @@ impl ExecutionEngine {
     /// Stops all registered execution clients without stopping the engine itself.
     pub fn stop_clients(&mut self) {
         for client in self.get_clients_mut() {
-            if let Err(e) = client.stop() {
-                log::error!("{e}");
+            if client.stop().is_err() {
+                log::error!("Failed to stop execution client {}", client.client_id());
             }
         }
     }
@@ -2122,8 +2132,8 @@ impl ExecutionEngine {
     /// other components on the shared clock untouched.
     pub fn reset(&mut self) {
         for client in self.get_clients_mut() {
-            if let Err(e) = client.reset() {
-                log::error!("{e}");
+            if client.reset().is_err() {
+                log::error!("Failed to reset execution client {}", client.client_id());
             }
         }
 
@@ -2147,8 +2157,8 @@ impl ExecutionEngine {
     /// other components on the shared clock untouched.
     pub fn dispose(&mut self) {
         for client in self.get_clients_mut() {
-            if let Err(e) = client.dispose() {
-                log::error!("{e}");
+            if client.dispose().is_err() {
+                log::error!("Failed to dispose execution client {}", client.client_id());
             }
         }
 
@@ -2743,7 +2753,11 @@ impl ExecutionEngine {
         log_info!("Submit {}", cmd.order_list, color = LogColor::Blue);
 
         if let Err(e) = client.submit_order_list(cmd) {
-            log::error!("Error submitting order list to client: {e}");
+            log::error!(
+                "Error submitting order list to client {}",
+                client.client_id()
+            );
+
             let reason = OrderDeniedReason::SubmitFailed {
                 detail: e.to_string(),
             }
@@ -2804,14 +2818,22 @@ impl ExecutionEngine {
             color = LogColor::Blue
         );
 
-        if let Err(e) = client.modify_order(cmd) {
-            log::error!("Error modifying order: {e}");
+        let command_id = cmd.command_id;
+        if client.modify_order(cmd).is_err() {
+            log::error!(
+                "Error modifying order: client {}, command {command_id}",
+                client.client_id()
+            );
         }
     }
 
     fn handle_batch_modify_orders(&self, client: &dyn ExecutionClient, cmd: BatchModifyOrders) {
-        if let Err(e) = client.batch_modify_orders(cmd) {
-            log::error!("Error batch modifying orders: {e}");
+        let command_id = cmd.command_id;
+        if client.batch_modify_orders(cmd).is_err() {
+            log::error!(
+                "Error batch modifying orders: client {}, command {command_id}",
+                client.client_id()
+            );
         }
     }
 
@@ -2826,8 +2848,12 @@ impl ExecutionEngine {
             color = LogColor::Blue
         );
 
-        if let Err(e) = client.cancel_order(cmd) {
-            log::error!("Error canceling order: {e}");
+        let command_id = cmd.command_id;
+        if client.cancel_order(cmd).is_err() {
+            log::error!(
+                "Error canceling order: client {}, command {command_id}",
+                client.client_id()
+            );
         }
     }
 
@@ -2843,8 +2869,13 @@ impl ExecutionEngine {
 
         log_info!("Cancel all{side_str}orders", color = LogColor::Blue);
 
-        if let Err(e) = client.cancel_all_orders(venue_command) {
-            log::error!("Error canceling all orders: {e}");
+        let command_id = command.command_id;
+
+        if client.cancel_all_orders(venue_command).is_err() {
+            log::error!(
+                "Error canceling all orders: client {}, command {command_id}",
+                client.client_id()
+            );
         }
 
         msgbus::send_trading_command(
@@ -2990,24 +3021,36 @@ impl ExecutionEngine {
             color = LogColor::Blue
         );
 
-        if let Err(e) = client.batch_cancel_orders(cmd) {
-            log::error!("Error batch canceling orders: {e}");
+        let command_id = cmd.command_id;
+        if client.batch_cancel_orders(cmd).is_err() {
+            log::error!(
+                "Error batch canceling orders: client {}, command {command_id}",
+                client.client_id()
+            );
         }
     }
 
     fn handle_query_account(&self, client: &dyn ExecutionClient, cmd: QueryAccount) {
         log_info!("Query {}", cmd.account_id, color = LogColor::Blue);
 
-        if let Err(e) = client.query_account(cmd) {
-            log::warn!("Error querying account: {e}");
+        let command_id = cmd.command_id;
+        if client.query_account(cmd).is_err() {
+            log::warn!(
+                "Error querying account: client {}, command {command_id}",
+                client.client_id()
+            );
         }
     }
 
     fn handle_query_order(&self, client: &dyn ExecutionClient, cmd: QueryOrder) {
         log_info!("Query {}", cmd.client_order_id, color = LogColor::Blue);
 
-        if let Err(e) = client.query_order(cmd) {
-            log::warn!("Error querying order: {e}");
+        let command_id = cmd.command_id;
+        if client.query_order(cmd).is_err() {
+            log::warn!(
+                "Error querying order: client {}, command {command_id}",
+                client.client_id()
+            );
         }
     }
 

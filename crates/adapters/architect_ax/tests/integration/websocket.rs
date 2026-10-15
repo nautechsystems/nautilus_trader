@@ -245,7 +245,7 @@ async fn test_md_connection_failure_to_invalid_url() {
 
     assert!(matches!(err, AxWsClientError::Transport(_)));
     assert!(
-        message.starts_with(&format!("Transport error: Failed to connect to {url}: ")),
+        message.starts_with("Transport error: WebSocket connection failed: ws://127.0.0.1:9999: "),
         "expected the failure to name the endpoint, was: {message}"
     );
     assert!(
@@ -1359,7 +1359,7 @@ async fn test_orders_connection_failure_to_invalid_url() {
 
     assert!(matches!(err, AxOrdersWsClientError::Transport(_)));
     assert!(
-        message.starts_with(&format!("Transport error: Failed to connect to {url}: ")),
+        message.starts_with("Transport error: WebSocket connection failed: ws://127.0.0.1:9999: "),
         "expected the failure to name the endpoint, was: {message}"
     );
     assert!(
@@ -1793,7 +1793,8 @@ async fn test_md_client_debug() {
 
     let debug_str = format!("{client:?}");
     assert!(debug_str.contains("AxMdWebSocketClient"));
-    assert!(debug_str.contains("ws://localhost:9999/md/ws"));
+    assert!(debug_str.contains("url: \"ws://localhost:9999\""));
+    assert!(!debug_str.contains("/md/ws"));
 }
 
 #[rstest]
@@ -1812,7 +1813,8 @@ async fn test_orders_client_debug() {
 
     let debug_str = format!("{client:?}");
     assert!(debug_str.contains("AxOrdersWebSocketClient"));
-    assert!(debug_str.contains("ws://localhost:9999/orders/ws"));
+    assert!(debug_str.contains("url: \"ws://localhost:9999\""));
+    assert!(!debug_str.contains("/orders/ws"));
 }
 
 #[rstest]

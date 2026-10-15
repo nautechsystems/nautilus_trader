@@ -224,7 +224,7 @@ impl TardisMachineClient {
                         }
                     }
                     Err(e) => {
-                        log::error!("Error in WebSocket stream: {e:?}");
+                        e.log_stream_error();
                         break;
                     }
                 }
@@ -384,7 +384,7 @@ where
                 }
             }
             Err(e) => {
-                log::error!("Error in WebSocket stream: {e:?}");
+                e.log_stream_error();
                 break;
             }
         }

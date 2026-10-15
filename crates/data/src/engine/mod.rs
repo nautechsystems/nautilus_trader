@@ -454,8 +454,8 @@ impl DataEngine {
     /// Starts all registered data clients and re-arms bar aggregator timers.
     pub fn start(&mut self) {
         for client in self.get_clients_mut() {
-            if let Err(e) = client.start() {
-                log::error!("{e}");
+            if client.start().is_err() {
+                log::error!("Failed to start data client {}", client.client_id());
             }
         }
 
@@ -481,8 +481,8 @@ impl DataEngine {
     /// Stops all registered data clients and bar aggregator timers.
     pub fn stop(&mut self) {
         for client in self.get_clients_mut() {
-            if let Err(e) = client.stop() {
-                log::error!("{e}");
+            if client.stop().is_err() {
+                log::error!("Failed to stop data client {}", client.client_id());
             }
         }
 
@@ -500,7 +500,7 @@ impl DataEngine {
         for client in self.get_clients_mut() {
             match client.reset() {
                 Ok(()) => client.clear_subscription_state(),
-                Err(e) => log::error!("{e}"),
+                Err(_) => log::error!("Failed to reset data client {}", client.client_id()),
             }
         }
 
@@ -595,8 +595,8 @@ impl DataEngine {
     /// Disposes the engine, stopping all clients and canceling any timers.
     pub fn dispose(&mut self) {
         for client in self.get_clients_mut() {
-            if let Err(e) = client.dispose() {
-                log::error!("{e}");
+            if client.dispose().is_err() {
+                log::error!("Failed to dispose data client {}", client.client_id());
             }
         }
 
@@ -638,17 +638,23 @@ impl DataEngine {
     /// Connects all registered data clients concurrently.
     ///
     /// Connection failures are logged but do not prevent the node from running.
+    /// Logs identify the client but omit provider error text, which can contain credentials.
     pub async fn connect(&mut self) {
         let futures: Vec<_> = self
             .get_clients_mut()
             .into_iter()
-            .map(DataClientAdapter::connect)
+            .map(|client| async move {
+                let client_id = client.client_id();
+                (client_id, client.connect().await)
+            })
             .collect();
 
         let results = join_all(futures).await;
 
-        for error in results.into_iter().filter_map(Result::err) {
-            log::error!("Failed to connect data client: {error}");
+        for (client_id, result) in results {
+            if result.is_err() {
+                log::error!("Failed to connect data client {client_id}: connection failed");
+            }
         }
     }
 
@@ -661,7 +667,10 @@ impl DataEngine {
         let futures: Vec<_> = self
             .get_clients_mut()
             .into_iter()
-            .map(DataClientAdapter::disconnect)
+            .map(|client| async move {
+                let client_id = client.client_id();
+                (client_id, client.disconnect().await)
+            })
             .collect();
 
         let results = join_all(futures).await;
@@ -670,15 +679,17 @@ impl DataEngine {
         #[cfg(feature = "defi")]
         self.abandon_pool_snapshots();
 
-        let errors: Vec<_> = results.into_iter().filter_map(Result::err).collect();
+        let failed_clients: Vec<_> = results
+            .into_iter()
+            .filter_map(|(client_id, result)| result.err().map(|_| client_id.to_string()))
+            .collect();
 
-        if errors.is_empty() {
+        if failed_clients.is_empty() {
             Ok(())
         } else {
-            let error_msgs: Vec<_> = errors.iter().map(ToString::to_string).collect();
             anyhow::bail!(
                 "Failed to disconnect data clients: {}",
-                error_msgs.join("; ")
+                failed_clients.join(", ")
             )
         }
     }
@@ -788,7 +799,50 @@ impl DataEngine {
             _ => {}
         }
 
-        if let Err(e) = match cmd {
+        let command_context = match &cmd {
+            DataCommand::Subscribe(c) => (
+                "Subscribe",
+                c.client_id().copied(),
+                c.venue().copied(),
+                Some(c.command_id()),
+            ),
+            DataCommand::Unsubscribe(c) => (
+                "Unsubscribe",
+                c.client_id().copied(),
+                c.venue().copied(),
+                Some(c.command_id()),
+            ),
+            DataCommand::Request(c) => (
+                "Request",
+                c.client_id().copied(),
+                c.venue().copied(),
+                Some(*c.request_id()),
+            ),
+            #[cfg(feature = "defi")]
+            DataCommand::DefiRequest(c) => (
+                "DefiRequest",
+                c.client_id().copied(),
+                c.venue().copied(),
+                Some(*c.request_id()),
+            ),
+            #[cfg(feature = "defi")]
+            DataCommand::DefiSubscribe(c) => (
+                "DefiSubscribe",
+                c.client_id().copied(),
+                c.venue().copied(),
+                Some(c.command_id()),
+            ),
+            #[cfg(feature = "defi")]
+            DataCommand::DefiUnsubscribe(c) => (
+                "DefiUnsubscribe",
+                c.client_id().copied(),
+                c.venue().copied(),
+                Some(c.command_id()),
+            ),
+            _ => ("Unknown", None, None, None),
+        };
+
+        let result = match cmd {
             DataCommand::Subscribe(c) => self.execute_subscribe(c),
             DataCommand::Unsubscribe(c) => self.execute_unsubscribe(&c),
             DataCommand::Request(c) => self.execute_request(c),
@@ -802,8 +856,10 @@ impl DataEngine {
                 log::warn!("Unhandled DataCommand variant");
                 Ok(())
             }
-        } {
-            log::error!("{e}");
+        };
+
+        if let Err(e) = result {
+            log::error!("Data command failed: {command_context:?}: {e}");
         }
     }
 
@@ -1118,7 +1174,7 @@ impl DataEngine {
         let resolved_client_id = client.client_id();
 
         #[rustfmt::skip]
-        match req {
+        let result = match req {
             RequestCommand::Data(req) => client.request_data(req),
             RequestCommand::Instrument(req) => client.request_instrument(req),
             RequestCommand::Instruments(req) => client.request_instruments(req),
@@ -1131,7 +1187,10 @@ impl DataEngine {
             RequestCommand::OptionChainReferencePrice(req) => client.request_option_chain_reference_price(req),
             RequestCommand::Bars(req) => client.request_bars(req),
             RequestCommand::Join(_) => anyhow::bail!("RequestJoin must be handled by handle_request_join"),
-        }?;
+        };
+
+        result
+            .map_err(|e| e.context(format!("Data client {resolved_client_id} request failed")))?;
 
         Ok(resolved_client_id)
     }

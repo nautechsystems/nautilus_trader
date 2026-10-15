@@ -63,9 +63,10 @@
 //!
 //! Buffered responses retain only configured header fields and reject bodies larger than 100 MiB,
 //! including chunked bodies without a declared length. [`HttpClient::get_stream`] consumes bodies
-//! incrementally without a total size limit. Transport error messages carry the request URL
-//! without its query string or fragment, and the `_url_redacted` request methods omit the URL
-//! entirely; the client itself logs request metadata only, never URLs.
+//! incrementally without a total size limit. Request URLs in transport errors and response-stream
+//! diagnostics are limited to their origin (scheme, host, and port). Setting `redact_url(true)` on the
+//! builder omits the origin too. This policy controls the URL context added by this client;
+//! diagnostic messages from lower layers are unchanged. The client logs request metadata only, never URLs.
 //!
 //! Hyper owns the lifecycle of individual pooled connections, so this client exposes no socket
 //! state sink or explicit reconnect operation. Callers observe connection failure through each

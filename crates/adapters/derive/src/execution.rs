@@ -23,6 +23,7 @@
 //! `private/order` body in particular is built by [`order_to_derive_payload`].
 
 use std::{
+    borrow::Cow,
     cell::RefCell,
     rc::Rc,
     sync::{
@@ -340,13 +341,16 @@ impl DeriveExecutionClient {
     }
 
     /// Spawns a fire-and-forget task tracked in `pending_tasks` for teardown.
-    fn spawn_task<F>(&self, description: &'static str, fut: F)
+    fn spawn_task<F>(&self, description: impl Into<Cow<'static, str>>, fut: F)
     where
         F: std::future::Future<Output = anyhow::Result<()>> + Send + 'static,
     {
+        let description = description.into();
+        let task_description = description.clone();
+
         let future = async move {
-            if let Err(e) = fut.await {
-                log::warn!("{description} failed: {e:?}");
+            if fut.await.is_err() {
+                log::warn!("{task_description} failed");
             }
         };
 
@@ -706,8 +710,8 @@ impl DeriveExecutionClient {
                                             };
                                             context.recover_after_reconnect(ts_init).await
                                         } => {
-                                            if let Err(e) = result {
-                                                log::warn!("Derive post-reconnect recovery failed: {e:?}");
+                                            if result.is_err() {
+                                                log::warn!("Derive post-reconnect recovery failed");
                                             }
                                         }
                                     }
@@ -715,9 +719,9 @@ impl DeriveExecutionClient {
                                     log::warn!("Skipping Derive reconnect recovery after shutdown began: {e}");
                                 }
                             }
-                            Some(DeriveWsMessage::SessionRecoveryFailed(reason)) => {
+                            Some(DeriveWsMessage::SessionRecoveryFailed(_)) => {
                                 is_connected.store(false, Ordering::Release);
-                                log::error!("Derive execution WebSocket recovery failed: {reason}");
+                                log::error!("Derive execution WebSocket recovery failed");
                             }
                             Some(DeriveWsMessage::Subscription(payload))
                                 if payload.channel == DeriveWsChannel::balances(dispatch_state.subaccount_id()).to_string() =>
@@ -730,8 +734,8 @@ impl DeriveExecutionClient {
                                         biased;
                                         () = task_cancellation.cancelled() => {}
                                         result = context.refresh_account_state() => {
-                                            if let Err(e) = result {
-                                                log::warn!("Derive balance update refresh failed: {e:?}");
+                                            if result.is_err() {
+                                                log::warn!("Derive balance update refresh failed");
                                             }
                                         }
                                     }
@@ -1053,7 +1057,10 @@ impl ExecutionClient for DeriveExecutionClient {
         ];
 
         if let Err(e) = self.ws_client.subscribe_channels(channels).await {
-            log::warn!("Derive private WS subscriptions failed: {e}; tearing down");
+            log::warn!(
+                "Derive private WS subscriptions failed: {}; tearing down",
+                e.redacted_message()
+            );
 
             if let Err(teardown_error) = self.teardown_partial_connect().await {
                 return Err(anyhow::Error::new(e).context(format!(
@@ -2097,29 +2104,35 @@ impl ExecutionClient for DeriveExecutionClient {
             cmd.correlation_id,
         );
 
-        self.spawn_task("query_order", async move {
-            let report = context
-                .generate_order_status_report(&report_cmd)
-                .await
-                .with_context(|| {
-                    format!(
-                        "failed to query Derive order: client_order_id={}, venue_order_id={:?}",
-                        cmd.client_order_id, cmd.venue_order_id,
-                    )
-                })?;
+        self.spawn_task(
+            format!(
+                "query_order client_order_id={}, venue_order_id={:?}",
+                cmd.client_order_id, cmd.venue_order_id
+            ),
+            async move {
+                let report = context
+                    .generate_order_status_report(&report_cmd)
+                    .await
+                    .with_context(|| {
+                        format!(
+                            "failed to query Derive order: client_order_id={}, venue_order_id={:?}",
+                            cmd.client_order_id, cmd.venue_order_id,
+                        )
+                    })?;
 
-            if let Some(report) = report {
-                context.emitter.send_order_status_report(report);
-            } else {
-                log::debug!(
-                    "Derive order not found: client_order_id={}, venue_order_id={:?}",
-                    cmd.client_order_id,
-                    cmd.venue_order_id,
-                );
-            }
+                if let Some(report) = report {
+                    context.emitter.send_order_status_report(report);
+                } else {
+                    log::debug!(
+                        "Derive order not found: client_order_id={}, venue_order_id={:?}",
+                        cmd.client_order_id,
+                        cmd.venue_order_id,
+                    );
+                }
 
-            Ok(())
-        });
+                Ok(())
+            },
+        );
 
         Ok(())
     }
@@ -4148,7 +4161,7 @@ fn ws_command_failure(error: &DeriveWsError) -> (CommandFailure, bool) {
         CommandFailure::not_sent(reason)
     };
 
-    log::warn!("Derive order command failed: {error}");
+    log::warn!("Derive order command failed: {}", error.redacted_message());
     (failure, due_post_only)
 }
 
@@ -5888,6 +5901,7 @@ mod tests {
 
     use super::*;
     use crate::{
+        client_logging,
         common::{
             consts::DERIVE,
             enums::{DeriveEnvironment, DeriveOrderStatus, DeriveOrderType},
@@ -6224,6 +6238,88 @@ mod tests {
             max_fee_per_contract: Some(dec!(1000)),
             ..DeriveExecutionClientConfig::default()
         }
+    }
+
+    #[tokio::test]
+    async fn test_execution_task_log_omits_provider_error() {
+        let _capture = client_logging::capture_logs().await;
+        let (sender, _events) = tokio::sync::mpsc::unbounded_channel();
+        nautilus_common::live::runner::replace_exec_event_sender(sender);
+        let client = DeriveExecutionClient::new(test_core(), test_config()).unwrap();
+        client.spawn_task("Synthetic order command PUB-ORDER".to_string(), async {
+            anyhow::bail!("SYN-secret-provider-error")
+        });
+
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while !client_logging::messages().contains(&(
+                log::Level::Warn,
+                "Synthetic order command PUB-ORDER failed".to_string(),
+            )) {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+
+        client.pending_tasks.begin_shutdown();
+        client
+            .pending_tasks
+            .finish_shutdown(Duration::from_secs(1), Duration::from_secs(1))
+            .await
+            .unwrap();
+        let messages = client_logging::messages();
+        assert!(messages.contains(&(
+            log::Level::Warn,
+            "Synthetic order command PUB-ORDER failed".to_string()
+        )));
+        assert!(
+            !messages
+                .iter()
+                .any(|(_, message)| message.contains("SYN-secret"))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_execution_session_failure_log_omits_provider_reason() {
+        let _capture = client_logging::capture_logs().await;
+        let (sender, mut events) = tokio::sync::mpsc::unbounded_channel();
+        nautilus_common::live::runner::replace_exec_event_sender(sender);
+        let client = DeriveExecutionClient::new(test_core(), test_config()).unwrap();
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        client.is_connected.store(true, Ordering::Release);
+        client.start_ws_dispatch(rx).unwrap();
+        tx.send(DeriveWsMessage::SessionRecoveryFailed(
+            "SYN-secret-provider-reason".to_string(),
+        ))
+        .unwrap();
+
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while client.is_connected() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+
+        drop(tx);
+        client.session_tasks.begin_shutdown();
+        client
+            .session_tasks
+            .finish_shutdown(Duration::from_secs(1), Duration::from_secs(1))
+            .await
+            .unwrap();
+        let messages = client_logging::messages();
+        assert!(!client.is_connected());
+        assert!(events.try_recv().is_err());
+        assert!(messages.contains(&(
+            log::Level::Error,
+            "Derive execution WebSocket recovery failed".to_string()
+        )));
+        assert!(
+            !messages
+                .iter()
+                .any(|(_, message)| message.contains("SYN-secret"))
+        );
     }
 
     #[tokio::test]

@@ -91,6 +91,13 @@ impl SubscriptionKey {
             UnsubscribeCommand::OptionGreeks(command) => Self::OptionGreeks(command.instrument_id),
         }
     }
+
+    pub(crate) fn log_context(&self) -> String {
+        match self {
+            Self::Data(data_type) => format!("Data({:?})", data_type.type_name()),
+            _ => format!("{self:?}"),
+        }
+    }
 }
 
 #[cfg(feature = "defi")]
@@ -198,6 +205,21 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest::rstest]
+    fn test_log_context_omits_custom_metadata() {
+        let mut metadata = nautilus_core::Params::default();
+        metadata.insert("token".to_string(), serde_json::json!("SYN-secret"));
+
+        let data_type = DataType::new(
+            "CustomTicks",
+            Some(metadata),
+            Some("SYN-identifier".to_string()),
+        );
+        let key = SubscriptionKey::Data(data_type.clone());
+        assert_eq!(key.log_context(), "Data(\"CustomTicks\")");
+        assert_eq!(key, SubscriptionKey::Data(data_type));
+    }
 
     #[rstest]
     fn test_churn_retains_replay_ids_until_physical_release() {

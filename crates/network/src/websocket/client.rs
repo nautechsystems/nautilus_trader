@@ -122,7 +122,7 @@ use crate::{
     },
     dst,
     error::{SendError, is_connection_drop_io_error},
-    logging::{escape_control_characters, log_task_aborted, log_task_started, log_task_stopped},
+    logging::{log_task_aborted, log_task_started, log_task_stopped},
     mode::{
         ConnectionMode, ControllerLifecycle, ReadSessionFence, ReconnectOutcome,
         ReconnectRequestOutcome,
@@ -463,7 +463,8 @@ impl WebSocketClientInner {
             let attempt = attempt.load(Ordering::Relaxed);
             if retryable && attempt < max_attempts && !cancellation_token.is_cancelled() {
                 log::warn!(
-                    "WebSocket connection attempt {attempt}/{max_attempts} to {REDACTED} failed: {error}"
+                    "WebSocket connection attempt {attempt}/{max_attempts} to {REDACTED} failed: {}",
+                    error.redacted_message()
                 );
             }
             retryable
@@ -1805,9 +1806,8 @@ impl WebSocketClientInner {
         match &frame {
             Some(frame) => log::log!(
                 read_termination_log_level(connection_state),
-                "Received close frame, terminating: code={}, reason='{}'",
-                frame.code,
-                escape_control_characters(&frame.reason)
+                "Received close frame, terminating: code={}, reason={REDACTED}",
+                frame.code
             ),
             None => log::log!(
                 read_termination_log_level(connection_state),
@@ -5009,11 +5009,10 @@ mod tests {
         assert_eq!(ConnectionMode::from_atomic(&mode), ConnectionMode::Active);
     }
 
-    // A close reason is fully server-controlled: the logged line must escape its control
-    // characters rather than let a hostile venue forge log lines or terminal sequences.
+    // Server-controlled reasons can contain credentials and forged log lines
     #[rstest]
     #[tokio::test]
-    async fn test_close_frame_reason_is_sanitized_in_logs() {
+    async fn test_close_frame_reason_is_redacted_in_logs() {
         let server = TestServer::setup().await;
         let client = setup_test_client(server.port).await;
         let capture = capture_logs_for(&["nautilus_network::websocket::client"]).await;
@@ -5044,17 +5043,22 @@ mod tests {
             .filter(|message| message.starts_with("Received close frame, terminating: code="))
             .collect();
 
-        let expected = "Received close frame, terminating: code=1011, \
-                        reason='injected\\r\\n\\u{1b}[31mforged\\u{1b}[0m'";
+        let expected = "Received close frame, terminating: code=1011, reason=<redacted>";
         assert!(
             close_frame_logs.iter().any(|message| message == expected),
-            "close frame reason was not escaped: {close_frame_logs:?}"
+            "close frame reason was not redacted: {close_frame_logs:?}"
         );
         assert!(
             close_frame_logs.iter().all(|message| {
                 !message.contains('\r') && !message.contains('\n') && !message.contains('\u{1b}')
             }),
             "close frame log forged line breaks or escape sequences: {close_frame_logs:?}"
+        );
+
+        assert!(
+            close_frame_logs
+                .iter()
+                .all(|message| !message.contains("injected") && !message.contains("forged"))
         );
 
         client.disconnect().await;

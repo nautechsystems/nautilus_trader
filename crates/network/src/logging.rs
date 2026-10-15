@@ -13,6 +13,67 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::fmt::Debug;
+
+use nautilus_core::string::secret::{REDACTED, SecretString};
+use url::Url;
+
+/// A connection URL whose debug output contains only its HTTP or WebSocket origin.
+///
+/// Stores the original value without validation or normalization. Debug output omits user
+/// information, paths, queries, and fragments; invalid URLs and other schemes are redacted.
+/// Use only when the origin is public; use [`SecretString`] when the whole location is secret.
+#[derive(Clone, PartialEq, Eq)]
+pub struct ConnectionUrl(SecretString);
+
+impl ConnectionUrl {
+    /// Returns the original URL, which can contain credentials.
+    ///
+    /// Use [`Self::origin`] for logging.
+    #[must_use]
+    pub fn expose(&self) -> &str {
+        self.0.expose_secret()
+    }
+
+    /// Returns the URL origin for logging, or [`REDACTED`] for invalid URLs and other schemes.
+    #[must_use]
+    pub fn origin(&self) -> String {
+        url_origin(self.expose())
+    }
+}
+
+impl From<String> for ConnectionUrl {
+    fn from(value: String) -> Self {
+        Self(value.into())
+    }
+}
+
+impl From<&str> for ConnectionUrl {
+    fn from(value: &str) -> Self {
+        Self(value.into())
+    }
+}
+
+impl Debug for ConnectionUrl {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.origin().fmt(f)
+    }
+}
+
+/// Returns the scheme, host, and non-default port of an HTTP or WebSocket URL for logging.
+///
+/// Omits user information, paths, queries, and fragments, which can contain credentials.
+/// Returns [`REDACTED`] for invalid URLs and other schemes. Hosts use their ASCII serialization.
+#[must_use]
+pub fn url_origin(value: &str) -> String {
+    match Url::parse(value) {
+        Ok(url) if matches!(url.scheme(), "http" | "https" | "ws" | "wss") => {
+            url.origin().ascii_serialization()
+        }
+        _ => REDACTED.to_string(),
+    }
+}
+
 /// Logs that a task has started using `log::debug!`.
 pub(crate) fn log_task_started(task_name: &str) {
     log::debug!("Started task '{task_name}'");
@@ -28,33 +89,46 @@ pub(crate) fn log_task_aborted(task_name: &str) {
     log::debug!("Aborted task '{task_name}'");
 }
 
-/// Escapes control characters so server-controlled strings cannot forge log lines or terminal
-/// escape sequences.
-///
-/// Uses [`str::escape_debug`], which escapes the C0 and C1 control ranges (including the
-/// single-character CSI), DEL, backslash, and bidi and format characters such as U+202E, keeping
-/// the logged output on one line and unambiguous for incident forensics.
-pub(crate) fn escape_control_characters(value: &str) -> String {
-    value.escape_debug().collect()
-}
-
 #[cfg(test)]
-mod escape_control_characters_tests {
+mod url_origin_tests {
     use rstest::rstest;
 
     use super::*;
 
     #[rstest]
-    #[case("injected\r\nforged line", "injected\\r\\nforged line")]
-    #[case("\u{1b}[31mred\u{1b}[0m", "\\u{1b}[31mred\\u{1b}[0m")]
-    #[case("\u{9b}31mcsi", "\\u{9b}31mcsi")]
-    #[case("nul\0", "nul\\0")]
-    #[case("delete\x7f", "delete\\u{7f}")]
-    #[case("back\\slash", "back\\\\slash")]
-    #[case("bidi\u{202e}override", "bidi\\u{202e}override")]
-    #[case("café é", "café é")]
-    fn control_characters_are_escaped(#[case] input: &str, #[case] expected: &str) {
-        assert_eq!(escape_control_characters(input), expected);
+    #[case("wss://stream.example.com/feed", "wss://stream.example.com")]
+    #[case("https://api.example.com:443/v1", "https://api.example.com")]
+    #[case(
+        "ws://user:password@example.com:8080/path-key?token=query-key#fragment-key",
+        "ws://example.com:8080"
+    )]
+    #[case(
+        "https://user%40secret:password%3Asecret@example.com/key%2Fsecret?api_key=secret",
+        "https://example.com"
+    )]
+    #[case(
+        "http://user:secret@[::1]:8123/path-secret?key=secret",
+        "http://[::1]:8123"
+    )]
+    #[case("https://bücher.example/path-secret", "https://xn--bcher-kva.example")]
+    #[case("wss://example.com:invalid/secret", REDACTED)]
+    #[case("invalid-secret", REDACTED)]
+    #[case("file:///secret", REDACTED)]
+    #[case("blob:https://example.com/secret", REDACTED)]
+    fn url_origin_preserves_endpoint_without_credentials(
+        #[case] input: &str,
+        #[case] expected: &str,
+    ) {
+        let url = ConnectionUrl::from(input);
+
+        assert_eq!(url_origin(input), expected);
+        assert_eq!(url.origin(), expected);
+        assert_eq!(format!("{url:?}"), format!("{expected:?}"));
+        assert_eq!(ConnectionUrl::from(input.to_owned()), url);
+        let cloned = url.clone();
+        assert_eq!(url.expose(), input);
+        drop(url);
+        assert_eq!(cloned.expose(), input);
     }
 }
 

@@ -45,6 +45,7 @@ use nautilus_live::{
     task::{SharedTaskSlot, TaskJoinOutcome, TaskSlot, finish_task},
 };
 use nautilus_network::{
+    ConnectionUrl,
     http::create_standard_nautilus_headers,
     mode::ConnectionMode,
     ratelimiter::clock::MonotonicClock,
@@ -152,7 +153,7 @@ pub(super) const UNAUTHENTICATED_CONNECTION_EPOCH: u64 = u64::MAX;
 /// before any subscribe call; [`Self::disconnect`] tears the connection down.
 #[derive(Debug)]
 pub struct DeriveWebSocketClient {
-    url: String,
+    url: ConnectionUrl,
     transport_backend: TransportBackend,
     proxy_url: Option<SecretString>,
     connection_mode: Arc<ArcSwap<AtomicU8>>,
@@ -283,7 +284,7 @@ impl DeriveWebSocketClient {
         ));
 
         Self {
-            url,
+            url: url.into(),
             transport_backend,
             proxy_url: proxy_url.map(SecretString::from),
             connection_mode,
@@ -325,7 +326,7 @@ impl DeriveWebSocketClient {
     /// Returns the configured WebSocket URL.
     #[must_use]
     pub fn url(&self) -> &str {
-        &self.url
+        self.url.expose()
     }
 
     /// Sets the per-operation WebSocket timeout (login, subscribe, reads, writes).
@@ -387,7 +388,7 @@ impl DeriveWebSocketClient {
         let headers = create_standard_nautilus_headers();
 
         let cfg = WebSocketConfig {
-            url: self.url.clone(),
+            url: self.url.expose().to_owned(),
             headers,
             heartbeat_interval_secs: Some(WS_HEARTBEAT_SECS),
             heartbeat_payload: None,
@@ -437,7 +438,7 @@ impl DeriveWebSocketClient {
         let reconnect_handle = client.reconnect_handle();
         self.connection_mode.store(Arc::clone(&connection_mode));
         self.connection_epoch.store(Arc::clone(&connection_epoch));
-        log::debug!("Derive WebSocket connected: {}", self.url);
+        log::debug!("Derive WebSocket connected: {}", self.url.origin());
 
         if let Err(e) = cmd_tx.send(HandlerCommand::SetClient(client)) {
             return Err(DeriveWsError::transport(format!(
@@ -503,7 +504,10 @@ impl DeriveWebSocketClient {
         {
             // Without teardown, a retry connect() would short-circuit on
             // is_active() and return Ok without a valid session.
-            log::warn!("Derive WebSocket login failed; tearing down transport: {e}");
+            log::warn!(
+                "Derive WebSocket login failed; tearing down transport: {}",
+                e.redacted_message()
+            );
             self.teardown().await?;
             return Err(e);
         }
@@ -890,7 +894,10 @@ impl SessionRecovery {
                     }
                 }
                 Err(e) => {
-                    log::error!("Derive WebSocket session recovery failed: {e}");
+                    log::error!(
+                        "Derive WebSocket session recovery failed: {}",
+                        e.redacted_message()
+                    );
                     let _ = out_tx.send(DeriveWsMessage::SessionRecoveryFailed(e.to_string()));
                     let _ = self.cmd_tx.send(HandlerCommand::Disconnect);
                     return;
@@ -2047,7 +2054,8 @@ async fn recover_session(
                     .saturating_mul(multiplier)
                     .min(RECONNECT_MAX_BACKOFF);
                 log::warn!(
-                    "Derive WebSocket session recovery attempt {attempt}/{MAX_SESSION_RECOVERY_ATTEMPTS} failed: {e}; retrying in {delay:?}",
+                    "Derive WebSocket session recovery attempt {attempt}/{MAX_SESSION_RECOVERY_ATTEMPTS} failed: {}; retrying in {delay:?}",
+                    e.redacted_message(),
                 );
                 time::sleep(delay).await;
             }
@@ -2305,6 +2313,25 @@ mod tests {
         },
         http::{DeriveHttpClient, client::DeriveCredentials},
     };
+
+    #[rstest]
+    #[case("wss://stream.example.com/feed", "wss://stream.example.com")]
+    #[case(
+        "wss://SYN-user:SYN-password@stream.example.com:9443/SYN-path?token=SYN-query#SYN-fragment",
+        "wss://stream.example.com:9443"
+    )]
+    fn test_debug_preserves_url_origin(#[case] url: &str, #[case] origin: &str) {
+        let client = DeriveWebSocketClient::new(
+            Some(url.to_string()),
+            DeriveEnvironment::Testnet,
+            TransportBackend::default(),
+            None,
+        );
+        let debug = format!("{client:?}");
+        assert!(debug.contains(&format!("url: {origin:?}")));
+        assert!(!debug.contains("SYN-"));
+        assert_eq!(client.url.expose(), url);
+    }
 
     #[rstest]
     #[case::subscription_lock(false)]

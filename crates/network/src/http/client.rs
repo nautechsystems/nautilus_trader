@@ -88,9 +88,10 @@ pub enum HttpRedirectPolicy {
 /// With `simulation` and `cfg(madsim)`, plaintext HTTP/1.1 uses simulated byte streams;
 /// HTTPS, explicit proxies, and redirect following are unsupported.
 ///
-/// Transport error messages carry the request URL without its query string or fragment, so
-/// credentials passed as query parameters cannot reach logs through errors. Use the
-/// `_url_redacted` request variants to omit the URL entirely.
+/// Request URLs in transport errors and response-stream diagnostics are limited to their origin
+/// (scheme, host, and port). Userinfo, paths, queries, and fragments are excluded. Set
+/// `redact_url(true)` on the builder to omit the origin too. This policy does not change requests
+/// or diagnostic messages from lower layers. It controls the URL context added by this client.
 #[derive(Clone, Debug)]
 pub struct HttpClient {
     pub(crate) client: InnerHttpClient,
@@ -131,6 +132,14 @@ impl HttpClient {
         /// Whether to honor ambient proxy configuration when `proxy_url` is not set.
         #[builder(default = true)]
         use_system_proxy: bool,
+        /// Whether to omit the request origin added by this client to transport errors and
+        /// response-stream diagnostics.
+        /// Defaults to `false`.
+        /// Userinfo, paths, queries, and fragments are always excluded from the added URL context.
+        /// Diagnostic messages from lower layers are unchanged. TLS certificate errors and
+        /// dependency logs can still include the hostname.
+        #[builder(default)]
+        redact_url: bool,
     ) -> Result<Self, HttpClientError> {
         let rate_limiters = if let Some(rate_limiters) = rate_limiters {
             if default_quota.is_some() || !keyed_quotas.is_empty() {
@@ -158,9 +167,14 @@ impl HttpClient {
             rate_limiters,
             redirect_policy,
             use_system_proxy,
+            redact_url,
         )
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "client construction consumes the builder settings"
+    )]
     fn build(
         headers: HashMap<String, String>,
         header_keys: Vec<String>,
@@ -169,6 +183,7 @@ impl HttpClient {
         rate_limiters: Vec<Arc<RateLimiter<Ustr, MonotonicClock>>>,
         redirect_policy: HttpRedirectPolicy,
         use_system_proxy: bool,
+        redact_url: bool,
     ) -> Result<Self, HttpClientError> {
         install_cryptographic_provider();
 
@@ -220,6 +235,7 @@ impl HttpClient {
             client,
             headers: header_map,
             timeout: timeout_secs.map(Duration::from_secs),
+            redact_url,
             #[cfg(not(all(feature = "simulation", madsim)))]
             redirect_policy,
             #[cfg(all(feature = "simulation", madsim))]
@@ -288,32 +304,6 @@ impl HttpClient {
             .await
     }
 
-    /// Sends an HTTP request while omitting the URL from transport errors.
-    ///
-    /// Use this for endpoints whose path or other URL components can carry credentials.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if unable to send request or times out.
-    #[expect(clippy::too_many_arguments)]
-    pub async fn request_with_url_redacted(
-        &self,
-        method: Method,
-        url: String,
-        params: Option<&HashMap<String, Vec<String>>>,
-        headers: Option<HashMap<String, String>>,
-        body: Option<Vec<u8>>,
-        timeout_secs: Option<u64>,
-        keys: Option<Vec<String>>,
-    ) -> Result<HttpResponse, HttpClientError> {
-        let keys = keys.map(into_ustr_vec);
-        self.await_rate_limits(keys.as_deref()).await;
-
-        self.client
-            .send_request_with_url_redacted(method, url, params, headers, body, timeout_secs)
-            .await
-    }
-
     /// Sends an HTTP request with serializable query parameters.
     ///
     /// This method accepts any type implementing `Serialize` for query parameters,
@@ -341,33 +331,6 @@ impl HttpClient {
             .await
     }
 
-    /// Sends an HTTP request with serializable query parameters while omitting the URL from
-    /// transport errors.
-    ///
-    /// Use this for query parameters that can carry credentials.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if unable to send request or times out.
-    #[expect(clippy::too_many_arguments)]
-    pub async fn request_with_params_url_redacted<P: serde::Serialize>(
-        &self,
-        method: Method,
-        url: String,
-        params: Option<&P>,
-        headers: Option<HashMap<String, String>>,
-        body: Option<Vec<u8>>,
-        timeout_secs: Option<u64>,
-        keys: Option<Vec<String>>,
-    ) -> Result<HttpResponse, HttpClientError> {
-        let keys = keys.map(into_ustr_vec);
-        self.await_rate_limits(keys.as_deref()).await;
-
-        self.client
-            .send_request_with_query_url_redacted(method, url, params, headers, body, timeout_secs)
-            .await
-    }
-
     /// Sends a GET request and returns its response body as a stream.
     ///
     /// Applies default headers and the client timeout. No rate-limit keys are supplied, so no
@@ -389,7 +352,6 @@ impl HttpClient {
                 None,
                 None,
                 None,
-                false,
             )
             .await
     }
@@ -520,6 +482,7 @@ pub struct InnerHttpClient {
     client: super::transport::Client,
     headers: HeaderMap,
     timeout: Option<Duration>,
+    redact_url: bool,
     #[cfg(not(all(feature = "simulation", madsim)))]
     redirect_policy: HttpRedirectPolicy,
     pub(crate) response_headers: Arc<[(String, HeaderName)]>,
@@ -541,14 +504,13 @@ impl InnerHttpClient {
         body: Option<Vec<u8>>,
         timeout_secs: Option<u64>,
     ) -> Result<HttpResponse, HttpClientError> {
-        self.send_request_with_redaction(
+        self.send_request_with_body(
             method,
             url,
             params,
             headers,
             body.map(RequestBody::Plain),
             timeout_secs,
-            false,
         )
         .await
     }
@@ -562,41 +524,18 @@ impl InnerHttpClient {
         body: SecretString,
         timeout_secs: Option<u64>,
     ) -> Result<HttpResponse, HttpClientError> {
-        self.send_request_with_redaction(
+        self.send_request_with_body(
             method,
             url,
             params,
             headers,
             Some(RequestBody::Secret(body)),
             timeout_secs,
-            false,
         )
         .await
     }
 
-    async fn send_request_with_url_redacted(
-        &self,
-        method: Method,
-        url: String,
-        params: Option<&HashMap<String, Vec<String>>>,
-        headers: Option<HashMap<String, String>>,
-        body: Option<Vec<u8>>,
-        timeout_secs: Option<u64>,
-    ) -> Result<HttpResponse, HttpClientError> {
-        self.send_request_with_redaction(
-            method,
-            url,
-            params,
-            headers,
-            body.map(RequestBody::Plain),
-            timeout_secs,
-            true,
-        )
-        .await
-    }
-
-    #[expect(clippy::too_many_arguments)]
-    async fn send_request_with_redaction(
+    async fn send_request_with_body(
         &self,
         method: Method,
         url: String,
@@ -604,7 +543,6 @@ impl InnerHttpClient {
         headers: Option<HashMap<String, String>>,
         body: Option<RequestBody>,
         timeout_secs: Option<u64>,
-        redact_url: bool,
     ) -> Result<HttpResponse, HttpClientError> {
         let full_url = encode_url_params(&url, params)?;
         self.send_request_internal(
@@ -614,7 +552,6 @@ impl InnerHttpClient {
             headers,
             body,
             timeout_secs,
-            redact_url,
         )
         .await
     }
@@ -643,28 +580,6 @@ impl InnerHttpClient {
             headers,
             body.map(RequestBody::Plain),
             timeout_secs,
-            false,
-        )
-        .await
-    }
-
-    async fn send_request_with_query_url_redacted<Q: serde::Serialize>(
-        &self,
-        method: Method,
-        url: String,
-        query: Option<&Q>,
-        headers: Option<HashMap<String, String>>,
-        body: Option<Vec<u8>>,
-        timeout_secs: Option<u64>,
-    ) -> Result<HttpResponse, HttpClientError> {
-        self.send_request_internal(
-            method,
-            &url,
-            query,
-            headers,
-            body.map(RequestBody::Plain),
-            timeout_secs,
-            true,
         )
         .await
     }
@@ -674,7 +589,6 @@ impl InnerHttpClient {
     /// # Errors
     ///
     /// Returns an error if unable to send request or times out.
-    #[expect(clippy::too_many_arguments)]
     async fn send_request_internal<Q: serde::Serialize>(
         &self,
         method: Method,
@@ -683,18 +597,16 @@ impl InnerHttpClient {
         headers: Option<HashMap<String, String>>,
         body: Option<RequestBody>,
         timeout_secs: Option<u64>,
-        redact_url: bool,
     ) -> Result<HttpResponse, HttpClientError> {
         let stream = self
-            .send_stream_internal(method, url, query, headers, body, timeout_secs, redact_url)
+            .send_stream_internal(method, url, query, headers, body, timeout_secs)
             .await?;
         let result = self
             .consume_response(stream.response, stream.deadline)
             .await;
-        result.map_err(|e| response_error(e, stream.url.as_ref()))
+        result.map_err(|e| response_error(e, stream.origin.as_deref()))
     }
 
-    #[expect(clippy::too_many_arguments)]
     async fn send_stream_internal<Q: serde::Serialize>(
         &self,
         method: Method,
@@ -703,7 +615,6 @@ impl InnerHttpClient {
         headers: Option<HashMap<String, String>>,
         body: Option<RequestBody>,
         timeout_secs: Option<u64>,
-        redact_url: bool,
     ) -> Result<HttpResponseStream, HttpClientError> {
         let mut url =
             Url::parse(url).map_err(|e| HttpClientError::from(format!("URL parse error: {e}")))?;
@@ -785,12 +696,7 @@ impl InnerHttpClient {
             request.method(),
         );
 
-        let error_url = (!redact_url).then(|| {
-            let mut error_url = url.clone();
-            error_url.set_query(None);
-            error_url.set_fragment(None);
-            error_url
-        });
+        let origin = (!self.redact_url).then(|| url.origin().ascii_serialization());
 
         let duration = timeout_secs.map(Duration::from_secs).or(self.timeout);
         let deadline = duration.map(|duration| crate::dst::time::Instant::now() + duration);
@@ -802,7 +708,7 @@ impl InnerHttpClient {
             Ok(HttpResponseStream {
                 response,
                 deadline,
-                url: error_url.clone(),
+                origin: origin.clone(),
                 #[cfg(all(feature = "simulation", madsim))]
                 _connection: connection,
             })
@@ -817,7 +723,7 @@ impl InnerHttpClient {
             None => operation.await,
         };
 
-        result.map_err(|e| response_error(e, error_url.as_ref()))
+        result.map_err(|e| response_error(e, origin.as_deref()))
     }
 
     async fn consume_response<B>(
@@ -1309,12 +1215,16 @@ mod tests {
         assert_eq!(response.body.as_ref(), b"hello-world!");
     }
 
+    #[rstest]
     #[tokio::test]
-    async fn test_request_preserves_wire_semantics_and_extracts_response_headers() {
+    async fn test_request_preserves_wire_semantics_and_extracts_response_headers(
+        #[values(false, true)] redact_url: bool,
+    ) {
         let addr = start_test_server().await.unwrap();
         let mut default_headers = HashMap::new();
         default_headers.insert("x-default".to_string(), "default-a".to_string());
         let client = HttpClient::builder()
+            .redact_url(redact_url)
             .headers(default_headers)
             .header_keys(vec!["x-response-id".to_string()])
             .build()
@@ -1351,10 +1261,14 @@ mod tests {
         );
     }
 
+    #[rstest]
     #[tokio::test]
-    async fn test_request_with_secret_body_preserves_wire_body() {
+    async fn test_request_with_secret_body_preserves_wire_body(
+        #[values(false, true)] redact_url: bool,
+    ) {
         let addr = start_test_server().await.unwrap();
         let client = HttpClient::builder()
+            .redact_url(redact_url)
             .headers(HashMap::from([(
                 "x-default".to_string(),
                 "default-secret".to_string(),
@@ -1384,8 +1298,11 @@ mod tests {
         );
     }
 
+    #[rstest]
     #[tokio::test]
-    async fn test_request_with_params_serializes_query_fields() {
+    async fn test_request_with_params_serializes_query_fields(
+        #[values(false, true)] redact_url: bool,
+    ) {
         #[derive(serde::Serialize)]
         struct Query<'a> {
             symbol: &'a str,
@@ -1396,6 +1313,7 @@ mod tests {
         let mut default_headers = HashMap::new();
         default_headers.insert("x-default".to_string(), "default-d".to_string());
         let client = HttpClient::builder()
+            .redact_url(redact_url)
             .headers(default_headers)
             .header_keys(vec!["x-response-id".to_string()])
             .build()
@@ -1431,8 +1349,11 @@ mod tests {
         );
     }
 
+    #[rstest]
     #[tokio::test]
-    async fn test_request_with_params_url_redacted_preserves_query_fields() {
+    async fn test_request_with_params_preserves_secret_query_fields(
+        #[values(false, true)] redact_url: bool,
+    ) {
         #[derive(serde::Serialize)]
         struct Query<'a> {
             auth: &'a str,
@@ -1441,6 +1362,7 @@ mod tests {
 
         let addr = start_test_server().await.unwrap();
         let client = HttpClient::builder()
+            .redact_url(redact_url)
             .headers(HashMap::from([(
                 "x-default".to_string(),
                 "default-f".to_string(),
@@ -1454,7 +1376,7 @@ mod tests {
         };
 
         let response = client
-            .request_with_params_url_redacted(
+            .request_with_params(
                 Method::GET,
                 format!("http://{addr}/capture"),
                 Some(&params),
@@ -1834,12 +1756,19 @@ mod tests {
         assert!(rejected.body.is_empty());
     }
 
+    #[rstest]
     #[tokio::test]
-    async fn test_http_client_redacted_url_request_preserves_response() {
+    async fn test_http_client_url_policy_preserves_response(
+        #[values(false, true)] redact_url: bool,
+    ) {
         let addr = start_test_server().await.unwrap();
-        let client = HttpClient::builder().timeout_secs(2).build().unwrap();
+        let client = HttpClient::builder()
+            .redact_url(redact_url)
+            .timeout_secs(2)
+            .build()
+            .unwrap();
         let response = client
-            .request_with_url_redacted(
+            .request(
                 Method::GET,
                 format!("http://{addr}/get"),
                 None,
@@ -1855,8 +1784,19 @@ mod tests {
         assert_eq!(response.body.as_ref(), b"hello-world!");
     }
 
+    #[rstest]
+    #[case::request("request")]
+    #[case::preinterned_keys("keys")]
+    #[case::get("get")]
+    #[case::post("post")]
+    #[case::patch("patch")]
+    #[case::delete("delete")]
+    #[case::stream("stream")]
     #[tokio::test]
-    async fn test_http_client_redacted_url_request_removes_endpoint_from_error() {
+    async fn test_http_client_url_policy_redacts_transport_errors(
+        #[case] request: &str,
+        #[values(false, true)] redact_url: bool,
+    ) {
         const USERINFO_SECRET: &str = "transport-userinfo-secret";
         const PATH_SECRET: &str = "transport-path-secret";
         const QUERY_SECRET: &str = "transport-query-secret";
@@ -1864,28 +1804,76 @@ mod tests {
         let url = format!(
             "http://rpc-user:{USERINFO_SECRET}@{addr}/{PATH_SECRET}?api_key={QUERY_SECRET}"
         );
-        let client = HttpClient::builder().timeout_secs(1).build().unwrap();
+        let client = HttpClient::builder()
+            .redact_url(redact_url)
+            .timeout_secs(1)
+            .build()
+            .unwrap();
 
-        let error = client
-            .request_with_url_redacted(Method::GET, url.clone(), None, None, None, None, None)
-            .await
-            .expect_err("an unreachable endpoint should fail");
+        let error = match request {
+            "request" => client
+                .request(Method::GET, url.clone(), None, None, None, None, None)
+                .await
+                .unwrap_err(),
+            "keys" => client
+                .request_with_ustr_keys(
+                    Method::GET,
+                    url.clone(),
+                    None,
+                    None,
+                    None,
+                    None,
+                    Some(vec![Ustr::from("policy")]),
+                )
+                .await
+                .unwrap_err(),
+            "get" => client
+                .get(url.clone(), None, None, None, None)
+                .await
+                .unwrap_err(),
+            "post" => client
+                .post(url.clone(), None, None, None, None, None)
+                .await
+                .unwrap_err(),
+            "patch" => client
+                .patch(url.clone(), None, None, None, None, None)
+                .await
+                .unwrap_err(),
+            "delete" => client
+                .delete(url.clone(), None, None, None, None)
+                .await
+                .unwrap_err(),
+            "stream" => client.get_stream(url.clone()).await.unwrap_err(),
+            _ => panic!("unknown request shape"),
+        };
+
         drop_task.abort();
         let task_error = drop_task
             .await
             .expect_err("connection dropper should be cancelled");
 
         assert!(task_error.is_cancelled());
+        assert!(
+            matches!(error, HttpClientError::TransportError(_)),
+            "{error:?}"
+        );
+
         for rendered in [error.to_string(), format!("{error:?}")] {
             assert!(!rendered.contains(USERINFO_SECRET));
             assert!(!rendered.contains(PATH_SECRET));
             assert!(!rendered.contains(QUERY_SECRET));
             assert!(!rendered.contains(&url));
+            assert_eq!(
+                rendered.contains(&format!("http://{addr}")),
+                !redact_url,
+                "{rendered}"
+            );
+            assert_eq!(rendered.contains("for origin ("), !redact_url, "{rendered}");
         }
     }
 
     #[tokio::test]
-    async fn test_request_with_params_url_redacted_removes_query_from_error() {
+    async fn test_request_with_params_redact_url_removes_origin_from_error() {
         const QUERY_SECRET: &str = "transport-query-secret";
         #[derive(serde::Serialize)]
         struct Query<'a> {
@@ -1895,18 +1883,14 @@ mod tests {
         let (addr, drop_task) = spawn_connection_dropper().await;
         let url = format!("http://{addr}/trades");
         let params = Query { auth: QUERY_SECRET };
-        let client = HttpClient::builder().timeout_secs(1).build().unwrap();
+        let client = HttpClient::builder()
+            .redact_url(true)
+            .timeout_secs(1)
+            .build()
+            .unwrap();
 
         let error = client
-            .request_with_params_url_redacted(
-                Method::GET,
-                url,
-                Some(&params),
-                None,
-                None,
-                None,
-                None,
-            )
+            .request_with_params(Method::GET, url, Some(&params), None, None, None, None)
             .await
             .expect_err("a dropped connection should fail");
         drop_task.abort();
@@ -1915,7 +1899,9 @@ mod tests {
             .expect_err("connection dropper should be cancelled");
 
         assert!(task_error.is_cancelled());
+
         for rendered in [error.to_string(), format!("{error:?}")] {
+            assert!(!rendered.contains(&addr.to_string()));
             assert!(!rendered.contains("auth="));
             assert!(!rendered.contains(QUERY_SECRET));
         }
@@ -1942,21 +1928,29 @@ mod tests {
 
         for rendered in [error.to_string(), format!("{error:?}")] {
             assert!(
-                rendered.contains(&format!("for url (http://{addr}/trades)")),
-                "default error omitted the queryless URL: {rendered}"
+                rendered.contains(&format!("for origin (http://{addr})")),
+                "default error omitted the origin: {rendered}"
             );
+            assert!(!rendered.contains("/trades"), "{rendered}");
             assert!(!rendered.contains("api_key="), "{rendered}");
             assert!(!rendered.contains(QUERY_SECRET), "{rendered}");
             assert!(!rendered.contains(FRAGMENT_MARKER), "{rendered}");
         }
     }
 
+    #[rstest]
     #[tokio::test]
-    async fn test_request_with_secret_body_removes_query_from_transport_error_by_default() {
+    async fn test_request_with_secret_body_url_policy_redacts_transport_error(
+        #[values(false, true)] redact_url: bool,
+    ) {
         const QUERY_SECRET: &str = "secret-body-query-secret";
         let (addr, drop_task) = spawn_connection_dropper().await;
         let url = format!("http://{addr}/trades?api_key={QUERY_SECRET}");
-        let client = HttpClient::builder().timeout_secs(1).build().unwrap();
+        let client = HttpClient::builder()
+            .redact_url(redact_url)
+            .timeout_secs(1)
+            .build()
+            .unwrap();
 
         let error = client
             .request_with_secret_body(
@@ -1978,10 +1972,18 @@ mod tests {
         assert!(task_error.is_cancelled());
 
         for rendered in [error.to_string(), format!("{error:?}")] {
-            assert!(
-                rendered.contains(&format!("for url (http://{addr}/trades)")),
-                "default error omitted the queryless URL: {rendered}"
+            assert_eq!(
+                rendered.contains(&format!("for origin (http://{addr})")),
+                !redact_url,
+                "{rendered}"
             );
+            assert_eq!(
+                rendered.contains(&addr.to_string()),
+                !redact_url,
+                "{rendered}"
+            );
+            assert!(!rendered.contains("/trades"), "{rendered}");
+            assert!(!rendered.contains("credential-body"), "{rendered}");
             assert!(!rendered.contains("api_key="), "{rendered}");
             assert!(!rendered.contains(QUERY_SECRET), "{rendered}");
         }
@@ -2013,16 +2015,20 @@ mod tests {
 
         for rendered in [error.to_string(), format!("{error:?}")] {
             assert!(
-                rendered.contains(&format!("for url (http://{addr}/trades)")),
-                "default error omitted the queryless URL: {rendered}"
+                rendered.contains(&format!("for origin (http://{addr})")),
+                "default error omitted the origin: {rendered}"
             );
+            assert!(!rendered.contains("/trades"), "{rendered}");
             assert!(!rendered.contains("auth="), "{rendered}");
             assert!(!rendered.contains(QUERY_SECRET), "{rendered}");
         }
     }
 
+    #[rstest]
     #[tokio::test]
-    async fn test_http_client_redacted_url_request_removes_endpoint_from_trace_logs() {
+    async fn test_http_client_url_policy_removes_endpoint_from_trace_logs(
+        #[values(false, true)] redact_url: bool,
+    ) {
         const USERINFO_SECRET: &str = "trace-userinfo-secret";
         const PATH_SECRET: &str = "trace-path-secret";
         const QUERY_SECRET: &str = "trace-query-secret";
@@ -2031,10 +2037,14 @@ mod tests {
         let url = format!(
             "http://rpc-user:{USERINFO_SECRET}@{addr}/{PATH_SECRET}?api_key={QUERY_SECRET}"
         );
-        let client = HttpClient::builder().timeout_secs(2).build().unwrap();
+        let client = HttpClient::builder()
+            .redact_url(redact_url)
+            .timeout_secs(2)
+            .build()
+            .unwrap();
 
         let response = client
-            .request_with_url_redacted(Method::GET, url.clone(), None, None, None, None, None)
+            .request(Method::GET, url.clone(), None, None, None, None, None)
             .await
             .expect("credentialized endpoint should return an HTTP response");
         let messages = capture.messages();

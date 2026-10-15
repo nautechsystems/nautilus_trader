@@ -259,7 +259,7 @@ pub trait ExecutionClient {
     ///
     /// Returns an error if submission fails.
     fn submit_order(&self, cmd: SubmitOrder) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), &cmd);
         Ok(())
     }
 
@@ -269,7 +269,7 @@ pub trait ExecutionClient {
     ///
     /// Returns an error if submission fails.
     fn submit_order_list(&self, cmd: SubmitOrderList) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), &cmd);
         Ok(())
     }
 
@@ -279,7 +279,7 @@ pub trait ExecutionClient {
     ///
     /// Returns an error if modification fails.
     fn modify_order(&self, cmd: ModifyOrder) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), &cmd);
         Ok(())
     }
 
@@ -304,7 +304,7 @@ pub trait ExecutionClient {
     ///
     /// Returns an error if cancellation fails.
     fn cancel_order(&self, cmd: CancelOrder) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), &cmd);
         Ok(())
     }
 
@@ -314,7 +314,7 @@ pub trait ExecutionClient {
     ///
     /// Returns an error if cancellation fails.
     fn cancel_all_orders(&self, cmd: CancelAllOrders) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), &cmd);
         Ok(())
     }
 
@@ -324,7 +324,7 @@ pub trait ExecutionClient {
     ///
     /// Returns an error if batch cancellation fails.
     fn batch_cancel_orders(&self, cmd: BatchCancelOrders) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), &cmd);
         Ok(())
     }
 
@@ -334,7 +334,7 @@ pub trait ExecutionClient {
     ///
     /// Returns an error if the query fails.
     fn query_account(&self, cmd: QueryAccount) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), &cmd);
         Ok(())
     }
 
@@ -344,7 +344,7 @@ pub trait ExecutionClient {
     ///
     /// Returns an error if the query fails.
     fn query_order(&self, cmd: QueryOrder) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), &cmd);
         Ok(())
     }
 
@@ -368,7 +368,7 @@ pub trait ExecutionClient {
         &self,
         cmd: &GenerateOrderStatusReport,
     ) -> anyhow::Result<Option<OrderStatusReport>> {
-        log_not_implemented(cmd);
+        log_not_implemented(self.client_id(), cmd);
         Ok(None)
     }
 
@@ -389,7 +389,7 @@ pub trait ExecutionClient {
         &self,
         cmd: &GenerateOrderStatusReports,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
-        log_not_implemented(cmd);
+        log_not_implemented(self.client_id(), cmd);
         Ok(Vec::new())
     }
 
@@ -410,7 +410,7 @@ pub trait ExecutionClient {
         &self,
         cmd: GenerateFillReports,
     ) -> anyhow::Result<Vec<FillReport>> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), &cmd);
         Ok(Vec::new())
     }
 
@@ -431,7 +431,7 @@ pub trait ExecutionClient {
         &self,
         cmd: &GeneratePositionStatusReports,
     ) -> anyhow::Result<Vec<PositionStatusReport>> {
-        log_not_implemented(cmd);
+        log_not_implemented(self.client_id(), cmd);
         Ok(Vec::new())
     }
 

@@ -4749,7 +4749,12 @@ class ClaimsStrategy(Strategy):
 
         let error = dispose_result.expect_err("dispose should return the stop error");
 
-        assert!(error.to_string().contains("test disconnect failed"));
+        assert!(
+            error
+                .to_string()
+                .contains("Failed to disconnect data clients: TEST_DISCONNECT_FAILURE")
+        );
+        assert!(!error.to_string().contains("test disconnect failed"));
         assert_eq!(dispose_count.load(Ordering::Relaxed), 1);
         assert!(!node.node_mut().unwrap().is_running());
     }

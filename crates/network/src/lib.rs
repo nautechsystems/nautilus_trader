@@ -117,6 +117,7 @@ mod writer;
 #[cfg(feature = "python")]
 pub mod python;
 
+pub use logging::{ConnectionUrl, url_origin};
 pub use sink::{SocketState, SocketStateSink};
 pub use transport::{Message, TransportError};
 pub use writer::WriterSender;

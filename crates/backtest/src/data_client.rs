@@ -376,14 +376,17 @@ mod tests {
         );
 
         let result = client.request_instruments(request);
+        let expected = format!(
+            "Handler not implemented: client BACKTEST, command {}",
+            std::any::type_name::<RequestInstruments>()
+        );
 
         assert!(result.is_ok());
         assert!(
             REQUEST_WARN_CAPTURE
                 .messages()
                 .iter()
-                .any(|message| message.contains("RequestInstruments")
-                    && message.contains("handler not implemented")),
+                .any(|message| message == &expected),
         );
     }
     #[rstest]

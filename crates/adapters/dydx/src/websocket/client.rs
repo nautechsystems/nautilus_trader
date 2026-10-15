@@ -62,7 +62,6 @@ pub const DEFAULT_MAX_WS_CONNECTIONS: usize = 8;
 pub const DEFAULT_PER_CHANNEL_SUBSCRIPTION_LIMIT: usize = 32;
 
 use std::{
-    fmt::Debug,
     num::NonZeroU32,
     sync::{
         Arc, LazyLock,
@@ -74,6 +73,8 @@ use std::{
 use ahash::{AHashMap, AHashSet};
 use arc_swap::ArcSwap;
 use dashmap::DashMap;
+#[cfg(test)]
+use nautilus_core::string::secret::REDACTED;
 use nautilus_core::string::secret::SecretString;
 use nautilus_live::{
     SocketControl, SocketControlFactory,
@@ -85,6 +86,7 @@ use nautilus_model::{
     instruments::InstrumentAny,
 };
 use nautilus_network::{
+    ConnectionUrl,
     http::create_standard_nautilus_headers,
     mode::ConnectionMode,
     ratelimiter::quota::Quota,
@@ -154,7 +156,7 @@ struct ConnectionSlot {
 /// output channel so callers see one merged stream.
 #[derive(Debug)]
 pub struct DydxWebSocketClient {
-    url: String,
+    url: ConnectionUrl,
     credential: Option<Arc<DydxCredential>>,
     requires_auth: bool,
     auth_tracker: AuthTracker,
@@ -336,7 +338,7 @@ impl DydxWebSocketClient {
         per_channel_limit: usize,
     ) -> Self {
         Self {
-            url,
+            url: url.into(),
             credential,
             requires_auth,
             auth_tracker: AuthTracker::new(),
@@ -422,7 +424,7 @@ impl DydxWebSocketClient {
     /// Returns the URL of this WebSocket client.
     #[must_use]
     pub fn url(&self) -> &str {
-        &self.url
+        self.url.expose()
     }
 
     /// Returns a clone of the connection mode atomic reference.
@@ -647,7 +649,7 @@ impl DydxWebSocketClient {
         drop(slots);
         drop(admission);
 
-        log::debug!("Connected dYdX WebSocket pool: {}", self.url);
+        log::debug!("Connected dYdX WebSocket pool: {}", self.url.origin());
         Ok(())
     }
 
@@ -746,7 +748,7 @@ impl DydxWebSocketClient {
         let headers = create_standard_nautilus_headers();
 
         let cfg = WebSocketConfig {
-            url: self.url.clone(),
+            url: self.url.expose().to_owned(),
             headers,
             heartbeat_interval_secs: self.heartbeat,
             heartbeat_payload: None,
@@ -927,7 +929,7 @@ impl DydxWebSocketClient {
             };
             log::debug!(
                 "dYdX pool slot {new_idx} connected: url={}, channel={:?}",
-                self.url,
+                self.url.origin(),
                 channel,
             );
         };
@@ -1455,10 +1457,23 @@ pub(crate) fn candle_ids_from_topics(topics: &[String]) -> AHashSet<String> {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_core::string::secret::REDACTED;
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    #[case("wss://stream.example.com/feed", "wss://stream.example.com")]
+    #[case(
+        "wss://SYN-user:SYN-password@stream.example.com:9443/SYN-path?token=SYN-query#SYN-fragment",
+        "wss://stream.example.com:9443"
+    )]
+    fn test_debug_preserves_url_origin(#[case] url: &str, #[case] origin: &str) {
+        let client = DydxWebSocketClient::new_public(url.to_string(), None, None);
+        let debug = format!("{client:?}");
+        assert!(debug.contains(&format!("url: {origin:?}")));
+        assert!(!debug.contains("SYN-"));
+        assert_eq!(client.url.expose(), url);
+    }
 
     #[rstest]
     fn test_debug_redacts_proxy_url() {

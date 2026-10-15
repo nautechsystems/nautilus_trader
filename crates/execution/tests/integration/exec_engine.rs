@@ -35,8 +35,8 @@ use nautilus_common::{
     messages::{
         ExecutionReport,
         execution::{
-            BatchModifyOrders, CancelAllOrders, CancelOrder, ModifyOrder, QueryAccount,
-            SubmitOrder, SubmitOrderList, TradingCommand,
+            BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder, ModifyOrder,
+            QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList, TradingCommand,
         },
     },
     msgbus::{
@@ -93,7 +93,7 @@ use nautilus_model::{
     position::{Position, PositionReplayEvent},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     stubs::{TestDefault, stub_position_long, stub_position_short},
-    types::{AccountBalance, Currency, Money, Price, Quantity},
+    types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
 use rstest::*;
 use rust_decimal::Decimal;
@@ -21216,6 +21216,7 @@ fn test_submit_order_list_adds_missing_orders_then_claims_origin_atomically(
 
 #[rstest]
 fn test_submit_order_list_denies_when_client_submit_fails(mut execution_engine: ExecutionEngine) {
+    capture_reconciliation_logs();
     let trader_id = TraderId::test_default();
     let strategy_id = StrategyId::test_default();
     let instrument = audusd_sim();
@@ -21227,7 +21228,7 @@ fn test_submit_order_list_denies_when_client_submit_fails(mut execution_engine: 
         OmsType::Netting,
         None,
     )
-    .with_submit_order_list_error("transport closed");
+    .with_submit_order_list_error("password=SYN-password token=SYN-token");
     let submitted_order_ids = client.submitted_order_ids();
     execution_engine.register_client(Box::new(client)).unwrap();
 
@@ -21292,16 +21293,28 @@ fn test_submit_order_list_denies_when_client_submit_fails(mut execution_engine: 
         causation_id: None,
     };
 
+    take_reconciliation_logs();
     execution_engine.execute(TradingCommand::SubmitOrderList(submit_order_list));
 
+    assert_eq!(
+        take_reconciliation_logs(),
+        vec![(
+            Level::Error,
+            "Error submitting order list to client SIM_CLIENT".to_string()
+        )]
+    );
     let cache = execution_engine.cache().borrow();
     for order in &orders {
         let cached_order = cache
             .order(&order.client_order_id())
             .expect("Order should be retrievable from cache");
         assert_eq!(cached_order.status(), OrderStatus::Denied);
+
         if let OrderEventAny::Denied(denied) = cached_order.last_event() {
-            assert_eq!(denied.reason, "SUBMIT_FAILED: transport closed");
+            assert_eq!(
+                denied.reason,
+                "SUBMIT_FAILED: password=SYN-password token=SYN-token"
+            );
         } else {
             panic!("Expected OrderDenied event");
         }
@@ -24589,4 +24602,389 @@ fn test_zero_quantity_fill_does_not_create_external_order(mut execution_engine: 
     let cache = execution_engine.cache().borrow();
     assert!(!cache.order_exists(&client_order_id));
     assert_eq!(cache.positions_total_count(None, None, None, None, None), 0);
+}
+
+struct LifecycleExecutionClient {
+    client_id: ClientId,
+    error_message: Option<&'static str>,
+    calls: Rc<RefCell<Vec<(ClientId, &'static str)>>>,
+    connected: bool,
+}
+
+impl LifecycleExecutionClient {
+    fn record(&self, operation: &'static str) -> anyhow::Result<()> {
+        self.calls.borrow_mut().push((self.client_id, operation));
+
+        if let Some(error_message) = self.error_message {
+            anyhow::bail!("{error_message}");
+        }
+
+        Ok(())
+    }
+}
+
+#[async_trait::async_trait(?Send)]
+impl ExecutionClient for LifecycleExecutionClient {
+    fn client_id(&self) -> ClientId {
+        self.client_id
+    }
+
+    fn account_id(&self) -> AccountId {
+        AccountId::from("SYN-001")
+    }
+
+    fn venue(&self) -> Venue {
+        Venue::from("SYN")
+    }
+
+    fn oms_type(&self) -> OmsType {
+        OmsType::Netting
+    }
+
+    fn get_account(&self) -> Option<AccountAny> {
+        None
+    }
+
+    fn is_connected(&self) -> bool {
+        self.connected
+    }
+
+    fn generate_account_state(
+        &self,
+        _: Vec<AccountBalance>,
+        _: Vec<MarginBalance>,
+        _: bool,
+        _: UnixNanos,
+        _: Option<Params>,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn modify_order(&self, _: ModifyOrder) -> anyhow::Result<()> {
+        self.record("modify")
+    }
+
+    fn batch_modify_orders(&self, _: BatchModifyOrders) -> anyhow::Result<()> {
+        self.record("batch_modify")
+    }
+
+    fn cancel_order(&self, _: CancelOrder) -> anyhow::Result<()> {
+        self.record("cancel")
+    }
+
+    fn cancel_all_orders(&self, _: CancelAllOrders) -> anyhow::Result<()> {
+        self.record("cancel_all")
+    }
+
+    fn batch_cancel_orders(&self, _: BatchCancelOrders) -> anyhow::Result<()> {
+        self.record("batch_cancel")
+    }
+
+    fn query_order(&self, _: QueryOrder) -> anyhow::Result<()> {
+        self.record("query_order")
+    }
+
+    fn query_account(&self, _: QueryAccount) -> anyhow::Result<()> {
+        self.record("query")
+    }
+
+    fn start(&mut self) -> anyhow::Result<()> {
+        self.record("start")
+    }
+
+    fn stop(&mut self) -> anyhow::Result<()> {
+        self.record("stop")
+    }
+
+    fn reset(&mut self) -> anyhow::Result<()> {
+        self.record("reset")
+    }
+
+    fn dispose(&mut self) -> anyhow::Result<()> {
+        self.record("dispose")
+    }
+
+    async fn connect(&mut self) -> anyhow::Result<()> {
+        self.record("connect")
+            .map_err(|e| e.context("provider context"))?;
+        self.connected = true;
+        Ok(())
+    }
+
+    async fn disconnect(&mut self) -> anyhow::Result<()> {
+        self.record("disconnect")?;
+        self.connected = false;
+        Ok(())
+    }
+}
+
+#[rstest]
+#[case(Some("password=SYN-password bearer=SYN-token"))]
+#[case(Some("https://SYN-user:SYN-password@example.invalid/SYN-path?token=SYN-token"))]
+#[case(None)]
+fn test_execution_client_lifecycle_logging(
+    mut execution_engine: ExecutionEngine,
+    #[case] error_message: Option<&'static str>,
+) {
+    capture_reconciliation_logs();
+    let calls = Rc::new(RefCell::new(Vec::new()));
+
+    for (client_id, error) in [
+        (ClientId::from("FIRST"), error_message),
+        (ClientId::from("SECOND"), None),
+    ] {
+        execution_engine
+            .register_client(Box::new(LifecycleExecutionClient {
+                client_id,
+                error_message: error,
+                calls: Rc::clone(&calls),
+                connected: false,
+            }))
+            .unwrap();
+    }
+
+    take_reconciliation_logs();
+    poll_to_completion(execution_engine.connect());
+
+    let expected = if error_message.is_some() {
+        vec![(
+            Level::Error,
+            "Failed to connect execution client FIRST: connection failed".to_string(),
+        )]
+    } else {
+        vec![]
+    };
+
+    assert_eq!(take_reconciliation_logs(), expected);
+    assert_eq!(execution_engine.check_connected(), error_message.is_none());
+
+    for (operation, action) in [
+        ("start", ExecutionEngine::start as fn(&mut ExecutionEngine)),
+        ("stop", ExecutionEngine::stop),
+        ("stop", ExecutionEngine::stop_clients),
+        ("reset", ExecutionEngine::reset),
+        ("dispose", ExecutionEngine::dispose),
+    ] {
+        action(&mut execution_engine);
+
+        let expected = if error_message.is_some() {
+            vec![(
+                Level::Error,
+                format!("Failed to {operation} execution client FIRST"),
+            )]
+        } else {
+            vec![]
+        };
+
+        assert_eq!(take_reconciliation_logs(), expected);
+    }
+
+    let result = poll_to_completion(execution_engine.disconnect());
+
+    if error_message.is_some() {
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Failed to disconnect execution clients: FIRST"
+        );
+    } else {
+        result.unwrap();
+    }
+
+    let expected_calls: Vec<_> = [
+        "connect",
+        "start",
+        "stop",
+        "stop",
+        "reset",
+        "dispose",
+        "disconnect",
+    ]
+    .into_iter()
+    .flat_map(|op| {
+        [
+            (ClientId::from("FIRST"), op),
+            (ClientId::from("SECOND"), op),
+        ]
+    })
+    .collect();
+
+    assert_eq!(*calls.borrow(), expected_calls);
+    assert_eq!(take_reconciliation_logs(), vec![]);
+    assert!(
+        !execution_engine
+            .get_clients_mut()
+            .iter()
+            .find(|c| c.client_id() == ClientId::from("SECOND"))
+            .unwrap()
+            .is_connected()
+    );
+}
+
+#[rstest]
+#[case(Some("password=SYN-password token=SYN-token"))]
+#[case(None)]
+fn test_execution_command_logging(
+    mut execution_engine: ExecutionEngine,
+    #[case] error_message: Option<&'static str>,
+    #[values(
+        "modify",
+        "batch_modify",
+        "cancel",
+        "cancel_all",
+        "batch_cancel",
+        "query",
+        "query_order"
+    )]
+    operation: &'static str,
+) {
+    capture_reconciliation_logs();
+    let client_id = ClientId::from("QUERIES");
+    let command_id = UUID4::new();
+    let calls = Rc::new(RefCell::new(Vec::new()));
+    execution_engine
+        .register_client(Box::new(LifecycleExecutionClient {
+            client_id,
+            error_message,
+            calls: Rc::clone(&calls),
+            connected: false,
+        }))
+        .unwrap();
+
+    take_reconciliation_logs();
+    let trader_id = TraderId::test_default();
+    let strategy_id = StrategyId::test_default();
+    let instrument_id = audusd_sim().id();
+    let client_order_id = ClientOrderId::from("O-QUERY-001");
+    let ts_init = UnixNanos::from(1);
+
+    let modify = ModifyOrder::new(
+        trader_id,
+        Some(client_id),
+        strategy_id,
+        instrument_id,
+        client_order_id,
+        None,
+        Some(Quantity::from("10")),
+        Some(Price::from("1.25")),
+        None,
+        command_id,
+        ts_init,
+        None,
+        None,
+    );
+
+    let cancel = CancelOrder::new(
+        trader_id,
+        Some(client_id),
+        strategy_id,
+        instrument_id,
+        client_order_id,
+        None,
+        command_id,
+        ts_init,
+        None,
+        None,
+    );
+
+    let (command, description, level) = match operation {
+        "modify" => (
+            TradingCommand::ModifyOrder(modify),
+            "modifying order",
+            Level::Error,
+        ),
+        "batch_modify" => (
+            TradingCommand::ModifyOrders(BatchModifyOrders::new(
+                trader_id,
+                Some(client_id),
+                strategy_id,
+                instrument_id,
+                vec![modify],
+                command_id,
+                ts_init,
+                None,
+                None,
+            )),
+            "batch modifying orders",
+            Level::Error,
+        ),
+        "cancel" => (
+            TradingCommand::CancelOrder(cancel),
+            "canceling order",
+            Level::Error,
+        ),
+        "cancel_all" => (
+            TradingCommand::CancelAllOrders(CancelAllOrders::new(
+                trader_id,
+                Some(client_id),
+                strategy_id,
+                instrument_id,
+                None,
+                command_id,
+                ts_init,
+                None,
+                None,
+            )),
+            "canceling all orders",
+            Level::Error,
+        ),
+        "batch_cancel" => (
+            TradingCommand::CancelOrders(BatchCancelOrders::new(
+                trader_id,
+                Some(client_id),
+                strategy_id,
+                instrument_id,
+                vec![cancel],
+                command_id,
+                ts_init,
+                None,
+                None,
+            )),
+            "batch canceling orders",
+            Level::Error,
+        ),
+        "query" => (
+            TradingCommand::QueryAccount(QueryAccount::new(
+                trader_id,
+                Some(client_id),
+                AccountId::from("SYN-001"),
+                command_id,
+                ts_init,
+                None,
+                None,
+            )),
+            "querying account",
+            Level::Warn,
+        ),
+        "query_order" => (
+            TradingCommand::QueryOrder(QueryOrder::new(
+                trader_id,
+                Some(client_id),
+                strategy_id,
+                instrument_id,
+                client_order_id,
+                None,
+                command_id,
+                ts_init,
+                None,
+                None,
+            )),
+            "querying order",
+            Level::Warn,
+        ),
+        _ => unreachable!(),
+    };
+
+    execution_engine.execute(command);
+
+    let expected = if error_message.is_some() {
+        vec![(
+            level,
+            format!("Error {description}: client QUERIES, command {command_id}"),
+        )]
+    } else {
+        vec![]
+    };
+
+    assert_eq!(take_reconciliation_logs(), expected);
+    assert_eq!(*calls.borrow(), vec![(client_id, operation)]);
 }

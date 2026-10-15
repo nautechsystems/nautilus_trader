@@ -41,7 +41,7 @@ use nautilus_model::{
     instruments::InstrumentAny,
 };
 use nautilus_network::{
-    SocketStateSink,
+    ConnectionUrl, SocketStateSink,
     http::create_standard_nautilus_headers,
     mode::ConnectionMode,
     websocket::{
@@ -93,7 +93,7 @@ struct SubscriptionArgs {
 /// re-issuing `subscribe_account`, so a reconnect never replays a connect-time,
 /// potentially-expired token.
 pub struct LighterWebSocketClient {
-    url: String,
+    url: ConnectionUrl,
     connection_mode: Arc<ArcSwap<AtomicU8>>,
     connection_epoch: Arc<ArcSwap<AtomicU64>>,
     connection_lock: Arc<tokio::sync::Mutex<()>>,
@@ -277,7 +277,7 @@ impl LighterWebSocketClient {
         let (placeholder_tx, _) = tokio::sync::mpsc::unbounded_channel();
 
         Self {
-            url,
+            url: url.into(),
             connection_mode,
             connection_epoch,
             connection_lock: Arc::new(tokio::sync::Mutex::new(())),
@@ -318,7 +318,7 @@ impl LighterWebSocketClient {
     /// Returns the resolved WebSocket URL.
     #[must_use]
     pub fn url(&self) -> &str {
-        &self.url
+        self.url.expose()
     }
 
     /// Returns `true` when the underlying connection is active.
@@ -463,7 +463,7 @@ impl LighterWebSocketClient {
         let headers = create_standard_nautilus_headers();
 
         let cfg = WebSocketConfig {
-            url: self.url.clone(),
+            url: self.url.expose().to_owned(),
             headers,
             heartbeat_interval_secs: Some(HEARTBEAT_INTERVAL.as_secs()),
             heartbeat_payload: None,
@@ -484,10 +484,11 @@ impl LighterWebSocketClient {
             max_message_size_bytes: None,
             max_frame_size_bytes: None,
         };
+
         let connect = WebSocketClient::epoch_builder()
             .config(cfg)
             .epoch_handler(message_handler)
-            .rate_limiter(ws_message_rate_limiter(&self.url))
+            .rate_limiter(ws_message_rate_limiter(self.url.expose()))
             .initial_connect_retry_policy(Self::initial_connect_retry_policy())
             .cancellation_token(cancellation_token.clone())
             .maybe_state_sink(
@@ -562,7 +563,7 @@ impl LighterWebSocketClient {
         self.connection_mode.store(connection_mode_atomic);
         self.connection_epoch.store(connection_epoch_atomic);
 
-        log::debug!("Lighter WebSocket connected: {}", self.url);
+        log::debug!("Lighter WebSocket connected: {}", self.url.origin());
 
         let signal = Arc::clone(&self.signal);
         let subscriptions = self.subscriptions.clone();
@@ -1417,6 +1418,28 @@ mod tests {
         let registry = Arc::new(MarketRegistry::new());
         registry.insert(market_index, symbol, product);
         registry
+    }
+
+    #[rstest]
+    #[case("wss://stream.example.com/feed", "wss://stream.example.com")]
+    #[case(
+        "wss://SYN-user:SYN-password@stream.example.com:9443/SYN-path?token=SYN-query#SYN-fragment",
+        "wss://stream.example.com:9443"
+    )]
+    fn test_debug_preserves_url_origin(#[case] url: &str, #[case] origin: &str) {
+        let client = LighterWebSocketClient::new(
+            Some(url.to_string()),
+            LighterEnvironment::Testnet,
+            Arc::new(MarketRegistry::new()),
+            TransportBackend::default(),
+            30,
+            Duration::from_secs(DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS),
+            None,
+        );
+        let debug = format!("{client:?}");
+        assert!(debug.contains(&format!("url: {origin:?}")));
+        assert!(!debug.contains("SYN-"));
+        assert_eq!(client.url.expose(), url);
     }
 
     #[rstest]

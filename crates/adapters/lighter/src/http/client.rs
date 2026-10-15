@@ -505,7 +505,7 @@ impl LighterRawHttpClient {
                     async move {
                         let response = self
                             .client
-                            .request_with_params_url_redacted(
+                            .request_with_params(
                                 Method::GET,
                                 url,
                                 params,

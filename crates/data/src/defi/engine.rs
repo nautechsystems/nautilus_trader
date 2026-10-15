@@ -232,7 +232,10 @@ impl DataEngine {
         }
 
         if let Some(client) = self.get_client(req.client_id(), req.venue()) {
-            client.execute_defi_request(req)
+            let client_id = client.client_id();
+            client
+                .execute_defi_request(req)
+                .map_err(|e| e.context(format!("Data client {client_id} request failed")))
         } else {
             anyhow::bail!(
                 "Cannot handle request: no client found for {:?} {:?}",

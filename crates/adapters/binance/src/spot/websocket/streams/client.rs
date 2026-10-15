@@ -43,6 +43,7 @@ use nautilus_live::{
 };
 use nautilus_model::instruments::{Instrument, InstrumentAny};
 use nautilus_network::{
+    ConnectionUrl,
     http::create_standard_nautilus_headers,
     mode::ConnectionMode,
     websocket::{
@@ -88,7 +89,7 @@ struct ConnectionSlot {
 /// transparent to the data client.
 #[derive(Clone)]
 pub struct BinanceSpotWebSocketClient {
-    url: String,
+    url: ConnectionUrl,
     credential: Option<Arc<Ed25519Credential>>,
     heartbeat: Option<u64>,
     signal: Arc<AtomicBool>,
@@ -152,7 +153,7 @@ impl BinanceSpotWebSocketClient {
         };
 
         Ok(Self {
-            url,
+            url: url.into(),
             credential,
             heartbeat,
             signal: Arc::new(AtomicBool::new(false)),
@@ -262,7 +263,7 @@ impl BinanceSpotWebSocketClient {
 
         log::debug!(
             "Connected to Binance Spot SBE stream pool: url={}",
-            self.url
+            self.url.origin()
         );
         Ok(())
     }
@@ -418,7 +419,12 @@ impl BinanceSpotWebSocketClient {
                     ),
                 }));
             }
-            log::debug!("Pool slot {} connected: url={}", slot_count - 1, self.url);
+
+            log::debug!(
+                "Pool slot {} connected: url={}",
+                slot_count - 1,
+                self.url.origin()
+            );
         }
 
         // Phase 3: assign streams to slots and send commands (brief lock).
@@ -588,7 +594,7 @@ impl BinanceSpotWebSocketClient {
         }
 
         let config = WebSocketConfig {
-            url: self.url.clone(),
+            url: self.url.expose().to_owned(),
             headers,
             heartbeat_interval_secs: self.heartbeat,
             heartbeat_payload: None,
@@ -800,6 +806,27 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    #[case("wss://stream.example.com/feed", "wss://stream.example.com")]
+    #[case(
+        "wss://SYN-user:SYN-password@stream.example.com:9443/SYN-path?token=SYN-query#SYN-fragment",
+        "wss://stream.example.com:9443"
+    )]
+    fn test_debug_preserves_url_origin(#[case] url: &str, #[case] origin: &str) {
+        let client = BinanceSpotWebSocketClient::new(
+            Some(url.to_string()),
+            None,
+            None,
+            None,
+            TransportBackend::default(),
+        )
+        .unwrap();
+        let debug = format!("{client:?}");
+        assert!(debug.contains(&format!("url: {origin:?}")));
+        assert!(!debug.contains("SYN-"));
+        assert_eq!(client.url.expose(), url);
+    }
 
     #[tokio::test]
     async fn test_cancelled_close_retains_connection_slot() {

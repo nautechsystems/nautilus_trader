@@ -249,10 +249,11 @@ make cargo-test-crate-nautilus-serialization FEATURES="capnp"
   together to avoid the act-assert-act smell.
 - Use `unwrap`, `expect`, or direct `panic!`/`assert` calls inside tests. Clarity and conciseness matter more
   than defensive error handling here.
-- Do not capture log output to assert on log messages. Log capture in tests is fragile
-  because loggers are global state, test execution order is non-deterministic, and the
-  assertions break when log wording changes. Instead, verify the observable behavior
-  (return values, state changes, side effects) that the log message reflects.
+- For behavior tests, assert return values, state changes, or side effects rather than log messages.
+  Log capture uses global state, depends on test execution order, and can break when wording changes.
+- Capture logs only when logging itself is the contract, such as excluding secrets and preserving
+  public diagnostic context. Serialize capture and join emitting tasks before releasing it.
+  Assert the relevant records and secret absence; avoid whole-transcript assertions.
 
 ### Python tests (`python/tests/`)
 

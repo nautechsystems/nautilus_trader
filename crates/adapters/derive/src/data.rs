@@ -16,6 +16,7 @@
 //! Live market data client implementation for the Derive adapter.
 
 use std::{
+    borrow::Cow,
     num::NonZeroUsize,
     str::FromStr,
     sync::{
@@ -217,13 +218,16 @@ impl DeriveDataClient {
 
     /// Spawns a fire-and-forget task, tracks its handle in `pending_tasks`
     /// for teardown abort, and logs failures with the task description.
-    fn spawn_task<F>(&self, description: &'static str, fut: F)
+    fn spawn_task<F>(&self, description: impl Into<Cow<'static, str>>, fut: F)
     where
         F: std::future::Future<Output = anyhow::Result<()>> + Send + 'static,
     {
+        let description = description.into();
+        let task_description = description.clone();
+
         let future = async move {
-            if let Err(e) = fut.await {
-                log::warn!("{description} failed: {e:?}");
+            if fut.await.is_err() {
+                log::warn!("{task_description} failed");
             }
         };
 
@@ -437,8 +441,8 @@ impl DeriveDataClient {
                 ctx.quote_cache.lock().clear();
                 log::info!("Derive WebSocket reconnected");
             }
-            DeriveWsMessage::SessionRecoveryFailed(reason) => {
-                log::error!("Derive WebSocket session recovery failed: {reason}");
+            DeriveWsMessage::SessionRecoveryFailed(_) => {
+                log::error!("Derive WebSocket session recovery failed");
             }
             DeriveWsMessage::Authenticated => log::debug!("Derive WebSocket authenticated"),
         }
@@ -1286,7 +1290,7 @@ impl DataClient for DeriveDataClient {
         let start_nanos = datetime_to_unix_nanos(request.start);
         let end_nanos = datetime_to_unix_nanos(request.end);
 
-        self.spawn_task("request_quotes", async move {
+        self.spawn_task(format!("request_quotes {instrument_id}"), async move {
             let ticker = match http_client.get_ticker(&venue_symbol).await {
                 Ok(ticker) => ticker,
                 Err(e) => {
@@ -2051,13 +2055,17 @@ async fn run_channel_subscribe(
 
     if let Err(e) = result {
         lifecycle.rollback(owner, generation);
-        log::error!("Failed to subscribe to Derive channel `{channel}`: {e}");
+        log::error!(
+            "Failed to subscribe to Derive channel `{channel}`: {}",
+            e.redacted_message()
+        );
 
         let cleanup_error = match request.unsubscribe(&ws).await {
             Ok(()) => None,
             Err(cleanup_error) => {
                 log::error!(
-                    "Failed to clean up uncertain Derive channel `{channel}`: {cleanup_error}",
+                    "Failed to clean up uncertain Derive channel `{channel}`: {}",
+                    cleanup_error.redacted_message(),
                 );
                 Some(cleanup_error)
             }
@@ -2740,6 +2748,7 @@ mod tests {
 
     use super::*;
     use crate::{
+        client_logging,
         common::{
             consts::DERIVE_CLIENT_ID, enums::DeriveEnvironment, parse::parse_derive_instrument_any,
             urls,
@@ -2756,6 +2765,62 @@ mod tests {
         let content = std::fs::read_to_string(data_path().join(filename))
             .unwrap_or_else(|_| panic!("failed to read {filename}"));
         serde_json::from_str(&content).expect("invalid json")
+    }
+
+    #[tokio::test]
+    async fn test_data_task_log_omits_provider_error() {
+        let _capture = client_logging::capture_logs().await;
+        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
+        replace_data_event_sender(sender);
+        let client =
+            DeriveDataClient::new(*DERIVE_CLIENT_ID, DeriveDataClientConfig::default()).unwrap();
+        client.spawn_task("Synthetic subscription", async {
+            anyhow::bail!("SYN-secret-provider-error")
+        });
+
+        wait_until_async(
+            || async {
+                client_logging::messages().iter().any(|(level, message)| {
+                    *level == log::Level::Warn && message == "Synthetic subscription failed"
+                })
+            },
+            Duration::from_secs(2),
+        )
+        .await;
+
+        client.join_pending_tasks().await.unwrap();
+        let messages = client_logging::messages();
+        assert!(messages.contains(&(
+            log::Level::Warn,
+            "Synthetic subscription failed".to_string()
+        )));
+        assert!(
+            !messages
+                .iter()
+                .any(|(_, message)| message.contains("SYN-secret"))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_session_failure_log_omits_provider_reason() {
+        let _capture = client_logging::capture_logs().await;
+        let (ctx, _receiver) = make_ctx(None);
+        DeriveDataClient::handle_ws_message(
+            DeriveWsMessage::SessionRecoveryFailed("SYN-secret-provider-reason".to_string()),
+            &ctx,
+        );
+        assert_eq!(
+            client_logging::messages()
+                .into_iter()
+                .filter(|(_, message)| {
+                    message.starts_with("Derive WebSocket session recovery failed")
+                })
+                .collect::<Vec<_>>(),
+            vec![(
+                log::Level::Error,
+                "Derive WebSocket session recovery failed".to_string()
+            )]
+        );
     }
 
     #[tokio::test]
@@ -3251,6 +3316,7 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn test_session_recovery_failure_marks_client_disconnected() {
+        let _capture = client_logging::capture_logs().await;
         let (data_tx, _data_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         replace_data_event_sender(data_tx);
 
@@ -3274,6 +3340,7 @@ mod tests {
         assert!(!client.is_connected());
 
         client.cancellation_token.cancel();
+        client.join_session_tasks().await.unwrap();
     }
 
     #[rstest]
