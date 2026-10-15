@@ -68,7 +68,7 @@ use nautilus_model::{
     enums::{AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce},
     events::{
         AccountState, OrderAccepted, OrderDenied, OrderEventAny, OrderFilled, OrderPendingCancel,
-        OrderSubmitted,
+        OrderRejected, OrderSubmitted,
     },
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId, Symbol,
@@ -5109,6 +5109,29 @@ fn mark_cached_order_submitted(cache: &Rc<RefCell<Cache>>, order: &OrderAny) {
         .unwrap();
 }
 
+/// Applies an `OrderSubmitted`, then an `OrderRejected`, closing the order without a venue order ID
+/// as a venue rejection of the submission does.
+fn mark_cached_order_rejected(cache: &Rc<RefCell<Cache>>, order: &OrderAny) {
+    mark_cached_order_submitted(cache, order);
+    let rejected = OrderRejected::new(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        test_account_id(),
+        "post only would execute".into(),
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        false,
+        false,
+    );
+    cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::Rejected(rejected))
+        .unwrap();
+}
+
 /// Leaves a cached order open with no venue order ID, as a cancel sent while the venue holds a
 /// submission does, so the orders-status window can only be asked by client order ID.
 fn mark_cached_order_pending_cancel_while_held(cache: &Rc<RefCell<Cache>>, order: &OrderAny) {
@@ -6231,9 +6254,11 @@ async fn test_futures_cancel_and_modify_name_the_order_by_one_identifier(
 /// the cache indexes for another order, even one whose full ID is this order's shortened one, is
 /// another order, while one it indexes for this order fits even before the order carries that
 /// venue order ID. With the venue order ID unknown, one read's rows or fills of two venue orders
-/// that can be the order leave the answer open; with it known, so does a row or fill of another
-/// venue order that can be the order when no row or fill carries the ID. Either way the query
-/// fails and reconciliation defers.
+/// that can be the order leave the answer open, as does a row of a venue order the cache indexes
+/// for no order, or with no row such a fill, that another cached order sent without a venue order
+/// ID, holding its echo as its full ID, can be by its instrument, side and creation; with it known,
+/// so does a row or fill of another venue order that can be the order when no row or fill carries
+/// the ID. Either way the query fails and reconciliation defers.
 #[rstest]
 #[case::venue_order_id_row_wins(
     true,
@@ -6326,6 +6351,12 @@ async fn test_futures_cancel_and_modify_name_the_order_by_one_identifier(
 #[case::history_row_of_a_short_id_order(false, LookupRow::HistoryOfShortIdOrder, false, Ok(None))]
 #[case::window_row_of_a_short_id_order(false, LookupRow::WindowOfShortIdOrder, false, Ok(None))]
 #[case::fill_of_a_short_id_order(false, LookupRow::FillOfShortIdOrder, false, Ok(None))]
+#[case::fill_of_a_short_id_order_adopted_after_the_fill(
+    false,
+    LookupRow::FillOfAdoptedShortIdOrder,
+    false,
+    Ok(None)
+)]
 #[case::own_row_beside_a_short_id_order(
     false,
     LookupRow::HistoryOfShortIdOrderAndTheOrder,
@@ -6356,6 +6387,66 @@ async fn test_futures_cancel_and_modify_name_the_order_by_one_identifier(
     false,
     Ok(Some("V-OWN-1"))
 )]
+#[case::history_row_of_an_unindexed_short_id_order(
+    false,
+    LookupRow::HistoryOfUnindexedShortIdOrder(UnindexedShortIdOrder::Fits),
+    false,
+    Err("the full ID of another cached order")
+)]
+#[case::window_row_of_an_unindexed_short_id_order(
+    false,
+    LookupRow::WindowOfUnindexedShortIdOrder,
+    false,
+    Err("the full ID of another cached order")
+)]
+#[case::fill_of_an_unindexed_short_id_order(
+    false,
+    LookupRow::FillOfUnindexedShortIdOrder,
+    false,
+    Err("carries its client order ID")
+)]
+#[case::history_row_of_an_unindexed_short_id_order_with_venue_order_id(
+    true,
+    LookupRow::HistoryOfUnindexedShortIdOrder(UnindexedShortIdOrder::Fits),
+    false,
+    Err("carries its client order ID")
+)]
+#[case::row_placed_before_an_unindexed_short_id_order(
+    false,
+    LookupRow::HistoryOfUnindexedShortIdOrder(UnindexedShortIdOrder::CreatedAfterTheRow),
+    false,
+    Ok(Some("V-OTHER-1"))
+)]
+#[case::row_on_the_other_side_of_an_unindexed_short_id_order(
+    false,
+    LookupRow::HistoryOfUnindexedShortIdOrder(UnindexedShortIdOrder::OnTheOtherSide),
+    false,
+    Ok(Some("V-OTHER-1"))
+)]
+#[case::row_on_another_instrument_than_an_unindexed_short_id_order(
+    false,
+    LookupRow::HistoryOfUnindexedShortIdOrder(UnindexedShortIdOrder::OnAnotherInstrument),
+    false,
+    Ok(Some("V-OTHER-1"))
+)]
+#[case::row_beside_a_short_id_order_holding_another_venue_order(
+    false,
+    LookupRow::HistoryOfUnindexedShortIdOrder(UnindexedShortIdOrder::HoldsAnotherVenueOrder),
+    false,
+    Ok(Some("V-OTHER-1"))
+)]
+#[case::row_beside_a_denied_short_id_order(
+    false,
+    LookupRow::HistoryOfUnindexedShortIdOrder(UnindexedShortIdOrder::Denied),
+    false,
+    Ok(Some("V-OTHER-1"))
+)]
+#[case::row_beside_a_rejected_short_id_order(
+    false,
+    LookupRow::HistoryOfUnindexedShortIdOrder(UnindexedShortIdOrder::Rejected),
+    false,
+    Err("the full ID of another cached order")
+)]
 #[case::no_row_carries_the_id(false, LookupRow::None, false, Ok(None))]
 #[tokio::test]
 async fn test_futures_order_lookup_takes_only_the_queried_order(
@@ -6384,6 +6475,9 @@ async fn test_futures_order_lookup_takes_only_the_queried_order(
 
     if with_venue_order_id {
         set_venue_order_id_on_cached_order(&cache, &order, "V-OWN-1");
+    } else {
+        // A cached order without a venue order ID is in flight when reconciliation queries it
+        mark_cached_order_submitted(&cache, &order);
     }
 
     let history_row = |order_uid: &str, client_id: &str| {
@@ -6516,9 +6610,24 @@ async fn test_futures_order_lookup_takes_only_the_queried_order(
         LookupRow::HistoryOfShortIdOrder
         | LookupRow::HistoryOfShortIdOrderAndTheOrder
         | LookupRow::WindowOfShortIdOrder
-        | LookupRow::FillOfShortIdOrder => {
-            let other =
-                add_limit_order_to_cache(&cache, ClientOrderId::new(SHORTENED_CLIENT_ORDER_ID));
+        | LookupRow::FillOfShortIdOrder
+        | LookupRow::FillOfAdoptedShortIdOrder => {
+            // An order adopted from a venue report is created after the venue placed and filled it
+            let created = if matches!(row, LookupRow::FillOfAdoptedShortIdOrder) {
+                UnixNanos::from(
+                    get_atomic_clock_realtime().get_time_ns().as_u64() + 86_400_000_000_000,
+                )
+            } else {
+                UnixNanos::default()
+            };
+            let other = add_futures_limit_order_created_at(
+                &cache,
+                ClientOrderId::new(SHORTENED_CLIENT_ORDER_ID),
+                test_instrument_id(),
+                OrderSide::Buy,
+                test_strategy_id(),
+                created,
+            );
             set_venue_order_id_on_cached_order(&cache, &other, "V-OTHER-1");
 
             match row {
@@ -6532,7 +6641,7 @@ async fn test_futures_order_lookup_takes_only_the_queried_order(
                         0,
                     )]));
                 }
-                LookupRow::FillOfShortIdOrder => {
+                LookupRow::FillOfShortIdOrder | LookupRow::FillOfAdoptedShortIdOrder => {
                     *state.fills_response.lock().await = Some(recent_fills_body(&[(
                         "F-OTHER-1",
                         "V-OTHER-1",
@@ -6546,6 +6655,83 @@ async fn test_futures_order_lookup_takes_only_the_queried_order(
                     }
                     *state.futures_order_history_json.lock().await =
                         Some(futures_order_history_json(&elements));
+                }
+            }
+        }
+        LookupRow::HistoryOfUnindexedShortIdOrder(_)
+        | LookupRow::WindowOfUnindexedShortIdOrder
+        | LookupRow::FillOfUnindexedShortIdOrder => {
+            let (instrument_id, side, created) = match row {
+                LookupRow::HistoryOfUnindexedShortIdOrder(
+                    UnindexedShortIdOrder::CreatedAfterTheRow,
+                ) => (
+                    test_instrument_id(),
+                    OrderSide::Buy,
+                    UnixNanos::from(
+                        get_atomic_clock_realtime().get_time_ns().as_u64() + 86_400_000_000_000,
+                    ),
+                ),
+                LookupRow::HistoryOfUnindexedShortIdOrder(
+                    UnindexedShortIdOrder::OnTheOtherSide,
+                ) => (test_instrument_id(), OrderSide::Sell, UnixNanos::default()),
+                LookupRow::HistoryOfUnindexedShortIdOrder(
+                    UnindexedShortIdOrder::OnAnotherInstrument,
+                ) => (
+                    InstrumentId::from("PF_ETHUSD.KRAKEN"),
+                    OrderSide::Buy,
+                    UnixNanos::default(),
+                ),
+                _ => (test_instrument_id(), OrderSide::Buy, UnixNanos::default()),
+            };
+            let other = add_futures_limit_order_created_at(
+                &cache,
+                ClientOrderId::new(SHORTENED_CLIENT_ORDER_ID),
+                instrument_id,
+                side,
+                test_strategy_id(),
+                created,
+            );
+
+            match row {
+                LookupRow::HistoryOfUnindexedShortIdOrder(UnindexedShortIdOrder::Denied) => {
+                    deny_cached_order(&cache, &other);
+                }
+                LookupRow::HistoryOfUnindexedShortIdOrder(
+                    UnindexedShortIdOrder::HoldsAnotherVenueOrder,
+                ) => {
+                    mark_cached_order_submitted(&cache, &other);
+                    set_venue_order_id_on_cached_order(&cache, &other, "V-OTHER-2");
+                }
+                LookupRow::HistoryOfUnindexedShortIdOrder(UnindexedShortIdOrder::Rejected) => {
+                    mark_cached_order_rejected(&cache, &other);
+                }
+                _ => mark_cached_order_submitted(&cache, &other),
+            }
+
+            match row {
+                LookupRow::WindowOfUnindexedShortIdOrder => {
+                    *state.orders_status_response.lock().await = Some(orders_status_body(&[(
+                        "V-OTHER-1",
+                        SHORTENED_CLIENT_ORDER_ID,
+                        "PI_XBTUSD",
+                        "buy",
+                        "ENTERED_BOOK",
+                        0,
+                    )]));
+                }
+                LookupRow::FillOfUnindexedShortIdOrder => {
+                    *state.fills_response.lock().await = Some(recent_fills_body(&[(
+                        "F-OTHER-1",
+                        "V-OTHER-1",
+                        SHORTENED_CLIENT_ORDER_ID,
+                    )]));
+                }
+                _ => {
+                    *state.futures_order_history_json.lock().await =
+                        Some(futures_order_history_json(&[history_row(
+                            "V-OTHER-1",
+                            SHORTENED_CLIENT_ORDER_ID,
+                        )]));
                 }
             }
         }
@@ -6595,39 +6781,67 @@ async fn test_futures_order_lookup_takes_only_the_queried_order(
 
 /// Without a cached order to check a row's instrument, side and placement against, the echo alone
 /// ties a row to the queried order unless the cache indexes the row's venue order for another
-/// order, and with the venue order ID known a row of another venue order that can be the order
-/// leaves the answer open, so the query fails and reconciliation defers.
+/// order or, indexing it for none, another cached order sent without a venue order ID holds the
+/// echo as its full ID and fits the row by its instrument, side and creation, and with the venue
+/// order ID known a row of another venue order that can be the order leaves the answer open, so the
+/// query fails and reconciliation defers.
 #[rstest]
-#[case::echoing_row(false, Some(LONG_CLIENT_ORDER_ID), false, Ok(Some("V-OTHER-1")))]
-#[case::shortened_echoing_row(false, Some(SHORTENED_CLIENT_ORDER_ID), false, Ok(Some("V-OTHER-1")))]
+#[case::echoing_row(
+    false,
+    Some(LONG_CLIENT_ORDER_ID),
+    ShortIdOrder::Absent,
+    Ok(Some("V-OTHER-1"))
+)]
+#[case::shortened_echoing_row(
+    false,
+    Some(SHORTENED_CLIENT_ORDER_ID),
+    ShortIdOrder::Absent,
+    Ok(Some("V-OTHER-1"))
+)]
 #[case::echoing_row_of_another_venue_order(
     true,
     Some(LONG_CLIENT_ORDER_ID),
-    false,
+    ShortIdOrder::Absent,
     Err("carries its client order ID")
 )]
-#[case::no_row(true, None, false, Ok(None))]
-#[case::row_of_a_short_id_order(false, Some(SHORTENED_CLIENT_ORDER_ID), true, Ok(None))]
+#[case::no_row(true, None, ShortIdOrder::Absent, Ok(None))]
+#[case::row_of_a_short_id_order(
+    false,
+    Some(SHORTENED_CLIENT_ORDER_ID),
+    ShortIdOrder::Indexed,
+    Ok(None)
+)]
 #[case::row_of_a_short_id_order_with_venue_order_id(
     true,
     Some(SHORTENED_CLIENT_ORDER_ID),
-    true,
+    ShortIdOrder::Indexed,
     Ok(None)
+)]
+#[case::row_of_an_unindexed_short_id_order(
+    false,
+    Some(SHORTENED_CLIENT_ORDER_ID),
+    ShortIdOrder::Unindexed,
+    Err("the full ID of another cached order")
 )]
 #[tokio::test]
 async fn test_futures_order_lookup_without_a_cached_order_takes_the_echo(
     #[case] with_venue_order_id: bool,
     #[case] echoed: Option<&str>,
-    #[case] indexed_for_a_short_id_order: bool,
+    #[case] short_id_order: ShortIdOrder,
     #[case] expected: Result<Option<&str>, &str>,
 ) {
     let (client, _rx, cache, state) =
         connected_client_with_command_responses(CommandResponses::default()).await;
     let client_order_id = ClientOrderId::new(LONG_CLIENT_ORDER_ID);
 
-    if indexed_for_a_short_id_order {
+    if !matches!(short_id_order, ShortIdOrder::Absent) {
         let other = add_limit_order_to_cache(&cache, ClientOrderId::new(SHORTENED_CLIENT_ORDER_ID));
-        set_venue_order_id_on_cached_order(&cache, &other, "V-OTHER-1");
+
+        if matches!(short_id_order, ShortIdOrder::Indexed) {
+            set_venue_order_id_on_cached_order(&cache, &other, "V-OTHER-1");
+        } else {
+            mark_cached_order_submitted(&cache, &other);
+        }
     }
 
     if let Some(echoed) = echoed {
@@ -6734,11 +6948,52 @@ enum LookupRow {
     /// A recent fill of `V-OTHER-1` echoing the shortened ID, which the cache indexes for another
     /// order holding that form as its full ID.
     FillOfShortIdOrder,
+    /// As `FillOfShortIdOrder`, with the other order created a day after the fill.
+    FillOfAdoptedShortIdOrder,
     /// A history row of `V-OWN-1` echoing the full ID, which the cache indexes for the order while
     /// the order carries no venue order ID, as when it is accepted while the query reads.
     HistoryIndexedForTheOrder,
+    /// A history row of `V-OTHER-1`, which the cache indexes for no order, echoing the shortened ID
+    /// another cached order holds as its full ID.
+    HistoryOfUnindexedShortIdOrder(UnindexedShortIdOrder),
+    /// A window entry of `V-OTHER-1`, as `HistoryOfUnindexedShortIdOrder` with an order that fits.
+    WindowOfUnindexedShortIdOrder,
+    /// A recent fill of `V-OTHER-1`, as `HistoryOfUnindexedShortIdOrder` with an order that fits.
+    FillOfUnindexedShortIdOrder,
     /// No row carries the ID.
     None,
+}
+
+/// The state of the cached order holding the shortened ID as its full ID, beside an unindexed row
+/// echoing it. Unless stated, it is submitted without a venue order ID, on the row's instrument and
+/// side, and created before the row's placement, as while its acknowledgement is in flight.
+#[derive(Clone, Copy, Debug)]
+enum UnindexedShortIdOrder {
+    /// Fits the row.
+    Fits,
+    /// Created a day after the test starts, long after the row's placement.
+    CreatedAfterTheRow,
+    /// On the other side.
+    OnTheOtherSide,
+    /// On another instrument.
+    OnAnotherInstrument,
+    /// Submitted and accepted as `V-OTHER-2`.
+    HoldsAnotherVenueOrder,
+    /// Denied, so never sent.
+    Denied,
+    /// Submitted and rejected, so closed without a venue order ID.
+    Rejected,
+}
+
+/// The cached order, if any, holding the shortened ID as its full ID in an uncached lookup.
+#[derive(Clone, Copy, Debug)]
+enum ShortIdOrder {
+    /// No such order is cached.
+    Absent,
+    /// Submitted, with no venue order ID.
+    Unindexed,
+    /// Cached, with `V-OTHER-1` indexed for it.
+    Indexed,
 }
 
 /// The open-orders read lists the held order's 1,000 contracts as last updated then; a window copy

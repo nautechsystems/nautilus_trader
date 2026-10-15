@@ -901,8 +901,12 @@ fill time stands in, which rules out only a fill executed before the order's
 creation. A row or fill of a venue order the cache indexes for another order
 never fits, whatever it echoes, since that order's full ID can be this order's
 shortened one. With the venue order ID unknown, the query fails when one read holds
-rows of two venue orders that fit or, no row fitting, the recent fills that fit
-belong to two venue orders or fall short of the order's quantity; with it known,
+rows of two venue orders that fit, or a fitting row of a venue order the cache
+indexes for no order that echoes the full ID of another cached order sent without
+a venue order ID, on that order's instrument and side and placed no more than five
+seconds before its creation, or, no row fitting, when the recent fills that fit
+belong to two venue orders, include such a fill, or fall short of the order's
+quantity; with it known,
 the query fails when no row or fill carries it and a fitting row or fill of
 another venue order appears. Either way reconciliation defers the order rather
 than taking a row or reporting the order missing.

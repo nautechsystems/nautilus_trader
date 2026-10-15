@@ -1996,6 +1996,10 @@ fn cached_order_for_report(cache: &Cache, report: &OrderStatusReport) -> Option<
 /// only a fill executed before the order's creation. Without a cached order to check against, the
 /// echo alone ties a row to it. A row of a venue order the cache indexes for another order is that
 /// order's whatever it echoes, since another order's full ID can be this order's shortened one.
+/// A row echoing the full ID of another cached order sent but carrying no venue order ID, on that
+/// order's instrument and side and placed no more than `ORDERS_STATUS_CLOCK_SKEW` before its
+/// creation, can be either order's while the cache indexes its venue order for neither, and leaves
+/// the answer open.
 struct QueriedOrder {
     venue_order_id: Option<VenueOrderId>,
     client_order_id: Option<ClientOrderId>,
@@ -2070,12 +2074,58 @@ impl QueriedOrder {
             )
     }
 
+    /// Whether another cached order, sent but without a venue order ID, holds `echoed` as its full
+    /// client order ID and a row on `instrument_id` and `side`, placed at `placed`, can be that
+    /// order's.
+    fn echo_is_another_order(
+        &self,
+        cache: &Cache,
+        echoed: Option<ClientOrderId>,
+        instrument_id: InstrumentId,
+        side: OrderSide,
+        placed: UnixNanos,
+    ) -> bool {
+        echoed
+            .filter(|echoed| Some(*echoed) != self.client_order_id)
+            .and_then(|echoed| cache.order(&echoed))
+            .is_some_and(|other| {
+                other.ts_submitted().is_some()
+                    && other.venue_order_id().is_none()
+                    && other.instrument_id() == instrument_id
+                    && other.order_side() == side
+                    && placed.saturating_add(ORDERS_STATUS_CLOCK_SKEW) >= other.ts_init()
+            })
+    }
+
+    fn report_may_be_another_order(&self, cache: &Cache, report: &OrderStatusReport) -> bool {
+        report.order_side.is_some_and(|side| {
+            self.echo_is_another_order(
+                cache,
+                report.client_order_id,
+                report.instrument_id,
+                side,
+                report.ts_accepted,
+            )
+        })
+    }
+
+    fn fill_may_be_another_order(&self, cache: &Cache, fill: &FillReport) -> bool {
+        self.echo_is_another_order(
+            cache,
+            fill.client_order_id,
+            fill.instrument_id,
+            fill.order_side,
+            fill.ts_event,
+        )
+    }
+
     /// The report of this order, named by its client order ID when matched by it.
     ///
     /// # Errors
     ///
-    /// Returns an error if reports of several venue orders can be this order, so the query defers
-    /// rather than take one of them.
+    /// Returns an error if reports of several venue orders can be this order, or a report that can
+    /// be this order can also be another cached order's by its full client order ID, so the query
+    /// defers rather than take one of them.
     fn find_report(
         &self,
         cache: &Cache,
@@ -2099,6 +2149,18 @@ impl QueriedOrder {
             anyhow::bail!(
                 "Reports of several venue orders carry the client order ID of order {:?}; \
                  deferring rather than taking one of them",
+                self.client_order_id,
+            );
+        }
+
+        if let Some(shared) = reports.iter().find(|report| {
+            self.echoes_report(cache, report) && self.report_may_be_another_order(cache, report)
+        }) {
+            anyhow::bail!(
+                "Report of venue order {} carries {:?}, the full ID of another cached order and a \
+                 form of order {:?}; deferring until the cache ties the venue order to one of them",
+                shared.venue_order_id,
+                shared.client_order_id,
                 self.client_order_id,
             );
         }
@@ -2464,7 +2526,8 @@ fn synthesize_filled_order_status_report(
     let venue_order_id = queried.venue_order_id;
 
     // A fill of another venue order can carry the same client order ID, so with the venue order
-    // ID known only its fills count, and without it the fills must belong to one venue order.
+    // ID known only its fills count, and without it the fills must belong to one venue order that
+    // no other cached order can hold by its full client order ID.
     let mut matched: Vec<&FillReport> = match venue_order_id {
         Some(venue_order_id) => fills
             .iter()
@@ -2477,10 +2540,10 @@ fn synthesize_filled_order_status_report(
                 .collect();
             let first_venue_order_id = matched.first()?.venue_order_id;
 
-            if matched
-                .iter()
-                .any(|fill| fill.venue_order_id != first_venue_order_id)
-            {
+            if matched.iter().any(|fill| {
+                fill.venue_order_id != first_venue_order_id
+                    || queried.fill_may_be_another_order(cache, fill)
+            }) {
                 return None;
             }
             matched
