@@ -8,6 +8,8 @@ Released on TBD (UTC).
 
 ### Security
 
+- Fixed HTTP `Referer` headers exposing URL paths and query parameters on cross-origin redirects
+
 ### Fixes
 
 ### Internal Improvements

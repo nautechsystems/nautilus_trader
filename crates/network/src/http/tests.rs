@@ -205,10 +205,7 @@ async fn redirect_method_body_and_credentials_match(
             "{headers}"
         );
         assert!(!headers.contains("private-"), "{headers}");
-        assert!(
-            headers.contains(&format!("referer: http://{addr}/start\r\n")),
-            "{headers}"
-        );
+        assert!(!headers.contains("\r\nreferer:"), "{headers}");
         assert_eq!(
             headers.contains("content-type: application/octet-stream"),
             retained
@@ -222,6 +219,110 @@ async fn redirect_method_body_and_credentials_match(
             }
         );
     }
+}
+
+#[rstest]
+#[case::same_origin(true)]
+#[case::cross_origin(false)]
+#[tokio::test]
+async fn redirect_referer_matches_origin(
+    #[case] same_origin: bool,
+    #[values(false, true)] initial_referer: bool,
+    #[values(false, true)] intermediate: bool,
+) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let destination = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+
+    let target = if same_origin {
+        addr
+    } else {
+        destination.local_addr().unwrap()
+    };
+
+    let peer = tokio::spawn(async move {
+        let mut origin_headers = Vec::new();
+
+        for step in 0..=usize::from(intermediate) {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            origin_headers.push(read_headers(&mut stream).await);
+
+            let location = if intermediate && step == 0 {
+                "/continue?signature=SECRET".to_string()
+            } else {
+                format!("http://{target}/next")
+            };
+
+            stream.write_all(format!("HTTP/1.1 302 Found\r\nContent-Length: 0\r\nConnection: close\r\nLocation: {location}\r\n\r\n").as_bytes()).await.unwrap();
+        }
+
+        let destination = if same_origin { listener } else { destination };
+        let (mut stream, _) = destination.accept().await.unwrap();
+        let headers = read_headers(&mut stream).await;
+        stream
+            .write_all(b"HTTP/1.1 201 Created\r\nContent-Length: 2\r\n\r\nok")
+            .await
+            .unwrap();
+        (origin_headers, headers)
+    });
+
+    let mut headers = HashMap::new();
+    if initial_referer {
+        headers.insert(
+            "referer".into(),
+            "https://private.example/signed?token=PRIOR_SECRET".into(),
+        );
+    }
+
+    let client = HttpClient::builder()
+        .headers(headers)
+        .use_system_proxy(false)
+        .timeout_secs(3)
+        .build()
+        .unwrap();
+    let response = send(
+        &client,
+        Method::GET,
+        format!("http://{addr}/start?signature=SECRET#fragment"),
+        None,
+    )
+    .await
+    .unwrap();
+    let (origin_headers, headers) = peer.await.unwrap();
+
+    assert_eq!(response.status.as_u16(), 201);
+    assert_eq!(response.body, Bytes::from_static(b"ok"));
+    assert_eq!(response.headers, HashMap::new());
+    assert_eq!(origin_headers.len(), 1 + usize::from(intermediate));
+    assert!(origin_headers[0].starts_with("GET /start?signature=SECRET HTTP/1.1\r\n"));
+    assert_eq!(
+        origin_headers[0]
+            .contains("\r\nreferer: https://private.example/signed?token=PRIOR_SECRET\r\n"),
+        initial_referer
+    );
+
+    if intermediate {
+        assert!(origin_headers[1].starts_with("GET /continue?signature=SECRET HTTP/1.1\r\n"));
+        assert!(origin_headers[1].contains(&format!(
+            "\r\nreferer: http://{addr}/start?signature=SECRET\r\n"
+        )));
+    }
+
+    assert!(headers.starts_with("GET /next HTTP/1.1\r\n"));
+    let referrers: Vec<_> = headers
+        .lines()
+        .filter(|line| line.to_ascii_lowercase().starts_with("referer:"))
+        .collect();
+
+    let path = if intermediate { "continue" } else { "start" };
+
+    let expected = if same_origin {
+        vec![format!("referer: http://{addr}/{path}?signature=SECRET")]
+    } else {
+        vec![]
+    };
+
+    assert_eq!(referrers, expected);
 }
 
 #[rstest]
