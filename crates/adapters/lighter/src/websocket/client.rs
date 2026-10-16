@@ -49,6 +49,7 @@ use nautilus_network::{
         WebSocketConfig, channel_epoch_message_handler,
     },
 };
+use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -106,6 +107,7 @@ pub struct LighterWebSocketClient {
     subscription_args: Arc<DashMap<String, SubscriptionArgs>>,
     next_subscription_generation: Arc<AtomicU64>,
     instruments: Arc<DashMap<i64, InstrumentAny>>,
+    cache_lock: Arc<Mutex<()>>,
     registry: Arc<MarketRegistry>,
     task_handle: TaskSlot<()>,
     transport_backend: TransportBackend,
@@ -232,6 +234,7 @@ impl Clone for LighterWebSocketClient {
             subscription_args: Arc::clone(&self.subscription_args),
             next_subscription_generation: Arc::clone(&self.next_subscription_generation),
             instruments: Arc::clone(&self.instruments),
+            cache_lock: Arc::clone(&self.cache_lock),
             registry: Arc::clone(&self.registry),
             task_handle: TaskSlot::new(),
             transport_backend: self.transport_backend,
@@ -290,6 +293,7 @@ impl LighterWebSocketClient {
             subscription_args: Arc::new(DashMap::new()),
             next_subscription_generation: Arc::new(AtomicU64::new(1)),
             instruments: Arc::new(DashMap::new()),
+            cache_lock: Arc::new(Mutex::new(())),
             registry,
             task_handle: TaskSlot::new(),
             transport_backend,
@@ -379,6 +383,7 @@ impl LighterWebSocketClient {
     /// Caches a batch of instruments along with their venue `market_index`,
     /// replaying them to the handler if a connection is already established.
     pub fn cache_instruments(&self, instruments: Vec<(i64, InstrumentAny)>) {
+        let _guard = self.cache_lock.lock();
         self.instruments.clear();
         for (market_index, instrument) in &instruments {
             self.instruments.insert(*market_index, instrument.clone());
@@ -395,6 +400,7 @@ impl LighterWebSocketClient {
 
     /// Caches a single instrument and pushes it to the handler if connected.
     pub fn cache_instrument(&self, market_index: i64, instrument: InstrumentAny) {
+        let _guard = self.cache_lock.lock();
         self.instruments.insert(market_index, instrument.clone());
 
         if let Ok(cmd_tx) = self.cmd_tx.try_read() {
@@ -537,31 +543,33 @@ impl LighterWebSocketClient {
             control.register(move || reconnect_handle.request_reconnect());
         }
 
-        let initial_instruments: Vec<(i64, InstrumentAny)> = self
-            .instruments
-            .iter()
-            .map(|entry| (*entry.key(), entry.value().clone()))
-            .collect();
-
-        if !initial_instruments.is_empty()
-            && let Err(e) = cmd_tx.send(HandlerCommand::InitializeInstruments(initial_instruments))
-        {
-            log::error!("Failed to send InitializeInstruments: {e}");
-        }
-
-        // Publish the new command channel and connection-mode atomic last.
-        // Any clone-driven subscribe call queued from this point lands
-        // behind SetClient and InitializeInstruments in cmd_rx.
+        self.out_rx = Some(out_rx);
         {
             let mut sender = self.cmd_tx.write().await;
+            // Only connect takes the sender write lock, so skipped cache sends join this snapshot
+            let cache_guard = self.cache_lock.lock();
+            let initial_instruments: Vec<(i64, InstrumentAny)> = self
+                .instruments
+                .iter()
+                .map(|entry| (*entry.key(), entry.value().clone()))
+                .collect();
+
+            if !initial_instruments.is_empty()
+                && let Err(e) =
+                    cmd_tx.send(HandlerCommand::InitializeInstruments(initial_instruments))
+            {
+                log::error!("Failed to send InitializeInstruments: {e}");
+            }
+
             self.subscriptions.clear();
             self.subscription_args.clear();
             *sender = cmd_tx.clone();
+            self.connection_epoch.store(connection_epoch_atomic);
+            self.connection_mode.store(connection_mode_atomic);
+            // Release the sender first so cache writes cannot miss both the snapshot and dispatch
+            drop(sender);
+            drop(cache_guard);
         }
-
-        self.out_rx = Some(out_rx);
-        self.connection_mode.store(connection_mode_atomic);
-        self.connection_epoch.store(connection_epoch_atomic);
 
         log::debug!("Lighter WebSocket connected: {}", self.url.origin());
 
@@ -1378,12 +1386,16 @@ fn send_command(
 
 #[cfg(test)]
 mod tests {
+    use futures_util::{SinkExt, StreamExt};
     use nautilus_core::{UnixNanos, string::secret::REDACTED};
     use nautilus_model::{
-        identifiers::Symbol,
+        data::TradeTick,
+        enums::AggressorSide,
+        identifiers::{Symbol, TradeId},
         instruments::CryptoPerpetual,
         types::{Currency, Price, Quantity},
     };
+    use nautilus_testkit::connection::race_command_with_publication;
     use rstest::rstest;
 
     use super::*;
@@ -1418,6 +1430,107 @@ mod tests {
         let registry = Arc::new(MarketRegistry::new());
         registry.insert(market_index, symbol, product);
         registry
+    }
+
+    #[tokio::test]
+    async fn command_during_sender_publication_reaches_initialized_handler() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (received_tx, mut received_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let server = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let mut socket = tokio_tungstenite::accept_async(socket).await.unwrap();
+            while let Some(Ok(message)) = socket.next().await {
+                if let tokio_tungstenite::tungstenite::Message::Text(text) = message {
+                    let payload: serde_json::Value = serde_json::from_str(text.as_str()).unwrap();
+                    let _ = received_tx.send(payload);
+                    socket
+                        .send(tokio_tungstenite::tungstenite::Message::Text(
+                            include_str!("../../test_data/ws_trade_update.json").into(),
+                        ))
+                        .await
+                        .unwrap();
+                }
+            }
+        });
+
+        let url = format!("ws://{addr}");
+
+        let mut ws_client = LighterWebSocketClient::new(
+            Some(url),
+            LighterEnvironment::Testnet,
+            registry_with(0, "ETH", LighterProductType::Perp),
+            TransportBackend::default(),
+            30,
+            Duration::from_secs(DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS),
+            None,
+        );
+        ws_client
+            .connection_epoch
+            .store(Arc::new(AtomicU64::new(99)));
+        let observer = ws_client.clone();
+        let published = ws_client.clone();
+        let instrument_id = InstrumentId::from("ETH-USD-PERP.LIGHTER");
+
+        let command = HandlerCommand::Subscribe {
+            channel: LighterWsChannel::Trade(0),
+            auth: None,
+            response_tx: None,
+        };
+
+        race_command_with_publication(
+            Arc::clone(&ws_client.cmd_tx),
+            ws_client.connect(),
+            move || {
+                assert!(published.is_active());
+                assert_eq!(published.connection_epoch(), 0);
+                command
+            },
+            || {
+                observer.cache_instrument(0, stub_instrument(instrument_id));
+                observer.is_active()
+            },
+        )
+        .await
+        .expect("connect failed");
+
+        let received = tokio::time::timeout(Duration::from_secs(2), received_rx.recv()).await;
+        let event = tokio::time::timeout(Duration::from_secs(2), ws_client.next_event()).await;
+        ws_client.disconnect().await.expect("disconnect failed");
+        server.abort();
+
+        let payload = received
+            .expect("startup command must reach server")
+            .unwrap();
+        assert_eq!(
+            payload,
+            serde_json::json!({
+                "type": "subscribe",
+                "channel": "trade/0"
+            })
+        );
+
+        let NautilusWsMessage::Trades(ticks) = event
+            .expect("startup cache must reach handler")
+            .expect("trade event")
+        else {
+            panic!("expected parsed trades");
+        };
+
+        assert_eq!(ticks.len(), 1);
+        assert_eq!(
+            ticks[0],
+            TradeTick::new(
+                instrument_id,
+                Price::from("2181.83"),
+                Quantity::from("0.1336"),
+                AggressorSide::Sell,
+                TradeId::from("16164557907"),
+                UnixNanos::from(1_773_854_156_654_000_000),
+                ticks[0].ts_init,
+            )
+        );
     }
 
     #[rstest]

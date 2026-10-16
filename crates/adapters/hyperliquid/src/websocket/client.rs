@@ -139,6 +139,7 @@ pub struct HyperliquidWebSocketClient {
     trade_stream_lock: Arc<Mutex<()>>,
     quote_streams: Arc<DashMap<Ustr, ()>>,
     instruments: Arc<AtomicMap<Ustr, InstrumentAny>>,
+    cache_tx: Arc<Mutex<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>>,
     bar_types: Arc<AtomicMap<String, BarType>>,
     asset_context_subs: Arc<DashMap<Ustr, AHashSet<AssetContextDataType>>>,
     all_dex_asset_ctxs_instrument_ids: Arc<AtomicMap<Ustr, Vec<Option<InstrumentId>>>>,
@@ -173,6 +174,7 @@ impl Clone for HyperliquidWebSocketClient {
             trade_stream_lock: Arc::clone(&self.trade_stream_lock),
             quote_streams: Arc::clone(&self.quote_streams),
             instruments: Arc::clone(&self.instruments),
+            cache_tx: Arc::clone(&self.cache_tx),
             bar_types: Arc::clone(&self.bar_types),
             asset_context_subs: Arc::clone(&self.asset_context_subs),
             all_dex_asset_ctxs_instrument_ids: Arc::clone(&self.all_dex_asset_ctxs_instrument_ids),
@@ -214,6 +216,8 @@ impl HyperliquidWebSocketClient {
         let connection_mode = Arc::new(ArcSwap::new(Arc::new(AtomicU8::new(
             ConnectionMode::Closed as u8,
         ))));
+        let (cmd_tx, _) = tokio::sync::mpsc::unbounded_channel();
+
         Self {
             url: url.into(),
             connection_mode,
@@ -225,6 +229,7 @@ impl HyperliquidWebSocketClient {
             trade_stream_lock: Arc::new(Mutex::new(())),
             quote_streams: Arc::new(DashMap::new()),
             instruments: Arc::new(AtomicMap::new()),
+            cache_tx: Arc::new(Mutex::new(cmd_tx.clone())),
             bar_types: Arc::new(AtomicMap::new()),
             asset_context_subs: Arc::new(DashMap::new()),
             all_dex_asset_ctxs_instrument_ids: Arc::new(AtomicMap::new()),
@@ -235,11 +240,7 @@ impl HyperliquidWebSocketClient {
             client_id: NEXT_WEBSOCKET_CLIENT_ID.fetch_add(1, Ordering::Relaxed),
             connection_permit: Arc::new(Mutex::new(None)),
             post_timeout: HTTP_TIMEOUT,
-            cmd_tx: {
-                // Placeholder channel until connect() creates the real handler and replays queued instruments
-                let (tx, _) = tokio::sync::mpsc::unbounded_channel();
-                Arc::new(tokio::sync::RwLock::new(tx))
-            },
+            cmd_tx: Arc::new(tokio::sync::RwLock::new(cmd_tx)),
             out_rx: None,
             task_handle: Arc::new(SharedTaskSlot::new()),
             connect_lock: Arc::new(tokio::sync::Mutex::new(())),
@@ -355,13 +356,8 @@ impl HyperliquidWebSocketClient {
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
         let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<NautilusWsMessage>();
 
-        // Update cmd_tx before connection_mode to avoid race where is_active() returns
-        // true but subscriptions still go to the old placeholder channel
-        *self.cmd_tx.write().await = cmd_tx.clone();
         self.out_rx = Some(out_rx);
-
-        self.connection_mode.store(client.connection_mode_atomic());
-        log::debug!("Hyperliquid WebSocket connected: {}", self.url.origin());
+        let connection_mode = client.connection_mode_atomic();
 
         // Send SetClient command immediately
         if let Err(e) = cmd_tx.send(HandlerCommand::SetClient(client)) {
@@ -369,34 +365,45 @@ impl HyperliquidWebSocketClient {
             anyhow::bail!("Failed to send SetClient command: {e}");
         }
 
-        // Initialize handler with existing instruments
-        let instruments_vec: Vec<InstrumentAny> =
-            self.instruments.load().values().cloned().collect();
-
-        if !instruments_vec.is_empty()
-            && let Err(e) = cmd_tx.send(HandlerCommand::InitializeInstruments(instruments_vec))
         {
-            log::error!("Failed to send InitializeInstruments: {e}");
-        }
+            let mut command_sender = self.cmd_tx.write().await;
+            // Synchronous cache updates share the snapshot and sender handoff
+            let mut cache_sender = self.cache_tx.lock();
+            // Initialize handler with existing instruments
+            let instruments_vec: Vec<InstrumentAny> =
+                self.instruments.load().values().cloned().collect();
 
-        for (coin, uses) in self.trade_streams.snapshot() {
-            if let Err(e) = cmd_tx.send(HandlerCommand::UpdateTradeSubs { coin, uses }) {
-                log::error!("Failed to send UpdateTradeSubs: {e}");
+            if !instruments_vec.is_empty()
+                && let Err(e) = cmd_tx.send(HandlerCommand::InitializeInstruments(instruments_vec))
+            {
+                log::error!("Failed to send InitializeInstruments: {e}");
             }
+
+            for (coin, uses) in self.trade_streams.snapshot() {
+                if let Err(e) = cmd_tx.send(HandlerCommand::UpdateTradeSubs { coin, uses }) {
+                    log::error!("Failed to send UpdateTradeSubs: {e}");
+                }
+            }
+
+            let all_dex_asset_ctxs_instrument_ids = self
+                .all_dex_asset_ctxs_instrument_ids
+                .load()
+                .iter()
+                .map(|(dex, instrument_ids)| (*dex, instrument_ids.clone()))
+                .collect();
+
+            if let Err(e) = cmd_tx.send(HandlerCommand::CacheAllDexAssetCtxsInstrumentIds(
+                all_dex_asset_ctxs_instrument_ids,
+            )) {
+                log::error!("Failed to send CacheAllDexAssetCtxsInstrumentIds: {e}");
+            }
+
+            *cache_sender = cmd_tx.clone();
+            *command_sender = cmd_tx.clone();
+            self.connection_mode.store(connection_mode);
         }
 
-        let all_dex_asset_ctxs_instrument_ids = self
-            .all_dex_asset_ctxs_instrument_ids
-            .load()
-            .iter()
-            .map(|(dex, instrument_ids)| (*dex, instrument_ids.clone()))
-            .collect();
-
-        if let Err(e) = cmd_tx.send(HandlerCommand::CacheAllDexAssetCtxsInstrumentIds(
-            all_dex_asset_ctxs_instrument_ids,
-        )) {
-            log::error!("Failed to send CacheAllDexAssetCtxsInstrumentIds: {e}");
-        }
+        log::debug!("Hyperliquid WebSocket connected: {}", self.url.origin());
 
         // Spawn handler task
         let signal = Arc::clone(&self.signal);
@@ -540,6 +547,8 @@ impl HyperliquidWebSocketClient {
         self.trade_stream_lock = Arc::new(Mutex::new(()));
         self.quote_streams = Arc::new(DashMap::new());
         self.instruments = Arc::new(AtomicMap::new());
+        let (cache_tx, _) = tokio::sync::mpsc::unbounded_channel();
+        self.cache_tx = Arc::new(Mutex::new(cache_tx));
         self.bar_types = Arc::new(AtomicMap::new());
         self.asset_context_subs = Arc::new(DashMap::new());
         self.all_dex_asset_ctxs_instrument_ids = Arc::new(AtomicMap::new());
@@ -1294,6 +1303,7 @@ impl HyperliquidWebSocketClient {
             map.insert(coin, inst);
         }
         let count = map.len();
+        let _guard = self.cache_tx.lock();
         self.instruments.store(map);
         log::debug!("Hyperliquid instrument cache initialized with {count} instruments");
     }
@@ -1302,14 +1312,13 @@ impl HyperliquidWebSocketClient {
     ///
     /// Any existing instrument with the same raw_symbol will be replaced.
     pub fn cache_instrument(&self, instrument: InstrumentAny) {
+        let cmd_tx = self.cache_tx.lock();
         let coin = instrument.raw_symbol().inner();
         self.instruments.insert(coin, instrument.clone());
 
         // Before connect() the handler isn't running; this send will fail and that's expected
         // because connect() replays the instruments via InitializeInstruments
-        if let Ok(cmd_tx) = self.cmd_tx.try_read() {
-            let _ = cmd_tx.send(HandlerCommand::UpdateInstrument(instrument));
-        }
+        let _ = cmd_tx.send(HandlerCommand::UpdateInstrument(instrument));
     }
 
     /// Returns a shared reference to the instrument cache.
@@ -2213,13 +2222,12 @@ impl HyperliquidWebSocketClient {
         &self,
         mapping: AHashMap<Ustr, Vec<Option<InstrumentId>>>,
     ) {
+        let cmd_tx = self.cache_tx.lock();
         self.all_dex_asset_ctxs_instrument_ids.rcu(|cached| {
             cached.extend(mapping.iter().map(|(dex, ids)| (*dex, ids.clone())));
         });
 
-        if let Ok(cmd_tx) = self.cmd_tx.try_read()
-            && let Err(e) = cmd_tx.send(HandlerCommand::CacheAllDexAssetCtxsInstrumentIds(mapping))
-        {
+        if let Err(e) = cmd_tx.send(HandlerCommand::CacheAllDexAssetCtxsInstrumentIds(mapping)) {
             log::debug!(
                 "Failed to send CacheAllDexAssetCtxsInstrumentIds command (handler may not be connected yet): {e}"
             );
@@ -2692,9 +2700,11 @@ fn subscription_from_topic(topic: &str) -> anyhow::Result<SubscriptionRequest> {
 
 #[cfg(test)]
 mod tests {
+    use futures_util::StreamExt;
     use nautilus_live::{SocketReconnectRegistry, SocketReconnectRequestOutcome};
     use nautilus_model::{identifiers::ClientId, instruments::stubs::crypto_perpetual_ethusdt};
     use nautilus_network::mode::ReconnectRequestOutcome;
+    use nautilus_testkit::connection::race_command_with_publication;
     use rstest::rstest;
     use ustr::Ustr;
 
@@ -2706,6 +2716,150 @@ mod tests {
         },
         websocket::handler::subscription_to_key,
     };
+
+    #[rstest]
+    fn cache_sender_reset_isolates_connection_generation() {
+        let mut ws_client = HyperliquidWebSocketClient::new(
+            Some("wss://test".to_string()),
+            HyperliquidEnvironment::Testnet,
+            None,
+            TransportBackend::default(),
+            None,
+        );
+        let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        *ws_client.cache_tx.lock() = cmd_tx;
+        let old = ws_client.clone();
+        ws_client.reset_runtime_state();
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+
+        old.cache_instrument(instrument.clone());
+        ws_client.cache_instrument(instrument.clone());
+
+        assert!(!Arc::ptr_eq(&ws_client.cache_tx, &old.cache_tx));
+        assert!(ws_client.cache_tx.lock().is_closed());
+        assert!(!old.cache_tx.lock().is_closed());
+
+        match cmd_rx.try_recv().unwrap() {
+            HandlerCommand::UpdateInstrument(updated) => assert_eq!(updated, instrument),
+            command => panic!("unexpected instrument command: {command:?}"),
+        }
+
+        assert!(cmd_rx.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn cache_updates_reach_handler_while_recovery_holds_sender() {
+        let ws_client = HyperliquidWebSocketClient::new(
+            Some("wss://test".to_string()),
+            HyperliquidEnvironment::Testnet,
+            None,
+            TransportBackend::default(),
+            None,
+        );
+        let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        *ws_client.cmd_tx.write().await = cmd_tx.clone();
+        *ws_client.cache_tx.lock() = cmd_tx;
+        ws_client
+            .connection_mode
+            .store(Arc::new(AtomicU8::new(ConnectionMode::Active as u8)));
+        let writer = ws_client.cmd_tx.write().await;
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let instrument_id = instrument.id();
+        let mapping =
+            AHashMap::from_iter([(Ustr::from("test-dex"), vec![None, Some(instrument_id)])]);
+
+        ws_client.cache_instrument(instrument.clone());
+        ws_client.cache_all_dex_asset_ctxs_instrument_ids(mapping.clone());
+        drop(writer);
+
+        assert_eq!(
+            ws_client
+                .instruments
+                .get_cloned(&instrument.raw_symbol().inner()),
+            Some(instrument.clone())
+        );
+        assert_eq!(
+            ws_client.all_dex_asset_ctxs_instrument_ids.load().as_ref(),
+            &mapping
+        );
+
+        match cmd_rx.try_recv().unwrap() {
+            HandlerCommand::UpdateInstrument(updated) => assert_eq!(updated, instrument),
+            command => panic!("unexpected instrument command: {command:?}"),
+        }
+
+        match cmd_rx.try_recv().unwrap() {
+            HandlerCommand::CacheAllDexAssetCtxsInstrumentIds(updated) => {
+                assert_eq!(updated, mapping);
+            }
+            command => panic!("unexpected context command: {command:?}"),
+        }
+
+        assert!(cmd_rx.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn command_during_sender_publication_reaches_initialized_handler() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (received_tx, mut received_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let server = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let mut socket = tokio_tungstenite::accept_async(socket).await.unwrap();
+            while let Some(Ok(message)) = socket.next().await {
+                if let tokio_tungstenite::tungstenite::Message::Text(text) = message {
+                    let payload: serde_json::Value = serde_json::from_str(text.as_str()).unwrap();
+                    let _ = received_tx.send(payload);
+                }
+            }
+        });
+
+        let url = format!("ws://{addr}");
+
+        let mut ws_client = HyperliquidWebSocketClient::new(
+            Some(url),
+            HyperliquidEnvironment::Testnet,
+            None,
+            TransportBackend::default(),
+            None,
+        );
+        let observer = ws_client.clone();
+
+        let command = HandlerCommand::Subscribe {
+            subscriptions: vec![SubscriptionRequest::Trades {
+                coin: Ustr::from("BTC"),
+            }],
+        };
+
+        race_command_with_publication(
+            Arc::clone(&ws_client.cmd_tx),
+            ws_client.connect(),
+            move || command,
+            || observer.is_active(),
+        )
+        .await
+        .expect("connect failed");
+        let command_sender = ws_client.cmd_tx.read().await.clone();
+        assert!(ws_client.cache_tx.lock().same_channel(&command_sender));
+        let received = tokio::time::timeout(Duration::from_secs(2), received_rx.recv()).await;
+        ws_client.disconnect().await.expect("disconnect failed");
+        server.abort();
+
+        let payload = received
+            .expect("startup command must reach server")
+            .unwrap();
+        assert_eq!(
+            payload,
+            serde_json::json!({
+                "method": "subscribe",
+                "subscription": {
+                    "type": "trades",
+                    "coin": "BTC"
+                }
+            })
+        );
+    }
 
     #[rstest]
     #[case("wss://stream.example.com/feed", "wss://stream.example.com")]

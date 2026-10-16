@@ -364,20 +364,24 @@ impl KrakenFuturesWebSocketClient {
             .await
             .map_err(|e| KrakenWsError::ConnectionError(e.to_string()))?;
 
-        self.connection_mode
-            .store(ws_client.connection_mode_atomic());
+        let connection_mode = ws_client.connection_mode_atomic();
         let reconnect_handle = ws_client.reconnect_handle();
 
         let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<KrakenFuturesWsMessage>();
         self.out_rx = Some(Arc::new(out_rx));
 
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<FuturesHandlerCommand>();
-        *self.cmd_tx.write().await = cmd_tx.clone();
 
         if let Err(e) = cmd_tx.send(FuturesHandlerCommand::SetClient(ws_client)) {
             return Err(KrakenWsError::ConnectionError(format!(
                 "Failed to send WebSocketClient to handler: {e}"
             )));
+        }
+
+        {
+            let mut command_sender = self.cmd_tx.write().await;
+            *command_sender = cmd_tx.clone();
+            self.connection_mode.store(connection_mode);
         }
 
         if let Some(control) = &self.socket_control {
@@ -1216,8 +1220,12 @@ fn resubscribe_private(
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use base64::{Engine, engine::general_purpose::STANDARD};
+    use futures_util::StreamExt;
     use nautilus_network::websocket::AuthTracker;
+    use nautilus_testkit::connection::race_command_with_publication;
     use rstest::rstest;
 
     use super::*;
@@ -1233,6 +1241,56 @@ mod tests {
     fn test_credential() -> KrakenCredential {
         let secret = STANDARD.encode(b"test_secret_key_24bytes!");
         KrakenCredential::new("test_key", secret)
+    }
+
+    #[tokio::test]
+    async fn command_during_sender_publication_reaches_initialized_handler() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (received_tx, mut received_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let server = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let mut socket = tokio_tungstenite::accept_async(socket).await.unwrap();
+            while let Some(Ok(message)) = socket.next().await {
+                if let tokio_tungstenite::tungstenite::Message::Text(text) = message {
+                    let payload: serde_json::Value = serde_json::from_str(text.as_str()).unwrap();
+                    let _ = received_tx.send(payload);
+                }
+            }
+        });
+
+        let url = format!("ws://{addr}");
+        let mut ws_client = KrakenFuturesWebSocketClient::new(url, 30, None);
+        let observer = ws_client.clone();
+        let expected = serde_json::json!({
+            "event": "subscribe",
+            "feed": "trade",
+            "product_ids": [
+                "PI_XBTUSD"
+            ]
+        });
+
+        let command = FuturesHandlerCommand::Subscribe {
+            payload: SecretString::from(expected.to_string()),
+        };
+
+        race_command_with_publication(
+            Arc::clone(&ws_client.cmd_tx),
+            ws_client.connect(),
+            move || command,
+            || observer.is_active(),
+        )
+        .await
+        .expect("connect failed");
+        let received = tokio::time::timeout(Duration::from_secs(2), received_rx.recv()).await;
+        ws_client.close().await.expect("disconnect failed");
+        server.abort();
+
+        let payload = received
+            .expect("startup command must reach server")
+            .unwrap();
+        assert_eq!(payload, expected);
     }
 
     #[rstest]

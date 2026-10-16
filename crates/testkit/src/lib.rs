@@ -79,6 +79,7 @@ pub mod cache;
 pub mod common;
 #[cfg(feature = "testers")]
 pub mod components;
+pub mod connection;
 pub mod events;
 pub mod http;
 
