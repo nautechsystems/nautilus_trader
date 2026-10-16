@@ -61,7 +61,7 @@ New orders typically enter one of these paths:
 
 The downstream flow is:
 
-`OrderEmulator` -> `ExecutionAlgorithm` or `ExecutionEngine`
+`OrderEmulator` -> `ExecutionAlgorithm` or `RiskEngine`
 
 `ExecutionAlgorithm` -> `RiskEngine` -> `ExecutionEngine` -> `ExecutionClient`
 
@@ -80,7 +80,8 @@ flowchart LR
     strategy --> engine
     emulator -. OrderReleased .-> risk
     emulator --> algo
-    emulator --> engine
+    emulator -->|SubmitOrder| risk
+    emulator -->|CancelOrder| engine
     algo --> risk
     risk <--> engine
     engine <--> client
@@ -292,7 +293,10 @@ In `REDUCING`, an individual `SubmitOrder` is eligible only when all of these co
 
 Order lists and modifications are denied.
 
-The risk engine applies these rules before forwarding commands to execution.
+The risk engine applies these rules before forwarding commands to execution. Released emulated orders follow the same
+rules: a protective stop must set `reduce_only=true` and satisfy the conditions above to pass in
+`REDUCING`. `HALTED` denies released orders, including protective stops. Modifications of held
+emulated orders stay local to the emulator and bypass these risk-engine restrictions.
 
 :::warning[Bypassing trading-state checks]
 When `RiskEngineConfig.bypass` is enabled, trading state is not enforced. Execution clients still follow

@@ -1831,7 +1831,10 @@ impl RiskEngine {
             reason
         );
 
-        if order.status() != OrderStatus::Initialized {
+        if !matches!(
+            order.status(),
+            OrderStatus::Initialized | OrderStatus::Released
+        ) {
             return;
         }
 

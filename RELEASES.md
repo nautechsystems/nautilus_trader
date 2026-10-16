@@ -7,6 +7,7 @@ Released on TBD (UTC).
 ### Breaking Changes
 
 - Changed Hyperliquid `UpdateIsolatedMargin`: replace `delta` with `is_buy` and `ntli` (signed millionths)
+- Changed emulated releases to undergo risk checks; use `REDUCING` for eligible exits, as `HALTED` denies stops
 
 ### Security
 
@@ -17,6 +18,7 @@ Released on TBD (UTC).
 - Fixed startup reconciliation leaving orders partially filled after venue quantity reductions
 - Fixed Hyperliquid leverage and isolated-margin request serialization and signing
 - Fixed Polymarket loading, request caching, and execution lookup cleanup for open markets past `endDate`
+- Fixed risk denials for released orders and cleanup of their contingent orders
 
 ### Internal Improvements
 

@@ -19,7 +19,7 @@ use ahash::AHashMap;
 use nautilus_common::{cache::Cache, clock::Clock, messages::execution::SubmitOrder};
 use nautilus_core::UUID4;
 use nautilus_model::{
-    enums::ContingencyType,
+    enums::{ContingencyType, OrderStatus},
     events::{
         OrderCanceled, OrderEventAny, OrderExpired, OrderFilled, OrderRejected, OrderUpdated,
     },
@@ -194,6 +194,21 @@ impl OrderManager {
     /// like `OrderSubmitted`, `OrderAccepted`, etc. are no-ops for the order manager.
     pub fn handle_event(&mut self, event: &OrderEventAny) -> Vec<OrderManagerAction> {
         match event {
+            OrderEventAny::Denied(event) => {
+                self.submit_order_commands.remove(&event.client_order_id);
+                self.oto_target_quantities.remove(&event.client_order_id);
+                let order = self.cache.borrow().order_owned(&event.client_order_id);
+
+                match order {
+                    Some(order)
+                        if order.previous_status() == Some(OrderStatus::Released)
+                            && order.contingency_type().is_some() =>
+                    {
+                        self.handle_contingencies(&order)
+                    }
+                    _ => Vec::new(),
+                }
+            }
             OrderEventAny::Rejected(event) => self.handle_order_rejected(*event),
             OrderEventAny::Canceled(event) => self.handle_order_canceled(*event),
             OrderEventAny::Expired(event) => self.handle_order_expired(*event),
@@ -829,9 +844,9 @@ mod tests {
     use nautilus_model::{
         enums::{ContingencyType, OmsType, OrderSide, OrderStatus, OrderType, TriggerType},
         events::order::spec::{
-            OrderAcceptedSpec, OrderCanceledSpec, OrderEmulatedSpec, OrderExpiredSpec,
-            OrderModifyRejectedSpec, OrderPendingUpdateSpec, OrderRejectedSpec, OrderSubmittedSpec,
-            OrderUpdatedSpec,
+            OrderAcceptedSpec, OrderCanceledSpec, OrderDeniedSpec, OrderEmulatedSpec,
+            OrderExpiredSpec, OrderModifyRejectedSpec, OrderPendingUpdateSpec, OrderRejectedSpec,
+            OrderReleasedSpec, OrderSubmittedSpec, OrderUpdatedSpec,
         },
         identifiers::{
             AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, StrategyId, TradeId, TraderId,
@@ -892,6 +907,78 @@ mod tests {
             OrderEventAny::Updated(_) => panic!("Should not match"),
             OrderEventAny::Filled(_) => panic!("Should not match"),
             _ => {}
+        }
+    }
+
+    #[rstest]
+    #[case(None)]
+    #[case(Some(ContingencyType::Oto))]
+    #[case(Some(ContingencyType::Oco))]
+    #[case(Some(ContingencyType::Ouo))]
+    fn test_denied_release_clears_pending_state_and_manages_contingencies(
+        #[case] contingency: Option<ContingencyType>,
+    ) {
+        let (clock, cache) = create_test_components();
+        let mut manager = OrderManager::new(clock, cache.clone(), true);
+        let mut builder = OrderTestBuilder::new(OrderType::Market);
+        builder
+            .instrument_id(audusd_sim().id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100_000))
+            .linked_order_ids(vec![ClientOrderId::from("O-SIBLING")]);
+
+        if let Some(contingency) = contingency {
+            builder.contingency_type(contingency);
+        }
+
+        let order = builder.build();
+        let sibling = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(order.instrument_id())
+            .client_order_id(ClientOrderId::from("O-SIBLING"))
+            .side(OrderSide::Sell)
+            .trigger_price(Price::from("0.99900"))
+            .quantity(Quantity::from(100_000))
+            .emulation_trigger(TriggerType::BidAsk)
+            .build();
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+        cache
+            .borrow_mut()
+            .add_order(sibling.clone(), None, None, false)
+            .unwrap();
+        cache
+            .borrow_mut()
+            .update_order(&OrderEventAny::Released(
+                OrderReleasedSpec::builder()
+                    .client_order_id(order.client_order_id())
+                    .build(),
+            ))
+            .unwrap();
+        let denied = OrderEventAny::Denied(
+            OrderDeniedSpec::builder()
+                .client_order_id(order.client_order_id())
+                .reason("TRADING_HALTED".into())
+                .build(),
+        );
+        cache.borrow_mut().update_order(&denied).unwrap();
+        manager.cache_submit_order_command(make_submit_command(&order));
+        manager
+            .oto_target_quantities
+            .insert(order.client_order_id(), Quantity::from(40_000));
+
+        let actions = manager.handle_event(&denied);
+
+        assert!(manager.submit_order_commands.is_empty());
+        assert!(manager.oto_target_quantities.is_empty());
+
+        if contingency.is_some() {
+            assert!(
+                matches!(actions.as_slice(), [OrderManagerAction::CancelLocal(order)] if order == &sibling)
+            );
+        } else {
+            assert!(actions.is_empty());
         }
     }
 
