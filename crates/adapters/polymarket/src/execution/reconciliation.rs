@@ -2207,7 +2207,13 @@ fn cap_order_reports_to_confirmed_fills<'a>(
     orders: impl IntoIterator<Item = &'a OrderAny>,
     is_bounded: bool,
 ) -> anyhow::Result<()> {
-    let confirmed_by_order = settlement.report_filled_quantities(fill_reports, orders)?;
+    let orders: Vec<_> = orders.into_iter().collect();
+    let confirmed_by_order =
+        settlement.report_filled_quantities(fill_reports, orders.iter().copied())?;
+    let current_orders: AHashMap<_, _> = orders
+        .into_iter()
+        .filter_map(|order| order.venue_order_id().map(|id| (id, order)))
+        .collect();
 
     for report in order_reports {
         if is_bounded && report.order_status.is_open() {
@@ -2221,15 +2227,59 @@ fn cap_order_reports_to_confirmed_fills<'a>(
         }
 
         let zero = Quantity::zero(report.quantity.precision);
+        let cached_order = current_orders.get(&report.venue_order_id).filter(|order| {
+            order.account_id() == Some(report.account_id) && order.venue_order_ids().len() > 1
+        });
+
+        let filled_before = cached_order.map_or(Ok(zero), |order| {
+            apply_logical_order_quantity(report, order)
+        })?;
+
+        let non_reopened_voided =
+            cached_order.map_or(zero, |order| order.non_reopened_voided_qty());
         cap_order_report_filled_qty(
             report,
-            zero,
-            confirmed_by_order.get(&report.venue_order_id).copied(),
-            zero,
+            filled_before,
+            confirmed_by_order
+                .get(&report.venue_order_id)
+                .map(|filled| filled_before.as_decimal() + filled),
+            non_reopened_voided,
         );
     }
 
     Ok(())
+}
+
+pub(crate) fn apply_logical_order_quantity(
+    report: &mut OrderStatusReport,
+    order: &OrderAny,
+) -> anyhow::Result<Quantity> {
+    let (filled_before, leg_quantity) = venue_leg_filled_before_and_quantity(
+        order,
+        report.venue_order_id,
+        report.quantity.precision,
+    )?;
+    anyhow::ensure!(
+        venue_qty_matches(
+            report.order_side == Some(OrderSide::Buy),
+            report.quantity.as_decimal(),
+            report.filled_qty.as_decimal(),
+            leg_quantity.as_decimal(),
+        ),
+        "provider venue-leg quantity {} does not match expected quantity {leg_quantity}",
+        report.quantity,
+    );
+    report.client_order_id = Some(order.client_order_id());
+    report.quantity = order.quantity();
+    report.filled_qty = filled_before
+        .checked_add(report.filled_qty)
+        .context("logical filled quantity overflow")?;
+
+    if report.order_status == OrderStatus::Accepted && !filled_before.is_zero() {
+        report.order_status = OrderStatus::PartiallyFilled;
+    }
+
+    Ok(filled_before)
 }
 
 pub(crate) fn confirmed_filled_quantities(
