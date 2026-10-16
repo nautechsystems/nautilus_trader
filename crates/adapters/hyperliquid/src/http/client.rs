@@ -39,8 +39,8 @@ use nautilus_core::{
 use nautilus_model::{
     data::{Bar, BarType},
     enums::{
-        AccountType, BarAggregation, CurrencyType, OrderSide, OrderStatus, OrderType, TimeInForce,
-        TriggerType,
+        AccountType, BarAggregation, CurrencyType, MarketStatusAction, OrderSide, OrderStatus,
+        OrderType, TimeInForce, TriggerType,
     },
     events::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, VenueOrderId},
@@ -1710,6 +1710,41 @@ impl HyperliquidHttpClient {
     pub async fn request_instruments(&self) -> Result<Vec<InstrumentAny>> {
         let defs = self.request_instrument_defs().await?;
         Ok(self.convert_defs(defs))
+    }
+
+    /// Fetch all available instruments together with the market status of each.
+    pub async fn request_instruments_with_statuses(
+        &self,
+    ) -> Result<(
+        Vec<InstrumentAny>,
+        AHashMap<InstrumentId, MarketStatusAction>,
+    )> {
+        let defs = self.request_instrument_defs().await?;
+        let def_statuses: AHashMap<Ustr, MarketStatusAction> = defs
+            .iter()
+            .map(|def| {
+                let action = if def.active {
+                    MarketStatusAction::Trading
+                } else {
+                    MarketStatusAction::Close
+                };
+                (def.symbol, action)
+            })
+            .collect();
+        let instruments = self.convert_defs(defs);
+
+        // Defs that fail conversion yield no instrument, so they get no status
+        let statuses = instruments
+            .iter()
+            .filter_map(|instrument| {
+                let instrument_id = instrument.id();
+                def_statuses
+                    .get(&instrument_id.symbol.inner())
+                    .map(|&action| (instrument_id, action))
+            })
+            .collect();
+
+        Ok((instruments, statuses))
     }
 
     /// Builds the `allDexsAssetCtxs` normalization map from dex name to ordered instrument IDs.
