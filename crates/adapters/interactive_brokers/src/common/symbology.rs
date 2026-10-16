@@ -634,6 +634,20 @@ const FUTURES_MONTH_CODES: &[(char, &str)] = &[
     ('X', "11"),
     ('Z', "12"),
 ];
+
+/// Returns the venue `symbol_to_mic_venue` maps the contract's symbol to, by prefix match.
+#[must_use]
+pub fn symbol_mic_venue(
+    contract: &Contract,
+    symbol_to_mic_venue: &std::collections::HashMap<String, String>,
+) -> Option<String> {
+    let symbol = contract.symbol.as_str();
+    symbol_to_mic_venue
+        .iter()
+        .find(|(symbol_prefix, _)| symbol.starts_with(symbol_prefix.as_str()))
+        .map(|(_, symbol_venue)| symbol_venue.clone())
+}
+
 /// Determine venue from contract using provider configuration.
 ///
 /// This implements the same logic as Python's `determine_venue_from_contract`:
@@ -654,13 +668,8 @@ pub fn determine_venue_from_contract(
         return "IBCMDTY".to_string();
     }
 
-    if !symbol_to_mic_venue.is_empty() {
-        let symbol = contract.symbol.as_str();
-        for (symbol_prefix, symbol_venue) in symbol_to_mic_venue {
-            if symbol.starts_with(symbol_prefix) {
-                return symbol_venue.clone();
-            }
-        }
+    if let Some(venue) = symbol_mic_venue(contract, symbol_to_mic_venue) {
+        return venue;
     }
 
     // Use the exchange from the contract (primaryExchange if exchange is SMART)
