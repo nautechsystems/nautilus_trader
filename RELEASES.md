@@ -14,6 +14,7 @@ Released on TBD (UTC).
 
 ### Fixes
 
+- Fixed startup reconciliation leaving orders partially filled after venue quantity reductions
 - Fixed Hyperliquid leverage and isolated-margin request serialization and signing
 - Fixed Polymarket loading, request caching, and execution lookup cleanup for open markets past `endDate`
 
