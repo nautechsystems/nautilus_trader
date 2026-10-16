@@ -15,7 +15,9 @@
 
 //! Data transfer objects for deserializing Bybit HTTP API payloads.
 
-use nautilus_core::string::secret::SecretString;
+use nautilus_core::{
+    serialization::deserialize_empty_string_as_none, string::secret::SecretString,
+};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
@@ -36,7 +38,8 @@ use crate::common::{
     },
     parse::{
         bool_or_int, deserialize_decimal_or_zero, deserialize_i32_or_string,
-        deserialize_optional_decimal_or_zero, deserialize_string_to_u8, masked_secret, on_off_bool,
+        deserialize_optional_decimal_or_zero, deserialize_optional_symbol_type,
+        deserialize_string_to_u8, masked_secret, on_off_bool,
     },
 };
 
@@ -607,7 +610,7 @@ pub struct BybitInstrumentSpot {
     pub price_filter: SpotPriceFilter,
     #[serde(default)]
     pub symbol_id: Option<i64>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_optional_symbol_type")]
     pub symbol_type: Option<BybitSymbolType>,
     #[serde(default)]
     pub xstock_multiplier: Option<String>,
@@ -637,8 +640,17 @@ pub struct BybitInstrumentLinear {
     pub settle_coin: Ustr,
     #[serde(default)]
     pub symbol_id: Option<i64>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_optional_symbol_type")]
     pub symbol_type: Option<BybitSymbolType>,
+    /// Ticker of the underlying in its native market (TradFi only).
+    #[serde(default, deserialize_with = "deserialize_empty_string_as_none")]
+    pub underlying_ticker: Option<String>,
+    /// Full name of the underlying asset.
+    #[serde(default, deserialize_with = "deserialize_empty_string_as_none")]
+    pub full_name: Option<String>,
+    /// Market region of the underlying, which sets its trading calendar (TradFi only).
+    #[serde(default, deserialize_with = "deserialize_empty_string_as_none")]
+    pub market_region: Option<String>,
 }
 
 /// Instrument definition for inverse contracts.
@@ -665,7 +677,7 @@ pub struct BybitInstrumentInverse {
     pub settle_coin: Ustr,
     #[serde(default)]
     pub symbol_id: Option<i64>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_optional_symbol_type")]
     pub symbol_type: Option<BybitSymbolType>,
 }
 
@@ -1915,6 +1927,31 @@ mod tests {
 
         assert_eq!(instrument.symbol_id, Some(7));
         assert_eq!(instrument.symbol_type, Some(BybitSymbolType::Stock));
+        assert_eq!(instrument.underlying_ticker.as_deref(), Some("AMD"));
+        assert_eq!(
+            instrument.full_name.as_deref(),
+            Some("Advanced Micro Devices")
+        );
+        assert_eq!(instrument.market_region.as_deref(), Some("US"));
+    }
+
+    #[rstest]
+    fn deserialize_linear_instrument_maps_empty_strings_to_none() {
+        let json = load_test_json("http_get_instruments_linear_symbol_type.json")
+            .replace(r#""symbolType": "stock""#, r#""symbolType": """#)
+            .replace(r#""underlyingTicker": "AMD""#, r#""underlyingTicker": """#)
+            .replace(
+                r#""fullName": "Advanced Micro Devices""#,
+                r#""fullName": """#,
+            )
+            .replace(r#""marketRegion": "US""#, r#""marketRegion": """#);
+        let response: BybitInstrumentLinearResponse = serde_json::from_str(&json).unwrap();
+        let instrument = &response.result.list[0];
+
+        assert_eq!(instrument.symbol_type, None);
+        assert_eq!(instrument.underlying_ticker, None);
+        assert_eq!(instrument.full_name, None);
+        assert_eq!(instrument.market_region, None);
     }
 
     #[derive(Deserialize)]
