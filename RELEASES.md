@@ -25,6 +25,7 @@ Released on TBD (UTC).
 ### Internal Improvements
 
 - Improved Dockerfile linting to run Hadolint without Docker
+- Standardized Architect AX owned execution report tasks
 - Upgraded OSV Scanner to v2.7.0
 - Upgraded Socket CLI to v1.8.1
 - Upgraded `uv` to v0.13.0

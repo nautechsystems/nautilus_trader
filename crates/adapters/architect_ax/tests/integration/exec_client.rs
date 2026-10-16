@@ -30,14 +30,16 @@ use nautilus_architect_ax::{
 };
 use nautilus_common::{
     cache::Cache,
-    clients::ExecutionClient,
+    clients::{ExecutionClient, ExecutionReportTask},
     live::runner::{replace_system_event_sender, set_exec_event_sender},
     messages::{
         ExecutionEvent, SystemEvent,
         execution::{
             BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
-            GenerateOrderStatusReports, GeneratePositionStatusReports, ModifyOrder, QueryAccount,
-            QueryOrder, SubmitOrder,
+            GenerateFillReportsBuilder, GenerateOrderStatusReportBuilder,
+            GenerateOrderStatusReports, GenerateOrderStatusReportsBuilder,
+            GeneratePositionStatusReports, GeneratePositionStatusReportsBuilder, ModifyOrder,
+            QueryAccount, QueryOrder, SubmitOrder,
         },
         system::SocketState,
     },
@@ -3430,4 +3432,331 @@ async fn test_submit_order_skips_closed_order() {
         result.is_err(),
         "expected no event for closed order, found {result:?}",
     );
+}
+
+#[rstest]
+#[case::all(None, None)]
+#[case::instrument(Some("EURUSD-PERP.AX"), None)]
+#[case::venue(None, Some("O-01ARZ3NDEKTSV4RRFFQ69G5FAV"))]
+#[case::missing(Some("UNKNOWN.AX"), None)]
+#[tokio::test]
+async fn test_owned_reports_match_inline(
+    #[case] instrument: Option<&str>,
+    #[case] venue_order: Option<&str>,
+) {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("AX-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    let instrument_id = instrument.map(InstrumentId::from);
+    let venue_order_id = venue_order.map(VenueOrderId::from);
+    let ts_init = UnixNanos::from(123);
+    let single = GenerateOrderStatusReportBuilder::default()
+        .ts_init(ts_init)
+        .instrument_id(instrument_id)
+        .venue_order_id(venue_order_id)
+        .build()
+        .unwrap();
+    let orders = GenerateOrderStatusReportsBuilder::default()
+        .ts_init(ts_init)
+        .open_only(false)
+        .instrument_id(instrument_id)
+        .build()
+        .unwrap();
+    // The fixture fills fall outside the default seven-day lookback
+    let fills = GenerateFillReportsBuilder::default()
+        .ts_init(ts_init)
+        .instrument_id(instrument_id)
+        .venue_order_id(venue_order_id)
+        .start(Some(UnixNanos::from(1_705_276_800_000_000_000)))
+        .end(Some(UnixNanos::from(1_705_363_200_000_000_000)))
+        .build()
+        .unwrap();
+    let positions = GeneratePositionStatusReportsBuilder::default()
+        .ts_init(ts_init)
+        .instrument_id(instrument_id)
+        .build()
+        .unwrap();
+
+    let before = nautilus_core::time::get_atomic_clock_realtime().get_time_ns();
+    let inline = client.generate_order_status_report(&single).await.unwrap();
+    let task = collect_report_task(client.generate_order_status_report_task(&single).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(
+        usize::from(inline.is_some()),
+        usize::from(instrument != Some("UNKNOWN.AX"))
+    );
+    assert_reports_equal(
+        inline.into_iter().collect(),
+        task.into_iter().collect(),
+        before,
+    );
+    let inline = client.generate_order_status_reports(&orders).await.unwrap();
+    let task = collect_report_task(client.generate_order_status_reports_task(&orders).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(
+        inline.len(),
+        if instrument == Some("UNKNOWN.AX") {
+            0
+        } else if instrument.is_some() {
+            1
+        } else {
+            2
+        }
+    );
+    assert_reports_equal(inline, task, before);
+    let inline = client.generate_fill_reports(fills.clone()).await.unwrap();
+    let task = collect_report_task(client.generate_fill_reports_task(&fills).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(
+        inline.len(),
+        if instrument == Some("UNKNOWN.AX") {
+            0
+        } else if instrument.is_some() || venue_order.is_some() {
+            1
+        } else {
+            2
+        }
+    );
+    assert_reports_equal(inline, task, before);
+    let inline = client
+        .generate_position_status_reports(&positions)
+        .await
+        .unwrap();
+    let task = collect_report_task(
+        client
+            .generate_position_status_reports_task(&positions)
+            .unwrap(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(inline.len(), if instrument.is_some() { 0 } else { 2 });
+    assert_reports_equal(inline, task, before);
+    client.disconnect().await.unwrap();
+}
+
+async fn collect_report_task<T>(task: ExecutionReportTask<T>) -> anyhow::Result<T> {
+    tokio::spawn(task.collection).await?;
+    task.result.await
+}
+
+fn assert_reports_equal<T: serde::Serialize>(inline: Vec<T>, owned: Vec<T>, before: UnixNanos) {
+    let after = nautilus_core::time::get_atomic_clock_realtime().get_time_ns();
+    let mut inline = serde_json::to_value(inline).unwrap();
+    let mut owned = serde_json::to_value(owned).unwrap();
+    // Only generated metadata differs between requests; compare every other field exactly
+    for reports in [&mut inline, &mut owned] {
+        for report in reports.as_array_mut().unwrap() {
+            let fields = report.as_object_mut().unwrap();
+            let ts_init: UnixNanos =
+                serde_json::from_value(fields.remove("ts_init").unwrap()).unwrap();
+            assert!((before..=after).contains(&ts_init));
+            let _: UUID4 = serde_json::from_value(fields.remove("report_id").unwrap()).unwrap();
+        }
+    }
+
+    assert_eq!(owned, inline);
+}
+
+#[rstest]
+#[case::complete(false)]
+#[case::cancel(true)]
+#[tokio::test(flavor = "current_thread")]
+async fn test_owned_report_delay_allows_core_progress(#[case] cancel: bool) {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("AX-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    state
+        .order_report_response_delay
+        .store(true, std::sync::atomic::Ordering::Relaxed);
+    let client = Rc::new(RefCell::new(client));
+    let command = GenerateOrderStatusReportsBuilder::default()
+        .ts_init(UnixNanos::from(321))
+        .open_only(false)
+        .build()
+        .unwrap();
+    let task = client
+        .borrow()
+        .generate_order_status_reports_task(&command)
+        .unwrap();
+
+    let worker = tokio::spawn(task.collection);
+    tokio::time::timeout(
+        Duration::from_secs(5),
+        state.order_report_response_entered.notified(),
+    )
+    .await
+    .unwrap();
+    // An owned worker leaves the non-Send client and live cache available to the core
+    client.borrow_mut().register_external_order(
+        ClientOrderId::from("CORE-PROGRESS"),
+        VenueOrderId::from("CORE-VENUE"),
+        InstrumentId::from("EURUSD-PERP.AX"),
+        StrategyId::from("CORE-001"),
+        UnixNanos::from(456),
+    );
+    cache
+        .borrow_mut()
+        .add_instrument(crate::common::server::create_test_instrument("CORE-PERP"))
+        .unwrap();
+
+    if cancel {
+        worker.abort();
+        assert!(worker.await.unwrap_err().is_cancelled());
+        let error = task.result.await.unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "report collection stopped without a result"
+        );
+    } else {
+        state.order_report_response_release.notify_one();
+        worker.await.unwrap();
+        let reports = task.result.await.unwrap();
+        assert_eq!(reports.len(), 2);
+        assert_eq!(reports[0].account_id, AccountId::from("AX-001"));
+    }
+
+    assert!(
+        cache
+            .borrow()
+            .instrument(&InstrumentId::from("CORE-PERP.AX"))
+            .is_some()
+    );
+    let mut client = Rc::try_unwrap(client).unwrap().into_inner();
+    client.disconnect().await.unwrap();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn test_mass_status_timestamp_precedes_delayed_collection() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("AX-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    state
+        .order_report_response_delay
+        .store(true, std::sync::atomic::Ordering::Relaxed);
+    let clock = nautilus_core::time::get_atomic_clock_realtime();
+    let before = clock.get_time_ns();
+    let mut mass = Box::pin(client.generate_mass_status(Some(60)));
+    tokio::select! {
+        result = &mut mass => panic!("mass status finished before release: {result:?}"),
+        () = state.order_report_response_entered.notified() => {},
+        () = tokio::time::sleep(Duration::from_secs(5)) => panic!("report request did not start"),
+    }
+    let entered = clock.get_time_ns();
+    state.order_report_response_release.notify_one();
+    let report = mass.await.unwrap().unwrap();
+    assert!((before..=entered).contains(&report.ts_init));
+    assert_eq!(
+        report.lookback_start(),
+        Some(UnixNanos::from(report.ts_init.as_u64() - 3_600_000_000_000))
+    );
+    assert_eq!(report.client_id, *AX_CLIENT_ID);
+    assert_eq!(report.account_id, AccountId::from("AX-001"));
+    assert_eq!(report.venue, *AX_VENUE);
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::single(0)]
+#[case::bulk(1)]
+#[case::fills(2)]
+#[case::positions(3)]
+#[tokio::test]
+async fn test_owned_report_failure_matches_inline(#[case] kind: u8) {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("AX-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    set_uncached_mass_status_payload(&state).await;
+    *state.open_orders_payload.lock().await = state.orders_payload.lock().await.clone();
+    state
+        .instrument_fail
+        .store(true, std::sync::atomic::Ordering::Relaxed);
+    let now = UnixNanos::from(123);
+
+    let (inline, owned) = match kind {
+        0 => {
+            let command = GenerateOrderStatusReportBuilder::default()
+                .ts_init(now)
+                .build()
+                .unwrap();
+            (
+                client
+                    .generate_order_status_report(&command)
+                    .await
+                    .map(|_| ()),
+                collect_report_task(client.generate_order_status_report_task(&command).unwrap())
+                    .await
+                    .map(|_| ()),
+            )
+        }
+        1 => {
+            let command = GenerateOrderStatusReportsBuilder::default()
+                .ts_init(now)
+                .open_only(false)
+                .build()
+                .unwrap();
+            (
+                client
+                    .generate_order_status_reports(&command)
+                    .await
+                    .map(|_| ()),
+                collect_report_task(client.generate_order_status_reports_task(&command).unwrap())
+                    .await
+                    .map(|_| ()),
+            )
+        }
+        2 => {
+            let command = GenerateFillReportsBuilder::default()
+                .ts_init(now)
+                .start(Some(UnixNanos::from(1_704_067_200_000_000_000)))
+                .end(Some(UnixNanos::from(1_704_153_600_000_000_000)))
+                .build()
+                .unwrap();
+            (
+                client
+                    .generate_fill_reports(command.clone())
+                    .await
+                    .map(|_| ()),
+                collect_report_task(client.generate_fill_reports_task(&command).unwrap())
+                    .await
+                    .map(|_| ()),
+            )
+        }
+        3 => {
+            let command = GeneratePositionStatusReportsBuilder::default()
+                .ts_init(now)
+                .build()
+                .unwrap();
+            (
+                client
+                    .generate_position_status_reports(&command)
+                    .await
+                    .map(|_| ()),
+                collect_report_task(
+                    client
+                        .generate_position_status_reports_task(&command)
+                        .unwrap(),
+                )
+                .await
+                .map(|_| ()),
+            )
+        }
+        _ => unreachable!(),
+    };
+
+    let inline = format!("{:#}", inline.unwrap_err());
+    let owned = format!("{:#}", owned.unwrap_err());
+    assert_eq!(owned, inline);
+    assert!(owned.contains("instrument unavailable"), "{owned}");
+    client.disconnect().await.unwrap();
 }
