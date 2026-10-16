@@ -36,6 +36,11 @@ engine.add_data(data)
 engine.run()
 ```
 
+Each instrument ID is registered once. Adding the same definition again is a no-op that keeps the
+existing matching engine, so resting orders, book state, and generated IDs are preserved. Adding a
+different definition for a registered ID raises an error and leaves the engine unchanged. The
+comparison ignores `ts_event` and `ts_init`.
+
 ### Loading data
 
 Each `add_data()` call copies its input into an independent stream. The engine orders each stream

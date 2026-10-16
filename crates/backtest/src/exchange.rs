@@ -382,21 +382,27 @@ impl SimulatedExchange {
         self.instruments.keys()
     }
 
-    /// Returns the expiration timestamp for the given instrument, if present.
-    #[must_use]
-    pub fn instrument_expiration(&self, instrument_id: InstrumentId) -> Option<UnixNanos> {
-        self.matching_engines
-            .get(&instrument_id)
-            .and_then(|matching_engine| matching_engine.instrument.expiration_ns())
-    }
-
-    /// Returns whether an unprocessed instrument remains for the given expiration.
-    #[must_use]
-    pub fn has_unprocessed_instrument_expiration(&self, expiration_ns: UnixNanos) -> bool {
-        self.matching_engines.values().any(|matching_engine| {
-            !matching_engine.is_expiration_processed()
-                && matching_engine.instrument.expiration_ns() == Some(expiration_ns)
-        })
+    /// Returns whether `instrument` is already registered with this exchange, failing when its
+    /// ID is registered with a different definition.
+    ///
+    /// Definitions are compared without their event timestamps.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if an instrument with the same ID is registered with a
+    /// different definition.
+    pub(crate) fn is_instrument_registered(
+        &self,
+        instrument: &InstrumentAny,
+    ) -> anyhow::Result<bool> {
+        match self.instruments.get(&instrument.id()) {
+            None => Ok(false),
+            Some(existing) if instrument_definitions_match(existing, instrument) => Ok(true),
+            Some(_) => anyhow::bail!(
+                "Instrument {} is already registered with a different definition",
+                instrument.id()
+            ),
+        }
     }
 
     pub fn initialize_account(&mut self) {
@@ -444,9 +450,13 @@ impl SimulatedExchange {
     // panics-doc-ok (transitive via expect_display on venue mismatch)
     /// Adds an instrument to the simulated exchange and initializes its matching engine.
     ///
+    /// Adding an instrument that is already registered with the same definition is a
+    /// no-op, so its matching engine and generated ID sequences are preserved.
+    ///
     /// # Errors
     ///
     /// Returns an error if:
+    /// - An instrument with the same ID is already registered with a different definition.
     /// - The exchange account type is `Cash` and the instrument is a `CryptoPerpetual`,
     ///   `CryptoFuture`, `FuturesContract`, or `PerpetualContract`.
     /// - The matching engine raw ID is exhausted.
@@ -462,6 +472,10 @@ impl SimulatedExchange {
             "Venue of simulated exchange",
         )
         .expect_display(FAILED);
+
+        if self.is_instrument_registered(&instrument)? {
+            return Ok(());
+        }
 
         if self.account_type == AccountType::Cash
             && (matches!(instrument, InstrumentAny::CryptoPerpetual(_))
@@ -2184,6 +2198,31 @@ fn revert_funding_adjustments(
     }
 }
 
+// Compares two instruments' tradable definitions on their serialized form without event
+// timestamps, so every field (including free-form `info`) takes part, and a serialization
+// failure compares as changed so a different definition is never accepted.
+fn instrument_definitions_match(a: &InstrumentAny, b: &InstrumentAny) -> bool {
+    fn normalized(instrument: &InstrumentAny) -> Option<serde_json::Value> {
+        let mut value = serde_json::to_value(instrument).ok()?;
+
+        if let Some(definition) = value
+            .as_object_mut()
+            .and_then(|obj| obj.values_mut().next())
+            .and_then(serde_json::Value::as_object_mut)
+        {
+            definition.remove("ts_event");
+            definition.remove("ts_init");
+        }
+
+        Some(value)
+    }
+
+    match (normalized(a), normalized(b)) {
+        (Some(a), Some(b)) => a == b,
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use nautilus_common::messages::execution::{QueryAccount, QueryOrder, SubmitOrder};
@@ -2203,6 +2242,7 @@ mod tests {
         types::AccountBalance,
     };
     use rstest::rstest;
+    use rust_decimal_macros::dec;
 
     use super::*;
 
@@ -2373,6 +2413,65 @@ mod tests {
         assert!(exchange.instruments.is_empty());
         assert!(exchange.matching_engines.is_empty());
         assert_eq!(exchange.last_raw_id, u32::MAX);
+    }
+
+    #[rstest]
+    fn test_add_identical_instrument_is_noop(audusd_sim: CurrencyPair) {
+        let mut exchange = setup_exchange(Dispatch::Immediate);
+        exchange
+            .add_instrument(InstrumentAny::CurrencyPair(audusd_sim.clone()))
+            .unwrap();
+
+        let mut restamped = audusd_sim.clone();
+        restamped.ts_event = UnixNanos::from(1);
+        restamped.ts_init = UnixNanos::from(1);
+        exchange
+            .add_instrument(InstrumentAny::CurrencyPair(restamped))
+            .unwrap();
+
+        assert_eq!(exchange.instruments.len(), 1);
+        assert_eq!(exchange.matching_engines.len(), 1);
+        assert_eq!(exchange.matching_engines[&audusd_sim.id].raw_id, 1);
+        assert_eq!(exchange.last_raw_id, 1);
+        assert_eq!(
+            exchange.instruments[&audusd_sim.id].ts_init(),
+            UnixNanos::default()
+        );
+    }
+
+    #[rstest]
+    #[case::price_increment(|pair: &mut CurrencyPair| {
+        pair.price_precision = 4;
+        pair.price_increment = Price::from("0.0001");
+    })]
+    #[case::lot_size(|pair: &mut CurrencyPair| pair.lot_size = Some(Quantity::from(100)))]
+    #[case::margin_init(|pair: &mut CurrencyPair| pair.margin_init = dec!(0.5))]
+    #[case::max_quantity(|pair: &mut CurrencyPair| pair.max_quantity = Some(Quantity::from(10)))]
+    fn test_add_changed_instrument_is_rejected_without_state_change(
+        audusd_sim: CurrencyPair,
+        #[case] change: fn(&mut CurrencyPair),
+    ) {
+        let mut exchange = setup_exchange(Dispatch::Immediate);
+        exchange
+            .add_instrument(InstrumentAny::CurrencyPair(audusd_sim.clone()))
+            .unwrap();
+        let mut changed = audusd_sim.clone();
+        change(&mut changed);
+
+        let result = exchange.add_instrument(InstrumentAny::CurrencyPair(changed));
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Instrument AUD/USD.SIM is already registered with a different definition"
+        );
+        assert_eq!(exchange.instruments.len(), 1);
+        assert_eq!(exchange.matching_engines.len(), 1);
+        assert_eq!(exchange.matching_engines[&audusd_sim.id].raw_id, 1);
+        assert_eq!(exchange.last_raw_id, 1);
+        assert_eq!(
+            serde_json::to_value(&exchange.instruments[&audusd_sim.id]).unwrap(),
+            serde_json::to_value(InstrumentAny::CurrencyPair(audusd_sim)).unwrap()
+        );
     }
 
     #[rstest]

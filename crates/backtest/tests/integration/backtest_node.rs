@@ -46,6 +46,7 @@ use nautilus_model::{
     },
     identifiers::{InstrumentId, StrategyId, TradeId},
     instruments::{CryptoPerpetual, Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
+    orders::Order,
     types::{Price, Quantity},
 };
 use nautilus_persistence::{
@@ -1290,6 +1291,52 @@ fn test_multiple_data_configs_mixed_types(crypto_perpetual_ethusdt: CryptoPerpet
     // Should process both quotes and trades (10 + 10 = 20)
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].iterations, 20);
+}
+
+#[rstest]
+fn test_multiple_data_configs_share_one_matching_engine(crypto_perpetual_ethusdt: CryptoPerpetual) {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let (_temp_dir, catalog_path) =
+        create_catalog_with_quotes_and_trades(&instrument, 10, 10, 1_000_000_000);
+
+    let quote_data = BacktestDataConfig::builder()
+        .data_type(NautilusDataType::QuoteTick)
+        .catalog_path(catalog_path.clone())
+        .instrument_id(instrument.id())
+        .build()
+        .unwrap();
+    let trade_data = BacktestDataConfig::builder()
+        .data_type(NautilusDataType::TradeTick)
+        .catalog_path(catalog_path)
+        .instrument_id(instrument.id())
+        .build()
+        .unwrap();
+    let config = BacktestRunConfig::builder()
+        .venues(vec![binance_venue_config()])
+        .data(vec![quote_data, trade_data])
+        .dispose_on_completion(false)
+        .build()
+        .unwrap();
+    let config_id = config.id().to_string();
+
+    let mut node = BacktestNode::new(vec![config]).unwrap();
+    node.build().unwrap();
+    node.get_engine_mut(&config_id)
+        .unwrap()
+        .add_strategy(MarketOrderStrategy::new(instrument.id()))
+        .unwrap();
+    node.run().unwrap();
+
+    // Both configs load the instrument, and its first matching engine (raw ID 1) is kept
+    let engine = node.get_engine(&config_id).unwrap();
+    let cache = engine.kernel().cache.borrow();
+    let venue_order_ids: Vec<String> = cache
+        .orders(None, None, None, None, None)
+        .iter()
+        .filter_map(|order| order.venue_order_id())
+        .map(|id| id.to_string())
+        .collect();
+    assert_eq!(venue_order_ids, vec!["BINANCE-1-1".to_string()]);
 }
 
 #[rstest]

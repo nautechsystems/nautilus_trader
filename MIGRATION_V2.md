@@ -690,6 +690,10 @@ Rust models compose at compile time; v1 provided no runtime native model plugins
   contracts, and option close legs at expiry.
 - An omitted backtest `default_leverage` now selects 10x for margin accounts and 1x for cash
   accounts. Set `default_leverage=Decimal(1)` to retain v1's unleveraged behavior.
+- Adding an instrument that is already registered no longer replaces its matching engine. An
+  identical definition is a no-op, and a different definition raises an error. A
+  `BacktestNode` catalog holding differing versions of one instrument ID now fails at build
+  instead of using the last version.
 
 ### Backtest post-run inspection
 
