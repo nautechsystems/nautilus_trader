@@ -1358,6 +1358,11 @@ skip invalid updates. Report construction does not substitute zero for an invali
 
 ## Fees
 
+The instrument provider and historical data loader use Gamma's `feeSchedule.rate` as the taker rate.
+During provider or historical loading, a fee-enabled market with a missing or zero rate uses zero and logs a warning.
+Runtime automatic instrument loading also uses zero for a missing or zero rate, but does not log this warning.
+The CLOB `/fee-rate` response's `base_fee` is a legacy base fee and does not supply the effective taker rate.
+
 The adapter reads each instrument's `fee_schedule` and applies its `rate` and `exponent` as:
 
 ```text

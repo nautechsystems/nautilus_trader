@@ -551,20 +551,12 @@ pub struct TickSizeResponse {
 
 /// Fee rate response from CLOB `GET /fee-rate`.
 ///
-/// Returns the taker fee rate in basis points for a given token.
+/// This legacy base fee is distinct from the effective `FeeSchedule::rate`.
 #[derive(Clone, Debug, Deserialize)]
 pub struct FeeRateResponse {
-    /// Fee rate in basis points.
+    /// Base fee in basis points.
     #[serde(deserialize_with = "deserialize_decimal_from_json")]
     pub base_fee: Decimal,
-}
-
-impl FeeRateResponse {
-    /// Converts the basis-points fee to a decimal taker rate.
-    #[must_use]
-    pub fn to_rate(&self) -> Decimal {
-        self.base_fee / Decimal::from(10_000)
-    }
 }
 
 /// A single price level from the CLOB order book.
@@ -1562,6 +1554,14 @@ mod tests {
     }
 
     #[rstest]
+    fn test_fee_rate_response_numeric() {
+        let response: FeeRateResponse =
+            serde_json::from_value(serde_json::json!({"base_fee": 1000})).unwrap();
+
+        assert_eq!(response.base_fee, dec!(1000));
+    }
+
+    #[rstest]
     fn test_data_api_position_deserialization() {
         let positions: Vec<DataApiPosition> =
             load::<DataApiPage<DataApiPosition>>("data_api_positions_response.json").data;
@@ -1747,16 +1747,5 @@ mod tests {
         let tags = events[0].tags.as_ref().unwrap();
 
         assert!(tags.iter().any(|tag| tag.slug.as_deref() == Some("sports")));
-    }
-
-    #[rstest]
-    fn test_fee_rate_response_to_rate() {
-        let zero: FeeRateResponse = load("clob_fee_rate_response_zero.json");
-        let nonzero: FeeRateResponse = load("clob_fee_rate_response_nonzero.json");
-        let numeric: FeeRateResponse = serde_json::from_str(r#"{"base_fee":700}"#).unwrap();
-
-        assert_eq!(zero.to_rate(), Decimal::ZERO);
-        assert_eq!(nonzero.to_rate(), dec!(0.015));
-        assert_eq!(numeric.to_rate(), dec!(0.07));
     }
 }

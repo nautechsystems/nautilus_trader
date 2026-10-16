@@ -163,7 +163,7 @@ impl PolymarketDataClient {
     pub fn new_with_proxy(
         client_id: ClientId,
         mut config: PolymarketDataClientConfig,
-        mut gamma_client: PolymarketGammaHttpClient,
+        gamma_client: PolymarketGammaHttpClient,
         clob_public_client: PolymarketClobPublicClient,
         data_api_client: PolymarketDataApiHttpClient,
         ws_client: PolymarketMarketConnectionPool,
@@ -174,7 +174,6 @@ impl PolymarketDataClient {
         let socket_factory = SocketControlFactory::new(client_id, Some(*POLYMARKET_VENUE));
         let ws_client = ws_client.with_socket_factory(socket_factory.clone());
         let polybolt_socket_control = Some(socket_factory.control(POLYBOLT_STREAMS_ENDPOINT));
-        gamma_client.set_clob_client(clob_public_client.clone());
         let provider =
             PolymarketInstrumentProvider::new(gamma_client, config.instrument_config.clone());
         let configured_fetch_max_concurrency = config.new_market_fetch_max_concurrency;

@@ -6,6 +6,7 @@ Released on TBD (UTC).
 
 ### Breaking Changes
 
+- Removed Polymarket `FeeRateResponse::to_rate` and Gamma `set_clob_client` and `clob_client` methods
 - Changed Hyperliquid `UpdateIsolatedMargin`: replace `delta` with `is_buy` and `ntli` (signed millionths)
 - Changed emulated releases to undergo risk checks; use `REDUCING` for eligible exits, as `HALTED` denies stops
 
@@ -16,9 +17,10 @@ Released on TBD (UTC).
 ### Fixes
 
 - Fixed startup reconciliation leaving orders partially filled after venue quantity reductions
+- Fixed risk denials for released orders and cleanup of their contingent orders
 - Fixed Hyperliquid leverage and isolated-margin request serialization and signing
 - Fixed Polymarket loading, request caching, and execution lookup cleanup for open markets past `endDate`
-- Fixed risk denials for released orders and cleanup of their contingent orders
+- Fixed Polymarket taker rates derived from CLOB `base_fee` when Gamma rates are missing or zero
 
 ### Internal Improvements
 
