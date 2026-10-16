@@ -67,7 +67,8 @@ use nautilus_model::{
     accounts::{AccountAny, CashAccount, MarginAccount},
     enums::{AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce},
     events::{
-        AccountState, OrderAccepted, OrderEventAny, OrderFilled, OrderPendingCancel, OrderSubmitted,
+        AccountState, OrderAccepted, OrderDenied, OrderEventAny, OrderFilled, OrderPendingCancel,
+        OrderRejected, OrderSubmitted,
     },
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId, Symbol,
@@ -100,6 +101,8 @@ enum BatchCancelResponse {
     Success,
     WholeFailure,
     Mixed,
+    /// The venue rejects the item it echoes by `LONG_CLIENT_ORDER_ID` alone.
+    RejectedByClientOrderId,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -143,6 +146,8 @@ struct TestServerState {
     /// Last raw body posted to a batch-cancel endpoint, for asserting the submitted IDs.
     last_batch_cancel_body: Arc<tokio::sync::Mutex<Option<String>>>,
     collection_request_ts: Arc<tokio::sync::Mutex<Option<UnixNanos>>>,
+    /// The path, query and body of each futures send, edit and cancel request, in order.
+    command_requests: Arc<tokio::sync::Mutex<Vec<String>>>,
     orders_status_response: Arc<tokio::sync::Mutex<Option<String>>>,
     /// Served by `/derivatives/api/v3/orders/status` one per request, ahead of the override.
     orders_status_sequence: Arc<tokio::sync::Mutex<VecDeque<String>>>,
@@ -198,6 +203,7 @@ impl Default for TestServerState {
             cancel_all_request_count: Arc::new(AtomicUsize::new(0)),
             last_batch_cancel_body: Arc::new(tokio::sync::Mutex::new(None)),
             collection_request_ts: Arc::new(tokio::sync::Mutex::new(None)),
+            command_requests: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             orders_status_response: Arc::new(tokio::sync::Mutex::new(None)),
             orders_status_sequence: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
             orders_status_request_body: Arc::new(tokio::sync::Mutex::new(None)),
@@ -279,6 +285,24 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
 
 async fn handle_http_request(State(state): State<TestServerState>, req: Request) -> Response {
     let path = req.uri().path().to_string();
+
+    let req = if matches!(
+        path.as_str(),
+        "/derivatives/api/v3/sendorder"
+            | "/derivatives/api/v3/editorder"
+            | "/derivatives/api/v3/cancelorder"
+    ) {
+        let (parts, body) = req.into_parts();
+        let body = to_bytes(body, 1024 * 1024).await.unwrap();
+        state.command_requests.lock().await.push(format!(
+            "{path} {} {}",
+            parts.uri.query().unwrap_or_default(),
+            String::from_utf8_lossy(&body)
+        ));
+        Request::from_parts(parts, Body::from(body))
+    } else {
+        req
+    };
 
     if matches!(
         path.as_str(),
@@ -477,6 +501,9 @@ async fn handle_http_request(State(state): State<TestServerState>, req: Request)
                     r#"{"result":"success","batchStatus":[{"orderId":"V-BATCH-OK","status":"cancelled"},{"orderId":"V-BATCH-REJECT","status":"notFound"}]}"#
                         .to_string(),
                 ),
+                BatchCancelResponse::RejectedByClientOrderId => json_response(format!(
+                    r#"{{"result":"success","batchStatus":[{{"cliOrdId":"{LONG_CLIENT_ORDER_ID}","status":"notFound"}}]}}"#
+                )),
             }
         }
         "/derivatives/api/v3/cancelallorders" => {
@@ -485,7 +512,9 @@ async fn handle_http_request(State(state): State<TestServerState>, req: Request)
                 .fetch_add(1, Ordering::Relaxed);
 
             match state.command_responses.lock().await.cancel_all {
-                BatchCancelResponse::Success | BatchCancelResponse::Mixed => json_response(
+                BatchCancelResponse::Success
+                | BatchCancelResponse::Mixed
+                | BatchCancelResponse::RejectedByClientOrderId => json_response(
                     r#"{"result":"success","cancelStatus":{"status":"cancelled","cancelledOrders":[]}}"#
                         .to_string(),
                 ),
@@ -676,7 +705,7 @@ async fn handle_http_request(State(state): State<TestServerState>, req: Request)
                 Some(String::from_utf8_lossy(&body).to_string());
 
             match state.command_responses.lock().await.batch_cancel {
-                BatchCancelResponse::Success => {
+                BatchCancelResponse::Success | BatchCancelResponse::RejectedByClientOrderId => {
                     json_response(r#"{"error":[],"result":{"count":2}}"#.to_string())
                 }
                 BatchCancelResponse::WholeFailure => {
@@ -693,7 +722,9 @@ async fn handle_http_request(State(state): State<TestServerState>, req: Request)
                 .fetch_add(1, Ordering::Relaxed);
 
             match state.command_responses.lock().await.cancel_all {
-                BatchCancelResponse::Success | BatchCancelResponse::Mixed => {
+                BatchCancelResponse::Success
+                | BatchCancelResponse::Mixed
+                | BatchCancelResponse::RejectedByClientOrderId => {
                     json_response(r#"{"error":[],"result":{"count":1}}"#.to_string())
                 }
                 BatchCancelResponse::WholeFailure => {
@@ -5078,6 +5109,29 @@ fn mark_cached_order_submitted(cache: &Rc<RefCell<Cache>>, order: &OrderAny) {
         .unwrap();
 }
 
+/// Applies an `OrderSubmitted`, then an `OrderRejected`, closing the order without a venue order ID
+/// as a venue rejection of the submission does.
+fn mark_cached_order_rejected(cache: &Rc<RefCell<Cache>>, order: &OrderAny) {
+    mark_cached_order_submitted(cache, order);
+    let rejected = OrderRejected::new(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        test_account_id(),
+        "post only would execute".into(),
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        false,
+        false,
+    );
+    cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::Rejected(rejected))
+        .unwrap();
+}
+
 /// Leaves a cached order open with no venue order ID, as a cancel sent while the venue holds a
 /// submission does, so the orders-status window can only be asked by client order ID.
 fn mark_cached_order_pending_cancel_while_held(cache: &Rc<RefCell<Cache>>, order: &OrderAny) {
@@ -5374,16 +5428,18 @@ async fn test_futures_open_order_reports_include_orders_status_window() {
     assert_eq!(part_filled.filled_qty, Quantity::from("1"));
 }
 
-/// A client order ID longer than 18 characters, which the adapter submits as `O` plus its last 17.
+/// A client order ID longer than 18 characters.
 const LONG_CLIENT_ORDER_ID: &str = "O-20260912-040506-001-001-1";
 /// Another order's ID that shortens to the same 18 characters.
 const LONG_CLIENT_ORDER_ID_OTHER_DAY: &str = "O-20260911-040506-001-001-1";
+/// `O` plus the last 17 characters of either ID above, the form the venue holds an order sent with
+/// a shortened ID under.
 const SHORTENED_CLIENT_ORDER_ID: &str = "O-040506-001-001-1";
 
 /// A window report carries the full client order ID of the cached order it describes, whether the
-/// adapter asks about that order by venue order ID or, holding none, by its shortened client order
-/// ID: reconciliation matches a report carrying a client order ID by that ID alone. A canceled
-/// order with executions passes unpriced.
+/// adapter asks about that order by venue order ID or, holding none, by both forms of its client
+/// order ID: reconciliation matches a report carrying a client order ID by that ID alone. A
+/// canceled order with executions passes unpriced.
 #[rstest]
 #[case::bulk_by_venue_order_id(false, true)]
 #[case::bulk_by_client_order_id(false, false)]
@@ -5451,17 +5507,19 @@ async fn test_futures_orders_status_window_report_carries_the_full_client_order_
         .await
         .clone()
         .expect("orders-status request recorded");
+    // A held order is asked about under both forms the venue can hold it under
     let expected_body = if has_venue_order_id {
         "orderIds=V-HELD-010".to_string()
     } else {
-        format!("cliOrdIds={SHORTENED_CLIENT_ORDER_ID}")
+        format!("cliOrdIds={LONG_CLIENT_ORDER_ID}&cliOrdIds={SHORTENED_CLIENT_ORDER_ID}")
     };
     assert_eq!(body, expected_body);
 }
 
-/// A shortened client order ID names an order queried by client order ID only when exactly one
-/// queried order and exactly one report without an indexed venue order ID hold it, and the report's
-/// instrument and side are the order's. Any other report is withheld, since it cannot be tied to
+/// A client order ID, in full or shortened, names an order queried by client order ID only when
+/// exactly one queried order and exactly one report without an indexed venue order ID hold it, and
+/// the report's instrument and side are the order's. Two reports that would name one order, one
+/// echoing each form, name neither. Any other report is withheld, since it cannot be tied to
 /// exactly one cached order. A report whose venue order ID the cache indexes keeps that order's ID.
 #[rstest]
 #[case::one_queried_order_and_one_report(
@@ -5518,6 +5576,36 @@ async fn test_futures_orders_status_window_report_carries_the_full_client_order_
     &[],
     &[("V-HELD-013", "futures-held-013", "PI_XBTUSD", "buy")],
     &[("V-HELD-013", None, 0)],
+)]
+#[case::full_id_one_queried_order_and_one_report(
+    &[LONG_CLIENT_ORDER_ID],
+    &[],
+    &[("V-HELD-016", LONG_CLIENT_ORDER_ID, "PI_XBTUSD", "buy")],
+    &[("V-HELD-016", Some(LONG_CLIENT_ORDER_ID), 1)],
+)]
+#[case::full_id_two_reports_share_it(
+    &[LONG_CLIENT_ORDER_ID],
+    &[],
+    &[
+        ("V-HELD-016", LONG_CLIENT_ORDER_ID, "PI_XBTUSD", "buy"),
+        ("V-HELD-017", LONG_CLIENT_ORDER_ID, "PI_XBTUSD", "buy"),
+    ],
+    &[("V-HELD-016", None, 0), ("V-HELD-017", None, 0)],
+)]
+#[case::full_and_shortened_reports_name_one_order(
+    &[LONG_CLIENT_ORDER_ID],
+    &[],
+    &[
+        ("V-HELD-016", LONG_CLIENT_ORDER_ID, "PI_XBTUSD", "buy"),
+        ("V-HELD-018", SHORTENED_CLIENT_ORDER_ID, "PI_XBTUSD", "buy"),
+    ],
+    &[("V-HELD-016", None, 0), ("V-HELD-018", None, 0)],
+)]
+#[case::full_id_another_instrument(
+    &[LONG_CLIENT_ORDER_ID],
+    &[],
+    &[("V-HELD-016", LONG_CLIENT_ORDER_ID, "PF_ETHUSD", "buy")],
+    &[("V-HELD-016", None, 0)],
 )]
 #[tokio::test]
 async fn test_futures_orders_status_window_report_names_only_an_unambiguous_order(
@@ -5580,9 +5668,10 @@ async fn test_futures_orders_status_window_report_names_only_an_unambiguous_orde
 /// The window entry's placement time, 2026-09-12T04:05:06.100Z.
 const WINDOW_ENTRY_PLACED_NS: u64 = 1_789_185_906_100_000_000;
 
-/// A shortened client order ID names only a venue order placed no more than five seconds, the
-/// allowance for skew between the node's and the venue's clocks, before the cached order's
-/// creation, so an older order whose client order ID shortens alike is withheld.
+/// A client order ID, full or shortened, names only a venue order placed no more than five
+/// seconds, the allowance for skew between the node's and the venue's clocks, before the cached
+/// order's creation, so an older order whose client order ID shortens alike, or that reused it, is
+/// withheld.
 #[rstest]
 #[case::created_before_placement(WINDOW_ENTRY_PLACED_NS - 1_000_000_000, true)]
 #[case::created_at_placement(WINDOW_ENTRY_PLACED_NS, true)]
@@ -5594,6 +5683,7 @@ const WINDOW_ENTRY_PLACED_NS: u64 = 1_789_185_906_100_000_000;
 async fn test_futures_orders_status_window_report_names_an_order_placed_after_its_creation(
     #[case] created_ns: u64,
     #[case] named: bool,
+    #[values(LONG_CLIENT_ORDER_ID, SHORTENED_CLIENT_ORDER_ID)] echoed: &str,
 ) {
     let (client, _rx, cache, state) =
         connected_client_with_command_responses(CommandResponses::default()).await;
@@ -5608,7 +5698,7 @@ async fn test_futures_orders_status_window_report_names_an_order_placed_after_it
     mark_cached_order_pending_cancel_while_held(&cache, &order);
     *state.orders_status_response.lock().await = Some(orders_status_body(&[(
         "V-HELD-015",
-        SHORTENED_CLIENT_ORDER_ID,
+        echoed,
         "PI_XBTUSD",
         "buy",
         "ENTERED_BOOK",
@@ -5795,7 +5885,10 @@ async fn test_futures_orders_status_window_keeps_the_latest_state_both_requests_
         .await
         .clone()
         .expect("orders-status request recorded");
-    assert_eq!(body, format!("cliOrdIds={SHORTENED_CLIENT_ORDER_ID}"));
+    assert_eq!(
+        body,
+        format!("cliOrdIds={LONG_CLIENT_ORDER_ID}&cliOrdIds={SHORTENED_CLIENT_ORDER_ID}")
+    );
 }
 
 /// A window report the mass status withholds, a fully executed one or one it cannot attribute to
@@ -5882,6 +5975,1411 @@ async fn test_futures_targeted_order_status_resolves_held_order_by_client_id() {
         .clone()
         .expect("orders-status request recorded");
     assert_eq!(body, "cliOrdIds=cli%2Bord%26id%3D001");
+}
+
+/// Kraken Futures takes a client order ID of up to 100 characters, so the order is sent with its
+/// full ID, and one past the limit is denied before it reaches the venue.
+#[rstest]
+#[case::default_id(LONG_CLIENT_ORDER_ID.len(), true)]
+#[case::at_the_limit(100, true)]
+#[case::past_the_limit(101, false)]
+#[tokio::test]
+async fn test_futures_submit_sends_the_full_client_order_id(
+    #[case] len: usize,
+    #[case] sent: bool,
+) {
+    let (client, mut rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    let id = if len == LONG_CLIENT_ORDER_ID.len() {
+        LONG_CLIENT_ORDER_ID.to_string()
+    } else {
+        format!("O-{}", "1".repeat(len - 2))
+    };
+    let client_order_id = ClientOrderId::new(&id);
+    let order = add_limit_order_to_cache(&cache, client_order_id);
+
+    client.submit_order(submit_order_command(&order)).unwrap();
+
+    if sent {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while state.submit_request_count.load(Ordering::Relaxed) == 0 {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("the order is sent");
+        let requests = state.command_requests.lock().await.clone();
+        assert!(
+            requests.iter().any(|request| {
+                request.starts_with("/derivatives/api/v3/sendorder")
+                    && request.contains(&format!("cliOrdId={id}"))
+            }),
+            "{requests:?}"
+        );
+    } else {
+        let events =
+            order_events_until_denied(&mut rx, &[client_order_id], &[client_order_id]).await;
+        assert_denied_alone(&events, &[client_order_id]);
+        assert_eq!(state.submit_request_count.load(Ordering::Relaxed), 0);
+    }
+}
+
+/// A list goes out whole or not at all: an open member whose client order ID is past the 100
+/// characters Kraken Futures takes denies every open member before any is submitted, so a bracket
+/// cannot reach the venue without a leg. A closed member is not denied, and its ID does not
+/// count.
+#[rstest]
+#[case::open_members(None, &[0, 1])]
+#[case::closed_short_member(Some(0), &[1])]
+#[case::closed_long_member(Some(1), &[])]
+#[tokio::test]
+async fn test_futures_submit_order_list_with_a_long_client_order_id_is_denied_whole(
+    #[case] closed: Option<usize>,
+    #[case] denied: &[usize],
+) {
+    let (client, mut rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    let long_id = format!("O-{}", "1".repeat(99));
+    let members = [
+        add_limit_order_to_cache(&cache, ClientOrderId::new("list-member-1")),
+        add_limit_order_to_cache(&cache, ClientOrderId::new(&long_id)),
+    ];
+
+    if let Some(index) = closed {
+        deny_cached_order(&cache, &members[index]);
+    }
+
+    client
+        .submit_order_list(submit_order_list_command(
+            "OL-LONG-1",
+            test_instrument_id(),
+            &members,
+        ))
+        .unwrap();
+
+    let ids: Vec<ClientOrderId> = members.iter().map(Order::client_order_id).collect();
+    let denied: Vec<ClientOrderId> = denied.iter().map(|index| ids[*index]).collect();
+
+    if denied.is_empty() {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while state.batch_submit_request_count.load(Ordering::Relaxed) == 0 {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("the open member is sent");
+        let mut denials = Vec::new();
+
+        while let Ok(event) = rx.try_recv() {
+            if let ExecutionEvent::Order(OrderEventAny::Denied(event)) = event {
+                denials.push(event.client_order_id);
+            }
+        }
+        assert!(denials.is_empty(), "{denials:?}");
+    } else {
+        let events = order_events_until_denied(&mut rx, &ids, &denied).await;
+        assert_denied_alone(&events, &denied);
+        assert_eq!(state.batch_submit_request_count.load(Ordering::Relaxed), 0);
+        assert_eq!(state.submit_request_count.load(Ordering::Relaxed), 0);
+    }
+}
+
+/// The order events of `client_order_ids`, received until each of `denied` is denied.
+async fn order_events_until_denied(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    client_order_ids: &[ClientOrderId],
+    denied: &[ClientOrderId],
+) -> Vec<OrderEventAny> {
+    let mut events: Vec<OrderEventAny> = Vec::new();
+    let all_denied = |events: &[OrderEventAny]| {
+        denied.iter().all(|id| {
+            events.iter().any(|event| {
+                matches!(event, OrderEventAny::Denied(_)) && event.client_order_id() == *id
+            })
+        })
+    };
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while !all_denied(&events) {
+            let event = rx.recv().await.expect("Execution event channel closed");
+            if let ExecutionEvent::Order(event) = event
+                && client_order_ids.contains(&event.client_order_id())
+            {
+                events.push(event);
+            }
+        }
+    })
+    .await
+    .expect("Timed out waiting for the denials");
+    events
+}
+
+/// Asserts `events` are one denial for the client order ID length per order in `denied`, in order,
+/// and nothing else.
+fn assert_denied_alone(events: &[OrderEventAny], denied: &[ClientOrderId]) {
+    let received: Vec<ClientOrderId> = events
+        .iter()
+        .map(|event| match event {
+            OrderEventAny::Denied(event) => {
+                assert!(event.reason.contains("at most 100 characters"), "{event:?}");
+                event.client_order_id
+            }
+            other => panic!("Expected only OrderDenied events, was {other:?}"),
+        })
+        .collect();
+    assert_eq!(received, denied);
+}
+
+/// Denies the cached order, closing it.
+fn deny_cached_order(cache: &Rc<RefCell<Cache>>, order: &OrderAny) {
+    let denied = OrderDenied::new(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        "closed before the list is sent".into(),
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::Denied(denied))
+        .unwrap();
+}
+
+/// `query_order` names the report by the cached order its venue order ID indexes, so a command
+/// whose venue order ID belongs to another cached order cannot pass that order off as the queried
+/// one.
+#[rstest]
+#[tokio::test]
+async fn test_futures_query_order_names_the_report_by_the_cached_order() {
+    let (client, mut rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    let owner = add_limit_order_to_cache(&cache, ClientOrderId::new("query-owner-1"));
+    set_venue_order_id_on_cached_order(&cache, &owner, "V-OWNED-1");
+    add_limit_order_to_cache(&cache, ClientOrderId::new("query-other-1"));
+    *state.futures_open_orders_json.lock().await =
+        Some(futures_open_orders_json("V-OWNED-1", "PI_XBTUSD"));
+
+    client
+        .query_order(QueryOrder::new(
+            test_trader_id(),
+            None,
+            test_strategy_id(),
+            test_instrument_id(),
+            ClientOrderId::new("query-other-1"),
+            Some(VenueOrderId::from("V-OWNED-1")),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+
+    let event = recv_until(&mut rx, |event| matches!(event, ExecutionEvent::Report(_))).await;
+    let ExecutionEvent::Report(ExecutionReport::Order(report)) = event else {
+        panic!("expected an order status report, received {event:?}");
+    };
+    assert_eq!(
+        report.client_order_id,
+        Some(ClientOrderId::from("query-owner-1"))
+    );
+}
+
+/// A cancel or edit names the order by one identifier: its venue order ID when known, else its
+/// full client order ID. An order sent with a shortened client order ID is held under that form,
+/// so its full ID beside the venue order ID could name no order.
+#[rstest]
+#[case::cancel_with_venue_order_id(false, true)]
+#[case::cancel_without_venue_order_id(false, false)]
+#[case::modify_with_venue_order_id(true, true)]
+#[case::modify_without_venue_order_id(true, false)]
+#[tokio::test]
+async fn test_futures_cancel_and_modify_name_the_order_by_one_identifier(
+    #[case] modify: bool,
+    #[case] with_venue_order_id: bool,
+) {
+    let (client, _rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    let client_order_id = ClientOrderId::new(LONG_CLIENT_ORDER_ID);
+    let order = add_limit_order_to_cache(&cache, client_order_id);
+    let venue_order_id = with_venue_order_id.then(|| VenueOrderId::from("V-ONE-ID-1"));
+
+    if modify {
+        let mut cmd = modify_order_command(&order, VenueOrderId::from("V-ONE-ID-1"));
+        cmd.venue_order_id = venue_order_id;
+        client.modify_order(cmd).unwrap();
+    } else {
+        let mut cmd = cancel_order_command(client_order_id, VenueOrderId::from("V-ONE-ID-1"));
+        cmd.venue_order_id = venue_order_id;
+        client.cancel_order(cmd).unwrap();
+    }
+
+    let path = if modify {
+        "/derivatives/api/v3/editorder"
+    } else {
+        "/derivatives/api/v3/cancelorder"
+    };
+    let request = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if let Some(request) = state
+                .command_requests
+                .lock()
+                .await
+                .iter()
+                .find(|request| request.starts_with(path))
+            {
+                return request.clone();
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the command is sent");
+
+    let names_venue_order_id = request.contains("V-ONE-ID-1");
+    let names_client_order_id = request.contains(&format!("cliOrdId={LONG_CLIENT_ORDER_ID}"));
+    assert_eq!(
+        (names_venue_order_id, names_client_order_id),
+        (with_venue_order_id, !with_venue_order_id),
+        "{request}"
+    );
+}
+
+/// The single-order query takes the row carrying the order's venue order ID when that is known.
+/// Otherwise a row is the order's when it echoes the client order ID, in full or in the shortened
+/// form the venue holds an order sent with one under, on the order's instrument and side and
+/// placed no more than the clock skew allowance before its creation, a fill's execution standing
+/// in for its placement; an older row sharing the ID, one on another instrument or side, or one
+/// the cache indexes for another order, even one whose full ID is this order's shortened one, is
+/// another order, while one it indexes for this order fits even before the order carries that
+/// venue order ID. With the venue order ID unknown, one read's rows or fills of two venue orders
+/// that can be the order leave the answer open, as does a row of a venue order the cache indexes
+/// for no order, or with no row such a fill, that another cached order sent without a venue order
+/// ID, holding its echo as its full ID, can be by its instrument, side and creation; with it known,
+/// so does a row or fill of another venue order that can be the order when no row or fill carries
+/// the ID. Either way the query fails and reconciliation defers.
+#[rstest]
+#[case::venue_order_id_row_wins(
+    true,
+    LookupRow::HistoryOfAnother(LONG_CLIENT_ORDER_ID),
+    false,
+    Ok(Some("V-OWN-1"))
+)]
+#[case::full_id_row_without_venue_order_id(
+    false,
+    LookupRow::HistoryOfAnother(LONG_CLIENT_ORDER_ID),
+    false,
+    Ok(Some("V-OTHER-1"))
+)]
+#[case::shortened_history_row(
+    false,
+    LookupRow::HistoryOfAnother(SHORTENED_CLIENT_ORDER_ID),
+    false,
+    Ok(Some("V-OTHER-1"))
+)]
+#[case::shortened_window_row(
+    false,
+    LookupRow::Window(SHORTENED_CLIENT_ORDER_ID),
+    false,
+    Ok(Some("V-OTHER-1"))
+)]
+#[case::shortened_fill(
+    false,
+    LookupRow::Fill(SHORTENED_CLIENT_ORDER_ID),
+    false,
+    Ok(Some("V-OTHER-1"))
+)]
+#[case::older_history_row(
+    false,
+    LookupRow::HistoryOfAnother(SHORTENED_CLIENT_ORDER_ID),
+    true,
+    Ok(None)
+)]
+#[case::older_window_row(false, LookupRow::Window(SHORTENED_CLIENT_ORDER_ID), true, Ok(None))]
+#[case::older_fill(false, LookupRow::Fill(SHORTENED_CLIENT_ORDER_ID), true, Ok(None))]
+#[case::window_row_on_another_instrument(
+    false,
+    LookupRow::WindowOnAnotherInstrument,
+    false,
+    Ok(None)
+)]
+#[case::history_row_of_the_other_side(false, LookupRow::HistoryOfTheOtherSide, false, Ok(None))]
+#[case::rows_of_two_venue_orders(
+    false,
+    LookupRow::TwoHistoryRows,
+    false,
+    Err("several venue orders")
+)]
+#[case::full_id_row_of_another_venue_order(
+    true,
+    LookupRow::OnlyAnotherWithTheId,
+    false,
+    Err("carries its client order ID")
+)]
+#[case::full_id_window_row_of_another_venue_order(
+    true,
+    LookupRow::Window(LONG_CLIENT_ORDER_ID),
+    false,
+    Err("carries its client order ID")
+)]
+#[case::full_id_fill_of_another_venue_order(
+    true,
+    LookupRow::Fill(LONG_CLIENT_ORDER_ID),
+    false,
+    Err("carries its client order ID")
+)]
+#[case::window_rows_of_two_venue_orders(
+    false,
+    LookupRow::TwoWindowRows,
+    false,
+    Err("several venue orders")
+)]
+#[case::fills_of_two_venue_orders(
+    false,
+    LookupRow::FillsOfTwoOrders,
+    false,
+    Err("carries its client order ID")
+)]
+#[case::window_row_of_another_cached_order(
+    false,
+    LookupRow::WindowOfAnotherCachedOrder,
+    false,
+    Ok(None)
+)]
+#[case::fill_of_another_cached_order(false, LookupRow::FillOfAnotherCachedOrder, false, Ok(None))]
+#[case::history_row_of_a_short_id_order(false, LookupRow::HistoryOfShortIdOrder, false, Ok(None))]
+#[case::window_row_of_a_short_id_order(false, LookupRow::WindowOfShortIdOrder, false, Ok(None))]
+#[case::fill_of_a_short_id_order(false, LookupRow::FillOfShortIdOrder, false, Ok(None))]
+#[case::fill_of_a_short_id_order_adopted_after_the_fill(
+    false,
+    LookupRow::FillOfAdoptedShortIdOrder,
+    false,
+    Ok(None)
+)]
+#[case::own_row_beside_a_short_id_order(
+    false,
+    LookupRow::HistoryOfShortIdOrderAndTheOrder,
+    false,
+    Ok(Some("V-OWN-1"))
+)]
+#[case::history_row_of_a_short_id_order_with_venue_order_id(
+    true,
+    LookupRow::HistoryOfShortIdOrder,
+    false,
+    Ok(None)
+)]
+#[case::window_row_of_a_short_id_order_with_venue_order_id(
+    true,
+    LookupRow::WindowOfShortIdOrder,
+    false,
+    Ok(None)
+)]
+#[case::fill_of_a_short_id_order_with_venue_order_id(
+    true,
+    LookupRow::FillOfShortIdOrder,
+    false,
+    Ok(None)
+)]
+#[case::own_row_indexed_while_the_query_reads(
+    false,
+    LookupRow::HistoryIndexedForTheOrder,
+    false,
+    Ok(Some("V-OWN-1"))
+)]
+#[case::history_row_of_an_unindexed_short_id_order(
+    false,
+    LookupRow::HistoryOfUnindexedShortIdOrder(UnindexedShortIdOrder::Fits),
+    false,
+    Err("the full ID of another cached order")
+)]
+#[case::window_row_of_an_unindexed_short_id_order(
+    false,
+    LookupRow::WindowOfUnindexedShortIdOrder,
+    false,
+    Err("the full ID of another cached order")
+)]
+#[case::fill_of_an_unindexed_short_id_order(
+    false,
+    LookupRow::FillOfUnindexedShortIdOrder,
+    false,
+    Err("carries its client order ID")
+)]
+#[case::history_row_of_an_unindexed_short_id_order_with_venue_order_id(
+    true,
+    LookupRow::HistoryOfUnindexedShortIdOrder(UnindexedShortIdOrder::Fits),
+    false,
+    Err("carries its client order ID")
+)]
+#[case::row_placed_before_an_unindexed_short_id_order(
+    false,
+    LookupRow::HistoryOfUnindexedShortIdOrder(UnindexedShortIdOrder::CreatedAfterTheRow),
+    false,
+    Ok(Some("V-OTHER-1"))
+)]
+#[case::row_on_the_other_side_of_an_unindexed_short_id_order(
+    false,
+    LookupRow::HistoryOfUnindexedShortIdOrder(UnindexedShortIdOrder::OnTheOtherSide),
+    false,
+    Ok(Some("V-OTHER-1"))
+)]
+#[case::row_on_another_instrument_than_an_unindexed_short_id_order(
+    false,
+    LookupRow::HistoryOfUnindexedShortIdOrder(UnindexedShortIdOrder::OnAnotherInstrument),
+    false,
+    Ok(Some("V-OTHER-1"))
+)]
+#[case::row_beside_a_short_id_order_holding_another_venue_order(
+    false,
+    LookupRow::HistoryOfUnindexedShortIdOrder(UnindexedShortIdOrder::HoldsAnotherVenueOrder),
+    false,
+    Ok(Some("V-OTHER-1"))
+)]
+#[case::row_beside_a_denied_short_id_order(
+    false,
+    LookupRow::HistoryOfUnindexedShortIdOrder(UnindexedShortIdOrder::Denied),
+    false,
+    Ok(Some("V-OTHER-1"))
+)]
+#[case::row_beside_a_rejected_short_id_order(
+    false,
+    LookupRow::HistoryOfUnindexedShortIdOrder(UnindexedShortIdOrder::Rejected),
+    false,
+    Err("the full ID of another cached order")
+)]
+#[case::no_row_carries_the_id(false, LookupRow::None, false, Ok(None))]
+#[tokio::test]
+async fn test_futures_order_lookup_takes_only_the_queried_order(
+    #[case] with_venue_order_id: bool,
+    #[case] row: LookupRow,
+    #[case] created_after_the_rows: bool,
+    #[case] expected: Result<Option<&str>, &str>,
+) {
+    let (client, _rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    let client_order_id = ClientOrderId::new(LONG_CLIENT_ORDER_ID);
+    // A day after now, after every row below, or at the epoch, before them
+    let created = if created_after_the_rows {
+        UnixNanos::from(get_atomic_clock_realtime().get_time_ns().as_u64() + 86_400_000_000_000)
+    } else {
+        UnixNanos::default()
+    };
+    let order = add_futures_limit_order_created_at(
+        &cache,
+        client_order_id,
+        test_instrument_id(),
+        OrderSide::Buy,
+        test_strategy_id(),
+        created,
+    );
+
+    if with_venue_order_id {
+        set_venue_order_id_on_cached_order(&cache, &order, "V-OWN-1");
+    } else {
+        // A cached order without a venue order ID is in flight when reconciliation queries it
+        mark_cached_order_submitted(&cache, &order);
+    }
+
+    let history_row = |order_uid: &str, client_id: &str| {
+        futures_history_element(
+            "OrderCancelled",
+            &format!("e-{order_uid}"),
+            order_uid,
+            "PI_XBTUSD",
+            "1000",
+            "0",
+            1_700_000_000_000,
+        )
+        .replace(r#""clientId":"""#, &format!(r#""clientId":"{client_id}""#))
+    };
+
+    match row {
+        LookupRow::HistoryOfAnother(echoed) => {
+            let mut elements = vec![history_row("V-OTHER-1", echoed)];
+            if with_venue_order_id {
+                elements.push(history_row("V-OWN-1", ""));
+            }
+            *state.futures_order_history_json.lock().await =
+                Some(futures_order_history_json(&elements));
+        }
+        LookupRow::OnlyAnotherWithTheId => {
+            *state.futures_order_history_json.lock().await =
+                Some(futures_order_history_json(&[history_row(
+                    "V-OTHER-1",
+                    LONG_CLIENT_ORDER_ID,
+                )]));
+        }
+        LookupRow::TwoHistoryRows => {
+            *state.futures_order_history_json.lock().await = Some(futures_order_history_json(&[
+                history_row("V-OTHER-1", LONG_CLIENT_ORDER_ID),
+                history_row("V-OTHER-2", SHORTENED_CLIENT_ORDER_ID),
+            ]));
+        }
+        LookupRow::WindowOnAnotherInstrument => {
+            *state.orders_status_response.lock().await = Some(orders_status_body(&[(
+                "V-OTHER-1",
+                LONG_CLIENT_ORDER_ID,
+                "PF_ETHUSD",
+                "buy",
+                "ENTERED_BOOK",
+                0,
+            )]));
+        }
+        LookupRow::HistoryOfTheOtherSide => {
+            let row = futures_history_element_sided(
+                "OrderCancelled",
+                "e-sell",
+                "V-OTHER-1",
+                "PI_XBTUSD",
+                "Sell",
+                "1000",
+                "0",
+                1_700_000_000_000,
+            )
+            .replace(
+                r#""clientId":"""#,
+                &format!(r#""clientId":"{LONG_CLIENT_ORDER_ID}""#),
+            );
+            *state.futures_order_history_json.lock().await =
+                Some(futures_order_history_json(&[row]));
+        }
+        LookupRow::Window(echoed) => {
+            *state.orders_status_response.lock().await = Some(orders_status_body(&[(
+                "V-OTHER-1",
+                echoed,
+                "PI_XBTUSD",
+                "buy",
+                "ENTERED_BOOK",
+                0,
+            )]));
+        }
+        LookupRow::Fill(echoed) => {
+            *state.fills_response.lock().await =
+                Some(recent_fills_body(&[("F-ECHO-1", "V-OTHER-1", echoed)]));
+        }
+        LookupRow::TwoWindowRows => {
+            *state.orders_status_response.lock().await = Some(orders_status_body(&[
+                (
+                    "V-OTHER-1",
+                    LONG_CLIENT_ORDER_ID,
+                    "PI_XBTUSD",
+                    "buy",
+                    "ENTERED_BOOK",
+                    0,
+                ),
+                (
+                    "V-OTHER-2",
+                    SHORTENED_CLIENT_ORDER_ID,
+                    "PI_XBTUSD",
+                    "buy",
+                    "ENTERED_BOOK",
+                    0,
+                ),
+            ]));
+        }
+        LookupRow::FillsOfTwoOrders => {
+            *state.fills_response.lock().await = Some(recent_fills_body(&[
+                ("F-ECHO-1", "V-OTHER-1", LONG_CLIENT_ORDER_ID),
+                ("F-ECHO-2", "V-OTHER-2", LONG_CLIENT_ORDER_ID),
+            ]));
+        }
+        LookupRow::WindowOfAnotherCachedOrder | LookupRow::FillOfAnotherCachedOrder => {
+            let other = add_limit_order_to_cache(
+                &cache,
+                ClientOrderId::new(LONG_CLIENT_ORDER_ID_OTHER_DAY),
+            );
+            set_venue_order_id_on_cached_order(&cache, &other, "V-OTHER-1");
+
+            if matches!(row, LookupRow::WindowOfAnotherCachedOrder) {
+                *state.orders_status_response.lock().await = Some(orders_status_body(&[(
+                    "V-OTHER-1",
+                    SHORTENED_CLIENT_ORDER_ID,
+                    "PI_XBTUSD",
+                    "buy",
+                    "ENTERED_BOOK",
+                    0,
+                )]));
+            } else {
+                *state.fills_response.lock().await = Some(recent_fills_body(&[(
+                    "F-OTHER-1",
+                    "V-OTHER-1",
+                    SHORTENED_CLIENT_ORDER_ID,
+                )]));
+            }
+        }
+        LookupRow::HistoryOfShortIdOrder
+        | LookupRow::HistoryOfShortIdOrderAndTheOrder
+        | LookupRow::WindowOfShortIdOrder
+        | LookupRow::FillOfShortIdOrder
+        | LookupRow::FillOfAdoptedShortIdOrder => {
+            // An order adopted from a venue report is created after the venue placed and filled it
+            let created = if matches!(row, LookupRow::FillOfAdoptedShortIdOrder) {
+                UnixNanos::from(
+                    get_atomic_clock_realtime().get_time_ns().as_u64() + 86_400_000_000_000,
+                )
+            } else {
+                UnixNanos::default()
+            };
+            let other = add_futures_limit_order_created_at(
+                &cache,
+                ClientOrderId::new(SHORTENED_CLIENT_ORDER_ID),
+                test_instrument_id(),
+                OrderSide::Buy,
+                test_strategy_id(),
+                created,
+            );
+            set_venue_order_id_on_cached_order(&cache, &other, "V-OTHER-1");
+
+            match row {
+                LookupRow::WindowOfShortIdOrder => {
+                    *state.orders_status_response.lock().await = Some(orders_status_body(&[(
+                        "V-OTHER-1",
+                        SHORTENED_CLIENT_ORDER_ID,
+                        "PI_XBTUSD",
+                        "buy",
+                        "ENTERED_BOOK",
+                        0,
+                    )]));
+                }
+                LookupRow::FillOfShortIdOrder | LookupRow::FillOfAdoptedShortIdOrder => {
+                    *state.fills_response.lock().await = Some(recent_fills_body(&[(
+                        "F-OTHER-1",
+                        "V-OTHER-1",
+                        SHORTENED_CLIENT_ORDER_ID,
+                    )]));
+                }
+                _ => {
+                    let mut elements = vec![history_row("V-OTHER-1", SHORTENED_CLIENT_ORDER_ID)];
+                    if matches!(row, LookupRow::HistoryOfShortIdOrderAndTheOrder) {
+                        elements.push(history_row("V-OWN-1", LONG_CLIENT_ORDER_ID));
+                    }
+                    *state.futures_order_history_json.lock().await =
+                        Some(futures_order_history_json(&elements));
+                }
+            }
+        }
+        LookupRow::HistoryOfUnindexedShortIdOrder(_)
+        | LookupRow::WindowOfUnindexedShortIdOrder
+        | LookupRow::FillOfUnindexedShortIdOrder => {
+            let (instrument_id, side, created) = match row {
+                LookupRow::HistoryOfUnindexedShortIdOrder(
+                    UnindexedShortIdOrder::CreatedAfterTheRow,
+                ) => (
+                    test_instrument_id(),
+                    OrderSide::Buy,
+                    UnixNanos::from(
+                        get_atomic_clock_realtime().get_time_ns().as_u64() + 86_400_000_000_000,
+                    ),
+                ),
+                LookupRow::HistoryOfUnindexedShortIdOrder(
+                    UnindexedShortIdOrder::OnTheOtherSide,
+                ) => (test_instrument_id(), OrderSide::Sell, UnixNanos::default()),
+                LookupRow::HistoryOfUnindexedShortIdOrder(
+                    UnindexedShortIdOrder::OnAnotherInstrument,
+                ) => (
+                    InstrumentId::from("PF_ETHUSD.KRAKEN"),
+                    OrderSide::Buy,
+                    UnixNanos::default(),
+                ),
+                _ => (test_instrument_id(), OrderSide::Buy, UnixNanos::default()),
+            };
+            let other = add_futures_limit_order_created_at(
+                &cache,
+                ClientOrderId::new(SHORTENED_CLIENT_ORDER_ID),
+                instrument_id,
+                side,
+                test_strategy_id(),
+                created,
+            );
+
+            match row {
+                LookupRow::HistoryOfUnindexedShortIdOrder(UnindexedShortIdOrder::Denied) => {
+                    deny_cached_order(&cache, &other);
+                }
+                LookupRow::HistoryOfUnindexedShortIdOrder(
+                    UnindexedShortIdOrder::HoldsAnotherVenueOrder,
+                ) => {
+                    mark_cached_order_submitted(&cache, &other);
+                    set_venue_order_id_on_cached_order(&cache, &other, "V-OTHER-2");
+                }
+                LookupRow::HistoryOfUnindexedShortIdOrder(UnindexedShortIdOrder::Rejected) => {
+                    mark_cached_order_rejected(&cache, &other);
+                }
+                _ => mark_cached_order_submitted(&cache, &other),
+            }
+
+            match row {
+                LookupRow::WindowOfUnindexedShortIdOrder => {
+                    *state.orders_status_response.lock().await = Some(orders_status_body(&[(
+                        "V-OTHER-1",
+                        SHORTENED_CLIENT_ORDER_ID,
+                        "PI_XBTUSD",
+                        "buy",
+                        "ENTERED_BOOK",
+                        0,
+                    )]));
+                }
+                LookupRow::FillOfUnindexedShortIdOrder => {
+                    *state.fills_response.lock().await = Some(recent_fills_body(&[(
+                        "F-OTHER-1",
+                        "V-OTHER-1",
+                        SHORTENED_CLIENT_ORDER_ID,
+                    )]));
+                }
+                _ => {
+                    *state.futures_order_history_json.lock().await =
+                        Some(futures_order_history_json(&[history_row(
+                            "V-OTHER-1",
+                            SHORTENED_CLIENT_ORDER_ID,
+                        )]));
+                }
+            }
+        }
+        LookupRow::HistoryIndexedForTheOrder => {
+            cache
+                .borrow_mut()
+                .add_venue_order_id(&client_order_id, &VenueOrderId::from("V-OWN-1"), false)
+                .unwrap();
+            *state.futures_order_history_json.lock().await =
+                Some(futures_order_history_json(&[history_row(
+                    "V-OWN-1",
+                    LONG_CLIENT_ORDER_ID,
+                )]));
+        }
+        LookupRow::None => {}
+    }
+
+    // As the engine's targeted query does, the command carries the order's venue order ID
+    let cmd = GenerateOrderStatusReport::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(test_instrument_id()),
+        Some(client_order_id),
+        with_venue_order_id.then(|| VenueOrderId::from("V-OWN-1")),
+        None,
+        None,
+    );
+    let result = client.generate_order_status_report(&cmd).await;
+
+    assert_lookup_result(expected, result, client_order_id);
+
+    if let LookupRow::Window(_) = row {
+        let body = state
+            .orders_status_request_body
+            .lock()
+            .await
+            .clone()
+            .expect("orders-status request recorded");
+        // The window is asked about the order under both forms the venue can hold it under
+        assert!(
+            body.contains(&format!("cliOrdIds={LONG_CLIENT_ORDER_ID}"))
+                && body.contains(&format!("cliOrdIds={SHORTENED_CLIENT_ORDER_ID}")),
+            "{body}"
+        );
+    }
+}
+
+/// Without a cached order to check a row's instrument, side and placement against, the echo alone
+/// ties a row to the queried order unless the cache indexes the row's venue order for another
+/// order or, indexing it for none, another cached order sent without a venue order ID holds the
+/// echo as its full ID and fits the row by its instrument, side and creation, and with the venue
+/// order ID known a row of another venue order that can be the order leaves the answer open, so the
+/// query fails and reconciliation defers.
+#[rstest]
+#[case::echoing_row(
+    false,
+    Some(LONG_CLIENT_ORDER_ID),
+    ShortIdOrder::Absent,
+    Ok(Some("V-OTHER-1"))
+)]
+#[case::shortened_echoing_row(
+    false,
+    Some(SHORTENED_CLIENT_ORDER_ID),
+    ShortIdOrder::Absent,
+    Ok(Some("V-OTHER-1"))
+)]
+#[case::echoing_row_of_another_venue_order(
+    true,
+    Some(LONG_CLIENT_ORDER_ID),
+    ShortIdOrder::Absent,
+    Err("carries its client order ID")
+)]
+#[case::no_row(true, None, ShortIdOrder::Absent, Ok(None))]
+#[case::row_of_a_short_id_order(
+    false,
+    Some(SHORTENED_CLIENT_ORDER_ID),
+    ShortIdOrder::Indexed,
+    Ok(None)
+)]
+#[case::row_of_a_short_id_order_with_venue_order_id(
+    true,
+    Some(SHORTENED_CLIENT_ORDER_ID),
+    ShortIdOrder::Indexed,
+    Ok(None)
+)]
+#[case::row_of_an_unindexed_short_id_order(
+    false,
+    Some(SHORTENED_CLIENT_ORDER_ID),
+    ShortIdOrder::Unindexed,
+    Err("the full ID of another cached order")
+)]
+#[tokio::test]
+async fn test_futures_order_lookup_without_a_cached_order_takes_the_echo(
+    #[case] with_venue_order_id: bool,
+    #[case] echoed: Option<&str>,
+    #[case] short_id_order: ShortIdOrder,
+    #[case] expected: Result<Option<&str>, &str>,
+) {
+    let (client, _rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    let client_order_id = ClientOrderId::new(LONG_CLIENT_ORDER_ID);
+
+    if !matches!(short_id_order, ShortIdOrder::Absent) {
+        let other = add_limit_order_to_cache(&cache, ClientOrderId::new(SHORTENED_CLIENT_ORDER_ID));
+
+        if matches!(short_id_order, ShortIdOrder::Indexed) {
+            set_venue_order_id_on_cached_order(&cache, &other, "V-OTHER-1");
+        } else {
+            mark_cached_order_submitted(&cache, &other);
+        }
+    }
+
+    if let Some(echoed) = echoed {
+        let row = futures_history_element(
+            "OrderCancelled",
+            "e-other",
+            "V-OTHER-1",
+            "PI_XBTUSD",
+            "1000",
+            "0",
+            1_700_000_000_000,
+        )
+        .replace(r#""clientId":"""#, &format!(r#""clientId":"{echoed}""#));
+        *state.futures_order_history_json.lock().await = Some(futures_order_history_json(&[row]));
+    }
+
+    let cmd = GenerateOrderStatusReport::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(test_instrument_id()),
+        Some(client_order_id),
+        with_venue_order_id.then(|| VenueOrderId::from("V-OWN-1")),
+        None,
+        None,
+    );
+    let result = client.generate_order_status_report(&cmd).await;
+
+    assert_lookup_result(expected, result, client_order_id);
+}
+
+/// Asserts a lookup's result: the venue order ID of the report it takes, named by the queried
+/// client order ID, no report, or an error whose message holds the expected text.
+fn assert_lookup_result(
+    expected: Result<Option<&str>, &str>,
+    result: anyhow::Result<Option<OrderStatusReport>>,
+    client_order_id: ClientOrderId,
+) {
+    match (expected, result) {
+        (Ok(None), Ok(None)) => {}
+        (Ok(Some(venue_order_id)), Ok(Some(report))) => {
+            assert_eq!(report.venue_order_id, VenueOrderId::from(venue_order_id));
+            assert_eq!(report.client_order_id, Some(client_order_id));
+        }
+        (Err(message), Err(e)) => {
+            assert!(
+                format!("{e:#}").contains(message),
+                "unexpected error: {e:#}"
+            );
+        }
+        (expected, result) => panic!("expected {expected:?}, received {result:?}"),
+    }
+}
+
+/// A recent `/fills` body with one fill per `(fill_id, order_id, cli_ord_id)` of one contract.
+fn recent_fills_body(fills: &[(&str, &str, &str)]) -> String {
+    let fill_time = jiff::Timestamp::now().to_string();
+    let rows: Vec<String> = fills
+        .iter()
+        .map(|(fill_id, order_id, echoed)| {
+            format!(
+                r#"{{"fill_id":"{fill_id}","symbol":"PI_XBTUSD","side":"buy","order_id":"{order_id}","cli_ord_id":"{echoed}","fillTime":"{fill_time}","size":1,"price":50000.0,"fillType":"taker","fee_paid":0.0,"fee_currency":"USD"}}"#
+            )
+        })
+        .collect();
+    format!(r#"{{"result":"success","fills":[{}]}}"#, rows.join(","))
+}
+
+/// Where a row carrying the queried client order ID appears in a lookup test.
+#[derive(Clone, Copy, Debug)]
+enum LookupRow {
+    /// A history row of `V-OTHER-1` echoing this ID, beside the order's own row when it has a
+    /// venue order ID.
+    HistoryOfAnother(&'static str),
+    /// Only a history row of `V-OTHER-1` echoing the full ID, the order's own row absent.
+    OnlyAnotherWithTheId,
+    /// History rows of `V-OTHER-1` and `V-OTHER-2`, echoing the full and the shortened ID.
+    TwoHistoryRows,
+    /// A window entry of `V-OTHER-1` echoing the full ID on another instrument.
+    WindowOnAnotherInstrument,
+    /// A history row of `V-OTHER-1` echoing the full ID on the other side.
+    HistoryOfTheOtherSide,
+    /// A window entry of `V-OTHER-1` echoing this ID.
+    Window(&'static str),
+    /// A recent fill of `V-OTHER-1` echoing this ID.
+    Fill(&'static str),
+    /// Window entries of `V-OTHER-1` and `V-OTHER-2`, echoing the full and the shortened ID.
+    TwoWindowRows,
+    /// Recent fills of `V-OTHER-1` and `V-OTHER-2`, each echoing the full ID.
+    FillsOfTwoOrders,
+    /// A window entry echoing the shortened ID of `V-OTHER-1`, which the cache indexes for another
+    /// order whose ID shortens alike.
+    WindowOfAnotherCachedOrder,
+    /// A recent fill echoing the shortened ID of `V-OTHER-1`, which the cache indexes for another
+    /// order whose ID shortens alike.
+    FillOfAnotherCachedOrder,
+    /// A history row of `V-OTHER-1` echoing the shortened ID, which the cache indexes for another
+    /// order holding that form as its full ID.
+    HistoryOfShortIdOrder,
+    /// As `HistoryOfShortIdOrder`, beside a history row of `V-OWN-1` echoing the full ID.
+    HistoryOfShortIdOrderAndTheOrder,
+    /// A window entry of `V-OTHER-1` echoing the shortened ID, which the cache indexes for another
+    /// order holding that form as its full ID.
+    WindowOfShortIdOrder,
+    /// A recent fill of `V-OTHER-1` echoing the shortened ID, which the cache indexes for another
+    /// order holding that form as its full ID.
+    FillOfShortIdOrder,
+    /// As `FillOfShortIdOrder`, with the other order created a day after the fill.
+    FillOfAdoptedShortIdOrder,
+    /// A history row of `V-OWN-1` echoing the full ID, which the cache indexes for the order while
+    /// the order carries no venue order ID, as when it is accepted while the query reads.
+    HistoryIndexedForTheOrder,
+    /// A history row of `V-OTHER-1`, which the cache indexes for no order, echoing the shortened ID
+    /// another cached order holds as its full ID.
+    HistoryOfUnindexedShortIdOrder(UnindexedShortIdOrder),
+    /// A window entry of `V-OTHER-1`, as `HistoryOfUnindexedShortIdOrder` with an order that fits.
+    WindowOfUnindexedShortIdOrder,
+    /// A recent fill of `V-OTHER-1`, as `HistoryOfUnindexedShortIdOrder` with an order that fits.
+    FillOfUnindexedShortIdOrder,
+    /// No row carries the ID.
+    None,
+}
+
+/// The state of the cached order holding the shortened ID as its full ID, beside an unindexed row
+/// echoing it. Unless stated, it is submitted without a venue order ID, on the row's instrument and
+/// side, and created before the row's placement, as while its acknowledgement is in flight.
+#[derive(Clone, Copy, Debug)]
+enum UnindexedShortIdOrder {
+    /// Fits the row.
+    Fits,
+    /// Created a day after the test starts, long after the row's placement.
+    CreatedAfterTheRow,
+    /// On the other side.
+    OnTheOtherSide,
+    /// On another instrument.
+    OnAnotherInstrument,
+    /// Submitted and accepted as `V-OTHER-2`.
+    HoldsAnotherVenueOrder,
+    /// Denied, so never sent.
+    Denied,
+    /// Submitted and rejected, so closed without a venue order ID.
+    Rejected,
+}
+
+/// The cached order, if any, holding the shortened ID as its full ID in an uncached lookup.
+#[derive(Clone, Copy, Debug)]
+enum ShortIdOrder {
+    /// No such order is cached.
+    Absent,
+    /// Submitted, with no venue order ID.
+    Unindexed,
+    /// Cached, with `V-OTHER-1` indexed for it.
+    Indexed,
+}
+
+/// The open-orders read lists the held order's 1,000 contracts as last updated then; a window copy
+/// lists 5.
+const OPEN_ORDER_UPDATED: &str = "2023-04-07T14:15:30.250Z";
+
+/// A window copy of an order the open-orders read already returned names that report by the cached
+/// order the window attributed it to and is dropped, so the order reaches reconciliation once with
+/// the open-orders fields. A copy updated later lends the report its state and its rules: a fully
+/// executed one is withheld, leaving mass status incomplete, and a canceled one with executions
+/// passes; an older copy lends nothing more. A copy the window cannot attribute is withheld,
+/// leaving the report unnamed and mass status incomplete.
+#[rstest]
+#[case::later_update(
+    &[("V-HELD-030", "ENTERED_BOOK", 0)],
+    "2026-09-12T04:05:06.300Z",
+    Some((OrderStatus::Accepted, "5", Some(LONG_CLIENT_ORDER_ID))),
+    true
+)]
+#[case::older_update(
+    &[("V-HELD-030", "ENTERED_BOOK", 0)],
+    "2023-04-07T14:15:30.000Z",
+    Some((OrderStatus::Accepted, "1000", Some(LONG_CLIENT_ORDER_ID))),
+    true
+)]
+#[case::later_cancel(
+    &[("V-HELD-030", "CANCELLED", 0)],
+    OPEN_ORDER_UPDATED,
+    Some((OrderStatus::Canceled, "5", Some(LONG_CLIENT_ORDER_ID))),
+    true
+)]
+#[case::later_cancel_with_executions(
+    &[("V-HELD-030", "CANCELLED", 2)],
+    OPEN_ORDER_UPDATED,
+    Some((OrderStatus::Canceled, "5", Some(LONG_CLIENT_ORDER_ID))),
+    true
+)]
+#[case::fully_executed(&[("V-HELD-030", "FULLY_EXECUTED", 5)], OPEN_ORDER_UPDATED, None, false)]
+#[case::ambiguous_copy(
+    &[("V-HELD-030", "ENTERED_BOOK", 0), ("V-HELD-031", "ENTERED_BOOK", 0)],
+    "2026-09-12T04:05:06.300Z",
+    Some((OrderStatus::Accepted, "1000", None)),
+    false
+)]
+#[tokio::test]
+async fn test_futures_window_copy_of_a_venue_read_order_names_it_once(
+    #[case] window: &[(&str, &str, u32)],
+    #[case] window_updated: &str,
+    #[case] expected: Option<(OrderStatus, &str, Option<&str>)>,
+    #[case] complete: bool,
+    #[values(false, true)] mass_status: bool,
+) {
+    let (client, _rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    let held = add_limit_order_to_cache(&cache, ClientOrderId::new(LONG_CLIENT_ORDER_ID));
+    mark_cached_order_pending_cancel_while_held(&cache, &held);
+    // The venue rests the held order, whose acknowledgement the node missed
+    *state.futures_open_orders_json.lock().await =
+        Some(futures_open_orders_json("V-HELD-030", "PI_XBTUSD"));
+    let entries: Vec<(&str, &str, &str, &str, &str, u32)> = window
+        .iter()
+        .map(|(venue_order_id, status, filled)| {
+            (
+                *venue_order_id,
+                LONG_CLIENT_ORDER_ID,
+                "PI_XBTUSD",
+                "buy",
+                *status,
+                *filled,
+            )
+        })
+        .collect();
+    *state.orders_status_response.lock().await =
+        Some(orders_status_body_updated_at(&entries, window_updated));
+
+    let reports: Vec<OrderStatusReport> = if mass_status {
+        let mass_status = client
+            .generate_mass_status(None)
+            .await
+            .unwrap()
+            .expect("mass status available");
+        assert_eq!(mass_status.reports_complete(), complete);
+        mass_status.order_reports().values().cloned().collect()
+    } else {
+        let cmd = GenerateOrderStatusReports::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            true,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        client.generate_order_status_reports(&cmd).await.unwrap()
+    };
+
+    let held_reports: Vec<(OrderStatus, Quantity, Option<ClientOrderId>)> = reports
+        .iter()
+        .filter(|report| report.venue_order_id == VenueOrderId::from("V-HELD-030"))
+        .map(|report| (report.order_status, report.quantity, report.client_order_id))
+        .collect();
+    let expected: Vec<(OrderStatus, Quantity, Option<ClientOrderId>)> = expected
+        .map(|(status, quantity, named)| {
+            (
+                status,
+                Quantity::from(quantity),
+                named.map(ClientOrderId::from),
+            )
+        })
+        .into_iter()
+        .collect();
+    assert_eq!(held_reports, expected);
+}
+
+/// A closed history report keeps its state however the window copy reads, so a later fully
+/// executed copy of an order the history already closed neither displaces the report nor leaves
+/// mass status incomplete.
+#[rstest]
+#[tokio::test]
+async fn test_futures_window_copy_leaves_a_closed_history_report_alone() {
+    let (client, _rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    let held = add_limit_order_to_cache(&cache, ClientOrderId::new(LONG_CLIENT_ORDER_ID));
+    mark_cached_order_pending_cancel_while_held(&cache, &held);
+    *state.futures_order_history_json.lock().await =
+        Some(futures_order_history_json(&[futures_history_element(
+            "OrderCancelled",
+            "e-closed",
+            "V-HELD-030",
+            "PI_XBTUSD",
+            "1000",
+            "0",
+            1_680_876_930_250,
+        )]));
+    *state.orders_status_response.lock().await = Some(orders_status_body(&[(
+        "V-HELD-030",
+        LONG_CLIENT_ORDER_ID,
+        "PI_XBTUSD",
+        "buy",
+        "FULLY_EXECUTED",
+        5,
+    )]));
+
+    let mass_status = client
+        .generate_mass_status(None)
+        .await
+        .unwrap()
+        .expect("mass status available");
+
+    assert!(mass_status.reports_complete());
+    let report = mass_status
+        .order_reports()
+        .get(&VenueOrderId::from("V-HELD-030"))
+        .cloned()
+        .expect("the history report stands");
+    assert_eq!(report.order_status, OrderStatus::Canceled);
+    assert_eq!(
+        report.client_order_id,
+        Some(ClientOrderId::from(LONG_CLIENT_ORDER_ID))
+    );
+}
+
+/// A report path of the futures client, for the naming test below.
+#[derive(Clone, Copy, Debug)]
+enum ReportPath {
+    BulkHistory,
+    MassStatusOrders,
+    MassStatusFills,
+    FillReports,
+    Lookup,
+    QueryOrder,
+}
+
+/// An order sent with a shortened client order ID is echoed in that form, so every report of an
+/// order the cache indexes by venue order ID takes the cached client order ID, while a report of an
+/// order the cache does not hold keeps the echo.
+#[rstest]
+#[case::bulk_history(ReportPath::BulkHistory)]
+#[case::mass_status_orders(ReportPath::MassStatusOrders)]
+#[case::mass_status_fills(ReportPath::MassStatusFills)]
+#[case::fill_reports(ReportPath::FillReports)]
+#[case::lookup(ReportPath::Lookup)]
+#[case::query_order(ReportPath::QueryOrder)]
+#[tokio::test]
+async fn test_futures_reports_of_a_cached_order_carry_its_client_order_id(
+    #[case] path: ReportPath,
+) {
+    let (client, mut rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    let client_order_id = ClientOrderId::new(LONG_CLIENT_ORDER_ID);
+    let order = add_limit_order_to_cache(&cache, client_order_id);
+    set_venue_order_id_on_cached_order(&cache, &order, "V-LEGACY-1");
+
+    let history_row = |order_uid: &str| {
+        futures_history_element(
+            "OrderCancelled",
+            &format!("e-{order_uid}"),
+            order_uid,
+            "PI_XBTUSD",
+            "1000",
+            "0",
+            1_700_000_000_000,
+        )
+        .replace(
+            r#""clientId":"""#,
+            &format!(r#""clientId":"{SHORTENED_CLIENT_ORDER_ID}""#),
+        )
+    };
+    *state.futures_order_history_json.lock().await = Some(futures_order_history_json(&[
+        history_row("V-LEGACY-1"),
+        history_row("V-UNKNOWN-1"),
+    ]));
+    let fill = |fill_id: &str, order_id: &str| {
+        format!(
+            r#"{{"fill_id":"{fill_id}","symbol":"PI_XBTUSD","side":"buy","order_id":"{order_id}","cli_ord_id":"{SHORTENED_CLIENT_ORDER_ID}","fillTime":"2023-04-07T15:20:45.500Z","size":1,"price":50000.0,"fillType":"taker","fee_paid":0.0,"fee_currency":"USD"}}"#
+        )
+    };
+    *state.fills_response.lock().await = Some(format!(
+        r#"{{"result":"success","fills":[{},{}]}}"#,
+        fill("F-LEGACY-1", "V-LEGACY-1"),
+        fill("F-UNKNOWN-1", "V-UNKNOWN-1"),
+    ));
+
+    let named: Vec<(VenueOrderId, Option<ClientOrderId>)> = match path {
+        ReportPath::BulkHistory => client
+            .generate_order_status_reports(&history_orders_cmd())
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|report| (report.venue_order_id, report.client_order_id))
+            .collect(),
+        ReportPath::MassStatusOrders => client
+            .generate_mass_status(None)
+            .await
+            .unwrap()
+            .expect("mass status available")
+            .order_reports()
+            .values()
+            .map(|report| (report.venue_order_id, report.client_order_id))
+            .collect(),
+        ReportPath::MassStatusFills => client
+            .generate_mass_status(None)
+            .await
+            .unwrap()
+            .expect("mass status available")
+            .fill_reports()
+            .values()
+            .flatten()
+            .map(|fill| (fill.venue_order_id, fill.client_order_id))
+            .collect(),
+        ReportPath::FillReports => client
+            .generate_fill_reports(GenerateFillReports::new(
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            ))
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|fill| (fill.venue_order_id, fill.client_order_id))
+            .collect(),
+        ReportPath::Lookup => {
+            let cmd = GenerateOrderStatusReport::new(
+                UUID4::new(),
+                UnixNanos::default(),
+                Some(test_instrument_id()),
+                Some(client_order_id),
+                Some(VenueOrderId::from("V-LEGACY-1")),
+                None,
+                None,
+            );
+            let report = client
+                .generate_order_status_report(&cmd)
+                .await
+                .unwrap()
+                .expect("the order is reported");
+            vec![(report.venue_order_id, report.client_order_id)]
+        }
+        ReportPath::QueryOrder => {
+            *state.futures_open_orders_json.lock().await =
+                Some(futures_open_orders_json("V-LEGACY-1", "PI_XBTUSD"));
+            client
+                .query_order(QueryOrder::new(
+                    test_trader_id(),
+                    None,
+                    test_strategy_id(),
+                    test_instrument_id(),
+                    client_order_id,
+                    Some(VenueOrderId::from("V-LEGACY-1")),
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    None,
+                    None,
+                ))
+                .unwrap();
+            let event =
+                recv_until(&mut rx, |event| matches!(event, ExecutionEvent::Report(_))).await;
+            let ExecutionEvent::Report(ExecutionReport::Order(report)) = event else {
+                panic!("expected an order status report, received {event:?}");
+            };
+            vec![(report.venue_order_id, report.client_order_id)]
+        }
+    };
+
+    let name_of = |venue_order_id: &str| {
+        named
+            .iter()
+            .filter(|(id, _)| *id == VenueOrderId::from(venue_order_id))
+            .map(|(_, name)| *name)
+            .collect::<Vec<_>>()
+    };
+    assert!(
+        name_of("V-LEGACY-1")
+            .iter()
+            .all(|name| *name == Some(client_order_id)),
+        "{named:?}"
+    );
+    assert!(!name_of("V-LEGACY-1").is_empty(), "{named:?}");
+
+    // Mass status withholds the uncached control on its own rules, so the bulk paths carry it
+    if matches!(path, ReportPath::BulkHistory | ReportPath::FillReports) {
+        assert_eq!(
+            name_of("V-UNKNOWN-1"),
+            vec![Some(ClientOrderId::from(SHORTENED_CLIENT_ORDER_ID))],
+            "an order the cache does not hold keeps the echo"
+        );
+    }
+}
+
+/// The client order ID request returns every order holding the ID, so a window report of another
+/// instrument, here an order whose ID shortens alike, stays out of a run scoped to one instrument
+/// and is kept in an unscoped one.
+#[rstest]
+#[case::scoped_to_the_held_order(Some("PI_XBTUSD.KRAKEN"), false)]
+#[case::unscoped(None, true)]
+#[tokio::test]
+async fn test_futures_scoped_window_run_keeps_only_its_instrument(
+    #[case] instrument_id: Option<&str>,
+    #[case] reported: bool,
+) {
+    let (client, _rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    let held = add_limit_order_to_cache(&cache, ClientOrderId::new(LONG_CLIENT_ORDER_ID));
+    mark_cached_order_pending_cancel_while_held(&cache, &held);
+    let other = add_futures_limit_order_to_cache(
+        &cache,
+        ClientOrderId::new(LONG_CLIENT_ORDER_ID_OTHER_DAY),
+        InstrumentId::from("PF_ETHUSD.KRAKEN"),
+        OrderSide::Buy,
+        test_strategy_id(),
+    );
+    set_venue_order_id_on_cached_order(&cache, &other, "V-ETH-1");
+    *state.orders_status_response.lock().await = Some(orders_status_body(&[(
+        "V-ETH-1",
+        SHORTENED_CLIENT_ORDER_ID,
+        "PF_ETHUSD",
+        "buy",
+        "ENTERED_BOOK",
+        0,
+    )]));
+
+    let cmd = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        true,
+        instrument_id.map(InstrumentId::from),
+        None,
+        None,
+        None,
+        None,
+    );
+    let reports = client.generate_order_status_reports(&cmd).await.unwrap();
+
+    assert_eq!(
+        reports
+            .iter()
+            .any(|report| report.venue_order_id == VenueOrderId::from("V-ETH-1")),
+        reported,
+        "{reports:?}"
+    );
 }
 
 #[rstest]
@@ -7314,6 +8812,44 @@ async fn test_mixed_per_item_batch_cancel_result_rejects_only_failed_item() {
         )
     })
     .await;
+}
+
+/// A cancel of an order without a venue order ID is sent, and rejected, by its full client order
+/// ID, which the venue echoes on the rejected item, so the rejection reaches that order.
+#[rstest]
+#[tokio::test]
+async fn test_batch_cancel_rejection_by_client_order_id_reaches_its_order() {
+    let (client, mut rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses {
+            batch_cancel: BatchCancelResponse::RejectedByClientOrderId,
+            ..Default::default()
+        })
+        .await;
+    let client_order_id = ClientOrderId::new(LONG_CLIENT_ORDER_ID);
+    add_limit_order_to_cache(&cache, client_order_id);
+    let mut cancel = cancel_order_command(client_order_id, VenueOrderId::from("V-UNUSED"));
+    cancel.venue_order_id = None;
+
+    client
+        .batch_cancel_orders(batch_cancel_command(vec![cancel]))
+        .unwrap();
+
+    wait_for_count(&state.batch_cancel_request_count, 1).await;
+
+    match recv_until(&mut rx, |event| {
+        matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::CancelRejected(event))
+                if event.client_order_id == client_order_id
+        )
+    })
+    .await
+    {
+        ExecutionEvent::Order(OrderEventAny::CancelRejected(event)) => {
+            assert!(event.reason.contains("notFound"), "{event:?}");
+        }
+        other => panic!("Expected CancelRejected event, was {other:?}"),
+    }
 }
 
 #[rstest]

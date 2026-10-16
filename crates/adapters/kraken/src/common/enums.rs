@@ -722,6 +722,16 @@ pub enum KrakenSendStatus {
     IocWouldNotExecute,
     /// Reduce-only order would increase position.
     ReduceOnlyWouldIncreasePosition,
+    /// Another order already carries the client order ID.
+    ClientOrderIdAlreadyExist,
+    /// The client order ID is longer than the venue accepts, as the send-order status enum spells
+    /// it.
+    ClientOrderIdTooBig,
+    /// The client order ID is longer than the venue accepts, as the batch-order status enum and the
+    /// send-order status descriptions spell it.
+    ClientOrderIdTooLong,
+    /// The venue does not accept the client order ID.
+    ClientOrderIdInvalid,
 }
 
 /// Kraken futures trigger side for conditional orders.
