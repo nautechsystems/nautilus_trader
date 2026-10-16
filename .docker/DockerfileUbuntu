@@ -29,6 +29,8 @@ ENV CC="clang"
 ENV CXX="clang++"
 
 # Install system dependencies
+# Preserve distribution updates and the development packages supplied as recommendations
+# hadolint ignore=DL3008,DL3015
 RUN apt-get update && apt-get install -y \
     curl \
     clang \
@@ -68,8 +70,8 @@ COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
 # Set up Rust toolchain based on project requirements
 RUN bash scripts/rust-toolchain.sh > /tmp/toolchain.txt && \
     TOOLCHAIN=$(cat /tmp/toolchain.txt) && \
-    rustup toolchain install $TOOLCHAIN && \
-    rustup default $TOOLCHAIN && \
+    rustup toolchain install "$TOOLCHAIN" && \
+    rustup default "$TOOLCHAIN" && \
     rustup component add clippy rustfmt
 
 # Copy and set up entrypoint script for interactive development

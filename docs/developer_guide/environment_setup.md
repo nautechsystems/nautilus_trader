@@ -176,6 +176,8 @@ prek install
 
 Rerun `prek install` after pulling a change to the configured hook types.
 
+The Dockerfile hook installs native Hadolint in its isolated environment; it does not require Docker.
+
 Before opening a pull-request run the formatting and lint suite locally so that CI passes on the
 first attempt:
 

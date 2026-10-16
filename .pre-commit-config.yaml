@@ -89,12 +89,14 @@ repos:
     hooks:
       - id: yamlfmt
 
-  - repo: https://github.com/hadolint/hadolint
+  - repo: https://github.com/AleksaC/hadolint-py
     rev: v2.15.1
     hooks:
-      - id: hadolint-docker
+      - id: hadolint
         name: dockerfile-lint
         description: Lint Dockerfiles for best practices and errors
+        types: [file]
+        files: (^|/)Dockerfile[^/]*$
 
   - repo: https://github.com/crate-ci/typos
     rev: v1.51.1
