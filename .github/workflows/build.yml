@@ -1861,6 +1861,7 @@ jobs:
 
       - name: Retain release verification diagnostics
         if: failure() || cancelled()
+        # https://github.com/actions/upload-artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-verification-${{ github.run_id }}-${{ github.run_attempt }}
@@ -1949,6 +1950,7 @@ jobs:
 
       - name: Retain release publication diagnostics
         if: failure() || cancelled()
+        # https://github.com/actions/upload-artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-publication-${{ github.run_id }}-${{ github.run_attempt }}

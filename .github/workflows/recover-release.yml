@@ -35,6 +35,7 @@ jobs:
       group: release-publication-${{ inputs.tag }}
       cancel-in-progress: false
     steps:
+      # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
@@ -55,18 +56,21 @@ jobs:
           echo "XDG_CACHE_HOME=$RUNNER_TEMP/release-recovery/cache" >> "$GITHUB_ENV"
 
       - name: Checkout recovery implementation
+        # https://github.com/actions/checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: recovery
           persist-credentials: false
 
       - name: Checkout release source
+        # https://github.com/actions/checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: source
           ref: refs/tags/${{ inputs.tag }}
           persist-credentials: false
 
+      # https://github.com/actions/setup-python
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
@@ -76,6 +80,7 @@ jobs:
           echo "UV_VERSION=$(bash recovery/scripts/uv-version.sh)" >> "$GITHUB_ENV"
           echo "PYPI_ATTESTATIONS_VERSION=$(bash recovery/scripts/tool-version.sh pypi-attestations)" >> "$GITHUB_ENV"
 
+      # https://github.com/astral-sh/setup-uv
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           version: ${{ env.UV_VERSION }}
@@ -96,6 +101,7 @@ jobs:
 
       - name: Retain recovery diagnostics
         if: always()
+        # https://github.com/actions/upload-artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-recovery-${{ github.run_id }}-${{ github.run_attempt }}
