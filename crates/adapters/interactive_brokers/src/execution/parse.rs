@@ -168,8 +168,8 @@ impl FillEvidence {
 /// The replay infers the pre-window quantity, so a missing execution would be read as part of
 /// it. The entry price therefore replaces IB's average cost only when every execution of the
 /// instrument was parsed and the entry price plus the opening commissions per unit reproduces
-/// IB's average cost. Otherwise the position keeps IB's average cost, which position recovery
-/// prices from.
+/// IB's average cost, within the rounding of the average cost and of each commission. Otherwise
+/// the position keeps IB's average cost, which position recovery prices from.
 pub(crate) fn fill_position_avg_px_from_fills(
     position_reports: &mut [PositionStatusReport],
     evidence: &FillEvidence,
@@ -227,8 +227,12 @@ pub(crate) fn fill_position_avg_px_from_fills(
             lot.avg_px - commission_px
         };
 
-        // IB's average cost is rounded to the price precision
-        let tolerance = Decimal::new(1, u32::from(instrument.price_precision()));
+        // IB's average cost is rounded to the price precision, and each opening commission is
+        // rounded to its currency's precision, which moves the expected average cost by up to
+        // half an increment per retained commission over the lot's units
+        let tick = Decimal::new(1, u32::from(instrument.price_precision()));
+        let half_increment = Decimal::new(5, u32::from(instrument.quote_currency().precision) + 1);
+        let tolerance = tick + half_increment * lot.commissions / units;
 
         if (venue_avg_px - venue_avg_px_expected).abs() <= tolerance {
             report.avg_px_open = Some(lot.avg_px);
@@ -251,11 +255,13 @@ fn signed_fill_qty(fill: &FillReport) -> Decimal {
     }
 }
 
-// The open lot left by the replay: its netting average price, and the commissions IB includes
-// in its average cost, scaled down as the lot is reduced
+// The open lot left by the replay: its netting average price, the commissions IB includes in
+// its average cost, and how many fill commissions that sum carries, both scaled down as the lot
+// is reduced
 struct EntryLot {
     avg_px: Decimal,
     commission: Decimal,
+    commissions: Decimal,
 }
 
 // Replays the window fills with netting semantics from `pre_window_qty` and returns the lot
@@ -298,21 +304,26 @@ fn entry_after_window(pre_window_qty: Decimal, fills: &[&FillReport]) -> Option<
                 lot = Some(EntryLot {
                     avg_px: last_px,
                     commission,
+                    commissions: Decimal::ONE,
                 });
             } else if quantity.is_sign_negative() == signed_qty.is_sign_negative() {
                 lot = lot.map(|lot| EntryLot {
                     avg_px: (lot.avg_px * open_qty + last_px * last_qty) / (open_qty + last_qty),
                     commission: lot.commission + commission,
+                    commissions: lot.commissions + Decimal::ONE,
                 });
             } else if last_qty > open_qty {
                 lot = Some(EntryLot {
                     avg_px: last_px,
                     commission: Decimal::ZERO,
+                    commissions: Decimal::ZERO,
                 });
             } else if last_qty < open_qty {
+                let retained = (open_qty - last_qty) / open_qty;
                 lot = lot.map(|lot| EntryLot {
                     avg_px: lot.avg_px,
-                    commission: lot.commission * (open_qty - last_qty) / open_qty,
+                    commission: lot.commission * retained,
+                    commissions: lot.commissions * retained,
                 });
             }
 
@@ -922,7 +933,7 @@ mod tests {
     use nautilus_model::{
         enums::{PositionSide, TrailingOffsetType, TriggerType},
         identifiers::{Symbol, Venue},
-        instruments::{InstrumentAny, stubs::equity_aapl},
+        instruments::{CurrencyPair, InstrumentAny, stubs::equity_aapl},
     };
     use rust_decimal::Decimal;
 
@@ -1128,6 +1139,107 @@ mod tests {
         );
 
         assert_eq!(avg_px_open, Some(Decimal::from_str("229.81").unwrap()));
+    }
+
+    #[rstest]
+    // A small PAXOS crypto lot: IB's average cost includes the 0.20031 USD commission, while the
+    // fill report carries it rounded to 0.20, which moves the expected average cost by 0.039,
+    // several ticks, so only a tolerance sized to that rounding accepts the entry price
+    #[case::commission_rounded_to_cents(
+        vec![(OrderSide::Buy, "0.00795734", "2507.10")],
+        "0.00795734",
+        "2532.27",
+        "2507.10"
+    )]
+    #[case::average_cost_disagrees(
+        vec![(OrderSide::Buy, "0.00795734", "2507.10")],
+        "0.00795734",
+        "2540.00",
+        "2540.00"
+    )]
+    // Closing 0.0099 of 0.01 ETH retains 1% of the opening commission, so the rounding allowance
+    // shrinks with it to 0.51 per ETH instead of staying at 50.01, and an average cost 10 away
+    // from the fills still keeps the venue average
+    #[case::partial_close_agrees(
+        vec![(OrderSide::Buy, "0.01", "2500.00"), (OrderSide::Sell, "0.0099", "2510.00")],
+        "0.0001",
+        "2520.00",
+        "2500.00"
+    )]
+    #[case::partial_close_disagrees(
+        vec![(OrderSide::Buy, "0.01", "2500.00"), (OrderSide::Sell, "0.0099", "2510.00")],
+        "0.0001",
+        "2530.00",
+        "2530.00"
+    )]
+    fn test_fill_position_avg_px_from_fills_allows_commission_rounding(
+        #[case] fills: Vec<(OrderSide, &str, &str)>,
+        #[case] position_qty: &str,
+        #[case] venue_avg_px: &str,
+        #[case] expected: &str,
+    ) {
+        let instrument = CurrencyPair::builder()
+            .instrument_id(InstrumentId::from("ETH/USD.PAXOS"))
+            .raw_symbol(Symbol::from("ETH.USD"))
+            .base_currency(Currency::from("ETH"))
+            .quote_currency(Currency::USD())
+            .price_precision(2)
+            .size_precision(8)
+            .price_increment(Price::from("0.01"))
+            .size_increment(Quantity::from("0.00000001"))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap();
+        let instrument_id = instrument.id;
+        let provider = InteractiveBrokersInstrumentProvider::new(
+            crate::config::InteractiveBrokersInstrumentProviderConfig::default(),
+        );
+        provider.insert_test_instrument(InstrumentAny::CurrencyPair(instrument), 495_759_171, 1);
+        let reports = fills
+            .into_iter()
+            .enumerate()
+            .map(|(index, (side, qty, px))| {
+                FillReport::new(
+                    AccountId::from("IB-DU001"),
+                    instrument_id,
+                    VenueOrderId::new(format!("PERM-{index}")),
+                    TradeId::new(format!("T-{index}")),
+                    side,
+                    Quantity::from(qty),
+                    Price::from(px),
+                    Money::from("0.20 USD"),
+                    LiquiditySide::Taker,
+                    None,
+                    None,
+                    UnixNanos::from(index as u64 + 10),
+                    UnixNanos::default(),
+                    None,
+                )
+            })
+            .collect();
+        let evidence = FillEvidence {
+            reports,
+            ..Default::default()
+        };
+        let mut position_reports = vec![PositionStatusReport::new(
+            AccountId::from("IB-DU001"),
+            instrument_id,
+            PositionSide::Long,
+            Quantity::from(position_qty),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            None,
+            None,
+            Some(Decimal::from_str(venue_avg_px).unwrap()),
+        )];
+
+        fill_position_avg_px_from_fills(&mut position_reports, &evidence, &provider);
+
+        assert_eq!(
+            position_reports[0].avg_px_open,
+            Some(Decimal::from_str(expected).unwrap())
+        );
     }
 
     #[rstest]
