@@ -967,7 +967,7 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                                 continue;
                             }
 
-                            if crate::data::runtime::is_instrument_expired(
+                            if crate::data::runtime::is_instrument_expired_and_not_reported_open(
                                 &inst,
                                 clock.get_time_ns(),
                             ) {
@@ -2242,6 +2242,179 @@ mod tests {
         assert!(ctx.instruments.load().is_empty());
         assert!(ctx.subscriptions.token_meta.is_empty());
         assert!(data_rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn new_market_past_end_honors_gamma_closure(#[values(false, true)] closed: bool) {
+        let mut market = gamma_market_expired_fixture_value();
+        market["closed"] = closed.into();
+
+        let state = ScriptedAutoLoadServerState::new(
+            vec![ScriptedAutoLoadReply::ok(serde_json::json!([market]))],
+            vec![],
+        );
+        let addr = start_scripted_auto_load_test_server(state.clone()).await;
+        let (client, mut data_rx) = create_test_client(addr);
+        let mut ctx = make_client_ws_ctx(&client);
+        ctx.subscriptions.subscribe_new_markets = true;
+
+        handle_market_message(
+            make_new_market_with_condition("past-end", TEST_CONDITION_ID, true),
+            &ctx,
+        );
+        wait_until_async(
+            || async {
+                !state.queries.lock().is_empty() && ctx.new_market_inflight_keys.is_empty()
+            },
+            StdDuration::from_secs(3),
+        )
+        .await;
+
+        let events = std::iter::from_fn(|| data_rx.try_recv().ok()).collect::<Vec<_>>();
+
+        let published = events
+            .iter()
+            .filter_map(|event| match event {
+                DataEvent::Instrument(instrument) => Some(instrument),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        let expected = if closed { 0 } else { 2 };
+
+        assert_eq!(client.instruments.load().len(), expected);
+        assert_eq!(client.subscriptions.token_meta.len(), expected);
+        assert_eq!(published.len(), expected);
+
+        for instrument in published {
+            assert_eq!(crate::filters::market_closed(instrument), Some(false));
+            assert_eq!(
+                client.instruments.get_cloned(&instrument.id()),
+                Some(instrument.clone())
+            );
+        }
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn instrument_requests_past_end_honor_gamma_closure(
+        #[values(false, true)] multiple: bool,
+        #[values(false, true)] closed: bool,
+    ) {
+        let mut market = gamma_market_expired_fixture_value();
+        market["closed"] = closed.into();
+
+        let state = ScriptedAutoLoadServerState::new(
+            vec![ScriptedAutoLoadReply::ok(serde_json::json!([market]))],
+            vec![],
+        );
+        let addr = start_scripted_auto_load_test_server(state).await;
+        let (client, mut data_rx) = create_test_client(addr);
+        let instrument_id = fixture_yes_instrument_id();
+        let request_id = UUID4::new();
+
+        if multiple {
+            client
+                .request_instruments(RequestInstruments::new(
+                    None,
+                    None,
+                    Some(client.client_id),
+                    None,
+                    request_id,
+                    UnixNanos::default(),
+                    None,
+                ))
+                .unwrap();
+        } else {
+            client
+                .request_instrument(RequestInstrument::new(
+                    instrument_id,
+                    None,
+                    None,
+                    Some(client.client_id),
+                    request_id,
+                    UnixNanos::default(),
+                    None,
+                ))
+                .unwrap();
+        }
+
+        let events = nautilus_testkit::events::collect_data_events_until_response(
+            &mut data_rx,
+            request_id,
+            StdDuration::from_secs(3),
+        )
+        .await;
+
+        let response = events
+            .iter()
+            .find_map(|event| match event {
+                DataEvent::Response(response) => Some(response),
+                _ => None,
+            })
+            .expect("instrument response");
+
+        let response_instruments = match response {
+            DataResponse::Instruments(response) => {
+                assert!(multiple);
+                assert_eq!(response.correlation_id, request_id);
+                assert_eq!(response.data.len(), 2);
+                response.data.iter().collect::<Vec<_>>()
+            }
+            DataResponse::Instrument(response) => {
+                assert!(!multiple);
+                assert_eq!(response.correlation_id, request_id);
+                assert_eq!(response.instrument_id, instrument_id);
+                vec![&response.data]
+            }
+            other => panic!("expected instrument response, was {other:?}"),
+        };
+
+        let expected = if closed {
+            0
+        } else if multiple {
+            2
+        } else {
+            1
+        };
+
+        let publish_count = events
+            .iter()
+            .filter_map(|event| match event {
+                DataEvent::Instrument(instrument) => Some(instrument),
+                _ => None,
+            })
+            .count();
+
+        assert_eq!(client.instruments.load().len(), expected);
+        assert_eq!(client.subscriptions.token_meta.len(), expected);
+        assert_eq!(publish_count, usize::from(!multiple && !closed));
+
+        for instrument in response_instruments {
+            assert_eq!(crate::filters::market_closed(instrument), Some(closed));
+            assert!(crate::filters::is_expired(
+                instrument,
+                client.clock.get_time_ns()
+            ));
+
+            if !closed {
+                assert_eq!(
+                    client.instruments.get_cloned(&instrument.id()),
+                    Some(instrument.clone())
+                );
+                let token = Ustr::from(instrument.raw_symbol().as_str());
+                assert_eq!(
+                    client
+                        .subscriptions
+                        .token_meta
+                        .get(&token)
+                        .unwrap()
+                        .instrument_id,
+                    instrument.id()
+                );
+            }
+        }
     }
 
     #[rstest]

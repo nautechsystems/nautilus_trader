@@ -765,6 +765,16 @@ async fn handle_gamma_markets(State(state): State<TestServerState>) -> Response 
     }
 }
 
+async fn handle_gamma_markets_keyset(State(state): State<TestServerState>) -> Response {
+    let markets = state
+        .gamma_response
+        .lock()
+        .await
+        .clone()
+        .unwrap_or_else(|| json!([]));
+    Json(json!({"markets": markets, "next_cursor": null})).into_response()
+}
+
 async fn handle_get_book(State(state): State<TestServerState>, uri: Uri) -> Response {
     *state.last_path.lock().await = uri.path().to_string();
     let resp = state.book_response.lock().await;
@@ -893,6 +903,7 @@ fn create_test_router(state: TestServerState) -> Router {
         .route("/cancel-all", delete(handle_cancel_all))
         .route("/cancel-market-orders", delete(handle_cancel_market_orders))
         .route("/markets", get(handle_gamma_markets))
+        .route("/markets/keyset", get(handle_gamma_markets_keyset))
         .route("/book", get(handle_get_book))
         .route("/fee-rate", get(handle_get_fee_rate))
         .route("/v1/heartbeats", post(handle_heartbeat))

@@ -1760,8 +1760,9 @@ fn sync_execution_lookup_for_instrument(
     let cache = core.cache();
 
     let instrument = cache.instrument(&instrument_id).cloned();
+
     let retain = instrument.as_ref().is_some_and(|instrument| {
-        if !crate::filters::is_expired(instrument, now_ns) {
+        if !crate::filters::is_expired_and_not_reported_open(instrument, now_ns) {
             return true;
         }
 
@@ -2709,9 +2710,26 @@ mod tests {
     }
 
     #[rstest]
-    fn position_event_subscription_prunes_expired_lookup_after_position_closes() {
+    #[case::unknown(None, false)]
+    #[case::open(Some(false), true)]
+    #[case::closed(Some(true), false)]
+    fn position_event_subscription_honors_gamma_closure_after_past_end_position_closes(
+        #[case] market_closed: Option<bool>,
+        #[case] retain: bool,
+    ) {
         let (client, cache) = test_client();
-        let expired = test_binary_option("0xEXPIRED_CLOSED", true, true);
+
+        let InstrumentAny::BinaryOption(mut binary) =
+            test_binary_option("0xEXPIRED_CLOSED", true, true)
+        else {
+            unreachable!();
+        };
+
+        if let Some(closed) = market_closed {
+            crate::filters::set_market_closed(&mut binary, closed);
+        }
+
+        let expired = InstrumentAny::BinaryOption(binary);
         let position = open_position(&expired);
         let closed = closed_position(&position);
 
@@ -2746,18 +2764,38 @@ mod tests {
         assert!(matches!(event, PositionEvent::PositionClosed(_)));
         publish_position_event("events.position.TEST".into(), &event);
 
-        assert!(
-            !client
-                .shared_token_instruments
-                .contains_key(&Ustr::from(expired.raw_symbol().as_str()))
+        let token = Ustr::from(expired.raw_symbol().as_str());
+        assert_eq!(
+            client.shared_token_instruments.get_cloned(&token),
+            retain.then_some(expired.clone())
         );
-        assert!(!client.neg_risk_index.contains_key(&expired.id()));
+        assert_eq!(
+            client.neg_risk_index.get_cloned(&expired.id()),
+            retain.then_some(true)
+        );
     }
 
     #[rstest]
-    fn order_event_subscription_prunes_expired_lookup_after_terminal_order() {
+    #[case::unknown(None, false)]
+    #[case::open(Some(false), true)]
+    #[case::closed(Some(true), false)]
+    fn order_event_subscription_honors_gamma_closure_after_past_end_terminal_order(
+        #[case] market_closed: Option<bool>,
+        #[case] retain: bool,
+    ) {
         let (client, cache) = test_client();
-        let expired = test_binary_option("0xEXPIRED_ORDER_CLOSED", true, true);
+
+        let InstrumentAny::BinaryOption(mut binary) =
+            test_binary_option("0xEXPIRED_ORDER_CLOSED", true, true)
+        else {
+            unreachable!();
+        };
+
+        if let Some(closed) = market_closed {
+            crate::filters::set_market_closed(&mut binary, closed);
+        }
+
+        let expired = InstrumentAny::BinaryOption(binary);
         let mut order;
 
         {
@@ -2790,12 +2828,15 @@ mod tests {
         client.ensure_order_event_subscription();
         publish_order_event("events.order.TEST".into(), &canceled);
 
-        assert!(
-            !client
-                .shared_token_instruments
-                .contains_key(&Ustr::from(expired.raw_symbol().as_str()))
+        let token = Ustr::from(expired.raw_symbol().as_str());
+        assert_eq!(
+            client.shared_token_instruments.get_cloned(&token),
+            retain.then_some(expired.clone())
         );
-        assert!(!client.neg_risk_index.contains_key(&expired.id()));
+        assert_eq!(
+            client.neg_risk_index.get_cloned(&expired.id()),
+            retain.then_some(true)
+        );
     }
 
     #[rstest]

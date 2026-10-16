@@ -30,7 +30,7 @@ use rust_decimal::Decimal;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
-use super::{PolymarketDataClient, runtime::is_instrument_expired};
+use super::{PolymarketDataClient, runtime::is_instrument_expired_and_not_reported_open};
 use crate::{
     common::consts::GAMMA_CONDITION_IDS_BATCH_SIZE,
     filters::{
@@ -260,7 +260,7 @@ pub(super) fn cache_and_publish_instruments(
     let mut total = 0;
 
     for instrument in instruments {
-        if is_instrument_expired(&instrument, now_ns) {
+        if is_instrument_expired_and_not_reported_open(&instrument, now_ns) {
             log::debug!(
                 "Skipping expired instrument {} during live cache publish",
                 instrument.id()
@@ -840,6 +840,117 @@ mod tests {
         assert!(instruments.load().is_empty());
         assert!(token_meta.is_empty());
         assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    #[case::open(false, 1)]
+    #[case::closed(true, 0)]
+    fn cache_and_publish_past_end_market_honors_gamma_closure(
+        #[case] closed: bool,
+        #[case] expected: usize,
+    ) {
+        let mut binary = past_end_open_instrument();
+        set_market_closed(&mut binary, closed);
+        let instrument = InstrumentAny::BinaryOption(binary);
+        let now_ns = Instrument::expiration_ns(&instrument).unwrap();
+        let instruments = Arc::new(AtomicMap::new());
+        let token_meta = Arc::new(DashMap::new());
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let total = cache_and_publish_instruments(
+            &Arc::new(Mutex::new(AHashSet::new())),
+            &Arc::new(Mutex::new(InstrumentUpdateState::default())),
+            &instruments,
+            &token_meta,
+            &tx.into(),
+            now_ns,
+            vec![instrument.clone()],
+        );
+        let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
+
+        assert_eq!(total, expected);
+        assert_eq!(instruments.load().len(), expected);
+        assert_eq!(token_meta.len(), expected);
+        assert_eq!(events.len(), expected);
+
+        if !closed {
+            assert_eq!(
+                instruments.get_cloned(&instrument.id()),
+                Some(instrument.clone())
+            );
+            let token = token_meta
+                .get(&Ustr::from(instrument.raw_symbol().as_str()))
+                .unwrap();
+            assert_eq!(token.instrument_id, instrument.id());
+            assert_eq!(token.neg_risk, Some(true));
+            assert!(
+                matches!(&events[0], DataEvent::Instrument(published) if published == &instrument)
+            );
+        }
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn bootstrap_and_refresh_publish_past_end_open_market(
+        #[values(false, true)] refresh: bool,
+    ) {
+        let addr = market_closure_server(false, false).await;
+        let http = PolymarketGammaHttpClient::new(
+            Some(format!("http://{addr}")),
+            1,
+            RetryConfig::default(),
+        )
+        .unwrap();
+        let instrument_id = past_end_open_instrument().id;
+
+        let config = crate::config::PolymarketInstrumentProviderConfig {
+            load_ids: Some(vec![instrument_id]),
+            ..Default::default()
+        };
+
+        let mut client = make_client(PolymarketDataClientConfig::default());
+        client.provider =
+            crate::providers::PolymarketInstrumentProvider::new(http.clone(), Some(config.clone()));
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        client.data_sender = tx.into();
+
+        if refresh {
+            let total = refresh_scoped_instruments(
+                http,
+                Some(config),
+                vec![],
+                &client.subscriptions.closed_condition_ids,
+                &client.instrument_update_state,
+                &client.instruments,
+                &client.subscriptions.token_meta,
+                &client.data_sender,
+                client.clock,
+            )
+            .await
+            .unwrap();
+            assert_eq!(total, 2);
+        } else {
+            client.bootstrap_instruments().await.unwrap();
+        }
+
+        let events = std::iter::from_fn(|| rx.try_recv().ok()).collect::<Vec<_>>();
+
+        assert_eq!(client.instruments.load().len(), 2);
+        assert_eq!(client.subscriptions.token_meta.len(), 2);
+        assert_eq!(events.len(), 2);
+
+        for event in events {
+            let DataEvent::Instrument(instrument) = event else {
+                panic!("expected instrument");
+            };
+
+            assert!(is_expired(&instrument, client.clock.get_time_ns()));
+            assert_eq!(market_closed(&instrument), Some(false));
+            assert_eq!(
+                client.instruments.get_cloned(&instrument.id()),
+                Some(instrument)
+            );
+        }
     }
 
     #[rstest]

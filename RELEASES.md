@@ -12,6 +12,8 @@ Released on TBD (UTC).
 
 ### Fixes
 
+- Fixed Polymarket loading, request caching, and execution lookup cleanup for open markets past `endDate`
+
 ### Internal Improvements
 
 - Improved Dockerfile linting to run Hadolint without Docker

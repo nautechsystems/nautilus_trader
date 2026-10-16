@@ -229,16 +229,17 @@ pub(super) fn request_instruments(client: &PolymarketDataClient, request: Reques
                 }
             };
 
-            if crate::data::runtime::is_instrument_expired(&instrument, now_ns)
-                || !apply_live_instrument_locked(
-                    &closed_condition_ids,
-                    &update_state,
-                    &instruments_cache,
-                    &token_meta,
-                    &instrument,
-                    |_| {},
-                )
-            {
+            if crate::data::runtime::is_instrument_expired_and_not_reported_open(
+                &instrument,
+                now_ns,
+            ) || !apply_live_instrument_locked(
+                &closed_condition_ids,
+                &update_state,
+                &instruments_cache,
+                &token_meta,
+                &instrument,
+                |_| {},
+            ) {
                 log::debug!(
                     "Skipping expired instrument {} during request_instruments cache update",
                     instrument.id()
@@ -315,7 +316,10 @@ pub(super) fn request_instrument(client: &PolymarketDataClient, request: Request
                 }
             };
 
-            if crate::data::runtime::is_instrument_expired(&inst, clock.get_time_ns()) {
+            if crate::data::runtime::is_instrument_expired_and_not_reported_open(
+                &inst,
+                clock.get_time_ns(),
+            ) {
                 log::debug!(
                     "Skipping expired instrument {instrument_id} during request_instrument cache update"
                 );
