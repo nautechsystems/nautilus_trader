@@ -122,3 +122,9 @@ name = "websocket_latency"
 path = "benches/websocket_latency.rs"
 harness = false
 required-features = ["transport-sockudo"]
+
+[[bench]]
+name = "websocket_client"
+path = "benches/websocket_client.rs"
+harness = false
+required-features = ["transport-sockudo"]

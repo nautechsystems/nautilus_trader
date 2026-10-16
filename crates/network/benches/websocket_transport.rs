@@ -28,7 +28,7 @@ use tokio_tungstenite::{
 
 const MESSAGE_COUNT: usize = 10_000;
 const DUPLEX_BUFFER_SIZE: usize = 1 << 20;
-const PAYLOAD_SIZES: [usize; 3] = [64, 512, 4_096];
+const PAYLOAD_SIZES: [usize; 7] = [64, 256, 512, 1_024, 4_096, 8_192, 16_384];
 
 type BenchResult<T = ()> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
@@ -60,6 +60,17 @@ fn bench_receive_text(c: &mut Criterion) {
                 b.iter(|| {
                     rt.block_on(async {
                         sockudo_receive_text(payload_size).await.unwrap();
+                    });
+                });
+            },
+        );
+        group.bench_with_input(
+            BenchmarkId::new("sockudo_native", payload_size),
+            &payload_size,
+            |b, &payload_size| {
+                b.iter(|| {
+                    rt.block_on(async {
+                        native_receive_text(payload_size).await.unwrap();
                     });
                 });
             },
@@ -113,6 +124,17 @@ fn bench_send_text(c: &mut Criterion) {
             },
         );
         group.bench_with_input(
+            BenchmarkId::new("sockudo_native", payload_size),
+            &payload_size,
+            |b, &payload_size| {
+                b.iter(|| {
+                    rt.block_on(async {
+                        native_send_text(payload_size).await.unwrap();
+                    });
+                });
+            },
+        );
+        group.bench_with_input(
             BenchmarkId::new("nautilus_sockudo", payload_size),
             &payload_size,
             |b, &payload_size| {
@@ -158,6 +180,17 @@ fn bench_roundtrip_text(c: &mut Criterion) {
                 b.iter(|| {
                     rt.block_on(async {
                         sockudo_roundtrip_text(payload_size).await.unwrap();
+                    });
+                });
+            },
+        );
+        group.bench_with_input(
+            BenchmarkId::new("sockudo_native", payload_size),
+            &payload_size,
+            |b, &payload_size| {
+                b.iter(|| {
+                    rt.block_on(async {
+                        native_roundtrip_text(payload_size).await.unwrap();
                     });
                 });
             },
@@ -416,8 +449,104 @@ define_sockudo_benches!(
     nautilus_sockudo_server,
     nautilus_transport,
     impl WsTransport,
-    |stream| SockudoTransport::new(stream).into_split()
+    SockudoTransport::new
 );
+
+async fn native_receive_text(payload_size: usize) -> BenchResult {
+    let (client_io, server_io) = duplex(DUPLEX_BUFFER_SIZE);
+    let (mut client_reader, _client_writer) = sockudo_client(client_io).split();
+    let (_server_reader, mut server_writer) = sockudo_server(server_io).split();
+    let payload = "x".repeat(payload_size);
+
+    let server_task = tokio::spawn(async move {
+        let _reader = _server_reader;
+
+        for _ in 0..MESSAGE_COUNT {
+            server_writer
+                .send(sockudo_ws::Message::Text(payload.clone().into()))
+                .await?;
+        }
+
+        BenchResult::Ok(())
+    });
+
+    for _ in 0..MESSAGE_COUNT {
+        let message = client_reader.next().await.transpose()?.unwrap();
+        match message {
+            sockudo_ws::Message::Text(data) => {
+                black_box(data);
+            }
+            other => panic!("unexpected message: {other:?}"),
+        }
+    }
+
+    server_task.await??;
+    Ok(())
+}
+
+async fn native_send_text(payload_size: usize) -> BenchResult {
+    let (client_io, server_io) = duplex(DUPLEX_BUFFER_SIZE);
+    let (_client_reader, mut client_writer) = sockudo_client(client_io).split();
+    let (mut server_reader, _server_writer) = sockudo_server(server_io).split();
+    let payload = "x".repeat(payload_size);
+
+    let server_task = tokio::spawn(async move {
+        let _writer = _server_writer;
+
+        for _ in 0..MESSAGE_COUNT {
+            let message = server_reader.next().await.transpose()?.unwrap();
+            match message {
+                sockudo_ws::Message::Text(data) => {
+                    black_box(data);
+                }
+                other => panic!("unexpected message: {other:?}"),
+            }
+        }
+
+        BenchResult::Ok(())
+    });
+
+    for _ in 0..MESSAGE_COUNT {
+        client_writer
+            .send(sockudo_ws::Message::Text(payload.clone().into()))
+            .await?;
+    }
+
+    server_task.await??;
+    Ok(())
+}
+
+async fn native_roundtrip_text(payload_size: usize) -> BenchResult {
+    let (client_io, server_io) = duplex(DUPLEX_BUFFER_SIZE);
+    let (mut client_reader, mut client_writer) = sockudo_client(client_io).split();
+    let (mut server_reader, mut server_writer) = sockudo_server(server_io).split();
+    let payload = "x".repeat(payload_size);
+
+    let server_task = tokio::spawn(async move {
+        for _ in 0..MESSAGE_COUNT {
+            let message = server_reader.next().await.transpose()?.unwrap();
+            server_writer.send(message).await?;
+        }
+
+        BenchResult::Ok(())
+    });
+
+    for _ in 0..MESSAGE_COUNT {
+        client_writer
+            .send(sockudo_ws::Message::Text(payload.clone().into()))
+            .await?;
+        let message = client_reader.next().await.transpose()?.unwrap();
+        match message {
+            sockudo_ws::Message::Text(data) => {
+                black_box(data);
+            }
+            other => panic!("unexpected message: {other:?}"),
+        }
+    }
+
+    server_task.await??;
+    Ok(())
+}
 
 fn sockudo_config() -> sockudo_ws::Config {
     sockudo_ws::Config::builder()

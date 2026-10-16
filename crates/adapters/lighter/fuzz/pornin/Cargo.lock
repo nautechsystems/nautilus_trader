@@ -2142,9 +2142,9 @@ dependencies = [
 
 [[package]]
 name = "sockudo-ws"
-version = "3.0.0"
+version = "3.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "76741a9665923aff03c4dfceea6d500ca3685487c9d8ab805b753c363222b6cc"
+checksum = "bed5f19c13fe5ffe390d4e30c4617ed65117e83d2792d7bb0092f4efd62536e0"
 dependencies = [
  "base64",
  "bytes",

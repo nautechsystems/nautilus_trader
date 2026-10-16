@@ -356,12 +356,9 @@ impl From<SockudoError> for TransportError {
 /// `Stream::poll_next` and `Sink<Message>::start_send` / `poll_*`. The
 /// underlying stream is owned and forwarded to via pin projection.
 ///
-/// If flushing an outbound frame returns `Pending`, the next [`Stream::poll_next`] retries the
-/// flush before reading. This prevents queued control responses from being stranded when write
-/// backpressure coincides with a quiet reader.
+/// The underlying stream drives automatic control responses while reading.
 pub struct SockudoTransport<S> {
     inner: WebSocketStream<S>,
-    pending_flush: bool,
 }
 
 impl<S> SockudoTransport<S> {
@@ -369,10 +366,7 @@ impl<S> SockudoTransport<S> {
     #[inline]
     #[must_use]
     pub const fn new(inner: WebSocketStream<S>) -> Self {
-        Self {
-            inner,
-            pending_flush: false,
-        }
+        Self { inner }
     }
 
     /// Consumes the adapter and returns the underlying stream.
@@ -402,34 +396,12 @@ where
     type Item = Result<Message, TransportError>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        // Drain any flush that returned Pending on a prior poll so queued
-        // control responses (Pong, close reply) reach the peer before the
-        // next read. Errors are dropped here; subsequent writes through the
-        // sink half surface them.
-        if self.pending_flush {
-            match Pin::new(&mut self.inner).poll_flush(cx) {
-                Poll::Ready(_) => self.pending_flush = false,
-                Poll::Pending => {}
-            }
-        }
-
-        let result = match Pin::new(&mut self.inner).poll_next(cx) {
+        match Pin::new(&mut self.inner).poll_next(cx) {
             Poll::Ready(Some(Ok(msg))) => Poll::Ready(Some(Ok(Message::from(msg)))),
             Poll::Ready(Some(Err(e))) => Poll::Ready(Some(Err(TransportError::from(e)))),
             Poll::Ready(None) => Poll::Ready(None),
-            Poll::Pending => return Poll::Pending,
-        };
-
-        // Sockudo queues automatic Pong / close-response frames into the
-        // write buffer during poll_next. Nudge a flush so they reach the peer
-        // promptly even on a reader-only client; track a pending flush so the
-        // next poll retries when backpressure stalls the write socket.
-        match Pin::new(&mut self.inner).poll_flush(cx) {
-            Poll::Ready(_) => self.pending_flush = false,
-            Poll::Pending => self.pending_flush = true,
+            Poll::Pending => Poll::Pending,
         }
-
-        result
     }
 }
 
@@ -475,7 +447,9 @@ where
     /// Call this before sending or receiving messages. A Tokio runtime is required.
     pub fn into_split(self) -> impl WsTransport {
         let (reader, writer) = self.inner.split();
-        let read = futures_util::stream::unfold(reader, |mut reader| async move {
+
+        // Keep the decoder stationary: unfold otherwise moves the entire reader for every message
+        let read = futures_util::stream::unfold(Box::new(reader), |mut reader| async move {
             reader.next().await.map(|message| {
                 (
                     message.map(Message::from).map_err(TransportError::from),
@@ -605,6 +579,43 @@ mod tests {
 
     #[cfg(not(feature = "turmoil"))]
     #[tokio::test]
+    async fn test_unified_read_flush_preserves_send_completion_wakeup() {
+        use futures_util::{SinkExt, StreamExt};
+
+        let (client_io, peer_io) = duplex(32);
+        let config = sockudo_ws::Config::builder()
+            .auto_ping(false)
+            .idle_timeout(0)
+            .build();
+        let transport = SockudoTransport::new(WebSocketStream::client(client_io, config.clone()));
+        let (mut writer, mut reader) = transport.split();
+        let mut peer = WebSocketStream::server(peer_io, config);
+
+        let send = tokio::spawn(async move { writer.send(Message::text("x".repeat(4096))).await });
+        tokio::task::yield_now().await;
+        peer.send(SockudoMessage::Ping(Bytes::from_static(b"probe")))
+            .await
+            .unwrap();
+        assert_eq!(
+            reader.next().await.unwrap().unwrap(),
+            Message::Ping(Bytes::from_static(b"probe"))
+        );
+
+        let read = tokio::spawn(async move { reader.next().await });
+
+        tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            assert!(matches!(peer.next().await, Some(Ok(SockudoMessage::Text(data))) if data.len() == 4096));
+            assert!(matches!(peer.next().await, Some(Ok(SockudoMessage::Pong(data))) if data.as_ref() == b"probe"));
+            send.await.unwrap().unwrap();
+        })
+        .await
+        .expect("a completed write must wake the sender without its own timeout");
+        drop(peer);
+        read.await.unwrap();
+    }
+
+    #[cfg(not(feature = "turmoil"))]
+    #[tokio::test]
     async fn test_split_reads_while_application_write_is_blocked() {
         use futures_util::{SinkExt, StreamExt};
 
@@ -634,8 +645,11 @@ mod tests {
     }
 
     #[cfg(not(feature = "turmoil"))]
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
     #[tokio::test]
-    async fn test_split_retains_send_after_outer_future_is_cancelled() {
+    async fn test_transport_retains_send_after_outer_future_is_cancelled(#[case] native: bool) {
         use futures_util::{SinkExt, StreamExt};
 
         let (client_io, peer_io) = duplex(32);
@@ -643,8 +657,12 @@ mod tests {
             .auto_ping(false)
             .idle_timeout(0)
             .build();
-        let mut transport =
-            SockudoTransport::new(WebSocketStream::client(client_io, config.clone())).into_split();
+        let transport = SockudoTransport::new(WebSocketStream::client(client_io, config.clone()));
+        let mut transport: Pin<Box<dyn WsTransport>> = if native {
+            Box::pin(transport.into_split())
+        } else {
+            Box::pin(transport)
+        };
         let payload = Message::text("x".repeat(4096));
         {
             let mut send = Box::pin(transport.send(payload.clone()));

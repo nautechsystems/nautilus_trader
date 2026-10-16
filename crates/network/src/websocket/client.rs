@@ -952,7 +952,7 @@ impl WebSocketClientInner {
 
         let ws =
             SockudoWebSocketStream::from_raw(stream, Role::Client, sockudo_protocol_config(limits));
-        let transport: BoxedWsTransport = Box::pin(SockudoTransport::new(ws).into_split());
+        let transport: BoxedWsTransport = Box::pin(SockudoTransport::new(ws));
         Ok(transport.split())
     }
 }

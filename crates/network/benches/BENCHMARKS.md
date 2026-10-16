@@ -70,11 +70,20 @@ and external network latency. It also excludes Compio, sockudo's native
 split-stream driver, compression, and keepalive traffic.
 
 The current WebSocket harness also includes `nautilus_sockudo` cases. These use the
-neutral message conversions and Sockudo's native split handles through
-`SockudoTransport::into_split`, matching the client transport adapter. Both endpoints
-use that adapter; the cases do not include the client's reader and writer tasks.
-The raw `sockudo_ws` cases retain the unified stream to distinguish library performance
-from adapter performance. The July tables below cover only the raw streams.
+neutral message conversions and Sockudo's unified stream through `SockudoTransport::new`,
+matching the client transport adapter. Both endpoints use that adapter; the cases do not
+include the client's reader and writer tasks. The raw `sockudo_ws` cases retain the unified
+stream and the `sockudo_native` cases use Sockudo's split handles directly, to distinguish
+library performance from adapter performance. The July tables below cover only the raw
+streams.
+
+The `websocket_client` benchmark drives the public `WebSocketClient` over loopback TCP
+against a Tungstenite peer, with the client's own reader and writer tasks, for both client
+backends. It runs `mixed`, `duplex`, `ingress-batched`, and `pingpong` workloads per payload
+size, plus a `paused` case in which the peer delays reading so a client write blocks.
+`NAUTILUS_WS_CLIENT_MESSAGES`, `NAUTILUS_WS_CLIENT_PAYLOADS`,
+`NAUTILUS_WS_CLIENT_MODE`, and `NAUTILUS_WS_CLIENT_BACKEND=sockudo` narrow a run;
+`NAUTILUS_WS_CLIENT_CPU` and `NAUTILUS_WS_PEER_CPU` pin the client and peer threads.
 
 ## Round-trip text latency
 
