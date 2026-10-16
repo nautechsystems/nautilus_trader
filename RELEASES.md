@@ -6,12 +6,15 @@ Released on TBD (UTC).
 
 ### Breaking Changes
 
+- Changed Hyperliquid `UpdateIsolatedMargin`: replace `delta` with `is_buy` and `ntli` (signed millionths)
+
 ### Security
 
 - Fixed HTTP `Referer` headers exposing URL paths and query parameters on cross-origin redirects
 
 ### Fixes
 
+- Fixed Hyperliquid leverage and isolated-margin request serialization and signing
 - Fixed Polymarket loading, request caching, and execution lookup cleanup for open markets past `endDate`
 
 ### Internal Improvements

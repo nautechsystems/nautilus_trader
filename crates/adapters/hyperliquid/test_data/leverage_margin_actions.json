@@ -1,0 +1,26 @@
+{
+  "source": "https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/exchange-endpoint#update-isolated-margin",
+  "provenance": "Synthetic leverage and isolated-margin actions from the venue exchange contract. MessagePack bytes independently constructed with Python standard-library integer packing, then checked against both Rust request representations and mainnet signer recovery. No account data.",
+  "cases": [
+    {
+      "name": "leverage_cross",
+      "json": "{\"type\":\"updateLeverage\",\"asset\":17,\"isCross\":true,\"leverage\":7}",
+      "msgpack": "84a474797065ae7570646174654c65766572616765a5617373657411a7697343726f7373c3a86c6576657261676507"
+    },
+    {
+      "name": "leverage_isolated",
+      "json": "{\"type\":\"updateLeverage\",\"asset\":19,\"isCross\":false,\"leverage\":3}",
+      "msgpack": "84a474797065ae7570646174654c65766572616765a5617373657413a7697343726f7373c2a86c6576657261676503"
+    },
+    {
+      "name": "margin_add",
+      "json": "{\"type\":\"updateIsolatedMargin\",\"asset\":23,\"isBuy\":true,\"ntli\":1250000}",
+      "msgpack": "84a474797065b475706461746549736f6c617465644d617267696ea5617373657417a56973427579c3a46e746c69ce001312d0"
+    },
+    {
+      "name": "margin_remove",
+      "json": "{\"type\":\"updateIsolatedMargin\",\"asset\":29,\"isBuy\":false,\"ntli\":-2345678}",
+      "msgpack": "84a474797065b475706461746549736f6c617465644d617267696ea561737365741da56973427579c2a46e746c69d2ffdc3532"
+    }
+  ]
+}

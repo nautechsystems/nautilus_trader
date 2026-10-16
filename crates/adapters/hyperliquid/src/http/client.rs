@@ -4048,7 +4048,7 @@ mod tests {
         response::{IntoResponse, Json, Response},
         routing::post,
     };
-    use nautilus_core::{Params, UUID4, UnixNanos, time::get_atomic_clock_realtime};
+    use nautilus_core::{Params, UUID4, UnixNanos, hex, time::get_atomic_clock_realtime};
     use nautilus_model::{
         currencies::CURRENCY_MAP,
         enums::{CurrencyType, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType},
@@ -4073,19 +4073,74 @@ mod tests {
     use crate::{
         common::{
             consts::{ASSET_INDEX_INFO_KEY, HYPERLIQUID_VENUE, NAUTILUS_BUILDER_ADDRESS},
+            credential::EvmPrivateKey,
             enums::{HyperliquidEnvironment, HyperliquidProductType},
         },
         http::{
             models::{
-                Cloid, HyperliquidExchangeResponse, HyperliquidOrderStatusEntry, PerpAsset,
-                PerpDex, PerpMeta,
+                Cloid, HyperliquidExchangeAction, HyperliquidExchangeResponse,
+                HyperliquidOrderStatusEntry, PerpAsset, PerpDex, PerpMeta,
             },
             query::InfoRequest,
         },
+        signing::{HyperliquidActionType, HyperliquidEip712Signer, SignRequest, nonce::TimeNonce},
     };
 
     const TEST_PRIVATE_KEY: &str =
         "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
+
+    #[rstest]
+    #[case(0)]
+    #[case(1)]
+    #[case(2)]
+    #[case(3)]
+    fn test_leverage_margin_signed_request(
+        #[case] case_index: usize,
+        #[values(HyperliquidEnvironment::Mainnet, HyperliquidEnvironment::Testnet)]
+        environment: HyperliquidEnvironment,
+    ) {
+        let fixture: Value =
+            serde_json::from_str(include_str!("../../test_data/leverage_margin_actions.json"))
+                .unwrap();
+        let case = &fixture["cases"][case_index];
+        let action: HyperliquidExchangeAction =
+            serde_json::from_str(case["json"].as_str().unwrap()).unwrap();
+        let client =
+            HyperliquidHttpClient::from_credentials(TEST_PRIVATE_KEY, None, environment, 60, None)
+                .unwrap();
+        let expires_after = Some(1_900_000_000_000);
+        let request = client
+            .sign_action_exec_request(&action, expires_after)
+            .unwrap();
+        let key = EvmPrivateKey::new(TEST_PRIVATE_KEY).unwrap();
+        let signer = HyperliquidEip712Signer::new(&key).unwrap();
+        let expected_bytes = hex::decode(case["msgpack"].as_str().unwrap()).unwrap();
+
+        let expected_signature = signer
+            .sign(&SignRequest {
+                action: None,
+                action_bytes: Some(expected_bytes),
+                time_nonce: TimeNonce::from_millis(i128::from(request.nonce)),
+                action_type: HyperliquidActionType::L1,
+                is_testnet: environment == HyperliquidEnvironment::Testnet,
+                vault_address: None,
+                expires_after,
+            })
+            .unwrap()
+            .signature;
+
+        let expected_action: Value = serde_json::from_str(case["json"].as_str().unwrap()).unwrap();
+
+        assert_eq!(
+            serde_json::to_value(&request).unwrap(),
+            json!({
+                "action": expected_action,
+                "nonce": request.nonce,
+                "signature": expected_signature,
+                "expiresAfter": expires_after,
+            })
+        );
+    }
 
     #[tokio::test]
     async fn test_authenticated_client_rejects_redirects() {
