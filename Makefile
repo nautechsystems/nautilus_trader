@@ -929,6 +929,7 @@ test-scripts:  #-- Run repository script tests
 	$Q bash scripts/ci/test-publish-cli-r2-upload-installer.bash
 	$Q bash scripts/ci/test-publish-wheels.bash
 	$Q bash scripts/ci/test-release-github-assets.bash
+	$Q python3 -B scripts/ci/test_recover_release.py
 	$Q bash scripts/ci/test-release-verification-retry.bash
 	$Q bash scripts/ci/test-select-attestation-bundle.bash
 	$Q bash scripts/ci/test-tool-version-scripts.bash
