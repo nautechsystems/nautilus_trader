@@ -6168,6 +6168,9 @@ fn test_submit_order_list_denies_when_representative_instrument_not_in_list(
 }
 
 #[rstest]
+#[case::invalid_first(0)]
+#[case::invalid_middle(1)]
+#[case::invalid_last(2)]
 fn test_submit_order_list_check_order_uses_each_orders_own_instrument(
     strategy_id_ema_cross: StrategyId,
     client_id_binance: ClientId,
@@ -6177,6 +6180,7 @@ fn test_submit_order_list_check_order_uses_each_orders_own_instrument(
     process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
     cash_account_state_million_usd: AccountState,
     mut simple_cache: Cache,
+    #[case] invalid_order_index: usize,
     #[values(false, true)] previously_dispatched: bool,
 ) {
     let instrument_a: InstrumentAny = audusd_sim.into();
@@ -6190,10 +6194,9 @@ fn test_submit_order_list_check_order_uses_each_orders_own_instrument(
         )))
         .unwrap();
 
-    // AUD/USD price precision is 5. A 6-decimal-place limit price violates instrument_a's
-    // precision regardless of which instrument the risk engine looks up. The first order
-    // uses a valid 5-dp price; the second order's price is 6-dp and must be denied because
-    // its own instrument's precision is checked, not the representative's.
+    // Both instruments have 5-dp price precision, so the GBP/USD child's 6-dp price
+    // must trigger a precision denial at every list position, while eligible siblings
+    // with valid 5-dp prices must also be denied whether they appear before or after it.
     let order_a = OrderTestBuilder::new(OrderType::Limit)
         .instrument_id(instrument_a.id())
         .client_order_id(ClientOrderId::from("O-PREC-001"))
@@ -6210,8 +6213,11 @@ fn test_submit_order_list_check_order_uses_each_orders_own_instrument(
         .price(bad_price)
         .quantity(Quantity::from_str("100").unwrap())
         .build();
+    let order_c = limit_buy(&instrument_a, "O-PREC-003", "100");
 
-    let orders = [order_a.clone(), order_b.clone()];
+    let mut orders = vec![order_a.clone(), order_c.clone()];
+    orders.insert(invalid_order_index, order_b.clone());
+
     for order in &orders {
         simple_cache
             .add_order(order.clone(), None, Some(client_id_binance), true)
@@ -6229,7 +6235,7 @@ fn test_submit_order_list_check_order_uses_each_orders_own_instrument(
         OrderListId::new("L-PREC-001"),
         instrument_a.id(),
         StrategyId::new("S-001"),
-        vec![order_a.client_order_id(), order_b.client_order_id()],
+        orders.iter().map(Order::client_order_id).collect(),
         risk_engine.clock().borrow().timestamp_ns(),
     );
 
@@ -6269,6 +6275,10 @@ fn test_submit_order_list_check_order_uses_each_orders_own_instrument(
         }),
         !previously_dispatched,
     );
+    assert!(saved.iter().any(|event| {
+        event.event_type() == OrderEventType::Denied
+            && event.client_order_id() == order_c.client_order_id()
+    }));
 }
 
 // Test that order lists with BUY orders are denied when in REDUCING state and already LONG.
