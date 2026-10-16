@@ -52,7 +52,7 @@ use crate::{
     config::{InteractiveBrokersInstrumentProviderConfig, SymbologyMethod},
     providers::parse::{
         expiry_timestring_to_unix_nanos, parse_ib_contract_to_instrument,
-        parse_spread_instrument_any,
+        parse_spread_instrument_any, split_last_trade_date, trim_last_trade_date,
     },
 };
 
@@ -716,8 +716,7 @@ impl InteractiveBrokersInstrumentProvider {
         }
 
         // For non-BAG contracts, fetch contract details and load
-        let details_vec = client
-            .contract_details(contract)
+        let details_vec = request_contract_details(client, contract)
             .await
             .context("Failed to fetch contract details from IB")?;
 
@@ -768,7 +767,7 @@ impl InteractiveBrokersInstrumentProvider {
         let chain_contract = if contract.security_type == SecurityType::ContinuousFuture
             && (build_futures_chain || build_options_chain)
         {
-            match client.contract_details(contract).await {
+            match request_contract_details(client, contract).await {
                 Ok(details_vec) => details_vec
                     .into_iter()
                     .next().map_or_else(|| contract.clone(), |details| {
@@ -1343,6 +1342,17 @@ fn normalize_price_magnifier(price_magnifier: i32) -> i32 {
     }
 }
 
+// Requests contract details with each expiry's time split from its date, so the contract can
+// be sent back to IB (see `split_last_trade_date`)
+async fn request_contract_details(
+    client: &ibapi::Client,
+    contract: &Contract,
+) -> Result<Vec<ibapi::contracts::ContractDetails>, ibapi::Error> {
+    let mut details_vec = client.contract_details(contract).await?;
+    details_vec.iter_mut().for_each(split_last_trade_date);
+    Ok(details_vec)
+}
+
 fn json_opt_bool(spec: Option<&serde_json::Value>, key: &str) -> Option<bool> {
     spec.and_then(|value| value.get(key))
         .and_then(serde_json::Value::as_bool)
@@ -1364,7 +1374,10 @@ fn json_string(spec: Option<&serde_json::Value>, key: &str) -> Option<String> {
 fn contract_from_instrument_info(instrument: &InstrumentAny) -> Option<Contract> {
     let value = serde_json::to_value(instrument).ok()?;
     let contract_json = find_contract_json(&value)?;
-    parse_contract_from_json(contract_json).ok()
+    let mut contract = parse_contract_from_json(contract_json).ok()?;
+    // An instrument stored before expiries were split may still hold one with its time
+    trim_last_trade_date(&mut contract);
+    Some(contract)
 }
 
 fn price_magnifier_from_instrument_info(instrument: &InstrumentAny) -> Option<i32> {
@@ -1466,7 +1479,7 @@ impl InteractiveBrokersInstrumentProvider {
                 .contract(instrument_id, Some(candidate_exchange.as_str()))
                 .with_context(|| format!("Failed to convert instrument_id {instrument_id} to IB contract. Check that the instrument ID format is correct and the venue/symbol are valid."))?;
 
-            match client.contract_details(&contract).await {
+            match request_contract_details(client, &contract).await {
                 Ok(result) if !result.is_empty() => {
                     details_vec = result;
                     break;
@@ -1950,7 +1963,7 @@ impl InteractiveBrokersInstrumentProvider {
                 last_trade_date: None,
             };
 
-            match client.contract_details(&option_contract).await {
+            match request_contract_details(client, &option_contract).await {
                 Ok(details_vec) => {
                     tracing::debug!(
                         "Received {} raw option contract details for {}.{} expiry {}",
@@ -2074,8 +2087,7 @@ impl InteractiveBrokersInstrumentProvider {
         };
 
         // Fetch contract details for all matching futures
-        let details_vec = client
-            .contract_details(&futures_contract)
+        let details_vec = request_contract_details(client, &futures_contract)
             .await
             .context("Failed to fetch futures chain from IB")?;
 
@@ -2222,16 +2234,14 @@ impl InteractiveBrokersInstrumentProvider {
             };
 
             // Fetch contract details for this leg
-            let leg_details_vec =
-                client
-                    .contract_details(&leg_contract)
-                    .await
-                    .with_context(|| {
-                        format!(
-                            "Failed to fetch contract details for leg conId {}",
-                            combo_leg.contract_id
-                        )
-                    })?;
+            let leg_details_vec = request_contract_details(client, &leg_contract)
+                .await
+                .with_context(|| {
+                    format!(
+                        "Failed to fetch contract details for leg conId {}",
+                        combo_leg.contract_id
+                    )
+                })?;
 
             if leg_details_vec.is_empty() {
                 tracing::warn!(
@@ -2304,8 +2314,7 @@ impl InteractiveBrokersInstrumentProvider {
             .context("Failed to create spread instrument ID from leg tuples")?;
 
         // Fetch BAG contract details (for storing the mapping)
-        let bag_details_vec = client
-            .contract_details(bag_contract)
+        let bag_details_vec = request_contract_details(client, bag_contract)
             .await
             .context("Failed to fetch BAG contract details from IB")?;
 
@@ -2484,8 +2493,10 @@ impl InteractiveBrokersInstrumentProvider {
                         if let Ok(value) =
                             serde_json::from_str::<serde_json::Value>(instrument_json)
                             && let Some(contract_json) = find_contract_json(&value)
-                            && let Ok(contract) = parse_contract_from_json(contract_json)
+                            && let Ok(mut contract) = parse_contract_from_json(contract_json)
                         {
+                            trim_last_trade_date(&mut contract);
+
                             if contract.contract_id != 0 {
                                 self.contract_id_to_instrument_id
                                     .insert(contract.contract_id, instrument_id);
@@ -2510,7 +2521,8 @@ impl InteractiveBrokersInstrumentProvider {
             }
         }
 
-        // Restore contracts and contract details
+        // Restore contracts and contract details; a cache written before expiries were split
+        // may still hold one with its time (see `split_last_trade_date`)
         for (instrument_id_str, contract) in &cache.contracts {
             if let Ok(instrument_id) = InstrumentId::from_str(instrument_id_str) {
                 if contract.contract_id != 0 {
@@ -2518,7 +2530,9 @@ impl InteractiveBrokersInstrumentProvider {
                         .insert(contract.contract_id, instrument_id);
                 }
 
-                self.contracts.insert(instrument_id, contract.clone());
+                let mut contract = contract.clone();
+                trim_last_trade_date(&mut contract);
+                self.contracts.insert(instrument_id, contract);
             }
         }
 
@@ -2529,9 +2543,11 @@ impl InteractiveBrokersInstrumentProvider {
                         .insert(details.contract.contract_id, instrument_id);
                 }
 
+                let mut details = details.clone();
+                split_last_trade_date(&mut details);
                 self.contracts
                     .insert(instrument_id, details.contract.clone());
-                self.contract_details.insert(instrument_id, details.clone());
+                self.contract_details.insert(instrument_id, details);
             }
         }
 
@@ -3116,6 +3132,96 @@ mod tests {
             265598
         );
         assert_eq!(provider.get_price_magnifier(&ib_instrument_id), 100);
+    }
+
+    fn create_future_contract_with_expiry_time() -> Contract {
+        Contract {
+            contract_id: 515416632,
+            symbol: ibapi::contracts::Symbol::from("ES"),
+            security_type: SecurityType::Future,
+            exchange: Exchange::from("CME"),
+            currency: ibapi::contracts::Currency::from("USD"),
+            local_symbol: String::from("ESZ6"),
+            last_trade_date_or_contract_month: String::from("20261218 08:30:00 US/Central"),
+            ..Default::default()
+        }
+    }
+
+    #[rstest]
+    fn test_add_cached_instruments_cuts_stored_expiry_to_date() {
+        let provider = InteractiveBrokersInstrumentProvider::new(Default::default());
+        let instrument_id = InstrumentId::new(Symbol::from("ESZ6"), Venue::from("CME"));
+        let contract = create_future_contract_with_expiry_time();
+        let instrument = create_test_instrument_with_info(
+            instrument_id,
+            Some(create_contract_info(&contract, Some(1))),
+        );
+
+        assert_eq!(provider.add_cached_instruments([instrument]), 1);
+        assert_eq!(
+            provider
+                .resolve_contract_for_instrument(instrument_id)
+                .unwrap()
+                .last_trade_date_or_contract_month,
+            "20261218"
+        );
+    }
+
+    #[rstest]
+    #[case::instrument_info(false, false)]
+    #[case::contract(true, false)]
+    #[case::contract_details(true, true)]
+    #[tokio::test]
+    async fn test_load_cache_cuts_cached_expiry_to_date(
+        #[case] with_contract: bool,
+        #[case] with_details: bool,
+    ) {
+        let (provider, _temp_dir) = create_test_provider_with_cache();
+        let cache_path = provider.config.cache_path.as_ref().unwrap().clone();
+        let instrument_id = InstrumentId::new(Symbol::from("ESZ6"), Venue::from("CME"));
+        let contract = create_future_contract_with_expiry_time();
+        let instrument = create_test_instrument_with_info(
+            instrument_id,
+            Some(create_contract_info(&contract, Some(1))),
+        );
+        let details = ibapi::contracts::ContractDetails {
+            contract: contract.clone(),
+            price_magnifier: 1,
+            time_zone_id: String::from("US/Central"),
+            ..Default::default()
+        };
+
+        provider.cache_instrument(
+            instrument_id,
+            instrument,
+            with_details.then_some(details),
+            with_contract.then_some(contract),
+            Some(1),
+            false,
+        );
+        provider.save_cache(&cache_path).await.unwrap();
+
+        let new_provider = InteractiveBrokersInstrumentProvider::new(provider.config.clone());
+
+        assert!(new_provider.load_cache(&cache_path).await.unwrap());
+        assert_eq!(
+            new_provider
+                .resolve_contract_for_instrument(instrument_id)
+                .unwrap()
+                .last_trade_date_or_contract_month,
+            "20261218"
+        );
+
+        if with_details {
+            let details = new_provider
+                .instrument_id_to_ib_contract_details(&instrument_id)
+                .unwrap();
+            assert_eq!(
+                details.contract.last_trade_date_or_contract_month,
+                "20261218"
+            );
+            assert_eq!(details.last_trade_time, "08:30:00 US/Central");
+        }
     }
 
     #[tokio::test]

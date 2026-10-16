@@ -38,12 +38,22 @@ struct QuantityPrecisionError {
 fn checked_quantity(size: f64, precision: u8) -> anyhow::Result<Quantity> {
     let quantity = Quantity::new_checked(size, precision)
         .map_err(|e| anyhow::anyhow!("invalid quantity size={size}: {e}"))?;
-    let tolerance = 10_f64.powi(-i32::from(precision)) * 1e-9;
-    if (quantity.as_f64() - size).abs() > tolerance {
+    if !is_representable_size(quantity, size, precision) {
         anyhow::bail!(QuantityPrecisionError { size, precision });
     }
 
     Ok(quantity)
+}
+
+/// Returns whether `quantity`, built from `size` at `precision`, kept `size` without rounding.
+///
+/// The tolerance grows with the size: `Quantity::as_f64` divides a 128-bit raw by the fixed
+/// scalar, so it can be an ulp or two off the size (2.3e-10 for 1975139), which a fixed
+/// tolerance rejects.
+pub(super) fn is_representable_size(quantity: Quantity, size: f64, precision: u8) -> bool {
+    let tolerance =
+        (10_f64.powi(-i32::from(precision)) * 1e-9).max(size.abs() * 4.0 * f64::EPSILON);
+    (quantity.as_f64() - size).abs() <= tolerance
 }
 
 /// Generates the stable fallback trade ID used when IB omits an execution identifier.
@@ -402,12 +412,23 @@ mod tests {
     #[rstest]
     #[case(0.63462, 0)]
     #[case(1.025, 2)]
+    #[case(1_975_139.005, 2)]
     fn test_quantity_precision_error_preserves_size(#[case] size: f64, #[case] precision: u8) {
         let e = checked_quantity(size, precision).unwrap_err();
         assert_eq!(
             e.downcast_ref::<QuantityPrecisionError>(),
             Some(&QuantityPrecisionError { size, precision })
         );
+    }
+
+    #[rstest]
+    #[case(1_975_139.0, 2)]
+    #[case(1_975_139.25, 2)]
+    #[case(123_456_789.0, 0)]
+    fn test_checked_quantity_accepts_large_sizes(#[case] size: f64, #[case] precision: u8) {
+        let quantity = checked_quantity(size, precision).unwrap();
+
+        assert_eq!(quantity, Quantity::new(size, precision));
     }
 
     #[rstest]
