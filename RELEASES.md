@@ -38,6 +38,7 @@ Released on TBD (UTC).
 - Upgraded `proptest` crate to v1.12.0
 - Upgraded `kaleido` package to v1.5.0
 - Upgraded `ty` package (dev) to v0.0.85
+- Upgraded `sockudo-ws` crate to v3.1.0
 
 ### Documentation Updates
 
@@ -272,7 +273,6 @@ Released on 15th October 2026 (UTC).
 - Upgraded `ty` package (dev) to v0.0.84
 - Upgraded `uvicorn` package (test) to v0.54.0
 - Upgraded `uvloop` package (test) to v0.23.0
-- Upgraded `sockudo-ws` crate to v3.0.0
 
 ### Documentation Updates
 

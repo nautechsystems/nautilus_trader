@@ -50,6 +50,7 @@ async fn main() -> BenchResult {
         {
             continue;
         }
+
         for size in sizes.split(',').map(str::parse::<usize>) {
             let size = size?;
             if size < 16 || count == 0 {
@@ -65,10 +66,12 @@ async fn main() -> BenchResult {
                 {
                     continue;
                 }
+
                 tokio::time::timeout(Duration::from_secs(30), run(size, count, mode, backend))
                     .await??;
             }
         }
+
         if selected_mode
             .as_deref()
             .is_none_or(|selected| selected == "paused")
@@ -80,6 +83,7 @@ async fn main() -> BenchResult {
             .await??;
         }
     }
+
     Ok(())
 }
 
@@ -99,6 +103,7 @@ async fn run(
     let peer_window = Arc::clone(&window);
     let (start_tx, start_rx) = tokio::sync::oneshot::channel();
     let (finish_tx, finish_rx) = tokio::sync::oneshot::channel();
+
     let sends = if mode == "ingress-batched" {
         1
     } else if mode == "mixed" {
@@ -111,6 +116,7 @@ async fn run(
     let (echo_tx, mut echo_rx) = tokio::sync::mpsc::unbounded_channel::<u64>();
 
     let (peer_done_tx, peer_done_rx) = tokio::sync::oneshot::channel();
+
     // Keep peer protocol work off the client runtime so CPU samples have an unambiguous owner
     let peer = std::thread::Builder::new()
         .name("nt-ws-peer".into())
@@ -127,6 +133,7 @@ async fn run(
                         if mode == "paused" {
                             socket2::SockRef::from(&socket).set_recv_buffer_size(64 * 1024)?;
                         }
+
                         let ws = tokio_tungstenite::accept_async(socket).await?;
                         let (mut write, mut read) = ws.split();
                         start_rx.await?;
@@ -135,6 +142,7 @@ async fn run(
                             if mode == "paused" {
                                 tokio::time::sleep(Duration::from_millis(100)).await;
                             }
+
                             let mut texts = 0;
                             let mut pong = false;
                             while texts < sends || !pong {
@@ -150,6 +158,7 @@ async fn run(
                                             }
                                         );
                                         texts += 1;
+
                                         if mode == "pingpong" {
                                             let sent =
                                                 u64::from_str_radix(&data.as_str()[..16], 16)?;
@@ -163,6 +172,7 @@ async fn run(
                                     other => panic!("unexpected peer message: {other:?}"),
                                 }
                             }
+
                             BenchResult::Ok(())
                         });
 
@@ -170,6 +180,7 @@ async fn run(
                         if mode == "paused" {
                             tokio::time::sleep(Duration::from_millis(20)).await;
                         }
+
                         write
                             .send(PeerMessage::Ping(bytes::Bytes::from_static(b"probe")))
                             .await?;
@@ -181,11 +192,13 @@ async fn run(
                                 peer_window.acquire().await?.forget();
                                 origin.elapsed().as_nanos() as u64
                             };
+
                             let mut payload = vec![b'x'; size];
                             payload[..8].copy_from_slice(&(sequence as u64).to_le_bytes());
                             payload[8..16].copy_from_slice(&sent.to_le_bytes());
                             if mode == "ingress-batched" {
                                 write.feed(PeerMessage::Binary(payload.into())).await?;
+
                                 // Match the 64-message credit window so unflushed frames never exhaust it
                                 if (sequence + 1) % 64 == 0 || sequence + 1 == count {
                                     write.flush().await?;
@@ -194,6 +207,7 @@ async fn run(
                                 write.send(PeerMessage::Binary(payload.into())).await?;
                             }
                         }
+
                         inbound.await??;
 
                         // Hold the transport open until the last client receive has been observed
@@ -201,14 +215,17 @@ async fn run(
                         BenchResult::Ok(())
                     })
             })();
+
             let _ = peer_done_tx.send(result);
         })?;
+
     let completed_sends = Arc::new(AtomicUsize::new(0));
     let read_completed_sends = Arc::clone(&completed_sends);
     let send_slots = Arc::new(tokio::sync::Semaphore::new(0));
     let read_slots = Arc::clone(&send_slots);
     let started = Arc::new(OnceLock::<Instant>::new());
     let read_started = Arc::clone(&started);
+
     let received = Arc::new(Mutex::new((
         Vec::with_capacity(count),
         Duration::ZERO,
@@ -218,12 +235,14 @@ async fn run(
     let read_samples = Arc::clone(&received);
     let done = Arc::new(tokio::sync::Notify::new());
     let read_done = Arc::clone(&done);
+
     let handler = Arc::new(move |message: Message| {
         let data = match message {
             Message::Binary(data) => data,
             Message::Ping(_) | Message::Pong(_) => return,
             other => panic!("unexpected message: {other:?}"),
         };
+
         let now = origin.elapsed().as_nanos() as u64;
         let mut samples = read_samples.lock().unwrap();
         assert_eq!(data.len(), size);
@@ -235,9 +254,11 @@ async fn run(
         if samples.0.is_empty() {
             samples.2 = Some(read_started.get().unwrap().elapsed());
         }
+
         let sent = u64::from_le_bytes(data[8..16].try_into().unwrap());
         samples.0.push(now - sent);
         window.add_permits(1);
+
         if (mode == "mixed" && (samples.0.len() - 1) % 64 == 0) || mode == "pingpong" {
             read_slots.add_permits(1);
         }
@@ -248,6 +269,7 @@ async fn run(
             read_done.notify_one();
         }
     });
+
     let config = WebSocketConfig::builder()
         .url(format!("ws://{address}"))
         .backend(backend)
@@ -267,12 +289,15 @@ async fn run(
         if mode == "mixed" || (mode == "pingpong" && index > 0) {
             send_slots.acquire().await?.forget();
         }
+
         let mut payload = "x".repeat(if mode == "paused" && index == 0 {
             BLOCKING_PAYLOAD_SIZE
         } else {
             size
         });
+
         let sent = Instant::now();
+
         if mode == "pingpong" {
             // The peer echoes this stamp, so the receive sample spans the full client round trip
             let stamp = format!("{:016x}", origin.elapsed().as_nanos() as u64);
@@ -291,8 +316,10 @@ async fn run(
             first_send_end = started.get().unwrap().elapsed();
         }
     }
+
     let last_send_end = started.get().unwrap().elapsed();
     done.notified().await;
+
     let (samples, duration, receive_first, sends_at_last_receive) = {
         let mut received = received.lock().unwrap();
         (
@@ -316,6 +343,7 @@ async fn run(
             "incoming traffic preceded the first write"
         );
     }
+
     let output = serde_json::json!({
         "backend": backend, "mode": mode, "payload": size, "messages": count,
         "receive_messages_per_second": count as f64 / duration.as_secs_f64(),
@@ -350,6 +378,7 @@ fn pin_thread(variable: &str, role: &str) -> BenchResult {
     let Ok(cpu) = env::var(variable) else {
         return Ok(());
     };
+
     let cpu: usize = cpu.parse()?;
     let thread_path = std::fs::read_link("/proc/thread-self")?;
     let tid = thread_path.file_name().ok_or("missing Linux thread ID")?;
@@ -357,9 +386,11 @@ fn pin_thread(variable: &str, role: &str) -> BenchResult {
         .args(["-pc", &cpu.to_string()])
         .arg(tid)
         .output()?;
+
     if !output.status.success() {
         return Err(String::from_utf8_lossy(&output.stderr).into_owned().into());
     }
+
     eprintln!("role={role} tid={} cpu={cpu}", tid.to_string_lossy());
     Ok(())
 }

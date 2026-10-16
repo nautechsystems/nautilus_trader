@@ -3984,6 +3984,13 @@ delta = "2.1.0 -> 3.0.0"
 importable = false
 notes = "Scoped to Tokio HTTP/1, SIMD, fastrand, rustls-webpki-roots, and test-util for simulation. Reviewed native split ownership, bounded control queue, retained partial writes, atomic terminal causes, hard deadlines, initialized ReadBuf receive bounds, complete-message and short-frame size checks, UTF-8 access, portable masking, and checked handshake grammar. New quanta clock dependencies are audited separately; no build script, hidden network destination, filesystem, process, or credential capability was added in this graph. Compression, Compio, HTTP/2, HTTP/3, io_uring, and PubSub are outside this certification."
 
+[[audits.sockudo-ws]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "3.0.0 -> 3.1.0"
+importable = false
+notes = "Scoped to Tokio HTTP/1, SIMD, fastrand, rustls-webpki-roots, and test-util. Reviewed the published delta: shared readiness and timer wakeups, continued reads under write backpressure, bounded Pong coalescing, close deadlines, cancellation-safe split control handoff, URL validation, and registered close codes. Removes manual unsafe Send implementations; adds no unsafe code, build script, runtime dependency, hidden network destination, filesystem, process, or credential capability in this graph. Compression, Compio, HTTP/2, HTTP/3, io_uring, Axum, and PubSub are outside this certification."
+
 [[audits.syn]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
