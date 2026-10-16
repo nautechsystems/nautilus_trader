@@ -1524,7 +1524,7 @@ impl DataClient for HyperliquidDataClient {
             anyhow::bail!("Funding rates are only available for perpetual instruments");
         }
 
-        let coin = instrument.raw_symbol().to_string();
+        let instrument = instrument.clone();
         let http = self.http_client.clone();
         let sender = self.data_sender.clone();
         let client_id = request.client_id.unwrap_or(self.client_id);
@@ -1537,32 +1537,11 @@ impl DataClient for HyperliquidDataClient {
         let start_nanos = datetime_to_unix_nanos(start_dt);
         let end_nanos = datetime_to_unix_nanos(end_dt);
 
-        let now_ms = Timestamp::now().as_millisecond() as u64;
-
-        // Hyperliquid requires a startTime; default to a 7-day lookback when none given
-        let default_lookback_ms: u64 = 7 * 86_400_000;
-        let start_ms = match start_dt {
-            Some(dt) => dt.as_millisecond().max(0) as u64,
-            None => now_ms.saturating_sub(default_lookback_ms),
-        };
-        let end_ms = end_dt.map(|dt| dt.as_millisecond().max(0) as u64);
-
         self.spawn_task("request_funding_rates", async move {
-            let entries = http
-                .info_funding_history(&coin, start_ms, end_ms)
+            let funding_rates = http
+                .request_funding_rates(&instrument, start_dt, end_dt, limit)
                 .await
                 .with_context(|| format!("funding rates request failed for {instrument_id}"))?;
-
-            let mut funding_rates: Vec<FundingRateUpdate> = entries
-                .iter()
-                .map(|entry| funding_entry_to_update(entry, instrument_id))
-                .collect();
-
-            if let Some(limit) = limit
-                && funding_rates.len() > limit
-            {
-                funding_rates.truncate(limit);
-            }
 
             log::debug!(
                 "Fetched {} funding rates for {instrument_id}",
