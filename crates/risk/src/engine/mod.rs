@@ -817,7 +817,7 @@ impl RiskEngine {
             instruments.insert(instrument_id, instrument);
         }
 
-        for order in &orders {
+        for (index, order) in orders.iter().enumerate() {
             let Some(instrument) = instruments.get(&order.instrument_id()) else {
                 self.deny_order(
                     order,
@@ -830,6 +830,13 @@ impl RiskEngine {
             };
 
             if !self.check_order(instrument, order, false) {
+                let reason = OrderDeniedReason::OrderListDenied {
+                    order_list_id: command.order_list.id,
+                }
+                .to_string();
+
+                self.deny_order_list(&orders[..index], &reason);
+                self.deny_order_list(&orders[index + 1..], &reason);
                 return; // Denied
             }
         }
@@ -1841,6 +1848,10 @@ impl RiskEngine {
         // Scope the cache borrow to avoid RefCell conflict when sending to ExecEngine
         {
             let mut cache = self.cache.borrow_mut();
+            if cache.is_order_dispatched(&order.client_order_id()) {
+                return;
+            }
+
             if !cache.order_exists(&order.client_order_id())
                 && let Err(e) = cache.add_order(order.clone(), None, None, false)
             {

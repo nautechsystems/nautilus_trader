@@ -2712,6 +2712,16 @@ mod tests {
             &[],
         ),
         cache_mutation(
+            "mark_orders_dispatched",
+            CacheMutationRecoveryClass::MissingLiveRecovery,
+            &[],
+        ),
+        cache_mutation(
+            "clear_order_dispatch",
+            CacheMutationRecoveryClass::MissingLiveRecovery,
+            &[],
+        ),
+        cache_mutation(
             "order_mut",
             CacheMutationRecoveryClass::MissingLiveRecovery,
             &[],

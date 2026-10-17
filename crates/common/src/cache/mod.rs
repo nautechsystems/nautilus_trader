@@ -137,6 +137,7 @@ pub struct Cache {
     external_clients: AHashSet<ClientId>,
     accounts: AHashMap<AccountId, SharedCell<AccountAny>>,
     orders: AHashMap<ClientOrderId, SharedCell<OrderAny>>,
+    orders_dispatched: AHashSet<ClientOrderId>,
     order_lists: AHashMap<OrderListId, OrderList>,
     positions: AHashMap<PositionId, SharedCell<Position>>,
     position_snapshots: AHashMap<PositionId, Vec<PositionSnapshotFrame>>,
@@ -175,6 +176,7 @@ impl Debug for Cache {
             .field("external_clients", &self.external_clients)
             .field("accounts", &self.accounts)
             .field("orders", &self.orders)
+            .field("orders_dispatched", &self.orders_dispatched)
             .field("order_lists", &self.order_lists)
             .field("positions", &self.positions)
             .field("position_snapshots", &self.position_snapshots)
@@ -247,6 +249,7 @@ impl Cache {
             external_clients: AHashSet::new(),
             accounts: AHashMap::new(),
             orders: AHashMap::new(),
+            orders_dispatched: AHashSet::new(),
             order_lists: AHashMap::new(),
             positions: AHashMap::new(),
             position_snapshots: AHashMap::new(),
@@ -2062,6 +2065,7 @@ impl Cache {
         self.bars.clear();
         self.accounts.clear();
         self.orders.clear();
+        self.orders_dispatched.clear();
         self.order_lists.clear();
         self.positions.clear();
         self.position_snapshots.clear();
@@ -5029,6 +5033,27 @@ impl Cache {
             }
             None => Vec::new(),
         }
+    }
+
+    /// Records execution client handoffs until their first status transitions.
+    ///
+    /// Records are process-local and may refer to uncached external orders.
+    pub fn mark_orders_dispatched(
+        &mut self,
+        client_order_ids: impl IntoIterator<Item = ClientOrderId>,
+    ) {
+        self.orders_dispatched.extend(client_order_ids);
+    }
+
+    /// Removes the execution dispatch record for an order.
+    pub fn clear_order_dispatch(&mut self, client_order_id: &ClientOrderId) {
+        self.orders_dispatched.remove(client_order_id);
+    }
+
+    /// Returns whether an order was dispatched and awaits its first status transition.
+    #[must_use]
+    pub fn is_order_dispatched(&self, client_order_id: &ClientOrderId) -> bool {
+        self.orders_dispatched.contains(client_order_id)
     }
 
     /// Returns whether an order with the `client_order_id` exists.

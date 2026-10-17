@@ -135,7 +135,6 @@ pub struct ExecutionEngine {
     external_clients: HashSet<ClientId>,
     pos_id_generator: PositionIdGenerator,
     config: ExecutionEngineConfig,
-    orders_dispatched: RefCell<AHashSet<ClientOrderId>>,
     command_count: Cell<u64>,
     event_count: u64,
     report_count: u64,
@@ -232,7 +231,6 @@ impl ExecutionEngine {
             external_clients,
             pos_id_generator: PositionIdGenerator::new(trader_id, clock),
             config: config.unwrap_or_default(),
-            orders_dispatched: RefCell::new(AHashSet::new()),
             command_count: Cell::new(0),
             event_count: 0,
             report_count: 0,
@@ -2139,7 +2137,6 @@ impl ExecutionEngine {
 
         self.cache.borrow_mut().reset();
         self.pos_id_generator.reset();
-        self.orders_dispatched.borrow_mut().clear();
 
         self.stop_snapshot_timer();
         self.stop_purge_timers();
@@ -2207,14 +2204,14 @@ impl ExecutionEngine {
             // The external client now owns the submitted orders, exactly like a registered client
             match &command {
                 TradingCommand::SubmitOrder(cmd) => {
-                    self.orders_dispatched
+                    self.cache
                         .borrow_mut()
-                        .insert(cmd.client_order_id);
+                        .mark_orders_dispatched([cmd.client_order_id]);
                 }
                 TradingCommand::SubmitOrderList(cmd) => {
-                    self.orders_dispatched
+                    self.cache
                         .borrow_mut()
-                        .extend(cmd.order_list.client_order_ids.iter().copied());
+                        .mark_orders_dispatched(cmd.order_list.client_order_ids.iter().copied());
                 }
                 _ => {}
             }
@@ -2332,10 +2329,9 @@ impl ExecutionEngine {
         )
     }
 
-    // The dispatch record is checked independently of the cache because the command is dispatched
-    // to an external client without the engine caching its orders (see the type-level documentation).
+    // External client dispatches are recorded even when their orders are not cached
     fn is_dispatched(&self, client_order_id: ClientOrderId) -> bool {
-        self.orders_dispatched.borrow().contains(&client_order_id)
+        self.cache.borrow().is_order_dispatched(&client_order_id)
     }
 
     // A cached order accepts a submit command only while it has a submittable status and has not
@@ -2597,7 +2593,9 @@ impl ExecutionEngine {
             return;
         }
 
-        self.orders_dispatched.borrow_mut().insert(client_order_id);
+        self.cache
+            .borrow_mut()
+            .mark_orders_dispatched([client_order_id]);
     }
 
     fn handle_submit_order_list(&self, client: &dyn ExecutionClient, cmd: SubmitOrderList) {
@@ -2769,9 +2767,9 @@ impl ExecutionEngine {
             return;
         }
 
-        self.orders_dispatched
+        self.cache
             .borrow_mut()
-            .extend(orders.iter().map(Order::client_order_id));
+            .mark_orders_dispatched(orders.iter().map(Order::client_order_id));
     }
 
     fn add_order_from_init(
@@ -4053,7 +4051,9 @@ impl ExecutionEngine {
 
         // The client's first status transition closes the dispatch window
         if !Self::has_submittable_status(&order) {
-            self.orders_dispatched.borrow_mut().remove(&client_order_id);
+            self.cache
+                .borrow_mut()
+                .clear_order_dispatch(&client_order_id);
         }
 
         if self.config.manage_own_order_books && should_handle_own_book_order(&order) {
