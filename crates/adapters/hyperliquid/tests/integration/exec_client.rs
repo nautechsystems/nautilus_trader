@@ -6800,6 +6800,15 @@ async fn test_query_order_fill_during_history_collection_books_once(#[case] trac
     );
 
     if tracked {
+        wait_until_async(
+            || async {
+                client.ws_dispatch_state().previous_filled_qty(&coid)
+                    == Some(Quantity::from("0.00040"))
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
         assert_eq!(
             client.ws_dispatch_state().previous_filled_qty(&coid),
             Some(Quantity::from("0.00040"))

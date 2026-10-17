@@ -73,7 +73,7 @@ use super::{
     parse::{
         parse_account_state, parse_bar, parse_fill_report, parse_funding_rate, parse_instrument,
         parse_order_detail_status_report, parse_order_status, parse_order_status_report,
-        parse_position_status_report, parse_trade_tick,
+        parse_position_status_report, parse_trade_tick, update_order_report_timestamps,
     },
     query::{
         GetBookParams, GetCandleParams, GetCandlesParams, GetFillsParams, GetFundingRatesParams,
@@ -2119,7 +2119,11 @@ impl AxHttpClient {
     /// Requests historical orders from Ax and parses them to Nautilus
     /// [`OrderStatusReport`].
     ///
-    /// Missing instruments are requested from Ax and cached before parsing order details.
+    /// Closed orders with fills trigger a `/fills` request in the same window to set
+    /// a lower bound for `ts_last`. The fill window is capped at seven days; without
+    /// a matching fill, creation time remains because `/orders` has no terminal timestamp.
+    ///
+    /// Missing instruments are requested from Ax and cached before parsing orders or fills.
     ///
     /// The `cid_resolver` parameter is an optional function that resolves a `cid` (u64)
     /// to a `ClientOrderId`. This is needed for correlating orders submitted via WebSocket.
@@ -2128,9 +2132,34 @@ impl AxHttpClient {
     ///
     /// Returns an error if:
     /// - The HTTP request or pagination contract fails.
-    /// - An order's instrument cannot be fetched or parsed.
-    /// - An order cannot be mapped to a complete status report.
+    /// - An order or fill's instrument cannot be fetched or parsed.
+    /// - An order or fill cannot be mapped to a complete report.
     pub async fn request_historical_order_status_reports<F>(
+        &self,
+        account_id: AccountId,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+        cid_resolver: Option<F>,
+    ) -> anyhow::Result<Vec<OrderStatusReport>>
+    where
+        F: Fn(u64) -> Option<ClientOrderId>,
+    {
+        let mut reports = self
+            .request_order_history(account_id, start, end, cid_resolver)
+            .await?;
+
+        if reports
+            .iter()
+            .any(|report| report.order_status.is_closed() && !report.filled_qty.is_zero())
+        {
+            let fills = self.request_fill_reports(account_id, start, end).await?;
+            update_order_report_timestamps(&mut reports, &fills);
+        }
+
+        Ok(reports)
+    }
+
+    pub(crate) async fn request_order_history<F>(
         &self,
         account_id: AccountId,
         start: Option<UnixNanos>,
@@ -2407,6 +2436,96 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[tokio::test]
+    #[ignore = "requires AX sandbox credentials and a partially filled expired IOC in history"]
+    async fn test_live_closed_order_timestamps_sandbox() {
+        let environment = crate::common::enums::AxEnvironment::Sandbox;
+        let client = AxHttpClient::new(
+            Some(environment.http_url().to_string()),
+            Some(environment.orders_url().to_string()),
+            30,
+            0,
+            1,
+            1,
+            None,
+        )
+        .unwrap();
+        client.authenticate_auto(300).await.unwrap();
+
+        let response = client
+            .inner
+            .get_orders(&GetOrdersParams {
+                order_state: Some(crate::common::enums::AxOrderStatus::Expired),
+                limit: Some(100),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+
+        let order = response
+            .orders
+            .iter()
+            .find(|order| {
+                order.xq > 0
+                    && order.xq < order.q
+                    && order.tif == crate::common::enums::AxTimeInForce::Ioc
+            })
+            .expect("sandbox history contains a partially filled expired IOC");
+
+        let mut params = vec![("order_id", order.oid.as_str())];
+        if let Some(aid) = &order.aid {
+            params.push(("aid", aid.as_str()));
+        }
+
+        let fills: AxFillsResponse = client
+            .inner
+            .send_request_to_url(
+                environment.orders_url(),
+                Method::GET,
+                "/order-fills",
+                Some(&params),
+                None,
+                true,
+            )
+            .await
+            .unwrap();
+        let ts_last_fill = fills
+            .fills
+            .iter()
+            .map(|fill| u64::try_from(fill.timestamp.as_nanosecond()).unwrap())
+            .max()
+            .map(UnixNanos::from)
+            .expect("sandbox order has fills");
+        let created = ax_timestamp_stn_to_unix_nanos(order.ts, order.tn).unwrap();
+        let start = UnixNanos::from(created.as_u64() - 1_000_000_000);
+        let end = UnixNanos::from(created.as_u64() + 60_000_000_000);
+        assert!(ts_last_fill > created);
+        assert!(ts_last_fill < end);
+        let reports = client
+            .request_historical_order_status_reports(
+                AccountId::from("AX-001"),
+                Some(start),
+                Some(end),
+                None::<fn(u64) -> Option<ClientOrderId>>,
+            )
+            .await
+            .unwrap();
+        let report = reports
+            .iter()
+            .find(|report| report.venue_order_id.as_str() == order.oid)
+            .expect("sandbox order report");
+
+        assert_eq!(report.order_status, OrderStatus::Canceled);
+        assert_eq!(report.ts_accepted, created);
+        assert_eq!(report.ts_last, ts_last_fill);
+        assert_eq!(report.quantity.as_decimal(), Decimal::from(order.q));
+        assert_eq!(report.filled_qty.as_decimal(), Decimal::from(order.xq));
+        println!(
+            "AX sandbox partial IOC timestamps passed, fill delay ns={}",
+            ts_last_fill.as_u64() - created.as_u64()
+        );
+    }
 
     #[rstest]
     #[tokio::test]

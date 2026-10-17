@@ -85,6 +85,7 @@ use crate::{
         client::AxHttpClient,
         error::AxHttpError,
         models::{AxOrderRejectReason, PreviewAggressiveLimitOrderRequest, ReplaceOrderRequest},
+        parse::update_order_report_timestamps,
     },
     websocket::{
         AxOrdersWsMessage, AxWsOrderEvent,
@@ -1259,8 +1260,27 @@ impl ExecutionClient for AxExecutionClient {
             None, // correlation_id
         );
 
-        let (order_reports, fill_reports, position_reports) = tokio::try_join!(
-            self.generate_order_status_reports(&order_cmd),
+        let (mut order_reports, fill_reports, position_reports) = tokio::try_join!(
+            async {
+                let cid_resolver = |cid| {
+                    self.ws_orders
+                        .caches()
+                        .cid_to_client_order_id
+                        .get(&cid)
+                        .map(|v| *v)
+                };
+                let mut reports = self
+                    .http_client
+                    .request_order_history(self.core.account_id, start, None, Some(cid_resolver))
+                    .await?;
+                retain_order_status_reports(&mut reports, &order_cmd);
+
+                for report in &reports {
+                    cleanup_closed_order_status_report(report, self.ws_orders.caches());
+                }
+
+                Ok::<_, anyhow::Error>(reports)
+            },
             self.generate_fill_reports(fill_cmd),
             self.generate_position_status_reports(&position_cmd),
         )?;
@@ -1279,6 +1299,8 @@ impl ExecutionClient for AxExecutionClient {
 
         // Declare the window so these fills are bounded history, not live fills
         mass_status.set_report_window(declared_start, true);
+
+        update_order_report_timestamps(&mut order_reports, &fill_reports);
 
         mass_status.add_order_reports(order_reports);
         mass_status.add_fill_reports(fill_reports);
@@ -2380,7 +2402,7 @@ mod tests {
             enums::{AxEnvironment, AxOrderSide, AxOrderStatus, AxTimeInForce},
         },
         config::AxExecutionClientConfig,
-        http::error::AxBuildError,
+        http::{error::AxBuildError, models::AxFillsResponse},
         websocket::{
             messages::{AxWsOrderExpired, AxWsOrderFilled, AxWsTradeExecution, OrderMetadata},
             orders::OrdersCaches,
@@ -2641,6 +2663,17 @@ mod tests {
                 .route(
                     "/open-orders",
                     axum::routing::get(move || async { axum::Json(open_body) }),
+                )
+                .route(
+                    "/fills",
+                    axum::routing::get(|| async {
+                        axum::Json(AxFillsResponse {
+                            fills: Vec::new(),
+                            total_count: Some(0),
+                            limit: Some(100),
+                            next_cursor: None,
+                        })
+                    }),
                 );
             axum::serve(listener, app).await.unwrap();
         });

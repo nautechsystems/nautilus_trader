@@ -476,6 +476,12 @@ Historical order reports carry the venue reject reason (`r`, falling back to `tx
 `OrderCanceled` events can also carry the venue reason where a live cancel carries none. Reports retain the
 venue's post-only flag and subsecond timestamp.
 
+AX `/orders` payloads expose creation time without a terminal timestamp. When history contains a
+closed order with fills, the adapter also requests `/fills` in the same window (at most seven days).
+Historical reports keep `ts_accepted` at creation and raise a closed order's `ts_last` to its latest
+matching fill. With no matching fill, `ts_last` stays at creation. The fill time is a lower bound for
+cancellation or expiry.
+
 Replaced historical order IDs are terminal. Day-complete orders expire, and expired IOC orders cancel,
 matching the WebSocket event path. An unknown order state fails the reconciliation request instead of omitting
 an order from the snapshot. A fill with an unknown sibling order state still reaches execution.
@@ -636,8 +642,9 @@ credentials are valid and have trading permissions.
   Reconciliation does not replace an applied commission, so a streamed estimate remains even when the
   venue-reported `/fills` fee differs. That endpoint supplies the fee for a fill that was not already applied
   from the stream. The adapter converts it with `Money::from_decimal` into USD, so a sub-cent fee such as
-  `0.012188` is stored as `0.01`. An unrepresentable REST fee fails the fill-report request and mass status.
-  During startup, that error prevents the node from starting.
+  `0.012188` is stored as `0.01`. An unrepresentable REST fee fails fill-report requests, historical
+  order-status requests that need fills, and mass status. During startup, that error prevents the node
+  from starting.
 - **Fill reconciliation window**: The `/fills` endpoint requires a bounded time range and caps the span at
   seven days. Reconciliation requests the most recent seven days of fills. Fills older than that are not
   reconciled.

@@ -877,10 +877,20 @@ async fn test_generate_mass_status_restores_historical_terminal_orders() {
             "quantity": 100,
             "side": "B",
             "symbol": "EURUSD-PERP",
-            "timestamp": "2024-01-01T00:00:00Z",
+            "timestamp": "2024-01-01T00:00:00.508000123Z",
             "account_id": "account-1"
         }]
     }));
+    let mut canceled_fill = state.fills_payload.lock().await.as_ref().unwrap()["fills"][0].clone();
+    canceled_fill["trade_id"] = serde_json::json!("T-CANCELED");
+    canceled_fill["order_id"] = serde_json::json!("OID-CANCELED");
+    canceled_fill["quantity"] = serde_json::json!(50);
+    canceled_fill["side"] = serde_json::json!("S");
+    canceled_fill["timestamp"] = serde_json::json!("2024-01-01T00:00:01.608000456Z");
+    state.fills_payload.lock().await.as_mut().unwrap()["fills"]
+        .as_array_mut()
+        .unwrap()
+        .push(canceled_fill);
     *state.positions_payload.lock().await = Some(serde_json::json!({ "positions": [] }));
 
     let (mut client, mut rx, cache) = create_test_execution_client(addr);
@@ -919,7 +929,23 @@ async fn test_generate_mass_status_restores_historical_terminal_orders() {
     assert_eq!(canceled.filled_qty, Quantity::from("50"));
     assert_eq!(canceled.price, Some(Price::from("1.08390")));
     assert_eq!(canceled.order_side, Some(OrderSide::Sell));
-    assert_eq!(fill_reports.len(), 1);
+    assert_eq!(
+        filled.ts_accepted,
+        UnixNanos::from(1_704_067_200_500_000_000_u64)
+    );
+    assert_eq!(
+        filled.ts_last,
+        UnixNanos::from(1_704_067_200_508_000_123_u64)
+    );
+    assert_eq!(
+        canceled.ts_accepted,
+        UnixNanos::from(1_704_067_201_600_000_000_u64)
+    );
+    assert_eq!(
+        canceled.ts_last,
+        UnixNanos::from(1_704_067_201_608_000_456_u64)
+    );
+    assert_eq!(fill_reports.len(), 2);
     assert_eq!(
         fill_reports
             .get(&VenueOrderId::from("OID-FILLED"))
@@ -934,6 +960,7 @@ async fn test_generate_mass_status_restores_historical_terminal_orders() {
     assert_eq!(queries[0].start_timestamp_ns, None);
     assert_eq!(queries[0].end_timestamp_ns, None);
     drop(queries);
+    assert_eq!(state.fills_queries.lock().await.len(), 1);
     assert_eq!(state.open_orders_queries.lock().await.len(), 0);
 
     client.disconnect().await.expect("Failed to disconnect");
