@@ -82,8 +82,11 @@ const HEARTBEAT_MESSAGE: &str = r#"{"method":"ping"}"#;
 )]
 #[allow(private_interfaces)]
 pub enum HandlerCommand {
-    /// Set the WebSocketClient for the handler to use.
-    SetClient(WebSocketClient),
+    /// Installs the WebSocket client and acknowledges initialization.
+    SetClient {
+        client: WebSocketClient,
+        initialized: tokio::sync::oneshot::Sender<()>,
+    },
     /// Disconnect the WebSocket connection.
     Disconnect,
     /// Subscribe to the given subscriptions.
@@ -385,9 +388,10 @@ impl FeedHandler {
                     };
 
                     match cmd {
-                        HandlerCommand::SetClient(client) => {
+                        HandlerCommand::SetClient { client, initialized } => {
                             log::debug!("Setting WebSocket client in handler");
                             self.client = Some(client);
+                            let _ = initialized.send(());
                         }
                         HandlerCommand::Disconnect => {
                             log::debug!("Handler received disconnect command");

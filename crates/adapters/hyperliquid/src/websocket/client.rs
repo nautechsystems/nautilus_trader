@@ -35,7 +35,7 @@ use nautilus_core::{AtomicMap, string::secret::SecretString};
 use nautilus_live::{
     SocketControl,
     book::snapshot::SnapshotGate,
-    task::{SharedTaskSlot, TaskJoinOutcome},
+    task::{SharedTaskSlot, TaskGroupGuard, TaskJoinOutcome},
 };
 use nautilus_model::{
     data::BarType,
@@ -266,7 +266,7 @@ impl HyperliquidWebSocketClient {
         self
     }
 
-    /// Establishes WebSocket connection and spawns the message handler.
+    /// Establishes the WebSocket connection and waits for the message handler to initialize.
     pub async fn connect(&mut self) -> anyhow::Result<()> {
         let connect_lock = Arc::clone(&self.connect_lock);
         let _guard = connect_lock.lock().await;
@@ -358,9 +358,12 @@ impl HyperliquidWebSocketClient {
 
         self.out_rx = Some(out_rx);
         let connection_mode = client.connection_mode_atomic();
+        let (initialized_tx, initialized_rx) = tokio::sync::oneshot::channel();
 
-        // Send SetClient command immediately
-        if let Err(e) = cmd_tx.send(HandlerCommand::SetClient(client)) {
+        if let Err(e) = cmd_tx.send(HandlerCommand::SetClient {
+            client,
+            initialized: initialized_tx,
+        }) {
             self.release_limit_reservations();
             anyhow::bail!("Failed to send SetClient command: {e}");
         }
@@ -400,10 +403,7 @@ impl HyperliquidWebSocketClient {
 
             *cache_sender = cmd_tx.clone();
             *command_sender = cmd_tx.clone();
-            self.connection_mode.store(connection_mode);
         }
-
-        log::debug!("Hyperliquid WebSocket connected: {}", self.url.origin());
 
         // Spawn handler task
         let signal = Arc::clone(&self.signal);
@@ -523,7 +523,42 @@ impl HyperliquidWebSocketClient {
             self.release_limit_reservations();
             anyhow::bail!("Failed to start Hyperliquid WebSocket handler task: {e}");
         }
+
+        self.wait_for_initialization(initialized_rx, connection_mode)
+            .await?;
+
+        log::debug!("Hyperliquid WebSocket connected: {}", self.url.origin());
+
         Ok(())
+    }
+
+    async fn wait_for_initialization(
+        &mut self,
+        initialized: tokio::sync::oneshot::Receiver<()>,
+        connection_mode: Arc<AtomicU8>,
+    ) -> anyhow::Result<()> {
+        let setup_guard = TaskGroupGuard::new(&[], || {
+            self.task_handle.abort();
+            self.release_limit_reservations();
+        });
+
+        let result = tokio::time::timeout(HTTP_TIMEOUT, initialized)
+            .await
+            .context("Hyperliquid WebSocket handler initialization timed out")
+            .and_then(|result| {
+                result.context("Hyperliquid WebSocket handler stopped before initialization")
+            });
+
+        if result.is_ok() {
+            self.connection_mode.store(connection_mode);
+            setup_guard.disarm();
+            return Ok(());
+        }
+
+        drop(setup_guard);
+        self.out_rx = None;
+        self.disconnect_locked().await?;
+        result
     }
 
     pub fn set_post_timeout(&mut self, timeout: Duration) {
@@ -2717,6 +2752,171 @@ mod tests {
         websocket::handler::subscription_to_key,
     };
 
+    #[tokio::test]
+    async fn initialization_waits_for_acknowledgement() {
+        let mut ws_client = HyperliquidWebSocketClient::new(
+            None,
+            HyperliquidEnvironment::Testnet,
+            None,
+            TransportBackend::default(),
+            None,
+        );
+        let observer = ws_client.clone();
+        let mode = Arc::new(AtomicU8::new(ConnectionMode::Active as u8));
+        let (initialized_tx, initialized_rx) = tokio::sync::oneshot::channel();
+        let mut initialization =
+            Box::pin(ws_client.wait_for_initialization(initialized_rx, Arc::clone(&mode)));
+
+        let polled =
+            std::future::poll_fn(|cx| std::task::Poll::Ready(initialization.as_mut().poll(cx)))
+                .await;
+        assert!(polled.is_pending());
+        assert!(!observer.is_active());
+
+        initialized_tx.send(()).unwrap();
+        initialization.await.unwrap();
+
+        assert!(observer.is_active());
+        assert!(Arc::ptr_eq(&observer.connection_mode.load_full(), &mode));
+    }
+
+    #[rstest]
+    #[case::closed(false)]
+    #[case::timeout(true)]
+    #[tokio::test(start_paused = true)]
+    async fn initialization_failure_releases_runtime(#[case] timeout: bool) {
+        let mut ws_client = HyperliquidWebSocketClient::new(
+            None,
+            HyperliquidEnvironment::Testnet,
+            None,
+            TransportBackend::default(),
+            None,
+        );
+        ws_client.rate_limits = Arc::new(WebSocketRateLimits::new());
+        let available = ws_client.rate_limits.connection_slots.available_permits();
+        *ws_client.connection_permit.lock() = Some(
+            Arc::clone(&ws_client.rate_limits.connection_slots)
+                .try_acquire_owned()
+                .unwrap(),
+        );
+
+        let (_out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel();
+        ws_client.out_rx = Some(out_rx);
+        let (initialized_tx, initialized_rx) = tokio::sync::oneshot::channel();
+        let initialized_tx = timeout.then_some(initialized_tx);
+        let mode = Arc::new(AtomicU8::new(ConnectionMode::Active as u8));
+        let started = tokio::time::Instant::now();
+
+        let error = ws_client
+            .wait_for_initialization(initialized_rx, mode)
+            .await
+            .unwrap_err();
+        drop(initialized_tx);
+
+        let expected = if timeout {
+            "Hyperliquid WebSocket handler initialization timed out"
+        } else {
+            "Hyperliquid WebSocket handler stopped before initialization"
+        };
+
+        assert_eq!(error.to_string(), expected);
+        assert_eq!(
+            tokio::time::Instant::now() - started,
+            if timeout {
+                HTTP_TIMEOUT
+            } else {
+                Duration::ZERO
+            },
+        );
+        assert!(!ws_client.is_active());
+        assert!(ws_client.out_rx.is_none());
+        assert!(ws_client.task_handle.is_empty());
+        assert!(ws_client.connection_permit.lock().is_none());
+        assert_eq!(
+            ws_client.rate_limits.connection_slots.available_permits(),
+            available,
+        );
+    }
+
+    #[tokio::test]
+    async fn cancelled_initialization_rejects_stale_acknowledgement() {
+        let mut ws_client = HyperliquidWebSocketClient::new(
+            None,
+            HyperliquidEnvironment::Testnet,
+            None,
+            TransportBackend::default(),
+            None,
+        );
+        ws_client.rate_limits = Arc::new(WebSocketRateLimits::new());
+        let available = ws_client.rate_limits.connection_slots.available_permits();
+        *ws_client.connection_permit.lock() = Some(
+            Arc::clone(&ws_client.rate_limits.connection_slots)
+                .try_acquire_owned()
+                .unwrap(),
+        );
+
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let (stopped_tx, stopped_rx) = tokio::sync::oneshot::channel::<()>();
+        ws_client
+            .task_handle
+            .spawn(async move {
+                let _stopped_tx = stopped_tx;
+                started_tx.send(()).unwrap();
+                std::future::pending::<()>().await;
+            })
+            .unwrap();
+
+        started_rx.await.unwrap();
+        let observer = ws_client.clone();
+        let old_mode = Arc::new(AtomicU8::new(ConnectionMode::Active as u8));
+        let (old_tx, old_rx) = tokio::sync::oneshot::channel();
+        let mut initialization =
+            Box::pin(ws_client.wait_for_initialization(old_rx, Arc::clone(&old_mode)));
+        let polled =
+            std::future::poll_fn(|cx| std::task::Poll::Ready(initialization.as_mut().poll(cx)))
+                .await;
+        assert!(polled.is_pending());
+        drop(initialization);
+        assert!(
+            tokio::time::timeout(Duration::from_secs(1), stopped_rx)
+                .await
+                .unwrap()
+                .is_err(),
+        );
+        assert!(ws_client.connection_permit.lock().is_none());
+        ws_client.disconnect_locked().await.unwrap();
+
+        assert!(ws_client.task_handle.is_empty());
+        assert_eq!(
+            ws_client.rate_limits.connection_slots.available_permits(),
+            available,
+        );
+
+        let new_mode = Arc::new(AtomicU8::new(ConnectionMode::Active as u8));
+        let (new_tx, new_rx) = tokio::sync::oneshot::channel();
+        let mut initialization =
+            Box::pin(ws_client.wait_for_initialization(new_rx, Arc::clone(&new_mode)));
+        let polled =
+            std::future::poll_fn(|cx| std::task::Poll::Ready(initialization.as_mut().poll(cx)))
+                .await;
+        assert!(polled.is_pending());
+
+        assert_eq!(old_tx.send(()), Err(()));
+        assert!(!observer.is_active());
+        new_tx.send(()).unwrap();
+        initialization.await.unwrap();
+
+        assert!(observer.is_active());
+        assert!(Arc::ptr_eq(
+            &observer.connection_mode.load_full(),
+            &new_mode
+        ));
+        assert!(!Arc::ptr_eq(
+            &observer.connection_mode.load_full(),
+            &old_mode
+        ));
+    }
+
     #[rstest]
     fn cache_sender_reset_isolates_connection_generation() {
         let mut ws_client = HyperliquidWebSocketClient::new(
@@ -2798,8 +2998,11 @@ mod tests {
         assert!(cmd_rx.try_recv().is_err());
     }
 
+    #[rstest]
+    #[case::publication(false)]
+    #[case::readiness(true)]
     #[tokio::test]
-    async fn command_during_sender_publication_reaches_initialized_handler() {
+    async fn command_at_publication_or_readiness_reaches_handler(#[case] readiness: bool) {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         let (received_tx, mut received_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -2832,14 +3035,45 @@ mod tests {
             }],
         };
 
-        race_command_with_publication(
-            Arc::clone(&ws_client.cmd_tx),
-            ws_client.connect(),
-            move || command,
-            || observer.is_active(),
-        )
-        .await
-        .expect("connect failed");
+        if readiness {
+            let mut connect = Box::pin(ws_client.connect());
+            let mut command = Some(command);
+
+            let result = tokio::time::timeout(
+                Duration::from_secs(5),
+                std::future::poll_fn(|cx| {
+                    let polled = connect.as_mut().poll(cx);
+
+                    if observer.is_active()
+                        && let Some(command) = command.take()
+                    {
+                        assert!(polled.is_ready(), "readiness must follow initialization");
+                        observer.cmd_tx.try_read().unwrap().send(command).unwrap();
+                    }
+
+                    polled
+                }),
+            )
+            .await
+            .expect("connect must publish readiness");
+
+            result.expect("connect failed");
+            assert!(command.is_none(), "command must be sent at first readiness");
+        } else {
+            let publication_observer = observer.clone();
+            race_command_with_publication(
+                Arc::clone(&ws_client.cmd_tx),
+                ws_client.connect(),
+                move || {
+                    assert!(!publication_observer.is_active());
+                    command
+                },
+                || observer.is_active(),
+            )
+            .await
+            .expect("connect failed");
+        }
+
         let command_sender = ws_client.cmd_tx.read().await.clone();
         assert!(ws_client.cache_tx.lock().same_channel(&command_sender));
         let received = tokio::time::timeout(Duration::from_secs(2), received_rx.recv()).await;
@@ -2859,6 +3093,46 @@ mod tests {
                 }
             })
         );
+    }
+
+    #[tokio::test]
+    #[ignore = "connects to Hyperliquid mainnet public market data"]
+    async fn mainnet_initialization_routes_subscription() {
+        let http_client =
+            HyperliquidHttpClient::new(HyperliquidEnvironment::Mainnet, 15, None).unwrap();
+        let instruments = http_client.request_instruments().await.unwrap();
+        let instrument = instruments
+            .into_iter()
+            .find(|instrument| instrument.raw_symbol().as_str() == "BTC")
+            .expect("BTC perpetual must exist");
+        let instrument_id = instrument.id();
+
+        let mut ws_client = HyperliquidWebSocketClient::new(
+            None,
+            HyperliquidEnvironment::Mainnet,
+            None,
+            TransportBackend::default(),
+            None,
+        );
+        ws_client.cache_instrument(instrument);
+
+        ws_client.connect().await.unwrap();
+        assert!(ws_client.is_active());
+        ws_client.subscribe_trades(instrument_id).await.unwrap();
+        let received = tokio::time::timeout(Duration::from_secs(15), ws_client.next_event()).await;
+        ws_client.disconnect().await.unwrap();
+
+        let Some(NautilusWsMessage::Trades(trades)) = received.unwrap() else {
+            panic!("expected BTC trades after immediate subscription");
+        };
+
+        assert!(!trades.is_empty());
+        assert!(
+            trades
+                .iter()
+                .all(|trade| trade.instrument_id == instrument_id)
+        );
+        assert!(!ws_client.is_active());
     }
 
     #[rstest]
