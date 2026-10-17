@@ -247,11 +247,19 @@ impl DataSubscriptions {
             });
         }
 
-        for subscriptions in [
-            &self.active_quote_subs,
-            &self.active_delta_subs,
-            &self.active_trade_subs,
-        ] {
+        let mut resolved_books = Vec::new();
+        self.active_delta_subs.rcu(|entries| {
+            resolved_books = entries
+                .extract_if(|id| matches_condition(id) || tracked_ids.contains(id))
+                .collect();
+        });
+
+        // Dropping synchronization state cancels its snapshot wait and recovery episode
+        for instrument_id in resolved_books {
+            self.book_sync.remove(instrument_id);
+        }
+
+        for subscriptions in [&self.active_quote_subs, &self.active_trade_subs] {
             subscriptions.rcu(|entries| {
                 entries.retain(|id| !matches_condition(id) && !tracked_ids.contains(id));
             });

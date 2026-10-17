@@ -4096,6 +4096,15 @@ mod tests {
             .active_instrument_status_subs
             .insert(yes.id());
         ctx.subscriptions.active_quote_subs.insert(no.id());
+        ctx.subscriptions.active_delta_subs.insert(no.id());
+        let closed_recovery = ctx.subscriptions.book_sync.claim_recovery(no.id()).unwrap();
+        let other_id = InstrumentId::from("0xOTHER-0xTOKEN.POLYMARKET");
+        ctx.subscriptions.active_delta_subs.insert(other_id);
+        let other_recovery = ctx
+            .subscriptions
+            .book_sync
+            .claim_recovery(other_id)
+            .unwrap();
         assert!(upsert_data_resolve_watch_entry_from_instrument(
             &ctx.resolve_poll_watchlist,
             &yes,
@@ -4119,6 +4128,10 @@ mod tests {
 
         assert!(ctx.subscriptions.ws_open_tokens.is_empty());
         assert!(!ctx.subscriptions.active_quote_subs.contains(&no.id()));
+        assert!(!ctx.subscriptions.active_delta_subs.contains(&no.id()));
+        assert!(closed_recovery.cancellation.is_cancelled());
+        assert!(!other_recovery.cancellation.is_cancelled());
+        assert!(ctx.subscriptions.active_delta_subs.contains(&other_id));
         assert!(
             ctx.subscriptions
                 .closed_condition_ids
