@@ -300,7 +300,6 @@ impl WebSocketConfig {
     /// outside `[1, Semaphore::MAX_PERMITS]`.
     pub fn validate(&self) -> NetworkConfigResult<()> {
         let mut errors = Vec::new();
-
         if let Err(e) = crate::writer::validate_capacity(self.writer_capacity) {
             errors.push(e);
         }

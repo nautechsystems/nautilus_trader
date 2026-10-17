@@ -410,6 +410,7 @@ mod tests {
         lifecycle.set_abort(move || {
             aborts_callback.fetch_add(1, Ordering::SeqCst);
         });
+
         let mut requests: Vec<_> = (0..count)
             .map(|_| lifecycle.enter_request().unwrap())
             .collect();

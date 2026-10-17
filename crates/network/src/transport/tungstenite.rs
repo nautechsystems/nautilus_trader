@@ -281,17 +281,22 @@ mod tests {
             code: CloseCode::Normal,
             reason: "bye".into(),
         }));
+
         let neutral: Message = original.into();
+
         let Message::Close(Some(frame)) = &neutral else {
             panic!("expected close frame");
         };
+
         assert_eq!(frame.code, 1000);
         assert_eq!(frame.reason, "bye");
 
         let back = tungstenite::Message::try_from(neutral).unwrap();
+
         let tungstenite::Message::Close(Some(frame)) = back else {
             panic!("expected close frame");
         };
+
         assert_eq!(u16::from(frame.code), 1000);
         assert_eq!(frame.reason.as_str(), "bye");
     }
@@ -337,6 +342,7 @@ mod tests {
         let TransportError::Other(message) = err else {
             panic!("expected other error, was {err:?}");
         };
+
         assert_eq!(message, "Too many headers");
     }
 
@@ -348,6 +354,7 @@ mod tests {
         let TransportError::Tls(message) = err else {
             panic!("expected TLS error, was {err:?}");
         };
+
         assert_eq!(message, "Invalid DNS name");
     }
 
@@ -359,6 +366,7 @@ mod tests {
         let TransportError::InvalidUrl(message) = err else {
             panic!("expected invalid URL error, was {err:?}");
         };
+
         assert_eq!(message, "URL scheme not supported");
     }
 }

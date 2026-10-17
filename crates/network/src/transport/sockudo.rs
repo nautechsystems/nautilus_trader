@@ -96,7 +96,6 @@ where
     stream.flush().await.map_err(TransportError::from)?;
 
     let mut buf = BytesMut::with_capacity(4096);
-
     loop {
         if buf.len() > MAX_HTTP_HEADER_SIZE {
             return Err(SockudoError::InvalidHttp("response too large").into());
@@ -106,6 +105,7 @@ where
             .read_buf(&mut buf)
             .await
             .map_err(TransportError::from)?;
+
         if n == 0 {
             return Err(TransportError::ConnectionClosed);
         }
@@ -136,6 +136,7 @@ where
 
             let res_protocol = res.protocol.map(String::from);
             let res_extensions = res.extensions.map(String::from);
+
             let leftover = if consumed < buf.len() {
                 Some(buf.split_off(consumed).freeze())
             } else {
@@ -202,6 +203,7 @@ pub(crate) fn validate_extra_headers(headers: &[(String, String)]) -> Result<(),
     for (name, value) in headers {
         validate_extra_header(name, value)?;
     }
+
     Ok(())
 }
 
@@ -458,6 +460,7 @@ where
             })
         })
         .fuse();
+
         SockudoSplitTransport {
             read: Box::pin(read),
             writer: Some(writer),
@@ -556,6 +559,7 @@ where
         None => writer.flush().await,
     }
     .map_err(TransportError::from);
+
     (writer, result)
 }
 
@@ -610,6 +614,7 @@ mod tests {
         })
         .await
         .expect("a completed write must wake the sender without its own timeout");
+
         drop(peer);
         read.await.unwrap();
     }
@@ -633,6 +638,7 @@ mod tests {
             Poll::Ready(())
         })
         .await;
+
         peer.write_all(b"\x81\x04peer").await.unwrap();
 
         let message = tokio::time::timeout(std::time::Duration::from_secs(1), reader.next())
@@ -663,6 +669,7 @@ mod tests {
         } else {
             Box::pin(transport)
         };
+
         let payload = Message::text("x".repeat(4096));
         {
             let mut send = Box::pin(transport.send(payload.clone()));
@@ -679,6 +686,7 @@ mod tests {
             let second = peer.next().await.unwrap().unwrap();
             (Message::from(first), Message::from(second))
         });
+
         transport.flush().await.unwrap();
         transport.send(Message::text("after")).await.unwrap();
         let (first, second) = peer_task.await.unwrap();
@@ -708,6 +716,7 @@ mod tests {
             })
             .await;
         }
+
         peer.write_all(b"rtial!").await.unwrap();
         let message = transport.next().await.unwrap().unwrap();
 
@@ -797,10 +806,12 @@ mod tests {
             .build();
         let mut transport =
             SockudoTransport::new(WebSocketStream::client(client_io, config.clone())).into_split();
+
         let close = Message::Close(Some(CloseFrame {
             code: 3001,
             reason: "finished".into(),
         }));
+
         transport.send(close.clone()).await.unwrap();
         transport.close().await.unwrap();
         transport.close().await.unwrap();
@@ -830,10 +841,12 @@ mod tests {
             Poll::Ready(())
         })
         .await;
+
         tokio::time::advance(std::time::Duration::from_millis(1001)).await;
         tokio::task::yield_now().await;
         let result =
             futures_util::future::poll_fn(|cx| Poll::Ready(receive.as_mut().poll(cx))).await;
+
         let Poll::Ready(Some(Err(TransportError::Io(e)))) = result else {
             panic!("expected simulated idle timeout, was {result:?}");
         };
@@ -849,7 +862,6 @@ mod tests {
     {
         let mut buf = Vec::new();
         let mut chunk = [0u8; 256];
-
         loop {
             let n = stream.read(&mut chunk).await.unwrap();
             assert!(n > 0, "HTTP request closed before headers completed");
@@ -895,7 +907,6 @@ mod tests {
     #[cfg(not(feature = "turmoil"))]
     async fn handshake_rejects_eof_before_response() {
         let (mut client, mut server) = duplex(4096);
-
         let peer = tokio::spawn(async move {
             read_http_request(&mut server).await;
         });
@@ -918,7 +929,6 @@ mod tests {
         #[case] expected: &str,
     ) {
         let (mut client, mut server) = duplex(MAX_HTTP_HEADER_SIZE * 2);
-
         let peer = tokio::spawn(async move {
             read_http_request(&mut server).await;
             let mut response = b"HTTP/1.1 101 Switching Protocols\r\nX-Padding: ".to_vec();
@@ -1000,7 +1010,6 @@ mod tests {
     #[cfg(not(feature = "turmoil"))]
     async fn client_handshake_with_headers_rejects_missing_accept() {
         let (mut client, mut server) = duplex(4096);
-
         let server_task = tokio::spawn(async move {
             let _request = read_http_request(&mut server).await;
             server
@@ -1029,7 +1038,6 @@ mod tests {
     #[cfg(not(feature = "turmoil"))]
     async fn client_handshake_with_headers_preserves_rejected_status() {
         let (mut client, mut server) = duplex(4096);
-
         let server_task = tokio::spawn(async move {
             let _request = read_http_request(&mut server).await;
             server.write_all(b"HTTP/1.1 429\r\n\r\n").await.unwrap();
@@ -1124,17 +1132,22 @@ mod tests {
             code: 1000,
             reason: "bye".into(),
         }));
+
         let neutral: Message = original.into();
+
         let Message::Close(Some(frame)) = &neutral else {
             panic!("expected close frame");
         };
+
         assert_eq!(frame.code, 1000);
         assert_eq!(frame.reason, "bye");
 
         let back: SockudoMessage = neutral.into();
+
         let SockudoMessage::Close(Some(reason)) = back else {
             panic!("expected close frame");
         };
+
         assert_eq!(reason.code, 1000);
         assert_eq!(reason.reason, "bye");
     }
@@ -1165,6 +1178,7 @@ mod tests {
         #[case] message: &str,
     ) {
         let err: TransportError = sockudo.into();
+
         let TransportError::Io(io_err) = &err else {
             panic!("expected I/O timeout, was: {err:?}");
         };
@@ -1226,7 +1240,6 @@ mod tests {
         ) {
             let capture = capture_logs_for(LOG_TARGETS).await;
             let (mut client, mut server) = duplex(4096);
-
             let server_task = tokio::spawn(async move {
                 let _request = read_http_request(&mut server).await;
                 server.write_all(response.as_bytes()).await.unwrap();

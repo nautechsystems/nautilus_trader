@@ -66,9 +66,11 @@ impl AsyncWrite for TcpStream {
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
         let result = Pin::new(&mut self.inner).poll_write(cx, buf);
+
         if matches!(result, Poll::Ready(Ok(n)) if n > 0) {
             self.dirty = true;
         }
+
         result
     }
 
@@ -77,10 +79,13 @@ impl AsyncWrite for TcpStream {
         if !self.dirty {
             return Poll::Ready(Ok(()));
         }
+
         let result = Pin::new(&mut self.inner).poll_flush(cx);
+
         if matches!(result, Poll::Ready(Ok(()))) {
             self.dirty = false;
         }
+
         result
     }
 

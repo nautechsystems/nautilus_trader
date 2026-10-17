@@ -189,6 +189,7 @@ mod tests {
         let sink = SocketStateSink::new(move |state| {
             states_callback.lock().push(state);
         });
+
         let mode = AtomicU8::new(ConnectionMode::Reconnect.as_u8());
 
         assert_eq!(
@@ -225,11 +226,13 @@ mod tests {
         let sink = SocketStateSink::new(move |_| {
             forwarded_calls.lock().push("forwarded");
         });
+
         let transition_lock = Arc::clone(&sink.transition_lock);
         let callback_calls = Arc::clone(&calls);
         let sink = sink.with_callback(move |_| {
             callback_calls.lock().push("callback");
         });
+
         let mode = AtomicU8::new(ConnectionMode::Reconnect.as_u8());
 
         assert_eq!(
@@ -247,6 +250,7 @@ mod tests {
         let sink = SocketStateSink::new(move |state| {
             states_callback.lock().push(state);
         });
+
         let mode = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
         let barrier = Arc::new(Barrier::new(8));
 
@@ -283,6 +287,7 @@ mod tests {
         let sink = SocketStateSink::new(move |state| {
             states_callback.lock().push(state);
         });
+
         let mode = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
         let barrier = Arc::new(Barrier::new(2));
 
@@ -318,6 +323,7 @@ mod tests {
         let calls_callback = Arc::clone(&calls);
         let states = Arc::new(Mutex::new(Vec::new()));
         let states_callback = Arc::clone(&states);
+
         let sink = SocketStateSink::new(move |state| {
             assert_ne!(
                 calls_callback.fetch_add(1, AtomicOrdering::SeqCst),
@@ -326,6 +332,7 @@ mod tests {
             );
             states_callback.lock().push(state);
         });
+
         let mode = AtomicU8::new(ConnectionMode::Reconnect.as_u8());
 
         assert_eq!(
@@ -352,6 +359,7 @@ mod tests {
         let sink = SocketStateSink::new(move |state| {
             states_callback.lock().push(state);
         });
+
         let mode = AtomicU8::new(ConnectionMode::Active.as_u8());
 
         assert!(ConnectionMode::request_disconnect(&mode));
@@ -370,6 +378,7 @@ mod tests {
         let sink = SocketStateSink::new(move |state| {
             states_callback.lock().push(state);
         });
+
         let mode = AtomicU8::new(ConnectionMode::Reconnect.as_u8());
 
         assert!(ConnectionMode::close_websocket_on_loss(&mode, Some(&sink)));

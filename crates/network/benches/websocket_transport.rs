@@ -53,6 +53,7 @@ fn bench_receive_text(c: &mut Criterion) {
                 });
             },
         );
+
         group.bench_with_input(
             BenchmarkId::new("sockudo_ws", payload_size),
             &payload_size,
@@ -64,6 +65,7 @@ fn bench_receive_text(c: &mut Criterion) {
                 });
             },
         );
+
         group.bench_with_input(
             BenchmarkId::new("sockudo_native", payload_size),
             &payload_size,
@@ -75,6 +77,7 @@ fn bench_receive_text(c: &mut Criterion) {
                 });
             },
         );
+
         group.bench_with_input(
             BenchmarkId::new("nautilus_sockudo", payload_size),
             &payload_size,
@@ -112,6 +115,7 @@ fn bench_send_text(c: &mut Criterion) {
                 });
             },
         );
+
         group.bench_with_input(
             BenchmarkId::new("sockudo_ws", payload_size),
             &payload_size,
@@ -123,6 +127,7 @@ fn bench_send_text(c: &mut Criterion) {
                 });
             },
         );
+
         group.bench_with_input(
             BenchmarkId::new("sockudo_native", payload_size),
             &payload_size,
@@ -134,6 +139,7 @@ fn bench_send_text(c: &mut Criterion) {
                 });
             },
         );
+
         group.bench_with_input(
             BenchmarkId::new("nautilus_sockudo", payload_size),
             &payload_size,
@@ -173,6 +179,7 @@ fn bench_roundtrip_text(c: &mut Criterion) {
                 });
             },
         );
+
         group.bench_with_input(
             BenchmarkId::new("sockudo_ws", payload_size),
             &payload_size,
@@ -184,6 +191,7 @@ fn bench_roundtrip_text(c: &mut Criterion) {
                 });
             },
         );
+
         group.bench_with_input(
             BenchmarkId::new("sockudo_native", payload_size),
             &payload_size,
@@ -195,6 +203,7 @@ fn bench_roundtrip_text(c: &mut Criterion) {
                 });
             },
         );
+
         group.bench_with_input(
             BenchmarkId::new("nautilus_sockudo", payload_size),
             &payload_size,

@@ -102,6 +102,7 @@ impl Client {
             count: 0,
             previous: None,
         };
+
         FollowRedirect::with_policy(self.clone(), policy)
             .preserve_extensions(false)
             .call(request)
@@ -186,6 +187,7 @@ impl Policy<Full<Bytes>, HttpClientError> for Redirects {
         let Some(previous) = &self.previous else {
             return;
         };
+
         let Ok(next) = Url::parse(&request.uri().to_string()) else {
             return;
         };
@@ -200,6 +202,7 @@ impl Policy<Full<Bytes>, HttpClientError> for Redirects {
             ] {
                 request.headers_mut().remove(name);
             }
+
             request.headers_mut().remove("cookie2");
             return;
         }
@@ -244,8 +247,10 @@ fn retryable(e: &(dyn Error + 'static)) -> bool {
                 && ((e.is_go_away() && e.reason() == Some(h2::Reason::NO_ERROR))
                     || (e.is_reset() && e.reason() == Some(h2::Reason::REFUSED_STREAM)));
         }
+
         cause = e.source();
     }
+
     false
 }
 
