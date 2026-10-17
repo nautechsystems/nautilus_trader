@@ -37,6 +37,7 @@ Released on TBD (UTC).
 - Fixed empty and incomplete OKX historical bar responses (#5339), thanks for reporting @AlphaTraderK
 - Fixed OKX USD-margined futures and swaps routed as spreads (#5337), thanks for reporting @michalismeng
 - Fixed Polymarket cancels lost while submit responses register venue order IDs
+- Fixed Polymarket reconciliation reverting resting partially filled orders to `Accepted`
 - Fixed Polymarket `price_change` quotes carrying sizes from different price levels
 - Fixed Polymarket stale book levels after resubscribing with effective deltas enabled
 - Fixed Polymarket loading, request caching, and execution lookup cleanup for open markets past `endDate`

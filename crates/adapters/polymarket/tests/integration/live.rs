@@ -745,6 +745,52 @@ async fn startup_reconciliation_correlates_tracked_open_order() {
 
 #[rstest]
 #[tokio::test]
+async fn reconciliation_preserves_resting_partially_filled_order(
+    #[values(false, true)] mass_status: bool,
+) {
+    let order = harness::limit_order(InstrumentId::from(harness::INSTRUMENT_ID), "O-1");
+    let h =
+        harness::Harness::build_with_cache(|execution| seed_partially_filled(execution, &order))
+            .await;
+    let before = cached_order(&h, &order);
+    *h.mock_state.trades_response_override.lock().await = Some(load_json("http_empty_page.json"));
+
+    let report = if mass_status {
+        let mut orders = load_json("http_open_orders_harness.json");
+        orders["data"][0]["size_matched"] = json!("25.0000");
+        *h.mock_state.orders_response_override.lock().await = Some(orders);
+        let mass_status = h.reconcile_from_venue().await;
+        let reports = mass_status.order_reports();
+        assert_eq!(reports.len(), 1);
+        reports
+            .values()
+            .next()
+            .expect("partially filled order report")
+            .clone()
+    } else {
+        *h.mock_state.single_order_response.lock().await = Some(load_json("http_open_order.json"));
+        let report =
+            generate_order_status_report(&h, &order, VenueOrderId::from(DEFAULT_ACCEPTED_ORDER_ID))
+                .await;
+        h.exec_engine()
+            .borrow_mut()
+            .reconcile_order_status_report(&report);
+        report
+    };
+
+    let cached = cached_order(&h, &order);
+
+    assert_eq!(before.status(), OrderStatus::PartiallyFilled);
+    assert_eq!(report.order_status, OrderStatus::PartiallyFilled);
+    assert_eq!(report.quantity, Quantity::from("100.0000"));
+    assert_eq!(report.filled_qty, Quantity::from("25.0000"));
+    assert_eq!(cached.status(), OrderStatus::PartiallyFilled);
+    assert_eq!(cached.filled_qty(), Quantity::from("25.0000"));
+    assert_eq!(cached.events(), before.events());
+}
+
+#[rstest]
+#[tokio::test]
 async fn reconciliation_applies_missed_terminal_cancel() {
     let mut h = harness::Harness::build().await;
     let order = harness::limit_order(h.instrument_id(), "O-1");
