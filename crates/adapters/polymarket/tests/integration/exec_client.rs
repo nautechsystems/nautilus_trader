@@ -12466,10 +12466,12 @@ async fn test_limit_fok_deferred_check_rejects_contradictory_signed_quantity() {
     assert_no_execution_event(&mut rx).await;
 }
 
-// A MATCHED FOK report excludes provisional quantity until the trade confirms
 #[rstest]
+#[case::market(OrderType::Market)]
+#[case::base_limit(OrderType::Limit)]
 #[tokio::test]
-async fn test_fok_deferred_check_filled_emits_report_for_reconciliation() {
+async fn test_fok_deferred_check_filled_report_requires_base_limit(#[case] order_type: OrderType) {
+    let price = Price::from("0.5100");
     let state = TestServerState::default();
     *state.single_order_response.lock().await = Some(json!({
         "associate_trades": [],
@@ -12480,7 +12482,7 @@ async fn test_fok_deferred_check_filled_emits_report_for_reconciliation() {
         "outcome": "Yes",
         "maker_address": "0xtest",
         "owner": "test-owner",
-        "price": "0.5100",
+        "price": price.to_string(),
         "side": "BUY",
         "size_matched": "10.0000",
         "asset_id": "TEST-TOKEN",
@@ -12495,13 +12497,27 @@ async fn test_fok_deferred_check_filled_emits_report_for_reconciliation() {
     let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
     add_instrument_to_cache(&cache, instrument_id);
 
-    let order = make_market_order_with_time_in_force(
-        "O-FOK-MATCHED",
-        instrument_id,
-        OrderSide::Buy,
-        true,
-        TimeInForce::Fok,
-    );
+    let order = if order_type == OrderType::Limit {
+        make_limit_order_at_price(
+            "O-FOK-MATCHED",
+            instrument_id,
+            OrderSide::Buy,
+            false,
+            false,
+            false,
+            TimeInForce::Fok,
+            price,
+        )
+    } else {
+        make_market_order_with_time_in_force(
+            "O-FOK-MATCHED",
+            instrument_id,
+            OrderSide::Buy,
+            true,
+            TimeInForce::Fok,
+        )
+    };
+
     cache
         .borrow_mut()
         .add_order(order.clone(), None, None, false)
@@ -12510,12 +12526,9 @@ async fn test_fok_deferred_check_filled_emits_report_for_reconciliation() {
 
     client.submit_order(cmd).unwrap();
 
-    for expected in ["Submitted", "Updated"] {
-        let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
-            .await
-            .unwrap()
-            .unwrap();
-        assert_order_event(event, expected);
+    assert_order_event(recv_execution_event(&mut rx).await, "Submitted");
+    if order_type == OrderType::Market {
+        assert_order_event(recv_execution_event(&mut rx).await, "Updated");
     }
 
     let accepted = tokio::time::timeout(Duration::from_secs(10), rx.recv())
@@ -12524,19 +12537,25 @@ async fn test_fok_deferred_check_filled_emits_report_for_reconciliation() {
         .unwrap();
     assert_order_event(accepted, "Accepted");
 
-    // Venue Filled with no confirmed local fills surfaces no fill quantity
-    let event = tokio::time::timeout(Duration::from_secs(10), rx.recv())
-        .await
-        .unwrap()
-        .unwrap();
+    if order_type == OrderType::Limit {
+        // A MATCHED FOK report excludes provisional quantity until the trade confirms
+        let event = recv_execution_event(&mut rx).await;
 
-    match event {
-        ExecutionEvent::Report(ExecutionReport::Order(report)) => {
-            assert_eq!(report.order_status, OrderStatus::Filled);
-            assert_eq!(report.filled_qty, Quantity::zero(0));
+        match event {
+            ExecutionEvent::Report(ExecutionReport::Order(report)) => {
+                assert_eq!(report.client_order_id, Some(order.client_order_id()));
+                assert_eq!(report.order_type, OrderType::Limit);
+                assert_eq!(report.order_status, OrderStatus::Filled);
+                assert_eq!(report.quantity, Quantity::from("10"));
+                assert_eq!(report.filled_qty, Quantity::zero(0));
+                assert_eq!(report.price, Some(price));
+            }
+            other => panic!("Expected Order report, was {other:?}"),
         }
-        other => panic!("Expected Order report, was {other:?}"),
     }
+
+    assert_eq!(state.single_order_get_count.load(Ordering::Acquire), 1);
+    assert_no_execution_event(&mut rx).await;
 }
 
 #[rstest]
