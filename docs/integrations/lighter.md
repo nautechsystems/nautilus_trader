@@ -921,8 +921,11 @@ Funding fields differ:
 - `current_funding_rate`: upcoming estimate used in live updates.
 - `funding_rate` and `funding_timestamp`: last completed payment.
 
-Market stats provide no future settlement time, so live updates leave `interval` and `next_funding_ns`
-unset. Spot `spot_market_stats` emits `IndexPriceUpdate`.
+Lighter funds hourly, so live updates set `interval=60`. Market stats provide no future settlement
+time, so `next_funding_ns` stays unset. Spot `spot_market_stats` emits `IndexPriceUpdate`.
+
+Lighter quotes funding rates in percent. The adapter converts live and historical rates to
+fractions, the Nautilus convention.
 
 Historical funding requests use public `/api/v1/fundings`, not account-specific `positionFunding`:
 
