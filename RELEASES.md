@@ -21,6 +21,7 @@ Released on TBD (UTC).
 
 - Fixed startup reconciliation leaving orders partially filled after venue quantity reductions
 - Fixed risk denials for released orders and cleanup of their contingent orders
+- Fixed Binance Futures HTTP order reports using update time as acceptance time
 - Fixed Binance spot SBE exponent overflow aborting user-data decode (#5320), thanks @zifulifufu
 - Fixed Hyperliquid leverage and isolated-margin request serialization and signing
 - Fixed Hyperliquid WebSocket readiness being published before handler initialization
