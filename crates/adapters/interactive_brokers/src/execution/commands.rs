@@ -29,6 +29,7 @@ impl InteractiveBrokersExecutionClient {
         account_id: AccountId,
         ib_account: Ustr,
         order_submit_lock: &Arc<tokio::sync::Mutex<()>>,
+        request_timeout_secs: u64,
     ) -> anyhow::Result<()> {
         if cmd.order_init.post_only {
             let ts_event = clock.get_time_ns();
@@ -86,7 +87,11 @@ impl InteractiveBrokersExecutionClient {
         // Every price sent and reported for the order is converted by the price magnifier, so an
         // order whose magnifier is unknown is denied rather than priced at the wrong scale
         if let Err(e) = instrument_provider
-            .ensure_price_magnifier_async(client, cmd.instrument_id)
+            .ensure_price_magnifier_async(
+                client,
+                cmd.instrument_id,
+                Duration::from_secs(request_timeout_secs),
+            )
             .await
         {
             return Self::deny_unpreparable_order(cmd, &e, exec_sender, clock);
@@ -213,7 +218,11 @@ impl InteractiveBrokersExecutionClient {
         request_timeout_secs: u64,
     ) -> anyhow::Result<()> {
         instrument_provider
-            .ensure_price_magnifier_async(client, cmd.instrument_id)
+            .ensure_price_magnifier_async(
+                client,
+                cmd.instrument_id,
+                Duration::from_secs(request_timeout_secs),
+            )
             .await?;
 
         let target_ib_order_id = Self::target_ib_order_id_for_modify(
@@ -472,6 +481,7 @@ impl InteractiveBrokersExecutionClient {
         ib_account: Ustr,
         strategy_id: StrategyId,
         order_submit_lock: &Arc<tokio::sync::Mutex<()>>,
+        request_timeout_secs: u64,
     ) -> anyhow::Result<()> {
         let num_orders = orders.len();
         anyhow::ensure!(!orders.is_empty(), "Cannot submit an empty order list");
@@ -482,7 +492,11 @@ impl InteractiveBrokersExecutionClient {
 
         for instrument_id in instrument_ids {
             if let Err(e) = instrument_provider
-                .ensure_price_magnifier_async(client, instrument_id)
+                .ensure_price_magnifier_async(
+                    client,
+                    instrument_id,
+                    Duration::from_secs(request_timeout_secs),
+                )
                 .await
             {
                 let reason = coded_denial_reason(DENIAL_ORDER_LIST_INVALID, &format!("{e:#}"));

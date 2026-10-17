@@ -692,8 +692,8 @@ and the greeks) in the contract's currency already, so the adapter publishes it 
 The execution client needs an instrument's magnifier before it submits or modifies an order for it.
 When its provider has not loaded the instrument, for example one a data client loaded after the
 execution client was created, the client takes the contract and magnifier from the instrument in
-the cache, or else requests the contract details from IB. It denies the order, or rejects the
-modify, when neither supplies the magnifier.
+the cache, or else requests the contract details from IB and waits up to `request_timeout` for
+them. It denies the order, or rejects the modify, when neither supplies the magnifier in time.
 
 #### Upgrading with magnified contracts
 

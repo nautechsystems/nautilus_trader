@@ -603,6 +603,7 @@ impl InteractiveBrokersExecutionClient {
         let strategy_id = cmd.strategy_id;
         let client_clone = client.as_arc().clone();
         let order_submit_lock = Arc::clone(&self.order_submit_lock);
+        let request_timeout_secs = self.config.request_timeout;
 
         let future = async move {
             if let Err(e) = Self::handle_submit_order_list_async(
@@ -618,6 +619,7 @@ impl InteractiveBrokersExecutionClient {
                 ib_account,
                 strategy_id,
                 &order_submit_lock,
+                request_timeout_secs,
             )
             .await
             {
@@ -1029,6 +1031,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
 
         let account_id = self.core.account_id;
         let ib_account = self.ib_account;
+        let request_timeout_secs = self.config.request_timeout;
 
         let future = async move {
             if let Err(e) = Self::handle_submit_order_async(
@@ -1042,6 +1045,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
                 account_id,
                 ib_account,
                 &order_submit_lock,
+                request_timeout_secs,
             )
             .await
             {

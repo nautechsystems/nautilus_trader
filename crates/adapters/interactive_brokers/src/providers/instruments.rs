@@ -15,7 +15,7 @@
 
 //! Interactive Brokers instrument provider implementation.
 
-use std::{collections::HashMap, fs, path::Path, str::FromStr, sync::Arc};
+use std::{collections::HashMap, fs, path::Path, str::FromStr, sync::Arc, time::Duration};
 
 use anyhow::Context;
 use dashmap::DashMap;
@@ -682,18 +682,19 @@ impl InteractiveBrokersInstrumentProvider {
     }
 
     /// Returns an instrument's price magnifier, requesting its contract details from IB when the
-    /// provider holds none.
+    /// provider holds none and waiting at most `timeout` for them.
     ///
     /// # Errors
     ///
-    /// Returns an error if the request fails or IB returns no contract details for the
-    /// instrument, so its price magnifier is unknown.
+    /// Returns an error if the request fails, does not complete within `timeout`, or IB returns
+    /// no contract details for the instrument, so its price magnifier is unknown.
     pub async fn ensure_price_magnifier_async(
         &self,
         client: &ibapi::Client,
         instrument_id: InstrumentId,
+        timeout: Duration,
     ) -> anyhow::Result<i32> {
-        self.ensure_price_magnifier_with(instrument_id, || async {
+        self.ensure_price_magnifier_with(instrument_id, timeout, || async {
             if is_spread_instrument_id(&instrument_id) {
                 self.fetch_spread_instrument(client, instrument_id, true, None)
                     .await
@@ -709,6 +710,7 @@ impl InteractiveBrokersInstrumentProvider {
     async fn ensure_price_magnifier_with<F, Fut>(
         &self,
         instrument_id: InstrumentId,
+        timeout: Duration,
         load: F,
     ) -> anyhow::Result<i32>
     where
@@ -719,8 +721,15 @@ impl InteractiveBrokersInstrumentProvider {
             return Ok(magnifier);
         }
 
-        load()
+        // IB can keep the connection open without completing the response, so the wait is
+        // bounded and the command is denied rather than left pending
+        tokio::time::timeout(timeout, load())
             .await
+            .map_err(|_| {
+                anyhow::anyhow!(
+                    "Timed out after {timeout:?} loading IB contract details for {instrument_id}"
+                )
+            })?
             .with_context(|| format!("Failed to load IB contract details for {instrument_id}"))?;
 
         self.price_magnifier(&instrument_id).with_context(|| {
@@ -3474,7 +3483,7 @@ mod tests {
         let requests = AtomicUsize::new(0);
 
         let magnifier = provider
-            .ensure_price_magnifier_with(instrument_id, || async {
+            .ensure_price_magnifier_with(instrument_id, Duration::from_secs(5), || async {
                 requests.fetch_add(1, Ordering::SeqCst);
                 Ok(())
             })
@@ -3491,7 +3500,7 @@ mod tests {
         let instrument_id = InstrumentId::from("ZCZ6.CBOT");
 
         let magnifier = provider
-            .ensure_price_magnifier_with(instrument_id, || async {
+            .ensure_price_magnifier_with(instrument_id, Duration::from_secs(5), || async {
                 let details = ibapi::contracts::ContractDetails {
                     price_magnifier: 100,
                     ..Default::default()
@@ -3517,7 +3526,7 @@ mod tests {
         let instrument_id = InstrumentId::from("ZCZ6.CBOT");
 
         let error = provider
-            .ensure_price_magnifier_with(instrument_id, || async {
+            .ensure_price_magnifier_with(instrument_id, Duration::from_secs(5), || async {
                 if request_fails {
                     anyhow::bail!("Socket disconnected");
                 }
@@ -3527,6 +3536,27 @@ mod tests {
             .unwrap_err();
 
         assert!(format!("{error:#}").starts_with(expected), "{error:#}");
+        assert_eq!(provider.price_magnifier(&instrument_id), None);
+    }
+
+    #[rstest]
+    #[tokio::test(start_paused = true)]
+    async fn ensure_price_magnifier_times_out_when_the_request_never_completes() {
+        let provider = InteractiveBrokersInstrumentProvider::new(Default::default());
+        let instrument_id = InstrumentId::from("ZCZ6.CBOT");
+        let timeout = Duration::from_secs(5);
+        let start = tokio::time::Instant::now();
+
+        let error = provider
+            .ensure_price_magnifier_with(instrument_id, timeout, std::future::pending)
+            .await
+            .unwrap_err();
+
+        assert_eq!(
+            format!("{error:#}"),
+            "Timed out after 5s loading IB contract details for ZCZ6.CBOT"
+        );
+        assert_eq!(tokio::time::Instant::now() - start, timeout);
         assert_eq!(provider.price_magnifier(&instrument_id), None);
     }
 }
