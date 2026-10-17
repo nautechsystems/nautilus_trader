@@ -163,12 +163,16 @@ impl PolymarketExecutionClient {
             return;
         };
 
-        let Some(venue_order_id) = self.cancel_venue_order_id(order_ref) else {
+        let Some(venue_order_id) = self
+            .pending_cancels
+            .venue_order_id_or_defer(cmd.client_order_id, || {
+                self.cancel_venue_order_id(order_ref)
+            })
+        else {
             log::debug!(
                 "Cancel for {} deferred, venue_order_id not yet available",
                 cmd.client_order_id
             );
-            self.pending_cancels.insert(cmd.client_order_id);
             return;
         };
 
@@ -282,14 +286,18 @@ impl PolymarketExecutionClient {
                 continue;
             }
 
-            if let Some(venue_order_id) = self.cancel_venue_order_id(&order) {
+            if let Some(venue_order_id) = self
+                .pending_cancels
+                .venue_order_id_or_defer(order.client_order_id(), || {
+                    self.cancel_venue_order_id(&order)
+                })
+            {
                 orders.push((venue_order_id, order.clone()));
             } else {
                 log::debug!(
                     "Cancel all for {} deferred, venue_order_id not yet available",
                     order.client_order_id()
                 );
-                self.pending_cancels.insert(order.client_order_id());
             }
         }
 
@@ -410,14 +418,18 @@ impl PolymarketExecutionClient {
         let mut venue_to_order: Vec<(String, OrderAny)> = Vec::new();
 
         for order in orders {
-            if let Some(venue_order_id) = self.cancel_venue_order_id(&order) {
+            if let Some(venue_order_id) = self
+                .pending_cancels
+                .venue_order_id_or_defer(order.client_order_id(), || {
+                    self.cancel_venue_order_id(&order)
+                })
+            {
                 venue_to_order.push((venue_order_id.to_string(), order));
             } else {
                 log::debug!(
                     "Batch cancel for {} deferred, venue_order_id not yet available",
                     order.client_order_id()
                 );
-                self.pending_cancels.insert(order.client_order_id());
             }
         }
 

@@ -20,6 +20,7 @@ Released on TBD (UTC).
 - Fixed startup reconciliation leaving orders partially filled after venue quantity reductions
 - Fixed risk denials for released orders and cleanup of their contingent orders
 - Fixed Hyperliquid leverage and isolated-margin request serialization and signing
+- Fixed Polymarket cancels lost while submit responses register venue order IDs
 - Fixed Polymarket loading, request caching, and execution lookup cleanup for open markets past `endDate`
 - Fixed Polymarket market order reconciliation panics after delayed FOK status checks
 - Fixed Polymarket market data subscriptions stalling after transient initial WebSocket connection failures
