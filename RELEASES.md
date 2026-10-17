@@ -9,12 +9,14 @@ Released on TBD (UTC).
 - Removed Polymarket `FeeRateResponse::to_rate` and Gamma `set_clob_client` and `clob_client` methods
 - Changed emulated releases to undergo risk checks; use `REDUCING` for eligible exits, as `HALTED` denies stops
 - Changed order-list validation to deny unsent siblings; retry with new IDs (#5336), thanks @imbolc
+- Changed Binance spot `BinanceAccountInfo::to_account_state` and `parse_spot_account_position` to return `Result`
 - Changed Hyperliquid `UpdateIsolatedMargin`: replace `delta` with `is_buy` and `ntli` (signed millionths)
 
 ### Security
 
 - Fixed HTTP `Referer` headers exposing URL paths and query parameters on cross-origin redirects
 - Fixed Feather run recovery modifying files outside the catalog through path traversal or symlinks
+- Fixed Binance spot account balances panicking or skipping an unrepresentable amount
 - Fixed Hyperliquid private WebSocket parse errors exposing account data in logs
 
 ### Fixes

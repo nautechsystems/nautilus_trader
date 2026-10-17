@@ -38,7 +38,7 @@ use nautilus_model::{
         perpetual_contract::PerpetualContract,
     },
     reports::{FillReport, OrderStatusReport},
-    types::{Currency, Money, Price, Quantity},
+    types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
 use serde_json::Value;
@@ -593,6 +593,50 @@ pub(crate) fn parse_coinm_instrument_with_fees(
 
 /// SBE status value for Trading.
 const SBE_STATUS_TRADING: u8 = 0;
+
+/// Converts an SBE `mantissa * 10^exponent` pair to a [`Decimal`] with exact integer scaling.
+///
+/// # Errors
+///
+/// Returns an error if the magnitude of a negative `exponent` exceeds [`Decimal`]'s maximum scale of 28, or if
+/// scaling by a positive exponent overflows. The conversion does not wrap and does not replace a
+/// nonzero mantissa with zero.
+pub(crate) fn sbe_mantissa_to_decimal(mantissa: i64, exponent: i8) -> anyhow::Result<Decimal> {
+    if exponent >= 0 {
+        let mut value = Decimal::from(mantissa);
+        for _ in 0..exponent {
+            value = value.checked_mul(Decimal::TEN).ok_or_else(|| {
+                anyhow::anyhow!("decimal overflow for mantissa {mantissa}, exponent {exponent}")
+            })?;
+        }
+
+        Ok(value)
+    } else {
+        let scale = u32::from(exponent.unsigned_abs());
+        Decimal::try_new(mantissa, scale).map_err(|e| {
+            anyhow::anyhow!("invalid decimal for mantissa {mantissa}, exponent {exponent}: {e}")
+        })
+    }
+}
+
+/// Builds an account balance from free and locked decimals.
+///
+/// # Errors
+///
+/// Returns an error if `free + locked` overflows, or if the total, locked, or derived free amount
+/// cannot be represented as [`Money`] for `currency`.
+pub(crate) fn account_balance_from_free_locked(
+    asset: &str,
+    free: Decimal,
+    locked: Decimal,
+    currency: Currency,
+) -> anyhow::Result<AccountBalance> {
+    let total = free
+        .checked_add(locked)
+        .ok_or_else(|| anyhow::anyhow!("decimal overflow adding free and locked for {asset}"))?;
+    AccountBalance::from_total_and_locked(total, locked, currency)
+        .with_context(|| format!("failed to build account balance for {asset}"))
+}
 
 /// Derives the number of significant decimal places from an SBE mantissa/exponent pair.
 ///

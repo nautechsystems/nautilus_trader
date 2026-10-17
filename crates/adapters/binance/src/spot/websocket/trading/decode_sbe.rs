@@ -20,7 +20,7 @@
 //! venue-level structs defined in [`super::user_data`].
 //! The existing JSON parse functions in [`super::parse`] then convert these to Nautilus types.
 
-use rust_decimal::Decimal;
+use anyhow::Context;
 use ustr::Ustr;
 
 use super::user_data::{
@@ -28,7 +28,10 @@ use super::user_data::{
     BinanceSpotExecutionReport, BinanceSpotExecutionType,
 };
 use crate::{
-    common::enums::{BinanceOrderStatus, BinanceSide, BinanceTimeInForce},
+    common::{
+        enums::{BinanceOrderStatus, BinanceSide, BinanceTimeInForce},
+        parse::sbe_mantissa_to_decimal,
+    },
     spot::sbe::spot::{
         ReadBuf, balance_update_event_codec, bool_enum, execution_report_event_codec,
         execution_type, expiry_reason, group_size_encoding_codec, message_header_codec, order_side,
@@ -247,7 +250,8 @@ fn execution_report_min_block_length(version: u16) -> usize {
 /// # Errors
 ///
 /// Returns an error if the buffer is too short, the template ID is wrong, the schema ID does not
-/// match, or balances framing is malformed.
+/// match, balances framing is malformed, or a balance mantissa and exponent cannot be converted to
+/// a decimal.
 pub fn decode_account_position(data: &[u8]) -> anyhow::Result<BinanceSpotAccountPositionMsg> {
     if data.len() < HEADER_LEN {
         anyhow::bail!(
@@ -347,11 +351,15 @@ pub fn decode_account_position(data: &[u8]) -> anyhow::Result<BinanceSpotAccount
         let asset_coords = balances_dec.asset_decoder();
         let asset_bytes = balances_dec.asset_slice(asset_coords);
         let asset = Ustr::from(&String::from_utf8_lossy(asset_bytes));
+        let free = sbe_mantissa_to_decimal(free_mantissa, exponent)
+            .with_context(|| format!("failed to convert free balance for {asset}"))?;
+        let locked = sbe_mantissa_to_decimal(locked_mantissa, exponent)
+            .with_context(|| format!("failed to convert locked balance for {asset}"))?;
 
         balances.push(BinanceSpotBalanceEntry {
             asset,
-            free: mantissa_to_decimal(free_mantissa, exponent)?,
-            locked: mantissa_to_decimal(locked_mantissa, exponent)?,
+            free,
+            locked,
         });
     }
 
@@ -559,29 +567,6 @@ fn us_to_ms(us: i64) -> i64 {
     if us < 0 { us } else { us / 1_000 }
 }
 
-/// Converts an SBE `mantissa * 10^exponent` pair to a [`Decimal`] without floating-point.
-///
-/// # Errors
-///
-/// Returns an error if the exponent is outside the range [`Decimal`] can represent, or
-/// the scaled value overflows.
-fn mantissa_to_decimal(mantissa: i64, exponent: i8) -> anyhow::Result<Decimal> {
-    if exponent >= 0 {
-        let mut value = Decimal::from(mantissa);
-        for _ in 0..exponent {
-            value = value.checked_mul(Decimal::TEN).ok_or_else(|| {
-                anyhow::anyhow!("Decimal overflow for mantissa {mantissa}, exponent {exponent}")
-            })?;
-        }
-        Ok(value)
-    } else {
-        let scale = u32::from(exponent.unsigned_abs());
-        Decimal::try_new(mantissa, scale).map_err(|e| {
-            anyhow::anyhow!("Invalid decimal for mantissa {mantissa}, exponent {exponent}: {e}")
-        })
-    }
-}
-
 /// Converts a mantissa + exponent pair to a decimal string without floating-point.
 ///
 /// SBE encodes numeric values as `mantissa * 10^exponent`. For exponent = -2
@@ -638,6 +623,7 @@ fn mantissa_to_decimal_string(mantissa: i64, exponent: i16) -> String {
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use rust_decimal::Decimal;
 
     use super::*;
     use crate::spot::sbe::spot::{
@@ -878,7 +864,7 @@ mod tests {
         #[case] exponent: i8,
         #[case] expected: &str,
     ) {
-        let result = mantissa_to_decimal(mantissa, exponent).unwrap();
+        let result = sbe_mantissa_to_decimal(mantissa, exponent).unwrap();
         assert_eq!(result, Decimal::from_str_exact(expected).unwrap());
     }
 
@@ -891,7 +877,69 @@ mod tests {
         #[case] mantissa: i64,
         #[case] exponent: i8,
     ) {
-        assert!(mantissa_to_decimal(mantissa, exponent).is_err());
+        let err = sbe_mantissa_to_decimal(mantissa, exponent).unwrap_err();
+
+        assert!(err.to_string().contains(&exponent.to_string()));
+    }
+
+    #[rstest]
+    #[case::scale_above_max(-29_i8, 1_i64)]
+    #[case::min_exponent(i8::MIN, 1_i64)]
+    #[case::positive_overflow(29_i8, 1_i64)]
+    #[case::product_overflow(18_i8, i64::MAX)]
+    fn test_decode_account_position_rejects_unrepresentable_balance(
+        #[case] exponent: i8,
+        #[case] mantissa: i64,
+    ) {
+        let data = encode_account_position(
+            1_709_654_400_000_000,
+            1_709_654_400_000_000,
+            &[
+                ("BTC", -8, 100_000_000, 0),
+                ("ETH", exponent, mantissa, mantissa),
+            ],
+        );
+
+        let err = decode_account_position(&data).unwrap_err();
+        let message = format!("{err:#}");
+
+        assert!(message.contains("ETH"), "{message}");
+        assert!(message.contains(&exponent.to_string()), "{message}");
+    }
+
+    #[rstest]
+    #[case::free_overflow(i64::MAX, 1_i64)]
+    #[case::locked_overflow(1_i64, i64::MAX)]
+    fn test_decode_account_position_rejects_one_sided_overflow(
+        #[case] free: i64,
+        #[case] locked: i64,
+    ) {
+        let data = encode_account_position(
+            1_709_654_400_000_000,
+            1_709_654_400_000_000,
+            &[("ETH", 10, free, locked)],
+        );
+
+        let err = decode_account_position(&data).unwrap_err();
+        let message = format!("{err:#}");
+
+        assert!(message.contains("ETH"), "{message}");
+        assert!(message.contains("10"), "{message}");
+    }
+
+    #[rstest]
+    fn test_decode_account_position_positive_exponent_is_exact() {
+        let data = encode_account_position(
+            1_709_654_400_000_000,
+            1_709_654_400_000_000,
+            &[("BTC", 2, 42, 7)],
+        );
+
+        let msg = decode_account_position(&data).unwrap();
+
+        assert_eq!(msg.balances.len(), 1);
+        assert_eq!(msg.balances[0].free, Decimal::from(4_200));
+        assert_eq!(msg.balances[0].locked, Decimal::from(700));
     }
 
     #[rstest]
