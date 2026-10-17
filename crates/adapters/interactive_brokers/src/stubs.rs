@@ -17,6 +17,12 @@
 
 use futures_util::Stream;
 use ibapi::{Error, subscriptions::SubscriptionItem};
+use nautilus_core::UnixNanos;
+use nautilus_model::{
+    identifiers::{InstrumentId, Symbol},
+    instruments::{CurrencyPair, InstrumentAny},
+    types::{Currency, Price, Quantity},
+};
 
 /// Channel-backed stand-in for an ibapi subscription; items arrive as data.
 pub(crate) struct ChannelSubscription<T>(tokio::sync::mpsc::UnboundedReceiver<Result<T, Error>>);
@@ -44,4 +50,28 @@ impl<T> Stream for ChannelSubscription<T> {
             .poll_recv(cx)
             .map(|item| item.map(|result| result.map(SubscriptionItem::Data)))
     }
+}
+
+/// Builds a spot currency pair for tests, FX or crypto by its currencies.
+pub(crate) fn currency_pair(
+    base: &str,
+    quote: &str,
+    price_precision: u8,
+    price_increment: &str,
+) -> InstrumentAny {
+    let instrument_id = InstrumentId::from(format!("{base}/{quote}.IDEALPRO").as_str());
+    let pair = CurrencyPair::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(Symbol::from(format!("{base}.{quote}").as_str()))
+        .base_currency(Currency::from(base))
+        .quote_currency(Currency::from(quote))
+        .price_precision(price_precision)
+        .size_precision(0)
+        .price_increment(Price::from(price_increment))
+        .size_increment(Quantity::from("1"))
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap();
+    InstrumentAny::from(pair)
 }

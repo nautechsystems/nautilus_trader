@@ -28,6 +28,8 @@ use nautilus_model::{
 };
 use thiserror::Error;
 
+use super::convert::IbPriceConverter;
+
 #[derive(Debug, PartialEq, Error)]
 #[error("quantity size={size} cannot be represented with precision={precision}")]
 struct QuantityPrecisionError {
@@ -77,13 +79,13 @@ pub fn parse_quote_tick(
     ask_price: Option<f64>,
     bid_size: Option<f64>,
     ask_size: Option<f64>,
-    price_precision: u8,
+    prices: IbPriceConverter,
     size_precision: u8,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) -> anyhow::Result<QuoteTick> {
-    let bid = bid_price.map(|p| Price::new(p, price_precision));
-    let ask = ask_price.map(|p| Price::new(p, price_precision));
+    let bid = bid_price.map(|p| prices.bid_price(p)).transpose()?;
+    let ask = ask_price.map(|p| prices.ask_price(p)).transpose()?;
     let bid_qty = bid_size
         .map(|s| checked_quantity(s, size_precision))
         .transpose()?;
@@ -93,8 +95,8 @@ pub fn parse_quote_tick(
 
     Ok(QuoteTick::new(
         instrument_id,
-        bid.unwrap_or_else(|| Price::zero(price_precision)),
-        ask.unwrap_or_else(|| Price::zero(price_precision)),
+        bid.unwrap_or_else(|| Price::zero(prices.precision())),
+        ask.unwrap_or_else(|| Price::zero(prices.precision())),
         bid_qty.unwrap_or_else(|| Quantity::zero(size_precision)),
         ask_qty.unwrap_or_else(|| Quantity::zero(size_precision)),
         ts_event,
@@ -112,13 +114,14 @@ pub fn parse_trade_tick(
     instrument_id: InstrumentId,
     price: f64,
     size: f64,
-    price_precision: u8,
+    prices: IbPriceConverter,
     size_precision: u8,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
     trade_id: Option<TradeId>,
 ) -> anyhow::Result<TradeTick> {
-    let trade_price = Price::new_checked(price, price_precision)
+    let trade_price = prices
+        .price(price)
         .map_err(|e| anyhow::anyhow!("invalid trade price={price}: {e}"))?;
     let trade_size = checked_quantity(size, size_precision)?;
     let aggressor_side = AggressorSide::NoAggressor; // IB doesn't provide this directly
@@ -152,20 +155,13 @@ pub(super) fn log_tick_parse_error(kind: &str, instrument_id: InstrumentId, e: &
 pub fn parse_index_price(
     instrument_id: InstrumentId,
     price: f64,
-    price_precision: u8,
-    price_magnifier: i32,
+    prices: IbPriceConverter,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) -> anyhow::Result<IndexPriceUpdate> {
-    let converted_price = if price_magnifier > 0 {
-        price / price_magnifier as f64
-    } else {
-        price
-    };
-
     Ok(IndexPriceUpdate::new(
         instrument_id,
-        Price::new(converted_price, price_precision),
+        prices.price(price)?,
         ts_event,
         ts_init,
     ))
@@ -226,15 +222,16 @@ pub fn parse_realtime_bar(
     low: f64,
     close: f64,
     volume: f64,
-    price_precision: u8,
+    prices: IbPriceConverter,
     size_precision: u8,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) -> anyhow::Result<Bar> {
-    let open_price = Price::new(open, price_precision);
-    let high_price = Price::new(high, price_precision);
-    let low_price = Price::new(low, price_precision);
-    let close_price = Price::new(close, price_precision);
+    let price_type = bar_type.spec().price_type;
+    let open_price = prices.bar_price(price_type, open)?;
+    let high_price = prices.bar_price(price_type, high)?;
+    let low_price = prices.bar_price(price_type, low)?;
+    let close_price = prices.bar_price(price_type, close)?;
     let bar_volume = Quantity::new(volume, size_precision);
 
     Ok(Bar::new(
@@ -270,10 +267,13 @@ mod tests {
         data::{BarSpecification, BarType},
         enums::{AggregationSource, BarAggregation, PriceType},
         identifiers::{InstrumentId, Symbol, Venue},
+        instruments::Instrument,
     };
     use rstest::rstest;
+    use rust_decimal::Decimal;
 
     use super::*;
+    use crate::stubs::currency_pair;
 
     fn create_test_instrument_id() -> InstrumentId {
         InstrumentId::new(Symbol::from("AAPL"), Venue::from("NASDAQ"))
@@ -288,7 +288,7 @@ mod tests {
             Some(150.30),
             Some(100.0),
             Some(200.0),
-            2,
+            IbPriceConverter::new(2),
             0,
             UnixNanos::new(0),
             UnixNanos::new(0),
@@ -310,7 +310,7 @@ mod tests {
             None,
             Some(100.0),
             None,
-            2,
+            IbPriceConverter::new(2),
             0,
             UnixNanos::new(0),
             UnixNanos::new(0),
@@ -332,7 +332,7 @@ mod tests {
             None,
             None,
             None,
-            2,
+            IbPriceConverter::new(2),
             0,
             UnixNanos::new(0),
             UnixNanos::new(0),
@@ -351,7 +351,7 @@ mod tests {
             instrument_id,
             150.25,
             100.0,
-            2,
+            IbPriceConverter::new(2),
             0,
             UnixNanos::new(0),
             UnixNanos::new(0),
@@ -371,7 +371,7 @@ mod tests {
             instrument_id,
             150.25,
             100.0,
-            2,
+            IbPriceConverter::new(2),
             0,
             UnixNanos::new(1000),
             UnixNanos::new(1000),
@@ -392,7 +392,7 @@ mod tests {
             instrument_id,
             150.25,
             0.5,
-            2,
+            IbPriceConverter::new(2),
             0,
             UnixNanos::new(1000),
             UnixNanos::new(1000),
@@ -446,7 +446,7 @@ mod tests {
             create_test_instrument_id(),
             150.25,
             0.0,
-            2,
+            IbPriceConverter::new(2),
             0,
             UnixNanos::new(1000),
             UnixNanos::new(1000),
@@ -468,7 +468,7 @@ mod tests {
             Some(150.30),
             Some(0.5),
             Some(200.0),
-            2,
+            IbPriceConverter::new(2),
             0,
             UnixNanos::new(0),
             UnixNanos::new(0),
@@ -483,8 +483,7 @@ mod tests {
         let result = parse_index_price(
             instrument_id,
             452525.0,
-            2,
-            100,
+            IbPriceConverter::new(2).with_price_magnifier(100),
             UnixNanos::new(0),
             UnixNanos::new(0),
         );
@@ -499,8 +498,7 @@ mod tests {
         let result = parse_index_price(
             instrument_id,
             4525.25,
-            2,
-            1,
+            IbPriceConverter::new(2),
             UnixNanos::new(0),
             UnixNanos::new(0),
         );
@@ -525,7 +523,7 @@ mod tests {
             149.0,
             150.5,
             1000.0,
-            2,
+            IbPriceConverter::new(2),
             0,
             UnixNanos::new(0),
             UnixNanos::new(0),
@@ -572,8 +570,8 @@ mod tests {
             Some(150.305),
             Some(100.0),
             Some(200.0),
-            2, // Price precision: 2 decimal places
-            0, // Size precision: 0 decimal places
+            IbPriceConverter::new(2), // Price precision: 2 decimal places
+            0,                        // Size precision: 0 decimal places
             UnixNanos::new(0),
             UnixNanos::new(0),
         );
@@ -651,5 +649,213 @@ mod tests {
             Some(42.0)
         );
         assert_eq!(parse_option_open_interest(&TickType::Bid, 42.0), None);
+    }
+
+    #[rstest]
+    fn test_parse_quote_tick_rounds_fx_prices_to_increment() {
+        let instrument = currency_pair("EUR", "USD", 5, "0.00005");
+
+        let quote = parse_quote_tick(
+            instrument.id(),
+            Some(1.12097),
+            Some(1.12098),
+            Some(1_000_000.0),
+            Some(2_000_000.0),
+            IbPriceConverter::for_instrument(&instrument, 1),
+            0,
+            UnixNanos::new(0),
+            UnixNanos::new(0),
+        )
+        .unwrap();
+
+        assert_eq!(quote.bid_price, Price::from("1.12095"));
+        assert_eq!(quote.ask_price, Price::from("1.12100"));
+    }
+
+    #[rstest]
+    #[case(1.12098, 1.12099, "1.12095", "1.12100")]
+    #[case(1.12097, 1.12097, "1.12095", "1.12100")]
+    #[case(1.12100, 1.12105, "1.12100", "1.12105")]
+    fn test_parse_quote_tick_rounds_fx_bid_down_and_ask_up(
+        #[case] ib_bid: f64,
+        #[case] ib_ask: f64,
+        #[case] bid: &str,
+        #[case] ask: &str,
+    ) {
+        let instrument = currency_pair("EUR", "USD", 5, "0.00005");
+
+        let quote = parse_quote_tick(
+            instrument.id(),
+            Some(ib_bid),
+            Some(ib_ask),
+            Some(1_000_000.0),
+            Some(2_000_000.0),
+            IbPriceConverter::for_instrument(&instrument, 1),
+            0,
+            UnixNanos::new(0),
+            UnixNanos::new(0),
+        )
+        .unwrap();
+
+        assert_eq!(quote.bid_price, Price::from(bid));
+        assert_eq!(quote.ask_price, Price::from(ask));
+    }
+
+    #[rstest]
+    fn test_parse_quote_tick_never_locks_or_crosses_fx_quote_across_sub_pip_offsets() {
+        let instrument = currency_pair("EUR", "USD", 5, "0.00005");
+        let increment = Price::from("0.00005").as_decimal();
+        let to_ib = |units: i64| -> f64 {
+            format!("{}.{:05}", units / 100_000, units % 100_000)
+                .parse()
+                .unwrap()
+        };
+
+        // Every bid below every ask over 40 steps of 0.00001, two pips
+        for bid_units in 112_000_i64..=112_040 {
+            for ask_units in (bid_units + 1)..=112_041 {
+                let quote = parse_quote_tick(
+                    instrument.id(),
+                    Some(to_ib(bid_units)),
+                    Some(to_ib(ask_units)),
+                    Some(1.0),
+                    Some(1.0),
+                    IbPriceConverter::for_instrument(&instrument, 1),
+                    0,
+                    UnixNanos::new(0),
+                    UnixNanos::new(0),
+                )
+                .unwrap();
+
+                let (bid, ask) = (quote.bid_price.as_decimal(), quote.ask_price.as_decimal());
+                let (ib_bid, ib_ask) = (Decimal::new(bid_units, 5), Decimal::new(ask_units, 5));
+                let case = format!("bid={ib_bid} ask={ib_ask} published {bid}/{ask}");
+
+                assert!((bid % increment).is_zero(), "bid off grid: {case}");
+                assert!((ask % increment).is_zero(), "ask off grid: {case}");
+                assert!(bid <= ib_bid && ib_bid - bid < increment, "{case}");
+                assert!(ask >= ib_ask && ask - ib_ask < increment, "{case}");
+                assert!(bid < ask, "locked or crossed: {case}");
+            }
+        }
+    }
+
+    #[rstest]
+    fn test_parse_quote_tick_leaves_equity_quote_prices_unrounded() {
+        let quote = parse_quote_tick(
+            create_test_instrument_id(),
+            Some(150.25),
+            Some(150.31),
+            Some(100.0),
+            Some(200.0),
+            IbPriceConverter::new(2),
+            0,
+            UnixNanos::new(0),
+            UnixNanos::new(0),
+        )
+        .unwrap();
+
+        assert_eq!(quote.bid_price, Price::from("150.25"));
+        assert_eq!(quote.ask_price, Price::from("150.31"));
+    }
+
+    #[rstest]
+    #[case(PriceType::Bid, "1.12095", "1.12105", "1.12090", "1.12095")]
+    #[case(PriceType::Ask, "1.12100", "1.12110", "1.12095", "1.12100")]
+    #[case(PriceType::Mid, "1.12095", "1.12110", "1.12090", "1.12095")]
+    fn test_parse_realtime_bar_rounds_fx_prices_by_price_type(
+        #[case] price_type: PriceType,
+        #[case] open: &str,
+        #[case] high: &str,
+        #[case] low: &str,
+        #[case] close: &str,
+    ) {
+        let instrument = currency_pair("EUR", "USD", 5, "0.00005");
+        let bar_type = BarType::new(
+            instrument.id(),
+            BarSpecification::new(5, BarAggregation::Second, price_type),
+            AggregationSource::External,
+        );
+
+        let bar = parse_realtime_bar(
+            bar_type,
+            1.12097,
+            1.12109,
+            1.12091,
+            1.12096,
+            0.0,
+            IbPriceConverter::for_instrument(&instrument, 1),
+            0,
+            UnixNanos::new(0),
+            UnixNanos::new(0),
+        )
+        .unwrap();
+
+        assert_eq!(bar.open, Price::from(open));
+        assert_eq!(bar.high, Price::from(high));
+        assert_eq!(bar.low, Price::from(low));
+        assert_eq!(bar.close, Price::from(close));
+    }
+
+    #[rstest]
+    fn test_parse_quote_tick_divides_magnified_prices() {
+        let quote = parse_quote_tick(
+            create_test_instrument_id(),
+            Some(425.25),
+            Some(425.5),
+            Some(10.0),
+            Some(20.0),
+            IbPriceConverter::new(4).with_price_magnifier(100),
+            0,
+            UnixNanos::new(0),
+            UnixNanos::new(0),
+        )
+        .unwrap();
+
+        assert_eq!(quote.bid_price, Price::from("4.2525"));
+        assert_eq!(quote.ask_price, Price::from("4.2550"));
+    }
+
+    #[rstest]
+    fn test_parse_trade_tick_divides_magnified_price() {
+        let trade = parse_trade_tick(
+            create_test_instrument_id(),
+            425.25,
+            3.0,
+            IbPriceConverter::new(4).with_price_magnifier(100),
+            0,
+            UnixNanos::new(0),
+            UnixNanos::new(0),
+            Some(TradeId::from("TRADE-001")),
+        )
+        .unwrap();
+
+        assert_eq!(trade.price, Price::from("4.2525"));
+    }
+
+    #[rstest]
+    fn test_parse_realtime_bar_divides_magnified_prices() {
+        let bar_type = BarType::new(
+            create_test_instrument_id(),
+            BarSpecification::new(5, BarAggregation::Second, PriceType::Last),
+            AggregationSource::External,
+        );
+
+        let bar = parse_realtime_bar(
+            bar_type,
+            425.25,
+            430.0,
+            424.5,
+            428.5,
+            10.0,
+            IbPriceConverter::new(4).with_price_magnifier(100),
+            0,
+            UnixNanos::new(0),
+            UnixNanos::new(0),
+        )
+        .unwrap();
+
+        assert_eq!(bar.open, Price::from("4.2525"));
+        assert_eq!(bar.close, Price::from("4.2850"));
     }
 }

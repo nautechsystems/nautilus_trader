@@ -43,7 +43,7 @@ use crate::{
         enums::{IbAction, IbOrderStatus, IbOrderType, IbTimeInForce},
         spreads::is_spread_instrument_id,
     },
-    execution::transform::ib_trigger_method_to_trigger_type,
+    execution::transform::{from_ib_price, ib_trigger_method_to_trigger_type},
     providers::instruments::InteractiveBrokersInstrumentProvider,
 };
 
@@ -217,9 +217,7 @@ pub(crate) fn fill_position_avg_px_from_fills(
             continue;
         };
 
-        let units = report.signed_decimal_qty.abs()
-            * instrument.multiplier().as_decimal()
-            * Decimal::from(instrument_provider.get_price_magnifier(&instrument_id));
+        let units = report.signed_decimal_qty.abs() * instrument.multiplier().as_decimal();
         let commission_px = lot.commission / units;
         let venue_avg_px_expected = if report.signed_decimal_qty.is_sign_positive() {
             lot.avg_px + commission_px
@@ -479,10 +477,10 @@ pub fn parse_execution_to_fill_report(
     avg_px: Option<Price>,
 ) -> anyhow::Result<FillReport> {
     // Get price magnifier from instrument provider
-    let price_magnifier = instrument_provider.get_price_magnifier(&instrument_id) as f64;
+    let price_magnifier = instrument_provider.get_price_magnifier(&instrument_id);
 
     // Convert execution price
-    let execution_price = execution.price * price_magnifier;
+    let execution_price = from_ib_price(execution.price, price_magnifier);
 
     // Determine order side
     let order_side = IbAction::from_str(execution.side.as_str())?.order_side();
@@ -564,7 +562,7 @@ pub fn parse_order_status_to_report(
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderStatusReport> {
     // Get price magnifier from instrument provider
-    let price_magnifier = instrument_provider.get_price_magnifier(&instrument_id) as f64;
+    let price_magnifier = instrument_provider.get_price_magnifier(&instrument_id);
 
     let mut nautilus_status = match IbOrderStatus::from_str(order_status.status.as_str()) {
         Ok(status) => status.nautilus_status(),
@@ -609,10 +607,13 @@ pub fn parse_order_status_to_report(
     // Get average price
     let average_fill_price = order_status.average_fill_price.unwrap_or(0.0);
     let include_avg_px = should_use_avg_fill_price(average_fill_price, &instrument_id);
-    let avg_px_value = if include_avg_px {
-        average_fill_price * price_magnifier
+    let avg_px = if include_avg_px {
+        let avg_px = decimal_from_f64(average_fill_price)?
+            .checked_div(Decimal::from(price_magnifier.max(1)))
+            .context("IB average fill price out of range")?;
+        Some(avg_px)
     } else {
-        0.0
+        None
     };
 
     if order_status.filled > 0.0
@@ -699,7 +700,7 @@ pub fn parse_order_status_to_report(
                     | OrderType::MarketToLimit
             )
         {
-            let converted = limit_price * price_magnifier;
+            let converted = from_ib_price(limit_price, price_magnifier);
             report = report.with_price(Price::new(converted, price_precision));
         }
 
@@ -736,8 +737,8 @@ pub fn parse_order_status_to_report(
         }
     }
 
-    if include_avg_px {
-        report = report.with_avg_px(decimal_from_f64(avg_px_value)?);
+    if let Some(avg_px) = avg_px {
+        report = report.with_avg_px(avg_px);
     }
 
     if let Some(display_size) = order
@@ -763,7 +764,7 @@ fn map_ib_order_type(order_type: &str, limit_price: Option<f64>) -> OrderType {
 fn parse_ib_order_pricing_fields(
     order: &ibapi::orders::Order,
     order_type: OrderType,
-    price_magnifier: f64,
+    price_magnifier: i32,
     price_precision: u8,
 ) -> anyhow::Result<(
     Option<Price>,
@@ -782,13 +783,13 @@ fn parse_ib_order_pricing_fields(
     ) {
         if let Some(trail_stop_price) = order.trail_stop_price {
             trigger_price = Some(Price::new(
-                trail_stop_price * price_magnifier,
+                from_ib_price(trail_stop_price, price_magnifier),
                 price_precision,
             ));
         }
 
         if let Some(aux_price) = order.aux_price {
-            trailing_offset = Some(decimal_from_f64(aux_price)?);
+            trailing_offset = Some(decimal_from_f64(aux_price)? / Decimal::from(price_magnifier));
             trailing_offset_type = Some(TrailingOffsetType::Price);
         } else if let Some(trailing_percent) = order.trailing_percent {
             trailing_offset = Some(decimal_from_f64(trailing_percent)? * Decimal::from(100));
@@ -798,7 +799,8 @@ fn parse_ib_order_pricing_fields(
         if order_type == OrderType::TrailingStopLimit
             && let Some(limit_price_offset) = order.limit_price_offset
         {
-            limit_offset = Some(decimal_from_f64(limit_price_offset)?);
+            limit_offset =
+                Some(decimal_from_f64(limit_price_offset)? / Decimal::from(price_magnifier));
             trailing_offset_type = Some(trailing_offset_type.unwrap_or(TrailingOffsetType::Price));
         }
 
@@ -811,7 +813,10 @@ fn parse_ib_order_pricing_fields(
     }
 
     if let Some(aux_price) = order.aux_price {
-        trigger_price = Some(Price::new(aux_price * price_magnifier, price_precision));
+        trigger_price = Some(Price::new(
+            from_ib_price(aux_price, price_magnifier),
+            price_precision,
+        ));
     }
 
     Ok((
@@ -931,15 +936,19 @@ mod tests {
         orders::{Action, ExecutionSide, Liquidity, Order, OrderStatusKind},
     };
     use nautilus_model::{
-        enums::{PositionSide, TrailingOffsetType, TriggerType},
+        enums::{AssetClass, PositionSide, TrailingOffsetType, TriggerType},
         identifiers::{Symbol, Venue},
-        instruments::{CurrencyPair, InstrumentAny, stubs::equity_aapl},
+        instruments::{
+            CurrencyPair, FuturesContract, InstrumentAny,
+            stubs::{equity_aapl, equity_aapl_itch},
+        },
     };
     use rust_decimal::Decimal;
+    use ustr::Ustr;
 
     use super::*;
     use crate::{
-        config::InteractiveBrokersInstrumentProviderConfig,
+        config::InteractiveBrokersInstrumentProviderConfig, execution::reports::IbReportContext,
         providers::instruments::InteractiveBrokersInstrumentProvider,
     };
 
@@ -1122,6 +1131,80 @@ mod tests {
         );
 
         assert_eq!(avg_px_open, Some(Decimal::from_str(expected).unwrap()));
+    }
+
+    // A ZC-like contract: IB prices it in cents (magnifier 100) and its multiplier is 5000
+    #[rstest]
+    fn test_fill_position_avg_px_from_fills_for_magnified_contract() {
+        let instrument = InstrumentAny::from(
+            FuturesContract::builder()
+                .instrument_id(InstrumentId::from("ZCZ6.CBOT"))
+                .raw_symbol(Symbol::from("ZCZ6"))
+                .asset_class(AssetClass::Commodity)
+                .exchange(Ustr::from("CBOT"))
+                .underlying(Ustr::from("ZC"))
+                .activation_ns(UnixNanos::default())
+                .expiration_ns(UnixNanos::from(1_800_000_000_000_000_000_u64))
+                .currency(Currency::USD())
+                .price_precision(4)
+                .price_increment(Price::from("0.0025"))
+                .multiplier(Quantity::from(5000))
+                .lot_size(Quantity::from(1))
+                .ts_event(UnixNanos::default())
+                .ts_init(UnixNanos::default())
+                .build()
+                .unwrap(),
+        );
+        let instrument_id = instrument.id();
+        let provider = create_test_instrument_provider();
+        provider.insert_test_instrument(instrument.clone(), 265_598, 100);
+
+        // IB's average cost is the price in the contract's currency times the multiplier, so the
+        // multiplier alone converts it, and the magnifier does not
+        let avg_px_open = IbReportContext::position_avg_px_open(&instrument, 24_340.51);
+        assert_eq!(avg_px_open, Some(Decimal::from_str("4.8681").unwrap()));
+
+        let fill = FillReport::new(
+            AccountId::from("IB-DU001"),
+            instrument_id,
+            VenueOrderId::new("PERM-1"),
+            TradeId::new("T-1"),
+            OrderSide::Buy,
+            Quantity::from(1),
+            Price::from("4.8675"),
+            Money::from("3.01 USD"),
+            LiquiditySide::Taker,
+            None,
+            None,
+            UnixNanos::from(10),
+            UnixNanos::default(),
+            None,
+        );
+        let mut position_reports = vec![PositionStatusReport::new(
+            AccountId::from("IB-DU001"),
+            instrument_id,
+            PositionSide::Long,
+            Quantity::from(1),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            None,
+            None,
+            avg_px_open,
+        )];
+
+        let evidence = FillEvidence {
+            reports: vec![fill],
+            ..Default::default()
+        };
+
+        fill_position_avg_px_from_fills(&mut position_reports, &evidence, &provider);
+
+        // The fill price plus 3.01 / 5000 = 0.000602 reproduces IB's 4.868102, within the rounding
+        // of the average cost, so the entry price replaces it
+        assert_eq!(
+            position_reports[0].avg_px_open,
+            Some(Decimal::from_str("4.8675").unwrap())
+        );
     }
 
     #[rstest]
@@ -2587,5 +2670,156 @@ mod tests {
         .unwrap();
 
         assert_eq!(report.ts_last, UnixNanos::from(expected_ts_last));
+    }
+
+    // A 4-decimal instrument whose contract IB prices in a sub-unit 100 times the currency
+    fn create_magnified_provider() -> (InteractiveBrokersInstrumentProvider, InstrumentId) {
+        let provider = create_test_instrument_provider();
+        let instrument = equity_aapl_itch();
+        let instrument_id = instrument.id();
+        provider.insert_test_instrument(InstrumentAny::from(instrument), 265_598, 100);
+        (provider, instrument_id)
+    }
+
+    fn create_test_order_status(average_fill_price: Option<f64>) -> OrderStatus {
+        OrderStatus {
+            order_id: 12345,
+            status: OrderStatusKind::Submitted,
+            filled: 3.0,
+            remaining: 7.0,
+            average_fill_price,
+            perm_id: 0,
+            parent_id: 0,
+            last_fill_price: average_fill_price,
+            client_id: 0,
+            why_held: String::new(),
+            market_cap_price: Some(0.0),
+        }
+    }
+
+    #[rstest]
+    fn test_parse_execution_to_fill_report_divides_magnified_price() {
+        let (provider, instrument_id) = create_magnified_provider();
+
+        let execution = Execution {
+            order_id: 12345,
+            client_id: 0,
+            execution_id: String::from("EXEC-001"),
+            time: String::from("20230223 00:43:36 Universal"),
+            account_number: String::new(),
+            exchange: String::new(),
+            side: ExecutionSide::Bought,
+            shares: 1.0,
+            price: 425.25,
+            perm_id: 0,
+            liquidation: 0,
+            cumulative_quantity: 1.0,
+            average_price: 425.25,
+            order_reference: String::from("ORDER-REF-001"),
+            ev_rule: String::new(),
+            ev_multiplier: None,
+            model_code: String::new(),
+            last_liquidity: Liquidity::None,
+            pending_price_revision: false,
+            submitter: String::new(),
+        };
+
+        let fill = parse_execution_to_fill_report(
+            &execution,
+            &Contract::default(),
+            1.0,
+            "USD",
+            instrument_id,
+            AccountId::from("IB-001"),
+            &provider,
+            UnixNanos::new(0),
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(fill.last_px, Price::from("4.2525"));
+    }
+
+    #[rstest]
+    fn test_parse_order_status_to_report_divides_magnified_prices() {
+        let (provider, instrument_id) = create_magnified_provider();
+
+        let order = Order {
+            action: Action::Buy,
+            total_quantity: 10.0,
+            order_type: "STP LMT".to_string(),
+            limit_price: Some(425.25),
+            aux_price: Some(430.25),
+            ..Default::default()
+        };
+
+        let report = parse_order_status_to_report(
+            &create_test_order_status(Some(425.5)),
+            Some(&order),
+            instrument_id,
+            AccountId::from("IB-001"),
+            &provider,
+            UnixNanos::new(0),
+        )
+        .unwrap();
+
+        assert_eq!(report.price, Some(Price::from("4.2525")));
+        assert_eq!(report.trigger_price, Some(Price::from("4.3025")));
+        assert_eq!(report.avg_px, Some(Decimal::from_str("4.255").unwrap()));
+    }
+
+    #[rstest]
+    #[case(400.02, "4.0002")]
+    #[case(486.75, "4.8675")]
+    #[case(117.3, "1.173")]
+    #[case(0.07, "0.0007")]
+    fn test_parse_order_status_to_report_divides_magnified_avg_px_exactly(
+        #[case] ib_avg_fill_price: f64,
+        #[case] expected: &str,
+    ) {
+        let (provider, instrument_id) = create_magnified_provider();
+
+        let report = parse_order_status_to_report(
+            &create_test_order_status(Some(ib_avg_fill_price)),
+            None,
+            instrument_id,
+            AccountId::from("IB-001"),
+            &provider,
+            UnixNanos::new(0),
+        )
+        .unwrap();
+
+        assert_eq!(report.avg_px, Some(Decimal::from_str(expected).unwrap()));
+    }
+
+    #[rstest]
+    fn test_parse_order_status_to_report_divides_magnified_trailing_prices() {
+        let (provider, instrument_id) = create_magnified_provider();
+
+        let order = Order {
+            action: Action::Sell,
+            total_quantity: 10.0,
+            order_type: "TRAIL".to_string(),
+            trail_stop_price: Some(481.25),
+            aux_price: Some(5.25),
+            ..Default::default()
+        };
+
+        let report = parse_order_status_to_report(
+            &create_test_order_status(Some(0.0)),
+            Some(&order),
+            instrument_id,
+            AccountId::from("IB-001"),
+            &provider,
+            UnixNanos::new(0),
+        )
+        .unwrap();
+
+        assert_eq!(report.trigger_price, Some(Price::from("4.8125")));
+        assert_eq!(
+            report.trailing_offset,
+            Some(Decimal::from_str("0.0525").unwrap())
+        );
+        assert_eq!(report.trailing_offset_type, Some(TrailingOffsetType::Price));
     }
 }

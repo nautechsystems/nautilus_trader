@@ -471,6 +471,9 @@ fn parse_option_contract(
     let multiplier = parse_contract_multiplier(&details.contract.multiplier, 100.0);
     let asset_class = sec_type_to_asset_class(details.under_security_type.as_str());
 
+    // IB reports a magnified contract's strike in the same sub-unit as its market data
+    let strike = details.contract.strike / f64::from(details.price_magnifier.max(1));
+
     let underlying =
         if details.under_security_type == "IND" && !details.under_symbol.starts_with('^') {
             format!("^{}", details.under_symbol)
@@ -484,7 +487,7 @@ fn parse_option_contract(
         .asset_class(asset_class)
         .underlying(Ustr::from(underlying.as_str()))
         .option_kind(option_kind)
-        .strike_price(Price::new(details.contract.strike, price_precision))
+        .strike_price(Price::new(strike, price_precision))
         .currency(Currency::from(details.contract.currency.to_string()))
         .activation_ns(activation_ns)
         .expiration_ns(expiration_ns)
@@ -963,6 +966,74 @@ mod tests {
 
         assert_eq!(spread.price_precision(), 2);
         assert_eq!(spread.price_increment(), Price::from("0.01"));
+    }
+
+    #[rstest]
+    fn test_parse_futures_option_contract_divides_magnified_strike() {
+        let details = ContractDetails {
+            contract: Contract {
+                symbol: Symbol::from("ZC"),
+                security_type: SecurityType::FuturesOption,
+                exchange: Exchange::from("CBOT"),
+                currency: Currency::from("USD"),
+                local_symbol: "OZCX6 C4630".to_string(),
+                last_trade_date_or_contract_month: "20261023".to_string(),
+                right: Some(OptionRight::Call),
+                strike: 463.0,
+                multiplier: "5000".to_string(),
+                ..Default::default()
+            },
+            min_tick: 0.00125,
+            price_magnifier: 100,
+            under_symbol: "ZCZ6".to_string(),
+            under_security_type: "FUT".to_string(),
+            ..Default::default()
+        };
+
+        let instrument_id =
+            InstrumentId::new(NautilusSymbol::from("OZCX6 C4630"), Venue::from("CBOT"));
+
+        let instrument = parse_ib_contract_to_instrument(&details, instrument_id).unwrap();
+
+        let InstrumentAny::OptionContract(option) = instrument else {
+            panic!("expected option contract");
+        };
+
+        assert_eq!(option.strike_price, Price::from("4.63000"));
+        assert_eq!(option.price_increment, Price::from("0.00125"));
+        assert_eq!(option.price_precision, 5);
+    }
+
+    #[rstest]
+    fn test_parse_future_contract_keeps_min_tick_with_price_magnifier() {
+        let details = ContractDetails {
+            contract: Contract {
+                symbol: Symbol::from("ZC"),
+                security_type: SecurityType::Future,
+                exchange: Exchange::from("CBOT"),
+                currency: Currency::from("USD"),
+                local_symbol: "ZCZ6".to_string(),
+                last_trade_date_or_contract_month: "20261214".to_string(),
+                multiplier: "5000".to_string(),
+                ..Default::default()
+            },
+            min_tick: 0.0025,
+            price_magnifier: 100,
+            under_symbol: "ZC".to_string(),
+            ..Default::default()
+        };
+
+        let instrument_id = InstrumentId::new(NautilusSymbol::from("ZCZ6"), Venue::from("CBOT"));
+
+        let instrument = parse_ib_contract_to_instrument(&details, instrument_id).unwrap();
+
+        let InstrumentAny::FuturesContract(future) = instrument else {
+            panic!("expected futures contract");
+        };
+
+        assert_eq!(future.price_increment, Price::from("0.0025"));
+        assert_eq!(future.price_precision, 4);
+        assert_eq!(future.multiplier, Quantity::from(5000));
     }
 }
 
