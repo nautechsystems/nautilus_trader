@@ -590,6 +590,7 @@ impl InteractiveBrokersExecutionClient {
         cmd: SubmitOrderList,
         orders: Vec<OrderAny>,
     ) -> anyhow::Result<()> {
+        self.seed_instruments_from_cache(orders.iter().map(|order| order.instrument_id()));
         let client = self.ib_client.as_ref().context("IB client not connected")?;
 
         let order_tracker = self.orders.clone();
@@ -998,6 +999,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
             return Ok(());
         }
 
+        self.seed_instruments_from_cache([cmd.instrument_id]);
         let client = self.ib_client.as_ref().context("IB client not connected")?;
 
         let orders = self.orders.clone();
@@ -1826,6 +1828,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
             return Ok(());
         }
 
+        self.seed_instruments_from_cache([cmd.instrument_id]);
         let client = self.ib_client.as_ref().context("IB client not connected")?;
 
         let orders = self.orders.clone();
