@@ -33,7 +33,7 @@
 //! book sync tracker, and recovery requests a fresh snapshot to reseed the book
 //! on the new tick grid. The quote arm of `price_change` stays open through the
 //! gap because each payload carries `best_bid` / `best_ask` on the new grid;
-//! `last_quotes` is preserved so the unchanged side's size carries forward. See
+//! `last_quotes` is preserved so sizes carry forward only at matching top prices. See
 //! `docs/integrations/polymarket.md` for the full description.
 //!
 //! A snapshot hash mismatch reuses the same book-delta gate and triggers recovery
@@ -12151,7 +12151,9 @@ mod tests {
     }
 
     #[rstest]
-    fn quote_path_open_during_pending_window() {
+    #[case::matching_ask("0.52", "75.00")]
+    #[case::moved_ask("0.51", "0.00")]
+    fn quote_path_open_during_pending_window(#[case] prior_ask: &str, #[case] ask_size: &str) {
         let asset_id_str = "0xTOKEN8";
         let market = "0xMARKET";
 
@@ -12172,7 +12174,7 @@ mod tests {
         let prior = QuoteTick::new(
             instrument_id,
             Price::from("0.49"),
-            Price::from("0.51"),
+            Price::from(prior_ask),
             Quantity::from("100.00"),
             Quantity::from("75.00"),
             UnixNanos::default(),
@@ -12210,7 +12212,10 @@ mod tests {
             })
             .unwrap_or_else(|| panic!("expected quote event, found: {events:?}"));
         assert_eq!(emitted_quote.bid_size, Quantity::from("20.00"));
-        assert_eq!(emitted_quote.ask_size, Quantity::from("75.00"));
+        assert_eq!(emitted_quote.instrument_id, instrument_id);
+        assert_eq!(emitted_quote.bid_price, Price::from("0.50"));
+        assert_eq!(emitted_quote.ask_price, Price::from("0.52"));
+        assert_eq!(emitted_quote.ask_size, Quantity::from(ask_size));
     }
 
     #[rstest]
@@ -12434,6 +12439,122 @@ mod tests {
                 _ => None,
             })
             .collect()
+    }
+
+    #[rstest]
+    #[case::quotes_only(false)]
+    #[case::with_book(true)]
+    fn price_change_burst_quote_sizes_match_their_levels(#[case] subscribe_book: bool) {
+        let messages: Vec<MarketWsMessage> = serde_json::from_str(include_str!(
+            "../../test_data/ws_market_price_change_crossing_burst.json"
+        ))
+        .unwrap();
+
+        let MarketWsMessage::Book(opening) = &messages[0] else {
+            panic!("capture must start with a book");
+        };
+
+        let asset_id = opening.asset_id;
+        let (ctx, mut data_rx) = make_ws_ctx();
+        let instrument = seed_instrument(
+            &ctx,
+            asset_id.as_str(),
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+        );
+        let instrument_id = instrument.id();
+        ctx.subscriptions.active_quote_subs.insert(instrument_id);
+        if subscribe_book {
+            ctx.subscriptions.active_delta_subs.insert(instrument_id);
+        }
+
+        let mut bids = BTreeMap::new();
+        let mut asks = BTreeMap::new();
+        let mut emitted = 0;
+        let mut unknown = 0;
+
+        for (index, message) in messages.into_iter().enumerate() {
+            update_quote_levels(&message, asset_id, &mut bids, &mut asks);
+
+            handle_market_message(message, &ctx);
+
+            for quote in emitted_quotes(&mut data_rx) {
+                emitted += 1;
+                unknown += usize::from(quote.bid_size.is_zero() || quote.ask_size.is_zero());
+                assert_eq!(quote.instrument_id, instrument_id);
+
+                for (price, size, levels) in [
+                    (quote.bid_price, quote.bid_size, &bids),
+                    (quote.ask_price, quote.ask_size, &asks),
+                ] {
+                    if !size.is_zero() {
+                        assert_eq!(
+                            Some(&size.as_decimal()),
+                            levels.get(&price.as_decimal()),
+                            "quote at event {index}, price {price}",
+                        );
+                    }
+                }
+            }
+        }
+
+        assert_eq!(emitted, 23);
+        assert_eq!(unknown, 2);
+    }
+
+    fn update_quote_levels(
+        message: &MarketWsMessage,
+        asset_id: Ustr,
+        bids: &mut BTreeMap<rust_decimal::Decimal, rust_decimal::Decimal>,
+        asks: &mut BTreeMap<rust_decimal::Decimal, rust_decimal::Decimal>,
+    ) {
+        match message {
+            MarketWsMessage::Book(snapshot) => {
+                *bids = snapshot
+                    .bids
+                    .iter()
+                    .map(|level| {
+                        (
+                            level.price.parse::<rust_decimal::Decimal>().unwrap(),
+                            level.size.parse::<rust_decimal::Decimal>().unwrap(),
+                        )
+                    })
+                    .collect();
+
+                *asks = snapshot
+                    .asks
+                    .iter()
+                    .map(|level| {
+                        (
+                            level.price.parse::<rust_decimal::Decimal>().unwrap(),
+                            level.size.parse::<rust_decimal::Decimal>().unwrap(),
+                        )
+                    })
+                    .collect();
+            }
+            MarketWsMessage::PriceChange(batch) => {
+                for change in batch
+                    .price_changes
+                    .iter()
+                    .filter(|c| c.asset_id == asset_id)
+                {
+                    let levels = match change.side {
+                        PolymarketOrderSide::Buy => &mut *bids,
+                        PolymarketOrderSide::Sell => &mut *asks,
+                    };
+
+                    let price = change.price.parse::<rust_decimal::Decimal>().unwrap();
+                    let size = change.size.parse::<rust_decimal::Decimal>().unwrap();
+
+                    if size.is_zero() {
+                        levels.remove(&price);
+                    } else {
+                        levels.insert(price, size);
+                    }
+                }
+            }
+            _ => panic!("unexpected captured message"),
+        }
     }
 
     // Mainnet events captured read-only on 2026-09-29: a subscribe dump, the updates that

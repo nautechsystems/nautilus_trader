@@ -371,8 +371,9 @@ pub fn parse_quote_from_snapshot(
 /// Returns `None` when either top-of-book side is absent or at the resolution
 /// boundary and `drop_quotes_missing_side` is enabled.
 /// Returns `None` for locked or crossed top-of-book prices.
-/// When `last_quote` is provided the opposite side's size is carried forward
-/// instead of being set to zero, matching the Python adapter's behavior.
+/// Uses the changed level's size when it matches the reported top on that side.
+/// Otherwise, carries each previous size only when its price still matches the
+/// reported top; moved or unknown sides have zero size.
 #[expect(clippy::too_many_arguments)]
 pub fn parse_quote_from_price_change(
     quote: &PolymarketQuote,
@@ -412,39 +413,24 @@ pub fn parse_quote_from_price_change(
     let size = parse_quantity(&quote.size, size_precision)?;
     let zero = || Quantity::zero(size_precision);
 
-    // Only use the changed level's size when it matches the best price,
-    // otherwise preserve the previous quote's size for that side
-    let (bid_size, ask_size) = match quote.side {
-        PolymarketOrderSide::Buy => {
-            let bid_size = if bid_missing {
-                zero()
-            } else if changed_price == bid_price {
-                size
-            } else {
-                last_quote.map_or_else(zero, |q| q.bid_size)
-            };
-            let ask_size = if ask_missing {
-                zero()
-            } else {
-                last_quote.map_or_else(zero, |q| q.ask_size)
-            };
-            (bid_size, ask_size)
-        }
-        PolymarketOrderSide::Sell => {
-            let ask_size = if ask_missing {
-                zero()
-            } else if changed_price == ask_price {
-                size
-            } else {
-                last_quote.map_or_else(zero, |q| q.ask_size)
-            };
-            let bid_size = if bid_missing {
-                zero()
-            } else {
-                last_quote.map_or_else(zero, |q| q.bid_size)
-            };
-            (bid_size, ask_size)
-        }
+    let bid_size = if bid_missing {
+        zero()
+    } else if quote.side == PolymarketOrderSide::Buy && changed_price == bid_price {
+        size
+    } else {
+        last_quote
+            .filter(|q| q.bid_price == bid_price)
+            .map_or_else(zero, |q| q.bid_size)
+    };
+
+    let ask_size = if ask_missing {
+        zero()
+    } else if quote.side == PolymarketOrderSide::Sell && changed_price == ask_price {
+        size
+    } else {
+        last_quote
+            .filter(|q| q.ask_price == ask_price)
+            .map_or_else(zero, |q| q.ask_size)
     };
 
     Ok(Some(QuoteTick::new_checked(
@@ -976,6 +962,75 @@ mod tests {
         .expect("quote should be Some when best_bid/best_ask present");
 
         assert_eq!(quote.instrument_id, instrument.id());
+    }
+
+    #[rstest]
+    #[case::buy_top(PolymarketOrderSide::Buy, "0.50", "0.50", "0.52", "37", "37", "75")]
+    #[case::sell_top(PolymarketOrderSide::Sell, "0.52", "0.50", "0.52", "37", "100", "37")]
+    #[case::buy_deeper(PolymarketOrderSide::Buy, "0.49", "0.50", "0.52", "37", "100", "75")]
+    #[case::sell_deeper(PolymarketOrderSide::Sell, "0.53", "0.50", "0.52", "37", "100", "75")]
+    #[case::buy_removed(PolymarketOrderSide::Buy, "0.50", "0.49", "0.52", "0", "0", "75")]
+    #[case::sell_removed(PolymarketOrderSide::Sell, "0.52", "0.50", "0.53", "0", "100", "0")]
+    #[case::buy_opposite_moved(PolymarketOrderSide::Buy, "0.50", "0.50", "0.53", "37", "37", "0")]
+    #[case::sell_opposite_moved(PolymarketOrderSide::Sell, "0.52", "0.49", "0.52", "37", "0", "37")]
+    fn test_parse_quote_from_price_change_sizes_only_matching_tops(
+        #[case] side: PolymarketOrderSide,
+        #[case] changed_price: &str,
+        #[case] best_bid: &str,
+        #[case] best_ask: &str,
+        #[case] changed_size: &str,
+        #[case] bid_size: &str,
+        #[case] ask_size: &str,
+    ) {
+        let instrument_id = InstrumentId::from("TEST.POLYMARKET");
+
+        let last_quote = QuoteTick::new(
+            instrument_id,
+            Price::from("0.50"),
+            Price::from("0.52"),
+            Quantity::from("100.00"),
+            Quantity::from("75.00"),
+            UnixNanos::from(1_000_000u64),
+            UnixNanos::from(2_000_000u64),
+        );
+
+        let change = PolymarketQuote {
+            asset_id: Ustr::from("TEST"),
+            price: changed_price.to_string(),
+            size: changed_size.to_string(),
+            side,
+            hash: String::new(),
+            best_bid: Some(best_bid.to_string()),
+            best_ask: Some(best_ask.to_string()),
+        };
+
+        let ts_event = UnixNanos::from(3_000_000u64);
+        let ts_init = UnixNanos::from(4_000_000u64);
+        let quote = parse_quote_from_price_change(
+            &change,
+            instrument_id,
+            2,
+            2,
+            Price::from("0.01"),
+            true,
+            Some(&last_quote),
+            ts_event,
+            ts_init,
+        )
+        .unwrap()
+        .unwrap();
+
+        let expected = QuoteTick::new(
+            instrument_id,
+            Price::from(best_bid),
+            Price::from(best_ask),
+            quantity(bid_size, 2),
+            quantity(ask_size, 2),
+            ts_event,
+            ts_init,
+        );
+
+        assert_eq!(quote, expected);
     }
 
     #[rstest]

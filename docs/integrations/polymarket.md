@@ -2003,11 +2003,11 @@ snapshot-derived, price-change-derived, and `best_bid_ask` quotes. Quote, book d
 for the same instrument share one asset-scoped `market` WebSocket subscription. A book delta subscription
 alone does not emit quote ticks. Quote output remains gated by an active quote subscription.
 
-| Venue message  | Trigger                                      | Price source                      | Size source                                                 |
-| -------------- | -------------------------------------------- | --------------------------------- | ----------------------------------------------------------- |
-| `book`         | Book snapshot                                | Snapshot best bid and ask         | Snapshot best-level sizes                                   |
-| `price_change` | Subscribed level update                      | Message `best_bid` and `best_ask` | Changed best-level size; previous quote or zero otherwise   |
-| `best_bid_ask` | Top move with `subscribe_new_markets = true` | Direct message best bid and ask   | Maintained-book top or prior quote, depending on book state |
+| Venue message  | Trigger                                      | Price source                      | Size source                                                           |
+| -------------- | -------------------------------------------- | --------------------------------- | --------------------------------------------------------------------- |
+| `book`         | Book snapshot                                | Snapshot best bid and ask         | Snapshot best-level sizes                                             |
+| `price_change` | Subscribed level update                      | Message `best_bid` and `best_ask` | Changed best-level size; prior size only at matching price, else zero |
+| `best_bid_ask` | Top move with `subscribe_new_markets = true` | Direct message best bid and ask   | Maintained-book top or prior quote, depending on book state           |
 
 ```mermaid
 flowchart LR

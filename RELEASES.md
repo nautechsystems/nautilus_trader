@@ -35,6 +35,7 @@ Released on TBD (UTC).
 - Fixed Lighter order lookups using the wrong client order ID after a collision and restart
 - Fixed empty and incomplete OKX historical bar responses (#5339), thanks for reporting @AlphaTraderK
 - Fixed Polymarket cancels lost while submit responses register venue order IDs
+- Fixed Polymarket `price_change` quotes carrying sizes from different price levels
 - Fixed Polymarket stale book levels after resubscribing with effective deltas enabled
 - Fixed Polymarket loading, request caching, and execution lookup cleanup for open markets past `endDate`
 - Fixed Polymarket market order reconciliation panics after delayed FOK status checks
