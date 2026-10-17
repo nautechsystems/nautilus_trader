@@ -15,6 +15,7 @@ Released on TBD (UTC).
 
 - Fixed HTTP `Referer` headers exposing URL paths and query parameters on cross-origin redirects
 - Fixed Feather run recovery modifying files outside the catalog through path traversal or symlinks
+- Fixed Hyperliquid private WebSocket parse errors exposing account data in logs
 
 ### Fixes
 
