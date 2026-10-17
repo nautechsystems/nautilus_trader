@@ -403,11 +403,12 @@ impl HyperliquidDataClient {
         // a pass that fetched before the bootstrap must not apply over its universe
         let _update_guard = self.instrument_update_lock.lock().await;
 
-        let (instruments, statuses) = self
+        let snapshot = self
             .http_client
             .request_instruments_with_statuses()
             .await
             .context("failed to fetch instruments during bootstrap")?;
+        let instruments = snapshot.instruments;
 
         cache_instruments(
             &instruments,
@@ -416,7 +417,7 @@ impl HyperliquidDataClient {
             &self.http_client,
             &self.ws_client,
         );
-        self.status_cache.store(statuses);
+        self.status_cache.store(snapshot.statuses);
         rebuild_all_dex_asset_ctxs_mapping(&self.http_client, &self.ws_client).await;
 
         log::debug!(
@@ -1800,7 +1801,7 @@ async fn refresh_instruments(
 ) -> anyhow::Result<InstrumentRefresh> {
     let _update_guard = update_lock.lock().await;
 
-    let (fetched, statuses) = http_client
+    let snapshot = http_client
         .request_instruments_with_statuses()
         .await
         .context("failed to fetch Hyperliquid instruments")?;
@@ -1808,7 +1809,7 @@ async fn refresh_instruments(
     // emit statuses after definitions, so a subscriber never sees a status for an
     // instrument it has not received
     let refresh = reconcile_instruments(
-        fetched,
+        snapshot.instruments,
         http_client,
         ws_client,
         instruments_by_id,
@@ -1821,9 +1822,10 @@ async fn refresh_instruments(
     let mut cache = (**status_cache.load()).clone();
     let subs_guard = status_subs.load();
     diff_and_emit_statuses(
-        &statuses,
+        &snapshot.statuses,
         &mut cache,
-        Some(&subs_guard),
+        &snapshot.loaded,
+        &subs_guard,
         data_sender,
         ts,
         ts,
