@@ -38,6 +38,7 @@ use nautilus_hyperliquid::{
     HyperliquidHttpClient,
     common::enums::{HyperliquidEnvironment, HyperliquidInfoRequestType},
     http::{
+        client::HYPERLIQUID_FUNDING_HISTORY_MAX_LIMIT,
         error::Error,
         models::{
             Cloid, HyperliquidExchangeResponse, HyperliquidFills, HyperliquidL2Book, OutcomeMeta,
@@ -51,11 +52,13 @@ use nautilus_model::{
     data::BarType,
     enums::{OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce},
     identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
+    instruments::InstrumentAny,
     reports::FillReport,
     types::{Currency, Money, Price, Quantity},
 };
 use nautilus_network::http::{HttpClient, Method};
 use rstest::rstest;
+use rust_decimal_macros::dec;
 use serde_json::{Value, json};
 
 #[derive(Clone)]
@@ -73,6 +76,8 @@ struct TestServerState {
     historical_orders_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     spot_fails: Arc<std::sync::atomic::AtomicBool>,
     user_abstraction_response: Arc<tokio::sync::Mutex<Option<Value>>>,
+    funding_history_rows: Arc<tokio::sync::Mutex<Vec<Value>>>,
+    funding_history_calls: Arc<AtomicUsize>,
 }
 
 impl Default for TestServerState {
@@ -91,6 +96,8 @@ impl Default for TestServerState {
             historical_orders_response: Arc::new(tokio::sync::Mutex::new(None)),
             spot_fails: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             user_abstraction_response: Arc::new(tokio::sync::Mutex::new(None)),
+            funding_history_rows: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            funding_history_calls: Arc::new(AtomicUsize::new(0)),
         }
     }
 }
@@ -282,6 +289,21 @@ async fn handle_info(State(state): State<TestServerState>, body: axum::body::Byt
         "userAbstraction" => {
             let custom = state.user_abstraction_response.lock().await.clone();
             Json(custom.unwrap_or_else(|| json!("disabled"))).into_response()
+        }
+        "fundingHistory" => {
+            state.funding_history_calls.fetch_add(1, Ordering::Relaxed);
+            let start = request_body["startTime"].as_u64().unwrap_or(0);
+            let end = request_body["endTime"].as_u64().unwrap_or(u64::MAX);
+            let rows: Vec<Value> = state
+                .funding_history_rows
+                .lock()
+                .await
+                .iter()
+                .filter(|row| (start..=end).contains(&row["time"].as_u64().unwrap()))
+                .take(HYPERLIQUID_FUNDING_HISTORY_MAX_LIMIT)
+                .cloned()
+                .collect();
+            Json(json!(rows)).into_response()
         }
         "candleSnapshot" => Json(json!([
             {
@@ -635,6 +657,190 @@ async fn test_request_bars_missing_cached_instrument_returns_bad_request_lookup_
         Error::BadRequest(ref message)
             if message == &InstrumentLookupError::not_found(instrument_id).to_string()
     ));
+}
+
+const FUNDING_BASE_MS: u64 = 1_769_908_800_000;
+const HOUR_MS: u64 = 3_600_000;
+
+fn funding_row(time_ms: u64, rate: &str) -> Value {
+    json!({"coin": "BTC", "fundingRate": rate, "premium": "0.0001", "time": time_ms})
+}
+
+// Venue rows land a few ms after the hour
+fn hourly_funding_rows(count: u64) -> Vec<Value> {
+    (0..count)
+        .map(|i| funding_row(FUNDING_BASE_MS + i * HOUR_MS + 7, "0.0000125"))
+        .collect()
+}
+
+fn timestamp_ms(ms: u64) -> jiff::Timestamp {
+    jiff::Timestamp::from_millisecond(i64::try_from(ms).unwrap()).unwrap()
+}
+
+fn btc_perp_instrument() -> InstrumentAny {
+    perp_instrument("BTC-USD-PERP.HYPERLIQUID", "BTC")
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_funding_rates_parses_signed_rates() {
+    let state = TestServerState::default();
+    *state.funding_history_rows.lock().await = vec![
+        funding_row(FUNDING_BASE_MS + 7, "0.0000125"),
+        funding_row(FUNDING_BASE_MS + HOUR_MS + 134, "-0.0000081"),
+    ];
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_domain_client(&addr);
+    let instrument_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
+
+    let funding_rates = client
+        .request_funding_rates(
+            &btc_perp_instrument(),
+            Some(timestamp_ms(FUNDING_BASE_MS)),
+            Some(timestamp_ms(FUNDING_BASE_MS + 2 * HOUR_MS)),
+            None,
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(state.funding_history_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(funding_rates.len(), 2);
+    assert_eq!(funding_rates[0].instrument_id, instrument_id);
+    assert_eq!(funding_rates[0].rate, dec!(0.0000125));
+    assert_eq!(funding_rates[0].interval, Some(60));
+    assert_eq!(
+        funding_rates[0].ts_event.as_u64(),
+        (FUNDING_BASE_MS + 7) * 1_000_000
+    );
+    assert_eq!(funding_rates[1].rate, dec!(-0.0000081));
+    assert_eq!(
+        funding_rates[1].ts_event.as_u64(),
+        (FUNDING_BASE_MS + HOUR_MS + 134) * 1_000_000
+    );
+
+    let request_body = state.last_request_body.lock().await.clone().unwrap();
+    assert_eq!(request_body["type"], "fundingHistory");
+    assert_eq!(request_body["coin"], "BTC");
+    assert_eq!(request_body["startTime"], FUNDING_BASE_MS);
+    assert_eq!(request_body["endTime"], FUNDING_BASE_MS + 2 * HOUR_MS);
+}
+
+#[rstest]
+#[case::two_full_pages_and_short_page(1_100, 3)]
+#[case::full_final_page_then_empty_page(1_000, 3)]
+#[case::single_short_page(10, 1)]
+#[tokio::test]
+async fn test_request_funding_rates_paginates_range(
+    #[case] row_count: u64,
+    #[case] expected_calls: usize,
+) {
+    let state = TestServerState::default();
+    *state.funding_history_rows.lock().await = hourly_funding_rows(row_count);
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_domain_client(&addr);
+
+    let funding_rates = client
+        .request_funding_rates(
+            &btc_perp_instrument(),
+            Some(timestamp_ms(FUNDING_BASE_MS)),
+            Some(timestamp_ms(FUNDING_BASE_MS + row_count * HOUR_MS)),
+            None,
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        state.funding_history_calls.load(Ordering::Relaxed),
+        expected_calls
+    );
+    assert_eq!(funding_rates.len() as u64, row_count);
+    assert!(
+        funding_rates
+            .windows(2)
+            .all(|pair| pair[0].ts_event < pair[1].ts_event)
+    );
+    assert_eq!(
+        funding_rates.last().unwrap().ts_event.as_u64(),
+        (FUNDING_BASE_MS + (row_count - 1) * HOUR_MS + 7) * 1_000_000
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_funding_rates_with_start_stops_at_limit() {
+    let state = TestServerState::default();
+    *state.funding_history_rows.lock().await = hourly_funding_rows(1_100);
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_domain_client(&addr);
+
+    let funding_rates = client
+        .request_funding_rates(
+            &btc_perp_instrument(),
+            Some(timestamp_ms(FUNDING_BASE_MS)),
+            Some(timestamp_ms(FUNDING_BASE_MS + 1_100 * HOUR_MS)),
+            Some(2),
+        )
+        .await
+        .unwrap();
+
+    // The limit is reached on the first page, so no further pages are fetched
+    assert_eq!(state.funding_history_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(funding_rates.len(), 2);
+    assert_eq!(
+        funding_rates[0].ts_event.as_u64(),
+        (FUNDING_BASE_MS + 7) * 1_000_000
+    );
+    assert_eq!(
+        funding_rates[1].ts_event.as_u64(),
+        (FUNDING_BASE_MS + HOUR_MS + 7) * 1_000_000
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_funding_rates_without_start_returns_latest_limit() {
+    let state = TestServerState::default();
+    *state.funding_history_rows.lock().await = hourly_funding_rows(12);
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_domain_client(&addr);
+    let end_ms = FUNDING_BASE_MS + 10 * HOUR_MS + 500;
+
+    let funding_rates = client
+        .request_funding_rates(
+            &btc_perp_instrument(),
+            None,
+            Some(timestamp_ms(end_ms)),
+            Some(2),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(funding_rates.len(), 2);
+    assert_eq!(
+        funding_rates[0].ts_event.as_u64(),
+        (FUNDING_BASE_MS + 9 * HOUR_MS + 7) * 1_000_000
+    );
+    assert_eq!(
+        funding_rates[1].ts_event.as_u64(),
+        (FUNDING_BASE_MS + 10 * HOUR_MS + 7) * 1_000_000
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_funding_rates_rejects_start_not_before_end() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_domain_client(&addr);
+    let ts = timestamp_ms(FUNDING_BASE_MS);
+
+    let err = client
+        .request_funding_rates(&btc_perp_instrument(), Some(ts), Some(ts), None)
+        .await
+        .unwrap_err();
+
+    assert!(matches!(err, Error::BadRequest(_)));
+    assert_eq!(state.funding_history_calls.load(Ordering::Relaxed), 0);
 }
 
 #[rstest]
@@ -1979,10 +2185,14 @@ fn cache_reconciliation_perps(client: &HyperliquidHttpClient) {
 }
 
 fn cache_perp_instrument(client: &HyperliquidHttpClient, instrument_id: &str, symbol: &str) {
+    client.cache_instrument(&perp_instrument(instrument_id, symbol));
+}
+
+fn perp_instrument(instrument_id: &str, symbol: &str) -> InstrumentAny {
     use nautilus_model::{
         enums::CurrencyType,
         identifiers::{InstrumentId, Symbol},
-        instruments::{CryptoPerpetual, InstrumentAny},
+        instruments::CryptoPerpetual,
         types::{Currency, Money, Price, Quantity},
     };
 
@@ -2008,7 +2218,7 @@ fn cache_perp_instrument(client: &HyperliquidHttpClient, instrument_id: &str, sy
         .build()
         .unwrap();
 
-    client.cache_instrument(&InstrumentAny::CryptoPerpetual(instrument));
+    InstrumentAny::CryptoPerpetual(instrument)
 }
 
 fn open_order(coin: &str, oid: u64, price: &str, size: &str) -> Value {
