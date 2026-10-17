@@ -694,6 +694,9 @@ When its provider has not loaded the instrument, for example one a data client l
 execution client was created, the client takes the contract and magnifier from the instrument in
 the cache, or else requests the contract details from IB and waits up to `request_timeout` for
 them. It denies the order, or rejects the modify, when neither supplies the magnifier in time.
+An order canceled while it waits, singly or by a cancel-all, is canceled in the client and never
+reaches IB. Canceling one order of a waiting order list stops the whole list, and the client
+denies the list's other orders.
 
 #### Upgrading with magnified contracts
 
