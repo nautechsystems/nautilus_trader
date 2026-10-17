@@ -251,7 +251,7 @@ fn execution_report_min_block_length(version: u16) -> usize {
 ///
 /// Returns an error if the buffer is too short, the template ID is wrong, the schema ID does not
 /// match, balances framing is malformed, or a balance mantissa and exponent cannot be converted to
-/// a decimal.
+/// a decimal. A balance conversion error rejects the whole message; no partial balances are returned.
 pub fn decode_account_position(data: &[u8]) -> anyhow::Result<BinanceSpotAccountPositionMsg> {
     if data.len() < HEADER_LEN {
         anyhow::bail!(
