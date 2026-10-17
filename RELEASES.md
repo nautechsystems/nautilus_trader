@@ -32,6 +32,7 @@ Released on TBD (UTC).
 - Fixed Lighter funding rates 100x too high and missing the live interval (#5338), thanks @dxwil
 - Fixed Lighter order lookups using the wrong client order ID after a collision and restart
 - Fixed Polymarket cancels lost while submit responses register venue order IDs
+- Fixed Polymarket stale book levels after resubscribing with effective deltas enabled
 - Fixed Polymarket loading, request caching, and execution lookup cleanup for open markets past `endDate`
 - Fixed Polymarket market order reconciliation panics after delayed FOK status checks
 - Fixed Polymarket market data subscriptions stalling after transient initial WebSocket connection failures

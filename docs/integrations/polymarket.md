@@ -2135,8 +2135,9 @@ snapshot batches (see [Data client options](#data-client-options)):
 - A full book snapshot with prior local state emits only net level changes: `ADD` for new levels,
   `UPDATE` for resized levels, and `DELETE` with the last known size for removed levels. No-op
   snapshots emit nothing, and the final record carries `F_LAST`.
-- Without prior state, such as after a [tick size change](#tick-size-change-handling), the snapshot
-  passes through unchanged to seed the new book epoch.
+- Without prior state, including on initial subscription, after unsubscribing and subscribing again,
+  or after a [tick size change](#tick-size-change-handling), the snapshot passes through unchanged
+  with `CLEAR` and `F_SNAPSHOT` to seed the new book epoch and remove stale consumer levels.
 - Incremental `price_change` batches follow [price change bursts](#price-change-bursts) handling
   and update the local comparison state.
 - When book deltas are subscribed, the maintained comparison book can supply matching sizes to

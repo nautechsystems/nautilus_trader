@@ -413,7 +413,9 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                     meta.size_precision,
                     ts_init,
                 ) {
-                    Ok(deltas) => match comparison_book(ctx, instrument_id) {
+                    Ok(deltas) => match comparison_book(ctx, instrument_id)
+                        .filter(|book| book.update_count > 0)
+                    {
                         Some(book) => {
                             let mut scratch = book.clone();
                             drop(book);
@@ -12892,7 +12894,7 @@ mod tests {
     }
 
     #[rstest]
-    fn effective_deltas_first_snapshot_emits_adds_only() {
+    fn effective_deltas_first_snapshot_preserves_clear() {
         let asset_id_str = "0xTOKEN-EFF1";
         let market = "0xMARKET";
 
@@ -12905,96 +12907,49 @@ mod tests {
             Quantity::from("0.01"),
         );
         let instrument_id = inst.id();
-        ctx.subscriptions.active_delta_subs.insert(instrument_id);
-        ctx.subscriptions.order_books.insert(
-            instrument_id,
-            OrderBook::new(instrument_id, BookType::L2_MBP),
-        );
+        ctx.subscriptions
+            .add_delta_subscription_intent(instrument_id, true);
 
         let snap = make_snapshot(
             market,
             asset_id_str,
             &[("0.45", "5"), ("0.49", "10"), ("0.51", "8"), ("0.55", "12")],
         );
-        handle_market_message(snap, &ctx);
+        handle_market_message(snap.clone(), &ctx);
 
         let batches = collect_delta_batches(&mut data_rx);
         assert_eq!(batches.len(), 1);
 
-        let batch = &batches[0];
-        let ts_event = UnixNanos::from(1_700_000_000_000_000_000_u64);
-        let ts_init = batch.ts_init;
-        let actual: Vec<_> = batch
-            .deltas
-            .iter()
-            .map(|delta| {
-                (
-                    delta.instrument_id,
-                    delta.action,
-                    delta.order.side,
-                    delta.order.price,
-                    delta.order.size,
-                    delta.order.order_id,
-                    delta.flags,
-                    delta.sequence,
-                    delta.ts_event,
-                    delta.ts_init,
-                )
-            })
-            .collect();
+        let MarketWsMessage::Book(snap) = snap else {
+            panic!("expected book snapshot");
+        };
+
+        let expected = parse_book_snapshot(&snap, instrument_id, 2, 2, batches[0].ts_init).unwrap();
+        assert_eq!(batches[0].instrument_id, expected.instrument_id);
+
+        let fields = |delta: &OrderBookDelta| {
+            (
+                delta.instrument_id,
+                delta.action,
+                delta.order.side,
+                delta.order.price,
+                delta.order.size,
+                delta.order.order_id,
+                delta.flags,
+                delta.sequence,
+                delta.ts_event,
+                delta.ts_init,
+            )
+        };
+
         assert_eq!(
-            actual,
-            vec![
-                (
-                    instrument_id,
-                    BookAction::Add,
-                    Some(OrderSide::Buy),
-                    Price::from("0.49"),
-                    Quantity::from("10.00"),
-                    0,
-                    0,
-                    0,
-                    ts_event,
-                    ts_init,
-                ),
-                (
-                    instrument_id,
-                    BookAction::Add,
-                    Some(OrderSide::Buy),
-                    Price::from("0.45"),
-                    Quantity::from("5.00"),
-                    0,
-                    0,
-                    0,
-                    ts_event,
-                    ts_init,
-                ),
-                (
-                    instrument_id,
-                    BookAction::Add,
-                    Some(OrderSide::Sell),
-                    Price::from("0.51"),
-                    Quantity::from("8.00"),
-                    0,
-                    0,
-                    0,
-                    ts_event,
-                    ts_init,
-                ),
-                (
-                    instrument_id,
-                    BookAction::Add,
-                    Some(OrderSide::Sell),
-                    Price::from("0.55"),
-                    Quantity::from("12.00"),
-                    0,
-                    RecordFlag::F_LAST as u8,
-                    0,
-                    ts_event,
-                    ts_init,
-                ),
-            ]
+            batches[0].deltas.iter().map(fields).collect::<Vec<_>>(),
+            expected.deltas.iter().map(fields).collect::<Vec<_>>()
         );
+        assert_eq!(batches[0].flags, expected.flags);
+        assert_eq!(batches[0].sequence, expected.sequence);
+        assert_eq!(batches[0].ts_event, expected.ts_event);
+        assert_eq!(batches[0].ts_init, expected.ts_init);
 
         let book = ctx
             .subscriptions
@@ -13003,6 +12958,74 @@ mod tests {
             .expect("book entry");
         assert_eq!(book.best_bid_price(), Some(Price::from("0.49")));
         assert_eq!(book.best_ask_price(), Some(Price::from("0.51")));
+    }
+
+    #[rstest]
+    #[case::changed(&[("0.40", "7"), ("0.60", "11")])]
+    #[case::empty(&[])]
+    fn effective_deltas_resubscribe_replaces_consumer_book(#[case] prices: &[(&str, &str)]) {
+        let asset_id_str = "0xTOKEN-EFF-RESUB";
+        let market = "0xMARKET";
+        let (mut ctx, mut data_rx) = make_ws_ctx();
+        ctx.compute_effective_deltas = true;
+        let inst = seed_instrument(
+            &ctx,
+            asset_id_str,
+            Price::from("0.01"),
+            Quantity::from("0.01"),
+        );
+        let instrument_id = inst.id();
+        let mut consumer = OrderBook::new(instrument_id, BookType::L2_MBP);
+        ctx.subscriptions
+            .add_delta_subscription_intent(instrument_id, true);
+        handle_market_message(
+            make_snapshot(market, asset_id_str, &[("0.49", "5"), ("0.51", "9")]),
+            &ctx,
+        );
+        let first = collect_delta_batches(&mut data_rx);
+        assert_eq!(first.len(), 1);
+        consumer.apply_deltas(&first[0]).unwrap();
+        assert_eq!(consumer.best_bid_price(), Some(Price::from("0.49")));
+        assert_eq!(consumer.best_ask_price(), Some(Price::from("0.51")));
+
+        ctx.subscriptions.unsubscribe(
+            instrument_id,
+            super::super::subscriptions::SubscriptionKind::Deltas,
+        );
+        ctx.subscriptions
+            .add_delta_subscription_intent(instrument_id, true);
+        handle_market_message(make_snapshot(market, asset_id_str, prices), &ctx);
+        let second = collect_delta_batches(&mut data_rx);
+        assert_eq!(second.len(), 1);
+        consumer.apply_deltas(&second[0]).unwrap();
+
+        let expected = |levels: &[(&str, &str)]| {
+            levels
+                .iter()
+                .map(|(price, size)| {
+                    (
+                        price.parse::<rust_decimal::Decimal>().unwrap(),
+                        size.parse::<rust_decimal::Decimal>().unwrap(),
+                    )
+                })
+                .collect::<indexmap::IndexMap<_, _>>()
+        };
+
+        let (bids, asks) = prices.split_at(prices.len() / 2);
+        let local = ctx.subscriptions.order_books.get(&instrument_id).unwrap();
+        assert_eq!(consumer.bids_as_map(None), expected(bids));
+        assert_eq!(consumer.asks_as_map(None), expected(asks));
+        assert_eq!(local.bids_as_map(None), consumer.bids_as_map(None));
+        assert_eq!(local.asks_as_map(None), consumer.asks_as_map(None));
+        assert_eq!(second[0].deltas[0].action, BookAction::Clear);
+        assert_eq!(
+            second[0].deltas[0].flags & RecordFlag::F_SNAPSHOT as u8,
+            RecordFlag::F_SNAPSHOT as u8
+        );
+        assert_eq!(
+            second[0].deltas.last().unwrap().flags,
+            RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8
+        );
     }
 
     #[rstest]
