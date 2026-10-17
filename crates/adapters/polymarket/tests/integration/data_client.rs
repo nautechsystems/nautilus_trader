@@ -24,7 +24,7 @@ use std::{
     path::PathBuf,
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicU16, AtomicUsize, Ordering},
     },
     time::Duration,
 };
@@ -134,6 +134,8 @@ struct TestServerState {
     trades_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     trades_request_count: Arc<AtomicUsize>,
     trades_error: Arc<AtomicBool>,
+    market_upgrade_status: Arc<AtomicU16>,
+    market_upgrade_attempts: Arc<AtomicUsize>,
     market_payloads: Arc<tokio::sync::Mutex<Vec<Value>>>,
     polybolt_payloads: Arc<tokio::sync::Mutex<Vec<Value>>>,
 }
@@ -194,6 +196,14 @@ async fn handle_market_upgrade(
     ws: WebSocketUpgrade,
     State(state): State<TestServerState>,
 ) -> Response {
+    state
+        .market_upgrade_attempts
+        .fetch_add(1, Ordering::Relaxed);
+    let status = state.market_upgrade_status.swap(0, Ordering::Relaxed);
+    if status != 0 {
+        return StatusCode::from_u16(status).unwrap().into_response();
+    }
+
     ws.on_upgrade(move |socket| handle_market_socket(socket, state))
 }
 
@@ -384,6 +394,65 @@ async fn test_connect_without_new_markets_does_not_open_market_socket() {
         "idle connect must not open a market socket, was {event:?}"
     );
     assert!(registry.handle(*POLYMARKET_CLIENT_ID, endpoint).is_none());
+
+    client.disconnect().await.expect("disconnect data client");
+}
+
+#[rstest]
+#[case::rate_limited(StatusCode::TOO_MANY_REQUESTS)]
+#[case::unavailable(StatusCode::SERVICE_UNAVAILABLE)]
+#[tokio::test]
+async fn test_subscribe_retries_initial_market_connection(#[case] status: StatusCode) {
+    let state = TestServerState::default();
+    *state.gamma_response.lock().await = Some(json!([gamma_market_request_fixture()]));
+    state
+        .market_upgrade_status
+        .store(status.as_u16(), Ordering::Relaxed);
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut data_rx) = create_test_data_client(addr);
+
+    let request_id = UUID4::new();
+    client
+        .request_instrument(RequestInstrument::new(
+            yes_instrument_id(),
+            None,
+            None,
+            Some(*POLYMARKET_CLIENT_ID),
+            request_id,
+            UnixNanos::default(),
+            None,
+        ))
+        .expect("prime instrument cache");
+    let _ =
+        collect_data_events_until_response(&mut data_rx, request_id, Duration::from_secs(5)).await;
+
+    client.connect().await.expect("connect data client");
+    assert_eq!(state.market_upgrade_attempts.load(Ordering::Relaxed), 0);
+
+    let subscription = SubscribeQuotes::new(
+        yes_instrument_id(),
+        Some(*POLYMARKET_CLIENT_ID),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    client
+        .subscribe_quotes(subscription)
+        .expect("subscribe quotes");
+
+    wait_for_market_payload_count(&state, 1, false, Duration::from_secs(5)).await;
+
+    assert_eq!(state.market_upgrade_attempts.load(Ordering::Relaxed), 2);
+    assert_eq!(
+        *state.market_payloads.lock().await,
+        vec![json!({
+            "assets_ids": [TEST_TOKEN_ID_YES],
+            "type": "market",
+            "initial_dump": true,
+        })],
+    );
 
     client.disconnect().await.expect("disconnect data client");
 }

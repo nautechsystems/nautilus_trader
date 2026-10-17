@@ -15,9 +15,13 @@
 
 //! Provides the WebSocket client for the Polymarket CLOB API.
 
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, AtomicU8, Ordering},
+use std::{
+    num::NonZeroU32,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicU8, Ordering},
+    },
+    time::Duration,
 };
 
 use nautilus_live::{
@@ -30,8 +34,8 @@ use nautilus_network::{
     http::create_standard_nautilus_headers,
     mode::ConnectionMode,
     websocket::{
-        AuthTracker, SubscriptionState, TransportBackend, WebSocketClient, WebSocketConfig,
-        channel_epoch_message_handler, proxy::ProxyUrl,
+        AuthTracker, InitialConnectRetryPolicy, SubscriptionState, TransportBackend,
+        WebSocketClient, WebSocketConfig, channel_epoch_message_handler, proxy::ProxyUrl,
     },
 };
 
@@ -289,6 +293,9 @@ impl PolymarketWebSocketClient {
         let client = WebSocketClient::epoch_builder()
             .config(cfg)
             .epoch_handler(message_handler)
+            .maybe_initial_connect_retry_policy(
+                (self.channel == WsChannel::Market).then(Self::initial_connect_retry_policy),
+            )
             .maybe_state_sink(
                 self.socket_control
                     .as_ref()
@@ -411,6 +418,16 @@ impl PolymarketWebSocketClient {
             anyhow::bail!("Failed to start Polymarket WebSocket handler task: {e}");
         }
         Ok(())
+    }
+
+    fn initial_connect_retry_policy() -> InitialConnectRetryPolicy {
+        InitialConnectRetryPolicy {
+            max_attempts: NonZeroU32::new(5).expect("initial connect attempts must be non-zero"),
+            delay_initial: Duration::from_millis(500),
+            delay_max: Duration::from_secs(5),
+            backoff_factor: 2.0,
+            jitter_ms: 250,
+        }
     }
 
     fn websocket_config(&self) -> WebSocketConfig {

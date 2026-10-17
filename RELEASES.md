@@ -21,6 +21,7 @@ Released on TBD (UTC).
 - Fixed Hyperliquid leverage and isolated-margin request serialization and signing
 - Fixed Polymarket loading, request caching, and execution lookup cleanup for open markets past `endDate`
 - Fixed Polymarket market order reconciliation panics after delayed FOK status checks
+- Fixed Polymarket market data subscriptions stalling after transient initial WebSocket connection failures
 - Fixed Polymarket taker rates derived from CLOB `base_fee` when Gamma rates are missing or zero
 
 ### Internal Improvements
