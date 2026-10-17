@@ -5069,8 +5069,15 @@ async fn test_http_request_order_status_reports_preserves_attached_tp_sl_child_i
 }
 
 #[rstest]
+#[case(None, OrderSide::Sell, "net")]
+#[case(Some(PositionSide::Long), OrderSide::Sell, "long")]
+#[case(Some(PositionSide::Short), OrderSide::Buy, "short")]
 #[tokio::test]
-async fn test_http_place_algo_order_with_close_fraction_uses_conditional_close_order_payload() {
+async fn test_http_place_algo_order_with_close_fraction_uses_conditional_close_order_payload(
+    #[case] position_side: Option<PositionSide>,
+    #[case] order_side: OrderSide,
+    #[case] expected_side: &str,
+) {
     let state = Arc::new(TestServerState::default());
     let addr = start_test_server(state.clone()).await;
     let base_url = format!("http://{addr}");
@@ -5098,13 +5105,14 @@ async fn test_http_place_algo_order_with_close_fraction_uses_conditional_close_o
             InstrumentId::from("BTC-USDT-SWAP.OKX"),
             OKXTradeMode::Cross,
             ClientOrderId::from("O-close-frac"),
-            OrderSide::Sell,
+            order_side,
             OrderType::StopMarket,
             Quantity::from("0.01"),
             Some(Price::from("50000")),
             Some(TriggerType::Default),
             None,
             None,
+            position_side,
             Some("1".to_string()),
             None,
             None,
@@ -5124,8 +5132,19 @@ async fn test_http_place_algo_order_with_close_fraction_uses_conditional_close_o
 
     assert_eq!(body["ordType"], "conditional");
     assert_eq!(body["closeFraction"], "1");
-    assert_eq!(body["reduceOnly"], true);
-    assert_eq!(body["posSide"], "net");
+    assert_eq!(
+        body.get("reduceOnly"),
+        position_side.is_none().then_some(&json!(true))
+    );
+    assert_eq!(body["posSide"], expected_side);
+    assert_eq!(
+        body["side"],
+        if order_side == OrderSide::Buy {
+            "buy"
+        } else {
+            "sell"
+        }
+    );
     assert_eq!(body["slTriggerPx"], "50000");
     assert_eq!(body["slOrdPx"], "-1");
     assert_eq!(body["slTriggerPxType"], "last");
@@ -5902,6 +5921,81 @@ async fn test_http_get_positions_returns_data() {
 }
 
 #[rstest]
+#[case("5.00", "2.00", None, "30000")]
+#[case("0.00", "2.00", Some("2.00"), "31000")]
+#[case("5.00", "0.00", Some("5.00"), "30000")]
+#[case("0.00", "0.00", Some("0.00"), "30000")]
+#[tokio::test]
+async fn test_http_position_reports_reject_mixed_margin_legs(
+    #[case] isolated_qty: &str,
+    #[case] cross_qty: &str,
+    #[case] expected_qty: Option<&str>,
+    #[case] expected_price: &str,
+) {
+    let state = Arc::new(TestServerState::default());
+    let mut payload = load_test_data("http_get_positions_long_short.json");
+    let mut isolated = payload["data"][0].clone();
+    isolated["pos"] = serde_json::json!(isolated_qty);
+    let mut cross = isolated.clone();
+    cross["pos"] = serde_json::json!(cross_qty);
+    cross["mgnMode"] = serde_json::json!("cross");
+    cross["posId"] = serde_json::json!("98765");
+    cross["avgPx"] = serde_json::json!("31000");
+    payload["data"] = serde_json::json!([isolated, cross]);
+    *state.positions_response.lock().await = Some(payload);
+    let address = start_test_server(state).await;
+    let client = OKXHttpClient::with_credentials(
+        Some("test_key".to_string()),
+        Some("test_secret".to_string()),
+        Some("test_passphrase".to_string()),
+        Some(format!("http://{address}")),
+        5,
+        0,
+        1,
+        1,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    for instrument in load_swap_instruments_any() {
+        client.cache_instrument(instrument);
+    }
+
+    let account_id = AccountId::from("OKX-001");
+    let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
+    let result = client
+        .request_position_status_reports(
+            account_id,
+            Some(OKXInstrumentType::Swap),
+            Some(instrument_id),
+        )
+        .await;
+
+    if let Some(qty) = expected_qty {
+        let reports = result.unwrap();
+        assert_eq!(reports.len(), 1);
+        assert_eq!(reports[0].account_id, account_id);
+        assert_eq!(reports[0].instrument_id, instrument_id);
+        assert_eq!(
+            reports[0].venue_position_id,
+            Some(PositionId::from("BTC-USDT-SWAP.OKX-LONG"))
+        );
+        assert_eq!(reports[0].position_side, PositionSide::Long);
+        assert_eq!(reports[0].quantity, Quantity::from(qty));
+        assert_eq!(
+            reports[0].avg_px_open,
+            Some(expected_price.parse::<Decimal>().unwrap())
+        );
+    } else {
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Multiple OKX positions map to BTC-USDT-SWAP.OKX-LONG; mixed margin modes are not supported"
+        );
+    }
+}
+
+#[rstest]
 #[tokio::test]
 async fn test_http_request_position_status_reports_preserves_long_short_legs() {
     let state = Arc::new(TestServerState::default());
@@ -5945,7 +6039,7 @@ async fn test_http_request_position_status_reports_preserves_long_short_legs() {
     );
     assert_eq!(
         reports[0].venue_position_id,
-        Some(PositionId::new("12345-LONG")),
+        Some(PositionId::new("BTC-USDT-SWAP.OKX-LONG")),
     );
     assert_eq!(
         reports[0].avg_px_open,
@@ -5966,7 +6060,7 @@ async fn test_http_request_position_status_reports_preserves_long_short_legs() {
     );
     assert_eq!(
         reports[1].venue_position_id,
-        Some(PositionId::new("67890-SHORT")),
+        Some(PositionId::new("BTC-USDT-SWAP.OKX-SHORT")),
     );
     assert_eq!(
         reports[1].avg_px_open,
@@ -8086,6 +8180,7 @@ async fn test_http_place_algo_order_returns_error_on_nonzero_scode() {
             Quantity::from("0.01"),
             Some(Price::from("50000")),
             Some(TriggerType::Default),
+            None,
             None,
             None,
             None,

@@ -127,8 +127,8 @@ use crate::{
         credential::Credential,
         enums::{
             OKXAlgoOrderStatus, OKXAlgoOrderType, OKXEnvironment, OKXInstrumentStatus,
-            OKXInstrumentType, OKXOrderStatus, OKXOrderType, OKXPositionMode, OKXPositionSide,
-            OKXSide, OKXTargetCurrency, OKXTradeMode, OKXTriggerType,
+            OKXInstrumentType, OKXMarginMode, OKXOrderStatus, OKXOrderType, OKXPositionMode,
+            OKXPositionSide, OKXSide, OKXTargetCurrency, OKXTradeMode, OKXTriggerType,
             conditional_order_to_algo_type,
         },
         models::OKXInstrument,
@@ -545,6 +545,32 @@ const MAX_RECONCILIATION_PAGES: usize = 50;
 pub(crate) struct ReportInstrumentScope<'a> {
     pub instrument_types: &'a [OKXInstrumentType],
     pub load_spreads: bool,
+    pub margin_mode: Option<OKXMarginMode>,
+}
+
+impl ReportInstrumentScope<'_> {
+    pub(crate) fn validate_position_margin(&self, position: &OKXPosition) -> anyhow::Result<()> {
+        if let Some(expected) = self.margin_mode
+            && matches!(
+                position.inst_type,
+                OKXInstrumentType::Swap | OKXInstrumentType::Futures
+            )
+            && matches!(
+                position.pos_side,
+                OKXPositionSide::Long | OKXPositionSide::Short
+            )
+            && position.mgn_mode != expected
+            && !Decimal::from_str(&position.pos)?.is_zero()
+        {
+            anyhow::bail!(
+                "OKX long/short position {} uses margin mode {}, expected {expected}; mixed margin modes are not supported",
+                position.inst_id,
+                position.mgn_mode,
+            );
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
@@ -5369,7 +5395,8 @@ impl OKXHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the request fails.
+    /// Returns an error if the request fails, a position cannot be parsed, or multiple
+    /// nonzero positions map to the same hedge leg.
     ///
     /// # References
     ///
@@ -5425,7 +5452,8 @@ impl OKXHttpClient {
             .map_err(|e| anyhow::anyhow!(e))?;
 
         let ts_init = self.generate_ts_init();
-        let mut reports = Vec::with_capacity(resp.len());
+        let mut reports: Vec<PositionStatusReport> = Vec::with_capacity(resp.len());
+        let mut position_ids = AHashMap::new();
 
         for position in resp {
             let inst = match self.resolve_report_instrument(
@@ -5445,6 +5473,10 @@ impl OKXHttpClient {
                 }
             };
 
+            if let Some(scope) = scope {
+                scope.validate_position_margin(&position)?;
+            }
+
             let report = parse_position_status_report(
                 &position,
                 account_id,
@@ -5458,6 +5490,27 @@ impl OKXHttpClient {
                     position.inst_id
                 )
             })?;
+
+            if let Some(position_id) = report.venue_position_id {
+                if let Some(index) = position_ids.get(&position_id).copied() {
+                    if report.quantity.is_zero() {
+                        continue;
+                    }
+
+                    let existing: &mut PositionStatusReport = &mut reports[index];
+                    if existing.quantity.is_zero() {
+                        *existing = report;
+                        continue;
+                    }
+
+                    anyhow::bail!(
+                        "Multiple OKX positions map to {position_id}; mixed margin modes are not supported"
+                    );
+                }
+
+                position_ids.insert(position_id, reports.len());
+            }
+
             reports.push(report);
         }
 
@@ -6310,7 +6363,7 @@ impl OKXHttpClient {
             ));
         }
 
-        let reduce_only = if reduce_only == Some(true) {
+        let reduce_only = if reduce_only == Some(true) || position_side.is_some() {
             okx_reduce_only_wire_value(
                 instrument_type,
                 td_mode,
@@ -6447,6 +6500,7 @@ impl OKXHttpClient {
         trigger_type: Option<TriggerType>,
         limit_price: Option<Price>,
         reduce_only: Option<bool>,
+        position_side: Option<PositionSide>,
         close_fraction: Option<String>,
         callback_ratio: Option<String>,
         callback_spread: Option<String>,
@@ -6545,7 +6599,7 @@ impl OKXHttpClient {
                 tp_trigger_px,
                 tp_ord_px,
                 tp_trigger_px_type,
-                Some(OKXPositionSide::Net),
+                Some(position_side.map_or(OKXPositionSide::Net, Into::into)),
                 Some(true),
             )
         } else {
@@ -6573,9 +6627,22 @@ impl OKXHttpClient {
                 None,
                 None,
                 None,
-                None,
+                position_side.map(Into::into),
                 reduce_only,
             )
+        };
+
+        let reduce_only = if position_side.is_some() {
+            okx_reduce_only_wire_value(
+                okx_instrument_type_from_symbol(instrument_id.symbol.as_str()),
+                td_mode,
+                order_side,
+                position_side,
+                reduce_only,
+            )
+            .map_err(OKXHttpError::ValidationError)?
+        } else {
+            reduce_only
         };
 
         let request = OKXPlaceAlgoOrderRequest {

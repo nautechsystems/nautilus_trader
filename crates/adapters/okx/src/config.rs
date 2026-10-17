@@ -17,7 +17,7 @@
 
 use nautilus_core::string::secret::SecretString;
 use nautilus_live::book::DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS;
-use nautilus_model::identifiers::AccountId;
+use nautilus_model::{enums::OmsType, identifiers::AccountId};
 use nautilus_network::websocket::TransportBackend;
 use serde::{Deserialize, Serialize};
 
@@ -206,6 +206,9 @@ pub struct OKXExecutionClientConfig {
     /// The account ID for the client.
     #[builder(default = AccountId::from("OKX-001"))]
     pub account_id: AccountId,
+    /// Optional OMS override for the client.
+    /// Defaults to netting with any derivative instrument type, otherwise hedging.
+    pub oms_type: Option<OmsType>,
     /// Optional API key for authenticated endpoints.
     pub api_key: Option<SecretString>,
     /// Optional API secret for authenticated endpoints.
@@ -275,6 +278,7 @@ pub struct OKXExecutionClientConfig {
 #[cfg(feature = "python")]
 nautilus_core::impl_pyo3_config_getters!(OKXExecutionClientConfig {
     account_id: AccountId,
+    oms_type: Option<OmsType>,
     instrument_types: Vec<OKXInstrumentType>,
     environment: OKXEnvironment,
     region: OKXRegion,

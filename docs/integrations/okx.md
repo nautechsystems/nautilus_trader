@@ -791,6 +791,49 @@ modes. In net mode, it derives the position side from the signed quantity. In lo
 `posSide` reported by OKX.
 :::
 
+When configured for `SWAP` or `FUTURES`, the execution client reads the account position mode on each
+connection. For long/short accounts, set `oms_type=OmsType.HEDGING` on `OKXExecutionClientConfig` and use
+a hedging OMS in your strategies. The adapter logs a warning when the client OMS differs from the account
+position mode. Without an override, the client uses netting if any derivative instrument type is
+configured, otherwise hedging.
+The override applies to every product handled by the client. Use separate clients when options need
+netting alongside futures or swaps in long/short mode.
+
+For futures and swaps in long/short mode, the order side and `reduce_only` flag select the leg:
+
+| Order side | `reduce_only` | OKX `posSide` | Effect                  |
+| ---------- | ------------- | ------------- | ----------------------- |
+| `BUY`      | `False`       | `long`        | Open or increase long.  |
+| `SELL`     | `False`       | `short`       | Open or increase short. |
+| `SELL`     | `True`        | `long`        | Close or reduce long.   |
+| `BUY`      | `True`        | `short`       | Close or reduce short.  |
+
+This mapping applies to single and batch WebSocket submissions and conditional (algo) submissions.
+`close_fraction` also selects the closing leg.
+
+Futures and swap orders, fills, and position reports in long/short mode use `{instrument_id}-LONG` or
+`{instrument_id}-SHORT` as the venue position ID. Omit `position_id` on submission or use the selected
+leg's ID; a conflicting ID causes a denial. Other products and net-mode reports have no venue position
+ID. Use separate nodes when multiple OKX accounts trade the same instrument, because these IDs do not
+include the account.
+
+:::warning
+In long/short mode, derivative orders and positions must use the client's configured `margin_mode`.
+The adapter rejects conflicting `td_mode` overrides and incompatible position snapshots.
+Do not mix cross and isolated positions for the same instrument and side: the venue position IDs do
+not distinguish margin modes.
+
+Before changing position or margin mode, close positions, cancel pending orders, and stop the node.
+Trim cached orders and positions from the old mode, including persisted records. Set
+`LiveExecutionEngineConfig.reconciliation_lookback_mins` shorter than the time since the change so
+reconciliation does not replay the old mode's history. If runtime position checks are enabled through
+`position_check_interval_secs`, apply the same bound to `position_check_lookback_mins`.
+A shorter lookback does not clear cached state or exclude current positions and pending orders.
+Use the same cleanup when upgrading cached hedge positions from numeric venue position IDs to
+instrument-based IDs. See [Cache purging](../concepts/cache.md#bulk-purges) and
+[Reconciliation](#reconciliation).
+:::
+
 ### Trade modes and margin configuration
 
 OKX's unified account system supports different trade modes for spot and derivatives. Configure the account
@@ -833,6 +876,7 @@ rejection when the value does not match the instrument type, such as `isolated` 
 spot instruments.
 
 Only use manual override for requirements that cannot be met through configuration.
+For long/short derivative orders, the override must match the configured margin mode.
 :::
 
 ### Order querying
@@ -1484,6 +1528,7 @@ The OKX execution client provides the following Python configuration options.
 | `instrument_types`       | `[OKXInstrumentType.SPOT]` | Tradable OKX instrument types.                                                           |
 | `load_spreads`           | `False`                    | Loads live spread instruments.                                                           |
 | `account_id`             | Required                   | Nautilus account ID for the client.                                                      |
+| `oms_type`               | `None`                     | Optional OMS override for the client.                                                    |
 | `base_url_http`          | `None`                     | Override for the OKX trading REST endpoint.                                              |
 | `base_url_ws_private`    | `None`                     | Override for the private WebSocket URL.                                                  |
 | `base_url_ws_business`   | `None`                     | Override for the business WebSocket URL.                                                 |
