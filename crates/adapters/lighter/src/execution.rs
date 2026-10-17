@@ -9239,7 +9239,10 @@ mod tests {
         accounts::MarginAccount,
         data::QuoteTick,
         enums::{ContingencyType, LiquiditySide, OrderSide, OrderStatus, TimeInForce},
-        events::{AccountState, OrderCanceled, OrderEventAny, OrderPendingCancel, OrderTriggered},
+        events::{
+            AccountState, OrderCanceled, OrderEventAny, OrderPendingCancel, OrderSubmitted,
+            OrderTriggered,
+        },
         identifiers::{
             InstrumentId, OrderListId, PositionId, StrategyId, Symbol, TradeId, TraderId,
             VenueOrderId,
@@ -16909,6 +16912,89 @@ mod tests {
             Some(ClientOrderId::new(venue_order_id.as_str())),
         );
         assert_eq!(translated.venue_order_id, venue_order_id);
+    }
+
+    #[rstest]
+    #[case::known_partner(true)]
+    #[case::external_partner(false)]
+    fn lookup_after_restart_preserves_collision_partner(#[case] partner_cached: bool) {
+        let (client, cache, _rx) = create_execution_client();
+        let instrument_id = register_test_instrument(&client, &cache);
+        let mut factory = test_order_factory();
+        let order = test_limit_order(&mut factory, instrument_id, "O-UNACKNOWLEDGED-PROBED");
+        let cloid = order.client_order_id();
+        let partner = test_limit_order(&mut factory, instrument_id, "O-COLLISION-PARTNER");
+        let partner_cloid = partner.client_order_id();
+        let venue_order_id = VenueOrderId::from("281476929510140");
+        let source = WsDispatchState::new();
+        let base_index = source.derive_client_order_index(&cloid);
+        source.register_cloid(base_index, partner_cloid).unwrap();
+        let selected_index = source.register_cloid(base_index, cloid).unwrap();
+        cache_order(&cache, order);
+
+        let submitted = OrderSubmitted::new(
+            trader_id(),
+            strategy_id(),
+            instrument_id,
+            cloid,
+            account_id(),
+            UUID4::new(),
+            UnixNanos::from(1),
+            UnixNanos::from(2),
+        );
+        cache
+            .borrow_mut()
+            .update_order(&OrderEventAny::Submitted(submitted))
+            .unwrap();
+
+        if partner_cached {
+            cache_accepted_order(&cache, partner, venue_order_id, Some(client_id()));
+            restore_reconciled_order(
+                &client.core,
+                &client.dispatch,
+                venue_order_id,
+                base_index,
+                false,
+            );
+        }
+
+        let raw = reconciliation_raw_order(base_index, venue_order_id, LighterOrderStatus::Open);
+        let lookup = OrderReportLookup::new(
+            &client.registry,
+            &client.dispatch,
+            Some(instrument_id),
+            Some(&cloid),
+            None,
+        )
+        .unwrap();
+        let parsed = lookup
+            .parse(
+                &raw,
+                &client.registry,
+                account_id(),
+                UnixNanos::from(3),
+                &client.dispatch,
+            )
+            .unwrap();
+
+        let expected_cloid = if partner_cached {
+            partner_cloid
+        } else {
+            ClientOrderId::new(venue_order_id.as_str())
+        };
+
+        let expected = parsed.0.clone().with_client_order_id(expected_cloid);
+        let report = lookup.finish(&client.dispatch, parsed);
+        let cached = cache.borrow().order_owned(&cloid).unwrap();
+
+        assert_eq!(selected_index, base_index + 1);
+        assert_eq!(
+            serde_json::to_value(&report).unwrap(),
+            serde_json::to_value(&expected).unwrap()
+        );
+        assert_eq!(cached.status(), OrderStatus::Submitted);
+        assert_eq!(cached.venue_order_id(), None);
+        assert_eq!(client.dispatch.client_order_index(&cloid), None);
     }
 
     fn forced_probed_index(cloid: ClientOrderId) -> (i64, i64) {

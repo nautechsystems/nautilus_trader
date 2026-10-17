@@ -29,6 +29,7 @@ Released on TBD (UTC).
 - Fixed Kraken Futures batch edits sending `orderId` instead of `order_id` (#5312), thanks @zhaow-de
 - Fixed Kraken Futures client order IDs shortened to 18 characters (#5312), thanks @zhaow-de
 - Fixed Lighter funding rates 100x too high and missing the live interval (#5338), thanks @dxwil
+- Fixed Lighter order lookups using the wrong client order ID after a collision and restart
 - Fixed Polymarket cancels lost while submit responses register venue order IDs
 - Fixed Polymarket loading, request caching, and execution lookup cleanup for open markets past `endDate`
 - Fixed Polymarket market order reconciliation panics after delayed FOK status checks

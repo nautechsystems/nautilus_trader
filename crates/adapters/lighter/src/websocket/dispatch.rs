@@ -2487,10 +2487,10 @@ impl OrderReportLookup {
                 )
             })?;
 
-        // A caller cloid identifies the order only when the raw client index matches
+        // A caller cloid needs its registered index; a derived index can identify a collision partner
         let supplied_cloid = self
             .supplied_cloid
-            .filter(|_| self.target_client_index == Some(order.client_order_index));
+            .filter(|cloid| dispatch.client_order_index(cloid) == Some(order.client_order_index));
         Ok((report, supplied_cloid))
     }
 
