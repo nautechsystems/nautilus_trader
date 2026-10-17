@@ -48,8 +48,9 @@ use nautilus_common::{
         data::{
             RequestBars, RequestBookSnapshot, RequestCustomData, RequestFundingRates,
             RequestInstrument, RequestInstruments, RequestTrades, SubscribeBookDeltas,
-            SubscribeBookDepth, SubscribeCustomData, SubscribeMarkPrices, SubscribeQuotes,
-            SubscribeTrades, UnsubscribeCustomData, UnsubscribeMarkPrices,
+            SubscribeBookDepth, SubscribeCustomData, SubscribeInstrumentStatus,
+            SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades, UnsubscribeCustomData,
+            UnsubscribeInstrumentStatus, UnsubscribeMarkPrices,
         },
         system::SocketState,
     },
@@ -74,8 +75,8 @@ use nautilus_hyperliquid::{
 };
 use nautilus_live::{SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
-    data::{BarType, CustomData, Data, DataType, OrderBookDeltas},
-    enums::{BookAction, BookType, RecordFlag},
+    data::{BarType, CustomData, Data, DataType, InstrumentStatus, OrderBookDeltas},
+    enums::{BookAction, BookType, MarketStatusAction, RecordFlag},
     identifiers::InstrumentId,
     instruments::Instrument,
 };
@@ -111,6 +112,8 @@ struct TestServerState {
     // When set, the standard perp dex lists BTC with a coarser size precision to
     // emulate the venue changing a definition between two fetches.
     btc_size_decimals_changed: Arc<tokio::sync::Mutex<bool>>,
+    // When set, the standard perp dex flags BTC with `isDelisted`.
+    btc_delisted: Arc<tokio::sync::Mutex<bool>>,
     // When set, the next `allPerpMetas` response is built, then held after
     // notifying `all_perp_metas_held` until `all_perp_metas_release` fires.
     hold_next_all_perp_metas: Arc<tokio::sync::Mutex<bool>>,
@@ -203,6 +206,10 @@ async fn standard_perp_meta(state: &TestServerState) -> Value {
 
     if *state.btc_size_decimals_changed.lock().await {
         meta["universe"][0]["szDecimals"] = json!(4);
+    }
+
+    if *state.btc_delisted.lock().await {
+        meta["universe"][0]["isDelisted"] = json!(true);
     }
 
     meta
@@ -856,6 +863,18 @@ fn btc_instrument_request() -> RequestInstrument {
         None,
         None,
         Some(*HYPERLIQUID_CLIENT_ID),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    )
+}
+
+fn instruments_request() -> RequestInstruments {
+    RequestInstruments::new(
+        None,
+        None,
+        Some(*HYPERLIQUID_CLIENT_ID),
+        Some(*HYPERLIQUID_VENUE),
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -2854,6 +2873,146 @@ async fn test_data_client_request_instrument() {
         events.last()
     );
     assert_new_listing_published_before_response(&events);
+
+    client.disconnect().await.unwrap();
+}
+
+fn instrument_statuses(events: &[DataEvent]) -> Vec<InstrumentStatus> {
+    events
+        .iter()
+        .filter_map(|event| match event {
+            DataEvent::InstrumentStatus(status) => Some(*status),
+            _ => None,
+        })
+        .collect()
+}
+
+fn instrument_status_subscription(instrument_id: InstrumentId) -> SubscribeInstrumentStatus {
+    SubscribeInstrumentStatus::new(
+        instrument_id,
+        Some(*HYPERLIQUID_CLIENT_ID),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )
+}
+
+#[rstest]
+#[case::listed(false, MarketStatusAction::Trading)]
+#[case::delisted(true, MarketStatusAction::Close)]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_data_client_subscribe_instrument_status_emits_current_status(
+    #[case] delisted: bool,
+    #[case] expected: MarketStatusAction,
+) {
+    let state = TestServerState::default();
+    *state.btc_delisted.lock().await = delisted;
+    let addr = start_mock_server(state.clone()).await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+
+    let config = create_data_client_config(addr);
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+
+    let instrument_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
+    client
+        .subscribe_instrument_status(instrument_status_subscription(instrument_id))
+        .unwrap();
+
+    let events: Vec<DataEvent> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+    let statuses = instrument_statuses(&events);
+    assert_eq!(statuses.len(), 1, "events: {events:?}");
+    assert_eq!(statuses[0].instrument_id, instrument_id);
+    assert_eq!(statuses[0].action, expected);
+    assert_eq!(
+        statuses[0].is_trading,
+        Some(expected == MarketStatusAction::Trading)
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_data_client_instrument_refresh_emits_status_change_for_subscribed() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+
+    let config = create_data_client_config(addr);
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
+    client.connect().await.unwrap();
+
+    let btc_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
+    client
+        .subscribe_instrument_status(instrument_status_subscription(btc_id))
+        .unwrap();
+
+    while rx.try_recv().is_ok() {}
+
+    // an unchanged universe emits no status
+    client.request_instruments(instruments_request()).unwrap();
+    let events = recv_until_response(&mut rx).await;
+    assert!(
+        instrument_statuses(&events).is_empty(),
+        "events: {events:?}"
+    );
+
+    *state.btc_delisted.lock().await = true;
+    client.request_instruments(instruments_request()).unwrap();
+    let events = recv_until_response(&mut rx).await;
+    let statuses = instrument_statuses(&events);
+    assert_eq!(statuses.len(), 1, "events: {events:?}");
+    assert_eq!(statuses[0].instrument_id, btc_id);
+    assert_eq!(statuses[0].action, MarketStatusAction::Close);
+    assert_eq!(statuses[0].is_trading, Some(false));
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_data_client_unsubscribe_instrument_status_stops_emitting() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+
+    let config = create_data_client_config(addr);
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
+    client.connect().await.unwrap();
+
+    let btc_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
+    client
+        .subscribe_instrument_status(instrument_status_subscription(btc_id))
+        .unwrap();
+    client
+        .unsubscribe_instrument_status(&UnsubscribeInstrumentStatus::new(
+            btc_id,
+            Some(*HYPERLIQUID_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+
+    while rx.try_recv().is_ok() {}
+
+    *state.btc_delisted.lock().await = true;
+    client.request_instruments(instruments_request()).unwrap();
+    let events = recv_until_response(&mut rx).await;
+    assert!(
+        instrument_statuses(&events).is_empty(),
+        "events: {events:?}"
+    );
 
     client.disconnect().await.unwrap();
 }
