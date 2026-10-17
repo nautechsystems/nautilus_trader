@@ -1815,7 +1815,7 @@ async fn test_market_stats_frame_emits_mark_index_and_funding_updates() {
             NautilusWsMessage::FundingRate(update) => {
                 saw_funding = true;
                 assert_eq!(update.instrument_id, harness.instrument(PERP_MARKET_INDEX));
-                assert_eq!(update.rate, Decimal::new(1, 6));
+                assert_eq!(update.rate, Decimal::new(1, 8));
                 assert_eq!(update.next_funding_ns, None);
             }
             _ => {}
