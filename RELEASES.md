@@ -38,6 +38,7 @@ Released on TBD (UTC).
 - Upgraded `proptest` crate to v1.12.0
 - Upgraded `kaleido` package to v1.5.0
 - Upgraded `ty` package (dev) to v0.0.85
+- Upgraded `sockudo-ws` crate to v3.1.0
 
 ### Documentation Updates
 
