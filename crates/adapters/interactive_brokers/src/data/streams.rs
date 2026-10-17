@@ -390,7 +390,7 @@ impl DataFarmRecoveryState {
             let (_, pruned_since_ns) = self.recoveries.pop_front().unwrap();
 
             if let Some((_, retained_since_ns)) = self.recoveries.front_mut() {
-                // Preserve the earliest replay boundary for streams lagging behind the history
+                // Keep the earliest degraded time across pruned entries
                 *retained_since_ns = (*retained_since_ns).min(pruned_since_ns);
             }
         }
@@ -560,22 +560,6 @@ impl DataFarmConnectionState {
         self.state.lock().recovery(scope).recovery_generation
     }
 
-    fn recovery_since_ns_after_for(
-        &self,
-        scope: DataFarmRecoveryScope,
-        generation: u64,
-    ) -> Option<UnixNanos> {
-        self.state
-            .lock()
-            .recovery(scope)
-            .recoveries
-            .iter()
-            .filter_map(|(recovery_generation, degraded_since_ns)| {
-                (*recovery_generation > generation).then_some(*degraded_since_ns)
-            })
-            .min()
-    }
-
     async fn wait_for_recovery_after(&self, generation: u64) {
         self.wait_for_recovery_after_for(DataFarmRecoveryScope::MarketData, generation)
             .await;
@@ -641,16 +625,13 @@ pub(super) fn resolve_historical_bar_start_ns(
     start_ns.unwrap_or(now_ns)
 }
 
-pub(super) fn resolve_historical_bar_replay_start_ns(
+pub(super) fn resolve_historical_bar_resume_ns(
     first_start_ns: UnixNanos,
-    last_disconnection_ns: Option<UnixNanos>,
+    last_sent_ns: Option<UnixNanos>,
 ) -> UnixNanos {
-    match last_disconnection_ns {
-        Some(last_disconnection_ns) if last_disconnection_ns > first_start_ns => {
-            last_disconnection_ns
-        }
-        _ => first_start_ns,
-    }
+    last_sent_ns.map_or(first_start_ns, |last_sent_ns| {
+        last_sent_ns.max(first_start_ns)
+    })
 }
 
 pub(super) fn calculate_historical_bar_subscription_duration(
@@ -674,8 +655,8 @@ pub(super) fn calculate_historical_bar_subscription_duration(
     }
 }
 
-fn should_emit_historical_bar(bar: &Bar, start_ns: UnixNanos) -> bool {
-    bar.ts_init >= start_ns
+fn should_emit_historical_bar(bar: &Bar, resume_ns: UnixNanos) -> bool {
+    bar.ts_event >= resume_ns
 }
 
 pub(super) async fn monitor_data_farm_notices(
@@ -727,10 +708,27 @@ pub(super) async fn monitor_data_farm_notices(
 #[derive(Debug)]
 struct HistoricalBarStreamState {
     first_start_ns: UnixNanos,
-    replay_start_ns: UnixNanos,
-    last_disconnection_ns: Option<UnixNanos>,
-    had_connection: bool,
+    resume_ns: UnixNanos,
+    last_sent_ns: Option<UnixNanos>,
     completion: HistoricalBarCompletion,
+}
+
+impl HistoricalBarStreamState {
+    /// Prepares a (re)subscribe and returns the historical request start.
+    ///
+    /// The replay resumes at the last sent bar, so bars lost during an outage are replayed
+    /// however the outage ended. The request starts one bar earlier so the replay includes
+    /// that bar, which is sent again with its replayed values when revised bars are enabled.
+    ///
+    /// A bar still pending from the previous stream is discarded without being published:
+    /// its grace deadline may have passed during the outage, and on re-entry the zero wait
+    /// would publish the pre-outage revision as final, resulting in the replayed true final
+    /// being dropped as already published.
+    fn begin_subscription(&mut self, bar_span_ns: u64) -> UnixNanos {
+        self.completion.discard_pending();
+        self.resume_ns = resolve_historical_bar_resume_ns(self.first_start_ns, self.last_sent_ns);
+        UnixNanos::from(self.resume_ns.as_u64().saturating_sub(bar_span_ns))
+    }
 }
 
 /// How long after its close a bar still waiting for IB's final update is published anyway.
@@ -744,7 +742,8 @@ const HISTORICAL_BAR_COMPLETION_GRACE: DurationNanos = DurationNanos::from_secs(
 /// IB revises the open bar every 5 seconds and marks no update as final. A bar completes on
 /// the first of: an update received after its close, the grace period after its close, or the
 /// next bar's first update. It persists across resubscriptions, so a replayed history cannot
-/// publish a bar twice.
+/// publish a bar twice. A bar still pending at a resubscribe is discarded without being
+/// published and completed from the replay instead.
 #[derive(Debug, Default)]
 struct HistoricalBarCompletion {
     pending: Option<Bar>,
@@ -785,6 +784,11 @@ impl HistoricalBarCompletion {
             .map(|bar| bar.ts_event.saturating_add(HISTORICAL_BAR_COMPLETION_GRACE))
     }
 
+    // Drops the pending bar without publishing it
+    fn discard_pending(&mut self) {
+        self.pending = None;
+    }
+
     fn expire(&mut self, now: UnixNanos) -> Option<Bar> {
         if self.deadline().is_none_or(|deadline| now < deadline) {
             return None;
@@ -818,11 +822,12 @@ pub(super) async fn handle_historical_bars_subscription(
 
     let stream_state = Arc::new(tokio::sync::Mutex::new(HistoricalBarStreamState {
         first_start_ns,
-        replay_start_ns: first_start_ns,
-        last_disconnection_ns: None,
-        had_connection: false,
+        resume_ns: first_start_ns,
+        last_sent_ns: None,
         completion: HistoricalBarCompletion::default(),
     }));
+
+    let bar_span_ns = (bar_type.spec().timedelta().as_secs().max(1) as u64) * 1_000_000_000;
 
     let context = StreamContext {
         stream_config,
@@ -849,18 +854,11 @@ pub(super) async fn handle_historical_bars_subscription(
             let contract = contract.clone();
             let stream_state = Arc::clone(&stream_state);
             Box::pin(async move {
-                let replay_start_ns = {
-                    let mut state = stream_state.lock().await;
-                    state.replay_start_ns = resolve_historical_bar_replay_start_ns(
-                        state.first_start_ns,
-                        state.last_disconnection_ns,
-                    );
-                    state.replay_start_ns
-                };
+                let request_start_ns = stream_state.lock().await.begin_subscription(bar_span_ns);
 
                 let duration = calculate_historical_bar_subscription_duration(
                     bar_type,
-                    replay_start_ns,
+                    request_start_ns,
                     context.clock.get_time_ns(),
                 );
                 context
@@ -922,30 +920,17 @@ where
             () = context.data_farm_state.wait_for_recovery_after_for(
                 DataFarmRecoveryScope::HistoricalBars,
                 farm_generation,
-            ) => {
-                record_historical_bar_recovery(
-                    context,
-                    farm_generation,
-                    &stream_state,
-                )
-                .await;
-                return Ok(StreamAction::Resubscribe);
-            }
+            ) => return Ok(StreamAction::Resubscribe),
             () = monitor.wait_for_idle() => {
                 if !monitor.notify_idle() {
                     return Ok(StreamAction::Stop);
                 }
             }
             () = sleep_or_pending(completion_wait) => {
-                let expired = stream_state
-                    .lock()
-                    .await
-                    .completion
-                    .expire(context.clock.get_time_ns());
+                let mut state = stream_state.lock().await;
+                let expired = state.completion.expire(context.clock.get_time_ns());
 
-                if let Some(bar) = expired
-                    && context.data_sender.send(DataEvent::Data(Data::Bar(bar))).is_err()
-                {
+                if !send_bars(&mut state, expired, |bar| send_bar(context, bar)) {
                     return Ok(StreamAction::Stop);
                 }
             }
@@ -953,7 +938,6 @@ where
                 match update {
                     Some(Ok(SubscriptionItem::Data(HistoricalBarUpdate::Historical(data)))) => {
                         if !data.bars.is_empty() { monitor.received_data(); }
-                        let replay_start_ns = mark_historical_bar_connected(&stream_state).await;
 
                         for ib_bar in &data.bars {
                             let bar = ib_bar_to_nautilus_bar(
@@ -963,22 +947,13 @@ where
                                 context.size_precision,
                             )?;
 
-                            if !should_emit_historical_bar(&bar, replay_start_ns) {
-                                continue;
-                            }
-
-                            if handle_revised_bars {
-                                if context.data_sender.send(DataEvent::Data(Data::Bar(bar))).is_err() {
-                                    return Ok(StreamAction::Stop);
-                                }
-                            } else if !send_completed_historical_bars(context, &stream_state, bar).await {
+                            if !send_historical_bar(context, &stream_state, handle_revised_bars, bar).await {
                                 return Ok(StreamAction::Stop);
                             }
                         }
                     }
                     Some(Ok(SubscriptionItem::Data(HistoricalBarUpdate::Update(ib_bar)))) => {
                         monitor.received_data();
-                        let replay_start_ns = mark_historical_bar_connected(&stream_state).await;
                         let bar = ib_bar_to_nautilus_bar(
                             &ib_bar,
                             bar_type,
@@ -986,15 +961,7 @@ where
                             context.size_precision,
                         )?;
 
-                        if !should_emit_historical_bar(&bar, replay_start_ns) {
-                            continue;
-                        }
-
-                        if handle_revised_bars {
-                            if context.data_sender.send(DataEvent::Data(Data::Bar(bar))).is_err() {
-                                return Ok(StreamAction::Stop);
-                            }
-                        } else if !send_completed_historical_bars(context, &stream_state, bar).await {
+                        if !send_historical_bar(context, &stream_state, handle_revised_bars, bar).await {
                             return Ok(StreamAction::Stop);
                         }
                     }
@@ -1019,12 +986,6 @@ where
                         {
                             return Ok(StreamAction::Stop);
                         }
-                        record_historical_bar_recovery(
-                            context,
-                            farm_generation,
-                            &stream_state,
-                        )
-                        .await;
                         return Ok(StreamAction::Resubscribe);
                     }
                     Some(Err(e)) => {
@@ -1033,7 +994,6 @@ where
                             bar_type,
                             e,
                         );
-                        mark_historical_bar_disconnected(context, &stream_state).await;
                         return Ok(StreamAction::Resubscribe);
                     }
                     None => {
@@ -1041,7 +1001,6 @@ where
                             "Historical bars subscription ended unexpectedly for {}",
                             bar_type,
                         );
-                        mark_historical_bar_disconnected(context, &stream_state).await;
                         return Ok(StreamAction::Resubscribe);
                     }
                 }
@@ -1051,22 +1010,70 @@ where
 }
 
 // Returns false when the data channel is closed
-async fn send_completed_historical_bars(
+async fn send_historical_bar(
     context: &StreamContext,
     stream_state: &tokio::sync::Mutex<HistoricalBarStreamState>,
+    handle_revised_bars: bool,
     bar: Bar,
 ) -> bool {
-    let completed = stream_state
-        .lock()
-        .await
-        .completion
-        .observe(bar, context.clock.get_time_ns());
-    completed.into_iter().all(|bar| {
-        context
-            .data_sender
-            .send(DataEvent::Data(Data::Bar(bar)))
-            .is_ok()
+    let mut state = stream_state.lock().await;
+    dispatch_historical_bar(
+        &mut state,
+        handle_revised_bars,
+        context.clock.get_time_ns(),
+        bar,
+        |bar| send_bar(context, bar),
+    )
+}
+
+// Applies the replay filter and, without revised bars, the completion step, then sends.
+// Returns false when `sink` does
+fn dispatch_historical_bar(
+    state: &mut HistoricalBarStreamState,
+    handle_revised_bars: bool,
+    now: UnixNanos,
+    bar: Bar,
+    sink: impl FnMut(Bar) -> bool,
+) -> bool {
+    if !should_emit_historical_bar(&bar, state.resume_ns) {
+        return true;
+    }
+
+    let bars = if handle_revised_bars {
+        vec![bar]
+    } else {
+        state.completion.observe(bar, now)
+    };
+    send_bars(state, bars, sink)
+}
+
+// Sends each bar through `sink`, recording the latest close sent on success.
+// Returns false when `sink` does
+fn send_bars(
+    state: &mut HistoricalBarStreamState,
+    bars: impl IntoIterator<Item = Bar>,
+    mut sink: impl FnMut(Bar) -> bool,
+) -> bool {
+    bars.into_iter().all(|bar| {
+        let ts_event = bar.ts_event;
+        if !sink(bar) {
+            return false;
+        }
+        state.last_sent_ns = Some(
+            state
+                .last_sent_ns
+                .map_or(ts_event, |last_sent_ns| last_sent_ns.max(ts_event)),
+        );
+        true
     })
+}
+
+// Returns false when the data channel is closed
+fn send_bar(context: &StreamContext, bar: Bar) -> bool {
+    context
+        .data_sender
+        .send(DataEvent::Data(Data::Bar(bar)))
+        .is_ok()
 }
 
 async fn sleep_or_pending(duration: Option<Duration>) {
@@ -1074,37 +1081,6 @@ async fn sleep_or_pending(duration: Option<Duration>) {
         Some(duration) => tokio::time::sleep(duration).await,
         None => std::future::pending().await,
     }
-}
-
-async fn mark_historical_bar_connected(
-    stream_state: &tokio::sync::Mutex<HistoricalBarStreamState>,
-) -> UnixNanos {
-    let mut state = stream_state.lock().await;
-    state.had_connection = true;
-    state.replay_start_ns
-}
-
-async fn mark_historical_bar_disconnected(
-    context: &StreamContext,
-    stream_state: &tokio::sync::Mutex<HistoricalBarStreamState>,
-) {
-    let mut state = stream_state.lock().await;
-    if state.had_connection {
-        state.last_disconnection_ns = Some(context.clock.get_time_ns());
-    }
-}
-
-async fn record_historical_bar_recovery(
-    context: &StreamContext,
-    farm_generation: u64,
-    stream_state: &tokio::sync::Mutex<HistoricalBarStreamState>,
-) {
-    let recovered_since = context
-        .data_farm_state
-        .recovery_since_ns_after_for(DataFarmRecoveryScope::HistoricalBars, farm_generation);
-    let mut state = stream_state.lock().await;
-    state.last_disconnection_ns =
-        earliest_data_loss_ns(state.last_disconnection_ns, recovered_since);
 }
 
 fn bar_type_to_historical_bar_size(bar_type: BarType) -> anyhow::Result<HistoricalBarSize> {
@@ -2733,39 +2709,19 @@ mod tests {
     }
 
     #[rstest]
-    fn test_resolve_historical_bar_replay_start_ns_uses_last_disconnect_when_later() {
-        let first_start_ns = UnixNanos::from(1_000);
-        let last_disconnection_ns = UnixNanos::from(1_500);
-
-        let replay_start_ns = super::resolve_historical_bar_replay_start_ns(
-            first_start_ns,
-            Some(last_disconnection_ns),
+    #[case::nothing_sent(None, 1_000)]
+    #[case::sent_after_start(Some(1_500), 1_500)]
+    #[case::sent_before_start(Some(500), 1_000)]
+    fn test_resolve_historical_bar_resume_ns(
+        #[case] last_sent_ns: Option<u64>,
+        #[case] expected_ns: u64,
+    ) {
+        let resume_ns = super::resolve_historical_bar_resume_ns(
+            UnixNanos::from(1_000),
+            last_sent_ns.map(UnixNanos::from),
         );
 
-        assert_eq!(replay_start_ns, last_disconnection_ns);
-    }
-
-    #[rstest]
-    fn test_resolve_historical_bar_replay_start_ns_uses_first_start_when_no_prior_disconnection() {
-        let first_start_ns = UnixNanos::from(1_000);
-
-        let replay_start_ns = super::resolve_historical_bar_replay_start_ns(first_start_ns, None);
-
-        assert_eq!(replay_start_ns, first_start_ns);
-    }
-
-    #[rstest]
-    fn test_resolve_historical_bar_replay_start_ns_uses_first_start_when_disconnection_before_start()
-     {
-        let first_start_ns = UnixNanos::from(1_000);
-        let last_disconnection_ns = UnixNanos::from(500);
-
-        let replay_start_ns = super::resolve_historical_bar_replay_start_ns(
-            first_start_ns,
-            Some(last_disconnection_ns),
-        );
-
-        assert_eq!(replay_start_ns, first_start_ns);
+        assert_eq!(resume_ns, UnixNanos::from(expected_ns));
     }
 
     #[rstest]
@@ -2796,11 +2752,6 @@ mod tests {
         );
 
         assert_eq!(data_farm_state.recovery_generation(), 1);
-        assert!(
-            data_farm_state
-                .recovery_since_ns_after_for(DataFarmRecoveryScope::MarketData, 0)
-                .is_some()
-        );
     }
 
     #[rstest]
@@ -2849,14 +2800,6 @@ mod tests {
             .unwrap();
 
         assert_eq!(observed_generation, 1);
-        assert!(
-            data_farm_state
-                .recovery_since_ns_after_for(
-                    DataFarmRecoveryScope::HistoricalBars,
-                    initial_generation,
-                )
-                .is_some()
-        );
     }
 
     #[tokio::test]
@@ -2972,17 +2915,6 @@ mod tests {
             data_farm_state.recovery_generation_for(DataFarmRecoveryScope::HistoricalBars),
             2
         );
-        assert_eq!(
-            data_farm_state.recovery_since_ns_after_for(DataFarmRecoveryScope::HistoricalBars, 0),
-            Some(UnixNanos::from(10))
-        );
-        assert_eq!(
-            data_farm_state.recovery_since_ns_after_for(
-                DataFarmRecoveryScope::HistoricalBars,
-                market_recovery_generation,
-            ),
-            Some(UnixNanos::from(10))
-        );
     }
 
     #[rstest]
@@ -3006,10 +2938,6 @@ mod tests {
         assert_eq!(
             data_farm_state.recovery_generation_for(DataFarmRecoveryScope::HistoricalBars),
             0
-        );
-        assert_eq!(
-            data_farm_state.recovery_since_ns_after_for(DataFarmRecoveryScope::HistoricalBars, 0),
-            None
         );
     }
 
@@ -3093,14 +3021,6 @@ mod tests {
         let latest_generation = data_farm_state.recovery_generation();
 
         assert_eq!(latest_generation, 2);
-        assert_eq!(
-            data_farm_state.recovery_since_ns_after_for(DataFarmRecoveryScope::MarketData, 0),
-            Some(UnixNanos::from(10))
-        );
-        assert_eq!(
-            data_farm_state.recovery_since_ns_after_for(DataFarmRecoveryScope::MarketData, 1),
-            Some(UnixNanos::from(10))
-        );
     }
 
     #[rstest]
@@ -4676,5 +4596,181 @@ mod tests {
         );
         assert_eq!(replayed, [vec![], vec![]]);
         assert_eq!(completion.deadline(), Some(secs(182.0)));
+    }
+
+    const MINUTE_NS: u64 = 60_000_000_000;
+
+    fn historical_bar_stream_state() -> super::HistoricalBarStreamState {
+        super::HistoricalBarStreamState {
+            first_start_ns: secs(0.0),
+            resume_ns: secs(0.0),
+            last_sent_ns: None,
+            completion: super::HistoricalBarCompletion::default(),
+        }
+    }
+
+    fn replay(
+        state: &mut super::HistoricalBarStreamState,
+        handle_revised_bars: bool,
+        batch: &[Bar],
+        now: UnixNanos,
+    ) -> Vec<Bar> {
+        let mut published = Vec::new();
+        for bar in batch {
+            super::dispatch_historical_bar(state, handle_revised_bars, now, *bar, |bar| {
+                published.push(bar);
+                true
+            });
+        }
+        published
+    }
+
+    #[rstest]
+    fn test_historical_bar_first_subscription_starts_one_bar_before_first_start() {
+        let mut state = historical_bar_stream_state();
+        state.first_start_ns = secs(120.0);
+
+        let request_start_ns = state.begin_subscription(MINUTE_NS);
+
+        assert_eq!(state.resume_ns, secs(120.0));
+        assert_eq!(request_start_ns, secs(60.0));
+    }
+
+    #[rstest]
+    fn test_historical_bar_repeated_resubscribe_keeps_resume_point() {
+        let mut state = historical_bar_stream_state();
+        state.begin_subscription(MINUTE_NS);
+        replay(&mut state, false, &[minute_bar(60, "100.00")], secs(100.0));
+
+        let first_retry = state.begin_subscription(MINUTE_NS);
+        let second_retry = state.begin_subscription(MINUTE_NS);
+
+        assert_eq!(first_retry, secs(0.0));
+        assert_eq!(second_retry, secs(0.0));
+        assert_eq!(state.resume_ns, secs(60.0));
+    }
+
+    // Holds a revision of the bar closing at 120 s, resubscribes at 200 s (past the
+    // 122 s grace deadline) and replays a batch whose bar for it carries its final values
+    #[rstest]
+    fn test_historical_bar_resubscribe_after_grace_publishes_replayed_final() {
+        let mut state = historical_bar_stream_state();
+        replay(
+            &mut state,
+            false,
+            &[minute_bar(60, "100.00"), minute_bar(120, "100.10")],
+            secs(115.0),
+        );
+
+        let request_start_ns = state.begin_subscription(MINUTE_NS);
+
+        // Re-entry: an expired deadline wins against the replay read
+        let expired = state.completion.expire(secs(200.0));
+        let mut published = Vec::new();
+        super::send_bars(&mut state, expired, |bar| {
+            published.push(bar);
+            true
+        });
+        published.extend(replay(
+            &mut state,
+            false,
+            &[minute_bar(60, "100.00"), minute_bar(120, "100.20")],
+            secs(200.0),
+        ));
+
+        assert_eq!(published, vec![minute_bar(120, "100.20")]);
+        assert_eq!(request_start_ns, secs(0.0));
+    }
+
+    #[rstest]
+    fn test_historical_bar_revised_resubscribe_resends_last_sent_bar() {
+        let mut state = historical_bar_stream_state();
+        state.begin_subscription(MINUTE_NS);
+        replay(
+            &mut state,
+            true,
+            &[minute_bar(180, "100.10"), minute_bar(240, "100.15")],
+            secs(230.0),
+        );
+
+        let request_start_ns = state.begin_subscription(MINUTE_NS);
+        let sent = replay(
+            &mut state,
+            true,
+            &[
+                minute_bar(120, "100.00"),
+                minute_bar(180, "100.10"),
+                minute_bar(240, "100.20"),
+                minute_bar(300, "100.30"),
+            ],
+            secs(400.0),
+        );
+
+        assert_eq!(request_start_ns, secs(180.0));
+        assert_eq!(
+            sent,
+            vec![minute_bar(240, "100.20"), minute_bar(300, "100.30")]
+        );
+        assert_eq!(state.last_sent_ns, Some(secs(300.0)));
+    }
+
+    #[rstest]
+    fn test_historical_bar_completed_resubscribe_skips_last_sent_bar() {
+        let mut state = historical_bar_stream_state();
+        state.begin_subscription(MINUTE_NS);
+        replay(
+            &mut state,
+            false,
+            &[minute_bar(180, "100.10"), minute_bar(240, "100.20")],
+            secs(300.0),
+        );
+
+        let request_start_ns = state.begin_subscription(MINUTE_NS);
+        let sent = replay(
+            &mut state,
+            false,
+            &[
+                minute_bar(120, "100.00"),
+                minute_bar(180, "100.10"),
+                minute_bar(240, "100.20"),
+                minute_bar(300, "100.30"),
+            ],
+            secs(400.0),
+        );
+
+        assert_eq!(request_start_ns, secs(180.0));
+        assert_eq!(sent, vec![minute_bar(300, "100.30")]);
+        assert_eq!(state.last_sent_ns, Some(secs(300.0)));
+    }
+
+    #[rstest]
+    fn test_send_bars_records_latest_close() {
+        let mut state = historical_bar_stream_state();
+
+        let sent = super::send_bars(
+            &mut state,
+            [minute_bar(180, "100.10"), minute_bar(120, "100.00")],
+            |_| true,
+        );
+
+        assert!(sent);
+        assert_eq!(state.last_sent_ns, Some(secs(180.0)));
+    }
+
+    #[rstest]
+    fn test_historical_bar_expired_bar_is_recorded_as_sent() {
+        let mut state = historical_bar_stream_state();
+        replay(&mut state, false, &[minute_bar(120, "100.10")], secs(115.0));
+        assert_eq!(state.last_sent_ns, None);
+
+        let expired = state.completion.expire(secs(125.0));
+        let mut published = Vec::new();
+        super::send_bars(&mut state, expired, |bar| {
+            published.push(bar);
+            true
+        });
+
+        assert_eq!(published, vec![minute_bar(120, "100.10")]);
+        assert_eq!(state.last_sent_ns, Some(secs(120.0)));
     }
 }
