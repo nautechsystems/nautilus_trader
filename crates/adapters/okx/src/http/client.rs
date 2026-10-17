@@ -57,6 +57,7 @@ use nautilus_model::{
     data::{
         Bar, BarType, BookOrder, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate,
         OrderBookDelta, OrderBookDeltas, TradeTick,
+        bar::{get_bar_interval_ns, get_time_bar_bounds},
     },
     enums::{
         AccountType, AggregationSource, BarAggregation, BookAction, BookType, OrderSide,
@@ -3624,6 +3625,9 @@ impl OKXHttpClient {
     ///
     /// The aggregation source must be `EXTERNAL`. Time range validation ensures start < end.
     /// Returns bars sorted oldest to newest.
+    /// Each bar uses the candle open time as `ts_event` and its close time as `ts_init`.
+    /// Requests without an end may include an unconfirmed candle with a future `ts_init`.
+    /// With bounds, candle open times are at or after `start` and close times are at or before `end`.
     ///
     /// # Errors
     ///
@@ -3631,13 +3635,14 @@ impl OKXHttpClient {
     ///
     /// # Endpoint Selection
     ///
-    /// The OKX API has different endpoints with different limits:
+    /// Normal pagination selects between endpoints with different limits:
     /// - Regular endpoint (`/api/v5/market/candles`): ≤ 300 rows/call, ≤ 40 req/2s
-    ///   - Used when: start is None OR age ≤ 100 days
+    ///   - Used when the pagination cursor is less than two hours old
     /// - History endpoint (`/api/v5/market/history-candles`): ≤ 100 rows/call, ≤ 20 req/2s
-    ///   - Used when: start is Some AND age > 100 days
+    ///   - Used when the pagination cursor is at least two hours old
     ///
-    /// Age is calculated from the current time and `start` at the time of the first request.
+    /// Cursor age uses the clock time captured when the request starts. Empty-page fallbacks
+    /// can select a different endpoint.
     ///
     /// # Supported Aggregations
     ///
@@ -3651,7 +3656,8 @@ impl OKXHttpClient {
     ///
     /// # Pagination
     ///
-    /// - Uses `before` parameter for backwards pagination
+    /// - Range requests use exclusive `after` and `before` cursors, adjusting `before` to include
+    ///   the floored start boundary
     /// - Pages backwards from end time (or now) to start time
     /// - Stops when: limit reached, time window covered, or API returns empty
     /// - Rate limit safety: ≥ 50ms between requests
@@ -3735,7 +3741,7 @@ impl OKXHttpClient {
         let start_ns = start.and_then(|s| i64::try_from(s.as_nanosecond()).ok());
         let end_ns = end.and_then(|e| i64::try_from(e.as_nanosecond()).ok());
 
-        // Floor start and ceiling end to bar boundaries for cleaner API requests
+        // Floor start to bar boundaries for cleaner API requests
         let start_ms = start.map(|s| {
             let ms = s.as_millisecond();
 
@@ -3745,15 +3751,8 @@ impl OKXHttpClient {
                 ms
             }
         });
-        let end_ms = end.map(|e| {
-            let ms = e.as_millisecond();
 
-            if slot_ms > 0 {
-                ((ms + slot_ms - 1) / slot_ms) * slot_ms // Ceiling to nearest bar boundary
-            } else {
-                ms
-            }
-        });
+        let end_ms = end.map(Timestamp::as_millisecond);
         let now_ms = now.as_millisecond();
 
         let instrument_id = bar_type.instrument_id();
@@ -3773,12 +3772,12 @@ impl OKXHttpClient {
         };
         let mut before_ms: Option<i64> = match mode {
             Mode::Backward => end_ms.map(|v| v.saturating_sub(1)),
-            Mode::Range => start_ms, // Lower bound: bars > start
+            Mode::Range => start_ms.map(|v| v.saturating_sub(1)),
             Mode::Latest => None,
         };
 
         // For Range mode, we'll paginate backwards like Backward mode
-        let mut forward_prepend_mode = matches!(mode, Mode::Range);
+        let forward_prepend_mode = matches!(mode, Mode::Range);
 
         // Adjust before_ms to ensure we get data from the API
         // OKX API might not have bars for the very recent past
@@ -3916,37 +3915,6 @@ impl OKXHttpClient {
                     }
                 }
 
-                // Range mode doesn't need special bootstrap - it uses the normal flow with before_ms set
-
-                // If still empty: for Range after first page, try a single backstep window using BEFORE
-                if raw.is_empty() && matches!(mode, Mode::Range) && pages > 0 {
-                    let backstep_ms = (page_cap as i64).saturating_mul(slot_ms.max(1));
-                    let pivot_back = after_ms.unwrap_or(now_ms).saturating_sub(backstep_ms);
-
-                    let mut p2 = GetCandlesticksParamsBuilder::default();
-                    p2.inst_id(symbol.as_str())
-                        .bar(&bar_param)
-                        .limit(page_cap as u32)
-                        .before_ms(pivot_back);
-                    let params2 = p2.build().map_err(anyhow::Error::new)?;
-                    let raw2 = if (now_ms.saturating_sub(pivot_back)) / (24 * 60 * 60 * 1000)
-                        > HISTORY_SPLIT_DAYS
-                    {
-                        self.inner.get_history_candles(params2).await
-                    } else {
-                        self.inner.get_candles(params2).await
-                    }
-                    .map_err(anyhow::Error::new)?;
-
-                    if raw2.is_empty() {
-                        break;
-                    } else {
-                        raw = raw2;
-                        forward_prepend_mode = true;
-                        req_used_before = true;
-                    }
-                }
-
                 // First LATEST page empty: jump back >100d to force history, then continue loop
                 if raw.is_empty()
                     && matches!(mode, Mode::Latest)
@@ -3969,16 +3937,13 @@ impl OKXHttpClient {
             pages += 1;
 
             // Parse, oldest → newest
-            let ts_init = self.generate_ts_init();
             let mut page: Vec<Bar> = Vec::with_capacity(raw.len());
-
             for r in &raw {
-                page.push(parse_candlestick(
+                page.push(parse_historical_candlestick(
                     r,
                     bar_type,
                     inst.price_precision(),
                     inst.size_precision(),
-                    ts_init,
                 )?);
             }
             page.reverse();
@@ -3986,56 +3951,16 @@ impl OKXHttpClient {
             let page_oldest_ms = page.first().map(|b| b.ts_event.as_i64() / 1_000_000);
             let page_newest_ms = page.last().map(|b| b.ts_event.as_i64() / 1_000_000);
 
-            // Range filter (inclusive)
-            // For Range mode, if we have no bars yet and this is an early page,
-            // be more tolerant with the start boundary to handle gaps in data
-            let mut filtered: Vec<Bar> = if matches!(mode, Mode::Range)
-                && out.is_empty()
-                && pages < 2
-            {
-                // On first pages of Range mode with no data yet, include the most recent bar
-                // even if it's slightly before our start time (within 2 bar periods)
-                // BUT we want ALL bars in the page that are within our range
-                let tolerance_ns = slot_ns * 2; // Allow up to 2 bar periods before start
-
-                // Debug: log the page range
-                if let (Some(first), Some(last)) = (page.first(), page.last()) {
-                    log::debug!(
-                        "Range mode bootstrap page: {} bars from {} to {}, filtering with start={:?} end={:?}",
-                        page.len(),
-                        first.ts_event.as_i64() / 1_000_000,
-                        last.ts_event.as_i64() / 1_000_000,
-                        start_ms,
-                        end_ms,
-                    );
-                }
-
-                let result: Vec<Bar> = page
-                    .clone()
-                    .into_iter()
-                    .filter(|b| {
-                        let ts = b.ts_event.as_i64();
-                        // Accept bars from (start - tolerance) to end
-                        let ok_after =
-                            start_ns.is_none_or(|sns| ts >= sns.saturating_sub(tolerance_ns));
-                        let ok_before = end_ns.is_none_or(|ens| ts <= ens);
-                        ok_after && ok_before
-                    })
-                    .collect();
-
-                result
-            } else {
-                // Normal filtering
-                page.clone()
-                    .into_iter()
-                    .filter(|b| {
-                        let ts = b.ts_event.as_i64();
-                        let ok_after = start_ns.is_none_or(|sns| ts >= sns);
-                        let ok_before = end_ns.is_none_or(|ens| ts <= ens);
-                        ok_after && ok_before
-                    })
-                    .collect()
-            };
+            let mut filtered: Vec<Bar> = page
+                .clone()
+                .into_iter()
+                .filter(|b| {
+                    let ts = b.ts_event.as_i64();
+                    let ok_after = start_ns.is_none_or(|sns| ts >= sns);
+                    let ok_before = end_ns.is_none_or(|ens| b.ts_init.as_i64() <= ens);
+                    ok_after && ok_before
+                })
+                .collect();
 
             if !page.is_empty() && filtered.is_empty() {
                 // For Range mode, if all bars are before our start time, there's no point continuing
@@ -4094,19 +4019,19 @@ impl OKXHttpClient {
                 }
             }
 
-            // Duplicate-window mitigation for Latest/Backward/Range
-            if contribution == 0
-                && matches!(mode, Mode::Latest | Mode::Backward | Mode::Range)
-                && let Some(b) = before_ms
-            {
-                let jump = (page_cap as i64).saturating_mul(slot_ms.max(1));
-                let new_b = b.saturating_sub(jump);
-                if new_b != b {
-                    before_ms = Some(new_b);
-                }
-            }
-
             if contribution == 0 {
+                // An unaligned end can exclude the newest candle by its close time
+                match mode {
+                    Mode::Range => after_ms = page_oldest_ms,
+                    Mode::Backward => before_ms = page_oldest_ms,
+                    Mode::Latest => {
+                        if let Some(b) = before_ms {
+                            let jump = (page_cap as i64).saturating_mul(slot_ms.max(1));
+                            before_ms = Some(b.saturating_sub(jump));
+                        }
+                    }
+                }
+
                 progressless_loops = progressless_loops.saturating_add(1);
                 if progressless_loops >= 3 {
                     break;
@@ -4127,10 +4052,7 @@ impl OKXHttpClient {
                     Mode::Range => {
                         if forward_prepend_mode || req_used_before {
                             if let Some(oldest) = page_oldest_ms {
-                                // Move back by at least one bar period to avoid getting the same data
-                                let jump_back = slot_ms.max(60_000); // At least 1 minute
-                                before_ms = Some(oldest.saturating_sub(jump_back));
-                                after_ms = None;
+                                after_ms = Some(oldest);
                             } else {
                                 break;
                             }
@@ -4164,23 +4086,6 @@ impl OKXHttpClient {
                 && (matches!(mode, Mode::Backward) || forward_prepend_mode)
                 && first.ts_event.as_i64() <= sns
             {
-                // For Range mode, check if we have all bars up to the end time
-                if matches!(mode, Mode::Range) {
-                    // Don't stop if we haven't reached the end time yet
-                    if let Some(ens) = end_ns
-                        && let Some(last) = out.last()
-                    {
-                        let last_ts = last.ts_event.as_i64();
-                        if last_ts < ens {
-                            // We have bars before start but haven't reached end, need to continue forward
-                            // Switch from backward to forward pagination
-                            forward_prepend_mode = false;
-                            after_ms = Some((last_ts / 1_000_000).saturating_add(1));
-                            before_ms = None;
-                            continue;
-                        }
-                    }
-                }
                 break;
             }
 
@@ -4205,16 +4110,13 @@ impl OKXHttpClient {
             .map_err(anyhow::Error::new)?;
 
             if !raw.is_empty() {
-                let ts_init = self.generate_ts_init();
                 let mut page: Vec<Bar> = Vec::with_capacity(raw.len());
-
                 for r in &raw {
-                    page.push(parse_candlestick(
+                    page.push(parse_historical_candlestick(
                         r,
                         bar_type,
                         inst.price_precision(),
                         inst.size_precision(),
-                        ts_init,
                     )?);
                 }
                 page.reverse();
@@ -4223,7 +4125,7 @@ impl OKXHttpClient {
                     .filter(|b| {
                         let ts = b.ts_event.as_i64();
                         let ok_after = start_ns.is_none_or(|sns| ts >= sns);
-                        let ok_before = end_ns.is_none_or(|ens| ts <= ens);
+                        let ok_before = end_ns.is_none_or(|ens| b.ts_init.as_i64() <= ens);
                         ok_after && ok_before
                     })
                     .collect();
@@ -7271,6 +7173,37 @@ impl OKXHttpClient {
 
         Ok(Some(report))
     }
+}
+
+fn parse_historical_candlestick(
+    raw: &OKXCandlestick,
+    bar_type: BarType,
+    price_precision: u8,
+    size_precision: u8,
+) -> anyhow::Result<Bar> {
+    let mut bar = parse_candlestick(
+        raw,
+        bar_type,
+        price_precision,
+        size_precision,
+        UnixNanos::default(),
+    )?;
+
+    bar.ts_init = if bar_type.spec().aggregation == BarAggregation::Month {
+        let time_zone = jiff::tz::TimeZone::fixed(jiff::tz::offset(8));
+        let (_, _, close) = get_time_bar_bounds(
+            bar.ts_event.to_datetime_utc(),
+            &bar_type,
+            None,
+            &time_zone,
+            None,
+        );
+        UnixNanos::from(close)
+    } else {
+        bar.ts_event + get_bar_interval_ns(&bar_type)
+    };
+
+    Ok(bar)
 }
 
 fn is_open_okx_order(state: OKXOrderStatus) -> bool {
