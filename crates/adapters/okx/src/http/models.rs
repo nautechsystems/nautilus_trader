@@ -549,6 +549,112 @@ pub struct OKXAccountConfiguration {
     pub permissions: Vec<OKXApiKeyPermission>,
 }
 
+/// Represents a trading-account bill from the recent or archived bills endpoint.
+///
+/// Numeric values and identifiers retain the exact strings returned by OKX.
+/// Bill codes are not restricted to known values. Optional fields preserve empty strings
+/// separately from absent fields, including trade fields on transfer bills.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OKXAccountBill {
+    /// Bill ID.
+    pub bill_id: String,
+    /// Account balance currency.
+    pub ccy: String,
+    /// Balance update time, as a Unix timestamp in milliseconds.
+    pub ts: String,
+    /// Balance at the account level.
+    pub bal: String,
+    /// Signed change in account balance, in `ccy`.
+    pub bal_chg: String,
+    /// Bill type code, including unrecognized codes.
+    #[serde(rename = "type")]
+    pub bill_type: String,
+    /// Bill subtype code, including unrecognized codes.
+    pub sub_type: String,
+    /// Instrument type; empty for non-trading bills.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub inst_type: Option<String>,
+    /// Instrument ID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub inst_id: Option<String>,
+    /// Margin mode: cross, isolated, cash, or empty for non-trading bills.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mgn_mode: Option<String>,
+    /// Balance at the position level.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pos_bal: Option<String>,
+    /// Change in balance at the position level.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pos_bal_chg: Option<String>,
+    /// Quantity, in contracts for derivatives or in `ccy` otherwise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sz: Option<String>,
+    /// Price associated with the bill subtype.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub px: Option<String>,
+    /// Profit and loss; includes funding payments for funding-fee bills.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pnl: Option<String>,
+    /// Fee: negative for charges, positive for rebates.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fee: Option<String>,
+    /// Auto earn amount, when applicable.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub earn_amt: Option<String>,
+    /// Auto earn APR, when applicable.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub earn_apr: Option<String>,
+    /// Order ID; empty when there is no order.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ord_id: Option<String>,
+    /// Client order ID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cl_ord_id: Option<String>,
+    /// Last trade ID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trade_id: Option<String>,
+    /// Liquidity role: T for taker, M for maker.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exec_type: Option<String>,
+    /// Remitting account for transfers: 6 for funding, 18 for trading.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub from: Option<String>,
+    /// Beneficiary account for transfers: 6 for funding, 18 for trading.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub to: Option<String>,
+    /// Bill notes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+    /// Interest amount.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub interest: Option<String>,
+    /// Order tag.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
+    /// Last fill time in Unix milliseconds.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fill_time: Option<String>,
+    /// Index price at execution.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fill_idx_px: Option<String>,
+    /// Mark price at execution.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fill_mark_px: Option<String>,
+    /// Implied volatility at execution, for options.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fill_px_vol: Option<String>,
+    /// Option price at execution, in USD.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fill_px_usd: Option<String>,
+    /// Mark volatility at execution, for options.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fill_mark_vol: Option<String>,
+    /// Forward price at execution, for options.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fill_fwd_px: Option<String>,
+}
+
 /// Represents an account balance snapshot from `GET /api/v5/account/balance`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

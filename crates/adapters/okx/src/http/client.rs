@@ -86,33 +86,33 @@ use ustr::Ustr;
 use super::{
     error::OKXHttpError,
     models::{
-        OKXAccount, OKXAccountConfiguration, OKXAmendAlgoOrderRequest, OKXAmendAlgoOrderResponse,
-        OKXAmendOrderRequest, OKXAttachAlgoOrdRequest, OKXCancelAlgoOrderRequest,
-        OKXCancelAlgoOrderResponse, OKXCancelAllSpreadOrdersRequest, OKXCancelOrderRequest,
-        OKXCancelOrderResponse, OKXCancelSpreadOrderRequest, OKXEventContractEvent,
-        OKXEventContractMarket, OKXEventContractSeries, OKXFeeRate, OKXFundingRateHistory,
-        OKXIndexTicker, OKXMarkPrice, OKXOptionSummary, OKXOrderAlgo, OKXOrderBookSnapshot,
-        OKXOrderHistory, OKXPlaceAlgoOrderRequest, OKXPlaceAlgoOrderResponse, OKXPlaceOrderRequest,
-        OKXPlaceOrderResponse, OKXPlaceSpreadOrderRequest, OKXPosition, OKXPositionHistory,
-        OKXPositionTier, OKXPriceLimit, OKXRpiOrderBookSnapshot, OKXServerTime, OKXSpread,
-        OKXSpreadOrder, OKXSpreadTrade, OKXTransactionDetail,
+        OKXAccount, OKXAccountBill, OKXAccountConfiguration, OKXAmendAlgoOrderRequest,
+        OKXAmendAlgoOrderResponse, OKXAmendOrderRequest, OKXAttachAlgoOrdRequest,
+        OKXCancelAlgoOrderRequest, OKXCancelAlgoOrderResponse, OKXCancelAllSpreadOrdersRequest,
+        OKXCancelOrderRequest, OKXCancelOrderResponse, OKXCancelSpreadOrderRequest,
+        OKXEventContractEvent, OKXEventContractMarket, OKXEventContractSeries, OKXFeeRate,
+        OKXFundingRateHistory, OKXIndexTicker, OKXMarkPrice, OKXOptionSummary, OKXOrderAlgo,
+        OKXOrderBookSnapshot, OKXOrderHistory, OKXPlaceAlgoOrderRequest, OKXPlaceAlgoOrderResponse,
+        OKXPlaceOrderRequest, OKXPlaceOrderResponse, OKXPlaceSpreadOrderRequest, OKXPosition,
+        OKXPositionHistory, OKXPositionTier, OKXPriceLimit, OKXRpiOrderBookSnapshot, OKXServerTime,
+        OKXSpread, OKXSpreadOrder, OKXSpreadTrade, OKXTransactionDetail,
     },
     query::{
-        ActivateFeatureParams, GetAlgoOrderParams, GetAlgoOrderParamsBuilder, GetAlgoOrdersParams,
-        GetAlgoOrdersParamsBuilder, GetCandlesticksParams, GetCandlesticksParamsBuilder,
-        GetEventContractEventsParams, GetEventContractMarketsParams, GetEventContractSeriesParams,
-        GetFundingRateHistoryParams, GetIndexTickerParams, GetIndexTickerParamsBuilder,
-        GetInstrumentsParams, GetInstrumentsParamsBuilder, GetMarkPriceParams,
-        GetMarkPriceParamsBuilder, GetOptionSummaryParams, GetOrderBookParams,
-        GetOrderHistoryParams, GetOrderHistoryParamsBuilder, GetOrderListParams,
-        GetOrderListParamsBuilder, GetOrderParams, GetOrderParamsBuilder, GetPositionTiersParams,
-        GetPositionsHistoryParams, GetPositionsParams, GetPositionsParamsBuilder,
-        GetPriceLimitParams, GetPriceLimitParamsBuilder, GetRpiOrderBookParams,
-        GetSpreadOrderParams, GetSpreadOrderParamsBuilder, GetSpreadOrdersParams,
-        GetSpreadOrdersParamsBuilder, GetSpreadTradesParams, GetSpreadTradesParamsBuilder,
-        GetSpreadsParams, GetTradeFeeParams, GetTradesParams, GetTradesParamsBuilder,
-        GetTransactionDetailsParams, GetTransactionDetailsParamsBuilder, SetPositionModeParams,
-        SetPositionModeParamsBuilder,
+        ActivateFeatureParams, GetAccountBillsParams, GetAlgoOrderParams,
+        GetAlgoOrderParamsBuilder, GetAlgoOrdersParams, GetAlgoOrdersParamsBuilder,
+        GetCandlesticksParams, GetCandlesticksParamsBuilder, GetEventContractEventsParams,
+        GetEventContractMarketsParams, GetEventContractSeriesParams, GetFundingRateHistoryParams,
+        GetIndexTickerParams, GetIndexTickerParamsBuilder, GetInstrumentsParams,
+        GetInstrumentsParamsBuilder, GetMarkPriceParams, GetMarkPriceParamsBuilder,
+        GetOptionSummaryParams, GetOrderBookParams, GetOrderHistoryParams,
+        GetOrderHistoryParamsBuilder, GetOrderListParams, GetOrderListParamsBuilder,
+        GetOrderParams, GetOrderParamsBuilder, GetPositionTiersParams, GetPositionsHistoryParams,
+        GetPositionsParams, GetPositionsParamsBuilder, GetPriceLimitParams,
+        GetPriceLimitParamsBuilder, GetRpiOrderBookParams, GetSpreadOrderParams,
+        GetSpreadOrderParamsBuilder, GetSpreadOrdersParams, GetSpreadOrdersParamsBuilder,
+        GetSpreadTradesParams, GetSpreadTradesParamsBuilder, GetSpreadsParams, GetTradeFeeParams,
+        GetTradesParams, GetTradesParamsBuilder, GetTransactionDetailsParams,
+        GetTransactionDetailsParamsBuilder, SetPositionModeParams, SetPositionModeParamsBuilder,
     },
 };
 use crate::{
@@ -309,9 +309,9 @@ mod tests {
     use serde::{Serialize, Serializer, ser::Error as _};
 
     use super::{
-        Method, OKXEnvironment, OKXHttpError, OKXInstrumentDefinitionError, OKXRawHttpClient,
-        Timestamp, deserialize_okx_response, parse_retry_after, resolve_okx_error_code,
-        resolve_okx_error_message,
+        Method, OKX_GLOBAL_RATE_KEY, OKXEnvironment, OKXHttpError, OKXInstrumentDefinitionError,
+        OKXRawHttpClient, Timestamp, deserialize_okx_response, parse_retry_after,
+        resolve_okx_error_code, resolve_okx_error_message,
     };
     use crate::http::models::OKXFeeRate;
 
@@ -399,6 +399,26 @@ mod tests {
         }"#;
 
         assert_eq!(resolve_okx_error_code(body, "1"), "50013");
+    }
+
+    #[rstest]
+    #[case("/api/v5/account/bills", 200)]
+    #[case("/api/v5/account/bills-archive", 400)]
+    fn test_account_bills_quotas(#[case] endpoint: &str, #[case] interval_ms: u64) {
+        let keys = OKXRawHttpClient::rate_limit_keys(&format!("{endpoint}?ccy=USDT"));
+        assert_eq!(keys[0].as_str(), OKX_GLOBAL_RATE_KEY);
+        assert_eq!(keys[1].as_str(), format!("okx:{endpoint}"));
+        let quota = OKXRawHttpClient::rate_limiter_quotas()
+            .into_iter()
+            .find_map(|(key, quota)| (key == keys[1].as_str()).then_some(quota))
+            .expect("account bills quota");
+
+        // Pace requests without a burst to stay within each endpoint's five-request window
+        assert_eq!(quota.burst_size().get(), 1);
+        assert_eq!(
+            quota.replenish_interval(),
+            Duration::from_millis(interval_ms)
+        );
     }
 
     #[rstest]
@@ -647,6 +667,14 @@ impl OKXRawHttpClient {
             (
                 "okx:/api/v5/account/balance".to_string(),
                 Quota::per_second(NonZeroU32::new(5).expect("non-zero")).expect("valid constant"),
+            ),
+            (
+                "okx:/api/v5/account/bills".to_string(),
+                Quota::with_period(Duration::from_millis(200)).expect("valid constant"),
+            ),
+            (
+                "okx:/api/v5/account/bills-archive".to_string(),
+                Quota::with_period(Duration::from_millis(400)).expect("valid constant"),
             ),
             (
                 "okx:/api/v5/account/trade-fee".to_string(),
@@ -1846,6 +1874,60 @@ impl OKXRawHttpClient {
         let path = "/api/v5/account/balance";
         self.send_request::<_, ()>(Method::GET, path, None, None, true)
             .await
+    }
+
+    /// Requests one page of trading-account bills from the last seven days.
+    ///
+    /// Returns bills in venue order (most recent first), including non-trade balance changes.
+    /// Pagination and historical coverage remain the caller's responsibility.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if credentials are missing, the request fails, OKX returns an error,
+    /// or the response cannot be decoded.
+    ///
+    /// # References
+    ///
+    /// <https://www.okx.com/docs-v5/en/#trading-account-rest-api-get-bills-details-last-7-days>
+    pub async fn get_account_bills(
+        &self,
+        params: GetAccountBillsParams,
+    ) -> Result<Vec<OKXAccountBill>, OKXHttpError> {
+        self.send_request(
+            Method::GET,
+            "/api/v5/account/bills",
+            Some(&params),
+            None,
+            true,
+        )
+        .await
+    }
+
+    /// Requests one page of trading-account bills from the last three months.
+    ///
+    /// Returns bills in venue order (most recent first), including non-trade balance changes.
+    /// Pagination and historical coverage remain the caller's responsibility.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if credentials are missing, the request fails, OKX returns an error,
+    /// or the response cannot be decoded.
+    ///
+    /// # References
+    ///
+    /// <https://www.okx.com/docs-v5/en/#trading-account-rest-api-get-bills-details-last-3-months>
+    pub async fn get_account_bills_archive(
+        &self,
+        params: GetAccountBillsParams,
+    ) -> Result<Vec<OKXAccountBill>, OKXHttpError> {
+        self.send_request(
+            Method::GET,
+            "/api/v5/account/bills-archive",
+            Some(&params),
+            None,
+            true,
+        )
+        .await
     }
 
     /// Requests fee rates for the account.
