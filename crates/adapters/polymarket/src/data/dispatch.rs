@@ -7393,6 +7393,7 @@ mod tests {
             if status.instrument_id == sibling.id() && close.instrument_id == sibling.id())
         );
 
+        let admission_started_at = client.clock.get_time_ns();
         release.add_permits(1);
         wait_until_async(
             || async {
@@ -7404,8 +7405,35 @@ mod tests {
             StdDuration::from_secs(3),
         )
         .await;
+        let admitted_id = fixture_yes_instrument_id();
+        assert!(!client.instruments.contains_key(&admitted_id));
+        assert!(!client.subscriptions.is_token_open(TEST_TOKEN_ID_YES));
         client.disconnect().await.unwrap();
         events.extend(std::iter::from_fn(|| data_rx.try_recv().ok()));
+
+        if accepted {
+            let [
+                _,
+                _,
+                DataEvent::Instrument(published),
+                DataEvent::InstrumentStatus(status),
+                DataEvent::Data(NautilusData::InstrumentClose(close)),
+            ] = events.as_slice()
+            else {
+                panic!("Expected admitted instrument, status and close events, was {events:?}");
+            };
+            let observed_at = status.ts_init;
+            assert!(observed_at > admission_started_at);
+            assert_eq!(published.id(), admitted_id);
+            assert_eq!(status.instrument_id, published.id());
+            assert_eq!(close.instrument_id, published.id());
+            assert_eq!(published.ts_init(), observed_at);
+            assert_eq!(published.ts_event(), observed_at);
+            assert_eq!(crate::filters::market_closed(published), Some(true));
+            assert_eq!(status.ts_event, observed_at);
+            assert_eq!(close.ts_init, observed_at);
+            assert_eq!(close.ts_event, observed_at);
+        }
 
         assert_eq!(
             count_instrument_close_events(&events),
@@ -8809,6 +8837,7 @@ mod tests {
             UnixNanos::from(u64::MAX),
             &client.subscriptions,
             None,
+            client.clock,
         )
         .await
         .expect("closure refresh");
@@ -8894,6 +8923,7 @@ mod tests {
             UnixNanos::from(u64::MAX),
             &client.subscriptions,
             None,
+            client.clock,
         )
         .await
         .expect("closure refresh");

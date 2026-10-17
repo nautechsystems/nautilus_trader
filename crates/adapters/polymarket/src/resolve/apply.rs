@@ -652,6 +652,8 @@ async fn apply_condition_resolution_inner(
             let mut instrument = instrument.clone();
             if let InstrumentAny::BinaryOption(binary) = &mut instrument {
                 crate::filters::set_market_closed(binary, true);
+                binary.ts_init = ts_init;
+                binary.ts_event = ts_init;
             }
 
             if let Err(e) = ctx.data_sender.send(DataEvent::Instrument(instrument)) {
