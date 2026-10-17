@@ -13,6 +13,7 @@ Released on TBD (UTC).
 ### Security
 
 - Fixed HTTP `Referer` headers exposing URL paths and query parameters on cross-origin redirects
+- Fixed Feather run recovery modifying files outside the catalog through path traversal or symlinks
 
 ### Fixes
 
