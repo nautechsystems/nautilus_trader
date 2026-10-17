@@ -131,9 +131,10 @@ pub fn decode_execution_report(data: &[u8]) -> anyhow::Result<BinanceSpotExecuti
         version,
     );
 
-    let price_exp = dec.price_exponent();
-    let qty_exp = dec.qty_exponent();
-    let commission_exp = dec.commission_exponent();
+    // Widen wire exponents so the summed quote-quantity exponent cannot overflow
+    let price_exp = i16::from(dec.price_exponent());
+    let qty_exp = i16::from(dec.qty_exponent());
+    let commission_exp = i16::from(dec.commission_exponent());
 
     let event_time_us = dec.event_time();
     let transact_time_us = dec.transact_time();
@@ -349,8 +350,8 @@ pub fn decode_account_position(data: &[u8]) -> anyhow::Result<BinanceSpotAccount
 
         balances.push(BinanceSpotBalanceEntry {
             asset,
-            free: mantissa_to_decimal(free_mantissa, exponent),
-            locked: mantissa_to_decimal(locked_mantissa, exponent),
+            free: mantissa_to_decimal(free_mantissa, exponent)?,
+            locked: mantissa_to_decimal(locked_mantissa, exponent)?,
         });
     }
 
@@ -429,7 +430,7 @@ pub fn decode_balance_update(data: &[u8]) -> anyhow::Result<BinanceSpotBalanceUp
 
     let event_time_us = dec.event_time();
     let clear_time_us = dec.clear_time().unwrap_or(0);
-    let qty_exponent = dec.qty_exponent();
+    let qty_exponent = i16::from(dec.qty_exponent());
     let free_qty_delta = dec.free_qty_delta();
 
     let asset = {
@@ -559,11 +560,25 @@ fn us_to_ms(us: i64) -> i64 {
 }
 
 /// Converts an SBE `mantissa * 10^exponent` pair to a [`Decimal`] without floating-point.
-fn mantissa_to_decimal(mantissa: i64, exponent: i8) -> Decimal {
+///
+/// # Errors
+///
+/// Returns an error if the exponent is outside the range [`Decimal`] can represent, or
+/// the scaled value overflows.
+fn mantissa_to_decimal(mantissa: i64, exponent: i8) -> anyhow::Result<Decimal> {
     if exponent >= 0 {
-        Decimal::from(mantissa) * Decimal::from(10_i64.pow(exponent as u32))
+        let mut value = Decimal::from(mantissa);
+        for _ in 0..exponent {
+            value = value.checked_mul(Decimal::TEN).ok_or_else(|| {
+                anyhow::anyhow!("Decimal overflow for mantissa {mantissa}, exponent {exponent}")
+            })?;
+        }
+        Ok(value)
     } else {
-        Decimal::new(mantissa, (-exponent) as u32)
+        let scale = u32::from(exponent.unsigned_abs());
+        Decimal::try_new(mantissa, scale).map_err(|e| {
+            anyhow::anyhow!("Invalid decimal for mantissa {mantissa}, exponent {exponent}: {e}")
+        })
     }
 }
 
@@ -571,13 +586,17 @@ fn mantissa_to_decimal(mantissa: i64, exponent: i8) -> Decimal {
 ///
 /// SBE encodes numeric values as `mantissa * 10^exponent`. For exponent = -2
 /// and mantissa = 250000, the result is "2500.00".
-fn mantissa_to_decimal_string(mantissa: i64, exponent: i8) -> String {
+///
+/// The exponent is `i16` so callers can pass the sum of two `i8` wire exponents.
+fn mantissa_to_decimal_string(mantissa: i64, exponent: i16) -> String {
+    let decimal_places = usize::from(exponent.unsigned_abs());
+
     if mantissa == 0 {
         if exponent >= 0 {
             return "0".to_string();
         }
         let mut s = "0.".to_string();
-        for _ in 0..(-exponent) {
+        for _ in 0..decimal_places {
             s.push('0');
         }
         return s;
@@ -593,23 +612,20 @@ fn mantissa_to_decimal_string(mantissa: i64, exponent: i8) -> String {
             s.push('0');
         }
         s
-    } else {
-        let decimal_places = (-exponent) as usize;
-        if digits.len() <= decimal_places {
-            let padding = decimal_places - digits.len();
-            let mut s = "0.".to_string();
-            for _ in 0..padding {
-                s.push('0');
-            }
-            s.push_str(&digits);
-            s
-        } else {
-            let split_pos = digits.len() - decimal_places;
-            let mut s = digits[..split_pos].to_string();
-            s.push('.');
-            s.push_str(&digits[split_pos..]);
-            s
+    } else if digits.len() <= decimal_places {
+        let padding = decimal_places - digits.len();
+        let mut s = "0.".to_string();
+        for _ in 0..padding {
+            s.push('0');
         }
+        s.push_str(&digits);
+        s
+    } else {
+        let split_pos = digits.len() - decimal_places;
+        let mut s = digits[..split_pos].to_string();
+        s.push('.');
+        s.push_str(&digits[split_pos..]);
+        s
     };
 
     if negative {
@@ -825,6 +841,26 @@ mod tests {
     }
 
     #[rstest]
+    fn test_mantissa_to_decimal_string_min_exponent() {
+        let result = mantissa_to_decimal_string(1, i16::from(i8::MIN));
+
+        assert_eq!(result.len(), 130);
+        assert!(result.starts_with("0.000"));
+        assert!(result.ends_with('1'));
+    }
+
+    #[rstest]
+    fn test_mantissa_to_decimal_string_summed_exponents_do_not_wrap() {
+        let price_exp: i8 = -80;
+        let qty_exp: i8 = -80;
+
+        let result = mantissa_to_decimal_string(1, i16::from(price_exp) + i16::from(qty_exp));
+
+        assert_eq!(result.len(), 162);
+        assert!(result.ends_with('1'));
+    }
+
+    #[rstest]
     #[case::typical_price(250000_i64, -2_i8, "2500.00")]
     #[case::btc_one(100000000_i64, -8_i8, "1.00000000")]
     #[case::zero_negative_exp(0_i64, -8_i8, "0")]
@@ -834,13 +870,28 @@ mod tests {
     #[case::small_fractional(5_i64, -3_i8, "0.005")]
     #[case::negative_mantissa(-250000_i64, -2_i8, "-2500.00")]
     #[case::large_positive_exponent(1_i64, 9_i8, "1000000000")]
+    #[case::exponent_beyond_i64_power(1_i64, 19_i8, "10000000000000000000")]
+    #[case::max_decimal_scale(1_i64, -28_i8, "0.0000000000000000000000000001")]
+    #[case::zero_with_large_exponent(0_i64, i8::MAX, "0")]
     fn test_mantissa_to_decimal_parametrized(
         #[case] mantissa: i64,
         #[case] exponent: i8,
         #[case] expected: &str,
     ) {
-        let result = mantissa_to_decimal(mantissa, exponent);
+        let result = mantissa_to_decimal(mantissa, exponent).unwrap();
         assert_eq!(result, Decimal::from_str_exact(expected).unwrap());
+    }
+
+    #[rstest]
+    #[case::scale_above_max(1_i64, -29_i8)]
+    #[case::min_exponent(1_i64, i8::MIN)]
+    #[case::value_overflow(1_i64, 29_i8)]
+    #[case::product_overflow(i64::MAX, 18_i8)]
+    fn test_mantissa_to_decimal_out_of_range_returns_error(
+        #[case] mantissa: i64,
+        #[case] exponent: i8,
+    ) {
+        assert!(mantissa_to_decimal(mantissa, exponent).is_err());
     }
 
     #[rstest]
