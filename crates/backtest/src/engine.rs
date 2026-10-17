@@ -4629,7 +4629,7 @@ mod tests {
         assert!(commands.iter().any(|command| matches!(
             command,
             DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(command))
-                if command.instrument_id == instrument_id
+                if command.instrument_ids == [instrument_id]
         )));
     }
 

@@ -28,7 +28,7 @@ use anyhow::Context;
 use dashmap::DashMap;
 use futures_util::{Stream, StreamExt, pin_mut};
 use nautilus_common::{
-    clients::DataClient,
+    clients::{DataClient, execute_bar_subscriptions, execute_instrument_subscriptions},
     live::{runner::get_data_event_sender, sender::EventSender},
     messages::{
         DataEvent, DataResponse,
@@ -501,152 +501,163 @@ impl DataClient for DydxDataClient {
     }
 
     fn subscribe_instrument(&mut self, cmd: SubscribeInstrument) -> anyhow::Result<()> {
-        if let Some(instrument) = self.instrument_cache.get(&cmd.instrument_id) {
-            log::debug!("Sending cached instrument for {}", cmd.instrument_id);
-            if let Err(e) = self.data_sender.send(DataEvent::Instrument(instrument)) {
-                log::warn!("Failed to send instrument {}: {e}", cmd.instrument_id);
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            if let Some(instrument) = self.instrument_cache.get(&instrument_id) {
+                log::debug!("Sending cached instrument for {instrument_id}");
+
+                if let Err(e) = self.data_sender.send(DataEvent::Instrument(instrument)) {
+                    log::warn!("Failed to send instrument {instrument_id}: {e}");
+                }
+            } else {
+                log::warn!(
+                    "Instrument {} not found in cache (available: {})",
+                    instrument_id,
+                    self.instrument_cache.len()
+                );
             }
-        } else {
-            log::warn!(
-                "Instrument {} not found in cache (available: {})",
-                cmd.instrument_id,
-                self.instrument_cache.len()
-            );
-        }
-        Ok(())
+
+            Ok(())
+        })
     }
 
     fn subscribe_book_deltas(&mut self, cmd: SubscribeBookDeltas) -> anyhow::Result<()> {
-        if cmd.book_type != BookType::L2_MBP {
-            anyhow::bail!(
-                "dYdX only supports L2_MBP order book deltas, received {:?}",
-                cmd.book_type
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let cmd = cmd.with_instrument_ids(instrument_id);
+            if cmd.book_type != BookType::L2_MBP {
+                anyhow::bail!(
+                    "dYdX only supports L2_MBP order book deltas, received {:?}",
+                    cmd.book_type
+                );
+            }
+
+            self.ensure_order_book(instrument_id, BookType::L2_MBP);
+            self.active_delta_subs.insert(instrument_id);
+
+            let ws = self.ws_client.clone();
+            self.spawn_ws(
+                async move {
+                    ws.subscribe_orderbook(instrument_id)
+                        .await
+                        .context("orderbook subscription")
+                },
+                "dYdX orderbook subscription",
             );
-        }
 
-        self.ensure_order_book(cmd.instrument_id, BookType::L2_MBP);
-        self.active_delta_subs.insert(cmd.instrument_id);
-
-        let ws = self.ws_client.clone();
-        let instrument_id = cmd.instrument_id;
-
-        self.spawn_ws(
-            async move {
-                ws.subscribe_orderbook(instrument_id)
-                    .await
-                    .context("orderbook subscription")
-            },
-            "dYdX orderbook subscription",
-        );
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn subscribe_quotes(&mut self, cmd: SubscribeQuotes) -> anyhow::Result<()> {
-        log::debug!(
-            "Subscribe_quotes for {}: subscribing to orderbook WS channel for quote synthesis",
-            cmd.instrument_id
-        );
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            log::debug!(
+                "Subscribe_quotes for {instrument_id}: subscribing to orderbook WS channel for quote synthesis"
+            );
 
-        self.last_quotes.remove(&cmd.instrument_id);
-        self.ensure_order_book(cmd.instrument_id, BookType::L2_MBP);
-        self.active_quote_subs.insert(cmd.instrument_id);
-        let ws = self.ws_client.clone();
-        let instrument_id = cmd.instrument_id;
+            self.last_quotes.remove(&instrument_id);
+            self.ensure_order_book(instrument_id, BookType::L2_MBP);
+            self.active_quote_subs.insert(instrument_id);
+            let ws = self.ws_client.clone();
+            self.spawn_ws(
+                async move {
+                    ws.subscribe_orderbook(instrument_id)
+                        .await
+                        .context("orderbook subscription (for quotes)")
+                },
+                "dYdX orderbook subscription (quotes)",
+            );
 
-        self.spawn_ws(
-            async move {
-                ws.subscribe_orderbook(instrument_id)
-                    .await
-                    .context("orderbook subscription (for quotes)")
-            },
-            "dYdX orderbook subscription (quotes)",
-        );
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn subscribe_trades(&mut self, cmd: SubscribeTrades) -> anyhow::Result<()> {
-        let ws = self.ws_client.clone();
-        let instrument_id = cmd.instrument_id;
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let ws = self.ws_client.clone();
 
-        self.active_trade_subs.insert(instrument_id);
+            self.active_trade_subs.insert(instrument_id);
+            self.spawn_ws(
+                async move {
+                    ws.subscribe_trades(instrument_id)
+                        .await
+                        .context("trade subscription")
+                },
+                "dYdX trade subscription",
+            );
 
-        self.spawn_ws(
-            async move {
-                ws.subscribe_trades(instrument_id)
-                    .await
-                    .context("trade subscription")
-            },
-            "dYdX trade subscription",
-        );
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn subscribe_mark_prices(&mut self, cmd: SubscribeMarkPrices) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        self.active_mark_price_subs.insert(instrument_id);
-        log::debug!("Subscribed to mark prices for {instrument_id} (via v4_markets channel)");
-        Ok(())
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.active_mark_price_subs.insert(instrument_id);
+            log::debug!("Subscribed to mark prices for {instrument_id} (via v4_markets channel)");
+            Ok(())
+        })
     }
 
     fn subscribe_index_prices(&mut self, cmd: SubscribeIndexPrices) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        self.active_index_price_subs.insert(instrument_id);
-        log::debug!("Subscribed to index prices for {instrument_id} (via v4_markets channel)");
-        Ok(())
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.active_index_price_subs.insert(instrument_id);
+            log::debug!("Subscribed to index prices for {instrument_id} (via v4_markets channel)");
+            Ok(())
+        })
     }
 
     fn subscribe_bars(&mut self, cmd: SubscribeBars) -> anyhow::Result<()> {
-        let ws = self.ws_client.clone();
-        let instrument_id = cmd.bar_type.instrument_id();
-        let spec = cmd.bar_type.spec();
+        execute_bar_subscriptions(&cmd.bar_types, |bar_type| {
+            let ws = self.ws_client.clone();
+            let instrument_id = bar_type.instrument_id();
+            let spec = bar_type.spec();
 
-        let resolution = Self::map_bar_spec_to_resolution(&spec)?;
-        let bar_type = cmd.bar_type;
-        self.active_bar_subs
-            .insert((instrument_id, resolution.to_string()), bar_type);
+            let resolution = Self::map_bar_spec_to_resolution(&spec)?;
+            self.active_bar_subs
+                .insert((instrument_id, resolution.to_string()), bar_type);
 
-        let ticker = extract_raw_symbol(instrument_id.symbol.as_str());
-        let topic = format!("{ticker}/{resolution}");
-        self.bar_type_mappings.insert(topic, bar_type);
+            let ticker = extract_raw_symbol(instrument_id.symbol.as_str());
+            let topic = format!("{ticker}/{resolution}");
+            self.bar_type_mappings.insert(topic, bar_type);
 
-        self.spawn_ws(
-            async move {
-                ws.subscribe_candles(instrument_id, resolution)
-                    .await
-                    .context("candles subscription")
-            },
-            "dYdX candles subscription",
-        );
+            self.spawn_ws(
+                async move {
+                    ws.subscribe_candles(instrument_id, resolution)
+                        .await
+                        .context("candles subscription")
+                },
+                "dYdX candles subscription",
+            );
 
-        Ok(())
+            Ok(())
+        })
     }
 
     fn subscribe_funding_rates(&mut self, cmd: SubscribeFundingRates) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        self.active_funding_rate_subs.insert(instrument_id);
-        log::debug!("Subscribed to funding rates for {instrument_id} (via v4_markets channel)");
-        Ok(())
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.active_funding_rate_subs.insert(instrument_id);
+            log::debug!("Subscribed to funding rates for {instrument_id} (via v4_markets channel)");
+            Ok(())
+        })
     }
 
     fn subscribe_instrument_status(
         &mut self,
         cmd: SubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        self.active_instrument_status_subs.insert(instrument_id);
-        log::debug!("Subscribed to instrument status for {instrument_id} (via v4_markets channel)");
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.active_instrument_status_subs.insert(instrument_id);
+            log::debug!(
+                "Subscribed to instrument status for {instrument_id} (via v4_markets channel)"
+            );
 
-        // Replay last known status (initial snapshot arrives before subscription)
-        if let Some(status) = self.last_instrument_statuses.get(&instrument_id)
-            && let Err(e) = self.data_sender.send(DataEvent::InstrumentStatus(*status))
-        {
-            log::error!("Failed to replay instrument status for {instrument_id}: {e}");
-        }
+            // Replay last known status (initial snapshot arrives before subscription)
+            if let Some(status) = self.last_instrument_statuses.get(&instrument_id)
+                && let Err(e) = self.data_sender.send(DataEvent::InstrumentStatus(*status))
+            {
+                log::error!("Failed to replay instrument status for {instrument_id}: {e}");
+            }
 
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_instruments(&mut self, _cmd: &UnsubscribeInstruments) -> anyhow::Result<()> {
@@ -660,120 +671,123 @@ impl DataClient for DydxDataClient {
     }
 
     fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
-        self.active_delta_subs.remove(&cmd.instrument_id);
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.active_delta_subs.remove(&instrument_id);
 
-        let ws = self.ws_client.clone();
-        let instrument_id = cmd.instrument_id;
+            let ws = self.ws_client.clone();
+            self.spawn_ws(
+                async move {
+                    ws.unsubscribe_orderbook(instrument_id)
+                        .await
+                        .context("orderbook unsubscription")
+                },
+                "dYdX orderbook unsubscription",
+            );
 
-        self.spawn_ws(
-            async move {
-                ws.unsubscribe_orderbook(instrument_id)
-                    .await
-                    .context("orderbook unsubscription")
-            },
-            "dYdX orderbook unsubscription",
-        );
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_quotes(&mut self, cmd: &UnsubscribeQuotes) -> anyhow::Result<()> {
-        log::debug!(
-            "unsubscribe_quotes for {}: removing quote subscription",
-            cmd.instrument_id
-        );
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            log::debug!("unsubscribe_quotes for {instrument_id}: removing quote subscription");
 
-        self.active_quote_subs.remove(&cmd.instrument_id);
-        self.last_quotes.remove(&cmd.instrument_id);
+            self.active_quote_subs.remove(&instrument_id);
+            self.last_quotes.remove(&instrument_id);
 
-        let ws = self.ws_client.clone();
-        let instrument_id = cmd.instrument_id;
+            let ws = self.ws_client.clone();
+            self.spawn_ws(
+                async move {
+                    ws.unsubscribe_orderbook(instrument_id)
+                        .await
+                        .context("orderbook unsubscription (for quotes)")
+                },
+                "dYdX orderbook unsubscription (quotes)",
+            );
 
-        self.spawn_ws(
-            async move {
-                ws.unsubscribe_orderbook(instrument_id)
-                    .await
-                    .context("orderbook unsubscription (for quotes)")
-            },
-            "dYdX orderbook unsubscription (quotes)",
-        );
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_trades(&mut self, cmd: &UnsubscribeTrades) -> anyhow::Result<()> {
-        self.active_trade_subs.remove(&cmd.instrument_id);
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.active_trade_subs.remove(&instrument_id);
 
-        let ws = self.ws_client.clone();
-        let instrument_id = cmd.instrument_id;
+            let ws = self.ws_client.clone();
+            self.spawn_ws(
+                async move {
+                    ws.unsubscribe_trades(instrument_id)
+                        .await
+                        .context("trade unsubscription")
+                },
+                "dYdX trade unsubscription",
+            );
 
-        self.spawn_ws(
-            async move {
-                ws.unsubscribe_trades(instrument_id)
-                    .await
-                    .context("trade unsubscription")
-            },
-            "dYdX trade unsubscription",
-        );
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_mark_prices(&mut self, cmd: &UnsubscribeMarkPrices) -> anyhow::Result<()> {
-        self.active_mark_price_subs.remove(&cmd.instrument_id);
-        log::debug!("Unsubscribed from mark prices for {}", cmd.instrument_id);
-        Ok(())
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.active_mark_price_subs.remove(&instrument_id);
+            log::debug!("Unsubscribed from mark prices for {instrument_id}");
+            Ok(())
+        })
     }
 
     fn unsubscribe_index_prices(&mut self, cmd: &UnsubscribeIndexPrices) -> anyhow::Result<()> {
-        self.active_index_price_subs.remove(&cmd.instrument_id);
-        log::debug!("Unsubscribed from index prices for {}", cmd.instrument_id);
-        Ok(())
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.active_index_price_subs.remove(&instrument_id);
+            log::debug!("Unsubscribed from index prices for {instrument_id}");
+            Ok(())
+        })
     }
 
     fn unsubscribe_bars(&mut self, cmd: &UnsubscribeBars) -> anyhow::Result<()> {
-        let ws = self.ws_client.clone();
-        let instrument_id = cmd.bar_type.instrument_id();
-        let spec = cmd.bar_type.spec();
+        execute_bar_subscriptions(&cmd.bar_types, |bar_type| {
+            let ws = self.ws_client.clone();
+            let instrument_id = bar_type.instrument_id();
+            let spec = bar_type.spec();
 
-        let resolution = Self::map_bar_spec_to_resolution(&spec)?;
+            let resolution = Self::map_bar_spec_to_resolution(&spec)?;
 
-        self.active_bar_subs
-            .remove(&(instrument_id, resolution.to_string()));
+            self.active_bar_subs
+                .remove(&(instrument_id, resolution.to_string()));
 
-        let ticker = extract_raw_symbol(instrument_id.symbol.as_str());
-        let topic = format!("{ticker}/{resolution}");
-        self.bar_type_mappings.remove(&topic);
+            let ticker = extract_raw_symbol(instrument_id.symbol.as_str());
+            let topic = format!("{ticker}/{resolution}");
+            self.bar_type_mappings.remove(&topic);
 
-        self.spawn_ws(
-            async move {
-                ws.unsubscribe_candles(instrument_id, resolution)
-                    .await
-                    .context("candles unsubscription")
-            },
-            "dYdX candles unsubscription",
-        );
+            self.spawn_ws(
+                async move {
+                    ws.unsubscribe_candles(instrument_id, resolution)
+                        .await
+                        .context("candles unsubscription")
+                },
+                "dYdX candles unsubscription",
+            );
 
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_funding_rates(&mut self, cmd: &UnsubscribeFundingRates) -> anyhow::Result<()> {
-        self.active_funding_rate_subs.remove(&cmd.instrument_id);
-        log::debug!("Unsubscribed from funding rates for {}", cmd.instrument_id);
-        Ok(())
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.active_funding_rate_subs.remove(&instrument_id);
+            log::debug!("Unsubscribed from funding rates for {instrument_id}");
+            Ok(())
+        })
     }
 
     fn unsubscribe_instrument_status(
         &mut self,
         cmd: &UnsubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
-        self.active_instrument_status_subs
-            .remove(&cmd.instrument_id);
-        log::debug!(
-            "Unsubscribed from instrument status for {}",
-            cmd.instrument_id
-        );
-        Ok(())
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.active_instrument_status_subs.remove(&instrument_id);
+            log::debug!("Unsubscribed from instrument status for {instrument_id}");
+            Ok(())
+        })
     }
 
     fn request_instrument(&self, request: RequestInstrument) -> anyhow::Result<()> {

@@ -134,7 +134,8 @@ pub struct Cache {
     client_accounts: AHashMap<ClientId, AccountId>,
     client_routes: AHashMap<Venue, ClientId>,
     default_client_id: Option<ClientId>,
-    external_clients: AHashSet<ClientId>,
+    external_data_clients: AHashSet<ClientId>,
+    external_exec_clients: AHashSet<ClientId>,
     accounts: AHashMap<AccountId, SharedCell<AccountAny>>,
     orders: AHashMap<ClientOrderId, SharedCell<OrderAny>>,
     orders_dispatched: AHashSet<ClientOrderId>,
@@ -173,7 +174,8 @@ impl Debug for Cache {
             .field("client_accounts", &self.client_accounts)
             .field("client_routes", &self.client_routes)
             .field("default_client_id", &self.default_client_id)
-            .field("external_clients", &self.external_clients)
+            .field("external_data_clients", &self.external_data_clients)
+            .field("external_exec_clients", &self.external_exec_clients)
             .field("accounts", &self.accounts)
             .field("orders", &self.orders)
             .field("orders_dispatched", &self.orders_dispatched)
@@ -246,7 +248,8 @@ impl Cache {
             client_accounts: AHashMap::new(),
             client_routes: AHashMap::new(),
             default_client_id: None,
-            external_clients: AHashSet::new(),
+            external_data_clients: AHashSet::new(),
+            external_exec_clients: AHashSet::new(),
             accounts: AHashMap::new(),
             orders: AHashMap::new(),
             orders_dispatched: AHashSet::new(),
@@ -423,18 +426,32 @@ impl Cache {
         }
     }
 
+    /// Returns whether `client_id` is registered as an external data client, whose commands
+    /// are published for another process to execute.
+    #[must_use]
+    pub fn is_external_data_client(&self, client_id: &ClientId) -> bool {
+        self.external_data_clients.contains(client_id)
+    }
+
+    /// Registers `client_id` as an external data client.
+    ///
+    /// Registrations survive [`Self::clear_index`] and [`Self::reset`].
+    pub fn add_external_data_client(&mut self, client_id: ClientId) {
+        self.external_data_clients.insert(client_id);
+    }
+
     /// Returns whether `client_id` is registered as an external execution client, whose commands
     /// are published for another process to execute.
     #[must_use]
-    pub fn is_external_client(&self, client_id: &ClientId) -> bool {
-        self.external_clients.contains(client_id)
+    pub fn is_external_exec_client(&self, client_id: &ClientId) -> bool {
+        self.external_exec_clients.contains(client_id)
     }
 
     /// Registers `client_id` as an external execution client.
     ///
     /// Registrations survive [`Self::clear_index`] and [`Self::reset`].
-    pub fn add_external_client(&mut self, client_id: ClientId) {
-        self.external_clients.insert(client_id);
+    pub fn add_external_exec_client(&mut self, client_id: ClientId) {
+        self.external_exec_clients.insert(client_id);
     }
 
     /// Sets the cache database adapter for persistence.

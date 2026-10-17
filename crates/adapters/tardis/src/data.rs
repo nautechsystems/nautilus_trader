@@ -687,6 +687,8 @@ fn build_ws_request(url: &str) -> anyhow::Result<tungstenite::http::Request<()>>
 mod tests {
     use jiff::civil::Date;
     use nautilus_common::live::runner::set_data_event_sender;
+    use nautilus_core::{UUID4, UnixNanos};
+    use nautilus_model::identifiers::InstrumentId;
     use rstest::rstest;
 
     use super::*;
@@ -695,6 +697,88 @@ mod tests {
         config::TardisDataClientConfig,
         machine::types::{ReplayNormalizedRequestOptions, StreamNormalizedRequestOptions},
     };
+
+    #[rstest]
+    #[case("mark")]
+    #[case("index")]
+    #[case("funding")]
+    fn test_reference_price_list_hooks_remain_noops(#[case] family: &str) {
+        setup_test_env();
+        let mut client =
+            TardisDataClient::new(*TARDIS_CLIENT_ID, TardisDataClientConfig::default()).unwrap();
+        let ids = [
+            InstrumentId::from("BTCUSDT.BINANCE"),
+            InstrumentId::from("ETHUSDT.BINANCE"),
+        ];
+        let command_id = UUID4::new();
+        let ts_init = UnixNanos::from(17);
+
+        let subscribe = match family {
+            "mark" => client.subscribe_mark_prices(SubscribeMarkPrices::new(
+                ids,
+                Some(*TARDIS_CLIENT_ID),
+                None,
+                command_id,
+                ts_init,
+                None,
+                None,
+            )),
+            "index" => client.subscribe_index_prices(SubscribeIndexPrices::new(
+                ids,
+                Some(*TARDIS_CLIENT_ID),
+                None,
+                command_id,
+                ts_init,
+                None,
+                None,
+            )),
+            "funding" => client.subscribe_funding_rates(SubscribeFundingRates::new(
+                ids,
+                Some(*TARDIS_CLIENT_ID),
+                None,
+                command_id,
+                ts_init,
+                None,
+                None,
+            )),
+            _ => unreachable!(),
+        };
+
+        let unsubscribe = match family {
+            "mark" => client.unsubscribe_mark_prices(&UnsubscribeMarkPrices::new(
+                ids,
+                Some(*TARDIS_CLIENT_ID),
+                None,
+                command_id,
+                ts_init,
+                None,
+                None,
+            )),
+            "index" => client.unsubscribe_index_prices(&UnsubscribeIndexPrices::new(
+                ids,
+                Some(*TARDIS_CLIENT_ID),
+                None,
+                command_id,
+                ts_init,
+                None,
+                None,
+            )),
+            "funding" => client.unsubscribe_funding_rates(&UnsubscribeFundingRates::new(
+                ids,
+                Some(*TARDIS_CLIENT_ID),
+                None,
+                command_id,
+                ts_init,
+                None,
+                None,
+            )),
+            _ => unreachable!(),
+        };
+
+        assert!(subscribe.is_ok());
+        assert!(unsubscribe.is_ok());
+        assert!(!client.is_connected());
+    }
 
     #[rstest]
     #[case(vec![], "Either replay `options` or `stream_options` must be provided")]

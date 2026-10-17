@@ -385,7 +385,7 @@ pub(super) fn continuous_future_subscription_from_bars(
         );
     }
 
-    parse_continuous_future(vec![cmd.bar_type], params).map(Some)
+    parse_continuous_future(vec![cmd.single_bar_type()?], params).map(Some)
 }
 
 fn parse_continuous_future(

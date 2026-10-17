@@ -26,7 +26,7 @@ use std::{
 use ahash::{AHashMap, AHashSet};
 use async_trait::async_trait;
 use nautilus_common::{
-    clients::DataClient,
+    clients::{DataClient, execute_bar_subscriptions, execute_instrument_subscriptions},
     live::{dst::time::Instant, runner::get_data_event_sender, sender::EventSender},
     messages::{
         DataEvent,
@@ -1168,78 +1168,78 @@ impl DataClient for BetfairDataClient {
     }
 
     fn subscribe_book_deltas(&mut self, cmd: SubscribeBookDeltas) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        let market_id = extract_market_id(&instrument_id)?;
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let market_id = extract_market_id(&instrument_id)?;
 
-        if self.subscribed_market_ids.contains(&market_id) {
-            log::debug!("Book deltas already subscribed for market {market_id}");
-            return Ok(());
-        }
-
-        let stream_client = Arc::clone(
-            self.stream_client
-                .as_ref()
-                .ok_or_else(|| anyhow::anyhow!("Stream client not connected"))?,
-        );
-
-        let tasks = match self.command_tasks.spawner() {
-            Ok(tasks) => tasks,
-            Err(e) => {
-                log::warn!("Skipping Betfair data command after shutdown began: {e}");
+            if self.subscribed_market_ids.contains(&market_id) {
+                log::debug!("Book deltas already subscribed for market {market_id}");
                 return Ok(());
             }
-        };
 
-        self.subscribed_market_ids.insert(market_id.clone());
+            let stream_client = Arc::clone(
+                self.stream_client
+                    .as_ref()
+                    .ok_or_else(|| anyhow::anyhow!("Stream client not connected"))?,
+            );
 
-        // Betfair keeps one market subscription per connection, so each write carries every
-        // subscribed market, and writing at once keeps the latest write last
-        let market_filter = market_subscription_filter(&self.subscribed_market_ids);
-        let conflate_ms = self.config.stream_conflate_ms;
+            let tasks = match self.command_tasks.spawner() {
+                Ok(tasks) => tasks,
+                Err(e) => {
+                    log::warn!("Skipping Betfair data command after shutdown began: {e}");
+                    return Ok(());
+                }
+            };
 
-        let subscribe = |gate: &SnapshotGate| {
-            stream_client.write_market_subscription(
-                market_filter,
-                market_data_filter(),
-                None,
-                conflate_ms,
-                gate,
-            )
-        };
+            self.subscribed_market_ids.insert(market_id.clone());
 
-        spawn_subscription_task(
-            market_id,
-            subscribe,
-            self.book_sync.clone(),
-            Arc::clone(&stream_client),
-            Duration::from_secs(self.config.book_snapshot_timeout_secs),
-            &tasks,
-        );
+            // Betfair keeps one market subscription per connection, so each write carries every
+            // subscribed market, and writing at once keeps the latest write last
+            let market_filter = market_subscription_filter(&self.subscribed_market_ids);
+            let conflate_ms = self.config.stream_conflate_ms;
 
-        Ok(())
+            let subscribe = |gate: &SnapshotGate| {
+                stream_client.write_market_subscription(
+                    market_filter,
+                    market_data_filter(),
+                    None,
+                    conflate_ms,
+                    gate,
+                )
+            };
+
+            spawn_subscription_task(
+                market_id,
+                subscribe,
+                self.book_sync.clone(),
+                Arc::clone(&stream_client),
+                Duration::from_secs(self.config.book_snapshot_timeout_secs),
+                &tasks,
+            );
+
+            Ok(())
+        })
     }
 
     fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
-        log::debug!(
-            "Skipping unsubscribe book deltas for Betfair: {}",
-            cmd.instrument_id
-        );
-        Ok(())
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            log::debug!("Skipping unsubscribe book deltas for Betfair: {instrument_id}");
+            Ok(())
+        })
     }
 
     fn subscribe_trades(&mut self, cmd: SubscribeTrades) -> anyhow::Result<()> {
         // Trades are included in market subscription via EX_TRADED
         log::debug!(
-            "Trade data included in book subscription for {}",
-            cmd.instrument_id
+            "Trade data included in book subscription for {:?}",
+            cmd.instrument_ids
         );
         Ok(())
     }
 
     fn unsubscribe_trades(&mut self, cmd: &UnsubscribeTrades) -> anyhow::Result<()> {
         log::debug!(
-            "Skipping unsubscribe trades for Betfair: {}",
-            cmd.instrument_id
+            "Skipping unsubscribe trades for Betfair: {:?}",
+            cmd.instrument_ids
         );
         Ok(())
     }
@@ -1248,44 +1248,40 @@ impl DataClient for BetfairDataClient {
         &mut self,
         cmd: SubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
-        // Instrument status is included in market subscription via EX_MARKET_DEF
-        log::debug!(
-            "Instrument status included in book subscription for {}",
-            cmd.instrument_id
-        );
-        Ok(())
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            // Instrument status is included in market subscription via EX_MARKET_DEF
+            log::debug!("Instrument status included in book subscription for {instrument_id}");
+            Ok(())
+        })
     }
 
     fn unsubscribe_instrument_status(
         &mut self,
         cmd: &UnsubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
-        log::debug!(
-            "Skipping unsubscribe instrument status for Betfair: {}",
-            cmd.instrument_id
-        );
-        Ok(())
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            log::debug!("Skipping unsubscribe instrument status for Betfair: {instrument_id}");
+            Ok(())
+        })
     }
 
     fn subscribe_instrument_close(&mut self, cmd: SubscribeInstrumentClose) -> anyhow::Result<()> {
-        // Close transitions arrive via marketDefinition.status="CLOSED" on the
-        // existing market subscription; no separate venue subscription exists.
-        log::debug!(
-            "Instrument close included in book subscription for {}",
-            cmd.instrument_id
-        );
-        Ok(())
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            // Close transitions arrive via marketDefinition.status="CLOSED" on the
+            // existing market subscription; no separate venue subscription exists.
+            log::debug!("Instrument close included in book subscription for {instrument_id}");
+            Ok(())
+        })
     }
 
     fn unsubscribe_instrument_close(
         &mut self,
         cmd: &UnsubscribeInstrumentClose,
     ) -> anyhow::Result<()> {
-        log::debug!(
-            "Skipping unsubscribe instrument close for Betfair: {}",
-            cmd.instrument_id
-        );
-        Ok(())
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            log::debug!("Skipping unsubscribe instrument close for Betfair: {instrument_id}");
+            Ok(())
+        })
     }
 
     fn unsubscribe(&mut self, _cmd: &UnsubscribeCustomData) -> anyhow::Result<()> {
@@ -1294,11 +1290,10 @@ impl DataClient for BetfairDataClient {
     }
 
     fn unsubscribe_instrument(&mut self, cmd: &UnsubscribeInstrument) -> anyhow::Result<()> {
-        log::debug!(
-            "Skipping unsubscribe instrument for Betfair: {}",
-            cmd.instrument_id
-        );
-        Ok(())
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            log::debug!("Skipping unsubscribe instrument for Betfair: {instrument_id}");
+            Ok(())
+        })
     }
 
     fn unsubscribe_instruments(&mut self, _cmd: &UnsubscribeInstruments) -> anyhow::Result<()> {
@@ -1308,15 +1303,17 @@ impl DataClient for BetfairDataClient {
 
     fn unsubscribe_quotes(&mut self, cmd: &UnsubscribeQuotes) -> anyhow::Result<()> {
         log::debug!(
-            "Skipping unsubscribe quotes for Betfair: {}",
-            cmd.instrument_id
+            "Skipping unsubscribe quotes for Betfair: {:?}",
+            cmd.instrument_ids
         );
         Ok(())
     }
 
     fn unsubscribe_bars(&mut self, cmd: &UnsubscribeBars) -> anyhow::Result<()> {
-        log::debug!("Skipping unsubscribe bars for Betfair: {}", cmd.bar_type);
-        Ok(())
+        execute_bar_subscriptions(&cmd.bar_types, |bar_type| {
+            log::debug!("Skipping unsubscribe bars for Betfair: {bar_type}");
+            Ok(())
+        })
     }
 }
 

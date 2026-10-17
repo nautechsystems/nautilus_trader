@@ -29,7 +29,7 @@ use anyhow::Context;
 use async_trait::async_trait;
 use dashmap::DashMap;
 use nautilus_common::{
-    clients::DataClient,
+    clients::{DataClient, execute_bar_subscriptions, execute_instrument_subscriptions},
     live::{get_data_event_sender, sender::EventSender},
     messages::{
         DataEvent,
@@ -668,232 +668,237 @@ impl DataClient for KrakenFuturesDataClient {
     }
 
     fn subscribe_book_deltas(&mut self, cmd: SubscribeBookDeltas) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        let depth = cmd.depth;
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let cmd = cmd.with_instrument_ids(instrument_id);
+            let depth = cmd.depth;
 
-        if cmd.book_type != BookType::L2_MBP {
-            log::warn!(
-                "Book type {:?} not supported by Kraken, skipping subscription",
-                cmd.book_type
+            if cmd.book_type != BookType::L2_MBP {
+                log::warn!(
+                    "Book type {:?} not supported by Kraken, skipping subscription",
+                    cmd.book_type
+                );
+                return Ok(());
+            }
+
+            self.book_instruments.insert(instrument_id);
+
+            let ws = self.ws.clone();
+            self.spawn_ws(
+                async move {
+                    ws.subscribe_book(instrument_id, depth.map(|d| d.get() as u32))
+                        .await
+                        .map_err(|e| anyhow::anyhow!("{e}"))
+                },
+                "subscribe book",
             );
-            return Ok(());
-        }
 
-        self.book_instruments.insert(instrument_id);
-
-        let ws = self.ws.clone();
-        self.spawn_ws(
-            async move {
-                ws.subscribe_book(instrument_id, depth.map(|d| d.get() as u32))
-                    .await
-                    .map_err(|e| anyhow::anyhow!("{e}"))
-            },
-            "subscribe book",
-        );
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn subscribe_quotes(&mut self, cmd: SubscribeQuotes) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        let ws = self.ws.clone();
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let ws = self.ws.clone();
 
-        self.last_quotes.remove(&instrument_id);
-        self.quote_instruments.insert(instrument_id);
+            self.last_quotes.remove(&instrument_id);
+            self.quote_instruments.insert(instrument_id);
+            self.spawn_ws(
+                async move {
+                    ws.subscribe_quotes(instrument_id)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("{e}"))
+                },
+                "subscribe quotes",
+            );
 
-        self.spawn_ws(
-            async move {
-                ws.subscribe_quotes(instrument_id)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("{e}"))
-            },
-            "subscribe quotes",
-        );
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn subscribe_trades(&mut self, cmd: SubscribeTrades) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        let ws = self.ws.clone();
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let ws = self.ws.clone();
+            self.spawn_ws(
+                async move {
+                    ws.subscribe_trades(instrument_id)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("{e}"))
+                },
+                "subscribe trades",
+            );
 
-        self.spawn_ws(
-            async move {
-                ws.subscribe_trades(instrument_id)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("{e}"))
-            },
-            "subscribe trades",
-        );
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn subscribe_mark_prices(&mut self, cmd: SubscribeMarkPrices) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        let ws = self.ws.clone();
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let ws = self.ws.clone();
+            self.spawn_ws(
+                async move {
+                    ws.subscribe_mark_price(instrument_id)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("{e}"))
+                },
+                "subscribe mark price",
+            );
 
-        self.spawn_ws(
-            async move {
-                ws.subscribe_mark_price(instrument_id)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("{e}"))
-            },
-            "subscribe mark price",
-        );
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn subscribe_index_prices(&mut self, cmd: SubscribeIndexPrices) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        let ws = self.ws.clone();
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let ws = self.ws.clone();
+            self.spawn_ws(
+                async move {
+                    ws.subscribe_index_price(instrument_id)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("{e}"))
+                },
+                "subscribe index price",
+            );
 
-        self.spawn_ws(
-            async move {
-                ws.subscribe_index_price(instrument_id)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("{e}"))
-            },
-            "subscribe index price",
-        );
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn subscribe_funding_rates(&mut self, cmd: SubscribeFundingRates) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        let ws = self.ws.clone();
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let ws = self.ws.clone();
+            self.spawn_ws(
+                async move {
+                    ws.subscribe_funding_rate(instrument_id)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("{e}"))
+                },
+                "subscribe funding rate",
+            );
 
-        self.spawn_ws(
-            async move {
-                ws.subscribe_funding_rate(instrument_id)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("{e}"))
-            },
-            "subscribe funding rate",
-        );
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn subscribe_bars(&mut self, cmd: SubscribeBars) -> anyhow::Result<()> {
-        log::warn!(
-            "Cannot subscribe to {} bars: Kraken Futures does not support EXTERNAL bar streaming",
-            cmd.bar_type
-        );
-        Ok(())
+        execute_bar_subscriptions(&cmd.bar_types, |bar_type| {
+            log::warn!(
+                "Cannot subscribe to {bar_type} bars: Kraken Futures does not support EXTERNAL bar streaming",
+            );
+            Ok(())
+        })
     }
 
     fn subscribe_instrument_status(
         &mut self,
         cmd: SubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
-        log::debug!(
-            "subscribe_instrument_status: {} (status changes detected via periodic instrument polling)",
-            cmd.instrument_id,
-        );
-        Ok(())
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            log::debug!(
+                "subscribe_instrument_status: {instrument_id} (status changes detected via periodic instrument polling)",
+            );
+            Ok(())
+        })
     }
 
     fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.book_instruments.remove(&instrument_id);
 
-        self.book_instruments.remove(&instrument_id);
+            let ws = self.ws.clone();
+            self.spawn_ws(
+                async move {
+                    ws.unsubscribe_book(instrument_id)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("{e}"))
+                },
+                "unsubscribe book",
+            );
 
-        let ws = self.ws.clone();
-        self.spawn_ws(
-            async move {
-                ws.unsubscribe_book(instrument_id)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("{e}"))
-            },
-            "unsubscribe book",
-        );
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_quotes(&mut self, cmd: &UnsubscribeQuotes) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        let ws = self.ws.clone();
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let ws = self.ws.clone();
 
-        self.quote_instruments.remove(&instrument_id);
-        self.last_quotes.remove(&instrument_id);
-        self.spawn_ws(
-            async move {
-                ws.unsubscribe_quotes(instrument_id)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("{e}"))
-            },
-            "unsubscribe quotes",
-        );
+            self.quote_instruments.remove(&instrument_id);
+            self.last_quotes.remove(&instrument_id);
+            self.spawn_ws(
+                async move {
+                    ws.unsubscribe_quotes(instrument_id)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("{e}"))
+                },
+                "unsubscribe quotes",
+            );
 
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_trades(&mut self, cmd: &UnsubscribeTrades) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        let ws = self.ws.clone();
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let ws = self.ws.clone();
+            self.spawn_ws(
+                async move {
+                    ws.unsubscribe_trades(instrument_id)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("{e}"))
+                },
+                "unsubscribe trades",
+            );
 
-        self.spawn_ws(
-            async move {
-                ws.unsubscribe_trades(instrument_id)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("{e}"))
-            },
-            "unsubscribe trades",
-        );
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_mark_prices(&mut self, cmd: &UnsubscribeMarkPrices) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        let ws = self.ws.clone();
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let ws = self.ws.clone();
+            self.spawn_ws(
+                async move {
+                    ws.unsubscribe_mark_price(instrument_id)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("{e}"))
+                },
+                "unsubscribe mark price",
+            );
 
-        self.spawn_ws(
-            async move {
-                ws.unsubscribe_mark_price(instrument_id)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("{e}"))
-            },
-            "unsubscribe mark price",
-        );
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_index_prices(&mut self, cmd: &UnsubscribeIndexPrices) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        let ws = self.ws.clone();
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let ws = self.ws.clone();
+            self.spawn_ws(
+                async move {
+                    ws.unsubscribe_index_price(instrument_id)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("{e}"))
+                },
+                "unsubscribe index price",
+            );
 
-        self.spawn_ws(
-            async move {
-                ws.unsubscribe_index_price(instrument_id)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("{e}"))
-            },
-            "unsubscribe index price",
-        );
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_funding_rates(&mut self, cmd: &UnsubscribeFundingRates) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        let ws = self.ws.clone();
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let ws = self.ws.clone();
+            self.spawn_ws(
+                async move {
+                    ws.unsubscribe_funding_rate(instrument_id)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("{e}"))
+                },
+                "unsubscribe funding rate",
+            );
 
-        self.spawn_ws(
-            async move {
-                ws.unsubscribe_funding_rate(instrument_id)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("{e}"))
-            },
-            "unsubscribe funding rate",
-        );
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_bars(&mut self, _cmd: &UnsubscribeBars) -> anyhow::Result<()> {

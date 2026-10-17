@@ -16,7 +16,10 @@
 //! Data client trait definition.
 
 use async_trait::async_trait;
-use nautilus_model::identifiers::{ClientId, Venue};
+use nautilus_model::{
+    data::BarType,
+    identifiers::{ClientId, InstrumentId, Venue},
+};
 
 use super::log_not_implemented;
 use crate::messages::data::{
@@ -25,7 +28,7 @@ use crate::messages::data::{
     RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth,
     SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
     SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices,
-    SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, UnsubscribeBars,
+    SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, SubscriptionError, UnsubscribeBars,
     UnsubscribeBookDeltas, UnsubscribeBookDepth, UnsubscribeCustomData, UnsubscribeFundingRates,
     UnsubscribeIndexPrices, UnsubscribeInstrument, UnsubscribeInstrumentClose,
     UnsubscribeInstrumentStatus, UnsubscribeInstruments, UnsubscribeMarkPrices,
@@ -40,6 +43,15 @@ use crate::messages::defi::{
 };
 
 /// Defines the interface for a data client, managing connections, subscriptions, and requests.
+///
+/// Instrument and bar commands carry ordered member lists in both directions. A hook limited to
+/// one member rejects a larger list before effects. Supported lists execute best effort without
+/// rolling back accepted members. Validate command-wide settings before effects.
+///
+/// `Ok(())` accepts every member. [`SubscriptionError`] lists the accepted members exactly.
+/// Acceptance is synchronous; other errors accept none. Bar outcomes use full bar types, and
+/// unsubscribe acceptance means successful release. Venue acknowledgements remain asynchronous.
+/// Adapters can batch wire requests or iterate locally.
 ///
 /// # Thread Safety
 ///
@@ -131,7 +143,7 @@ pub trait DataClient {
         Ok(())
     }
 
-    /// Subscribes to data for a single instrument.
+    /// Subscribes to definitions for the specified instruments.
     ///
     /// # Errors
     ///
@@ -141,7 +153,7 @@ pub trait DataClient {
         Ok(())
     }
 
-    /// Subscribes to order book delta updates for the specified instrument.
+    /// Subscribes to order book delta updates for the specified instruments.
     ///
     /// # Errors
     ///
@@ -151,7 +163,7 @@ pub trait DataClient {
         Ok(())
     }
 
-    /// Subscribes to order book depth snapshot updates for the specified instrument.
+    /// Subscribes to order book depth snapshot updates for the specified instruments.
     ///
     /// # Errors
     ///
@@ -161,7 +173,12 @@ pub trait DataClient {
         Ok(())
     }
 
-    /// Subscribes to quote updates for the specified instrument.
+    /// Subscribes to quote updates for the specified instruments.
+    ///
+    /// If a failed dispatch accepted any IDs, the client returns
+    /// [`SubscriptionError`](crate::messages::data::SubscriptionError) with exactly those IDs.
+    /// Accepted IDs must belong to the command. Acceptance records client dispatch;
+    /// venue acknowledgements arrive asynchronously.
     ///
     /// # Errors
     ///
@@ -171,7 +188,12 @@ pub trait DataClient {
         Ok(())
     }
 
-    /// Subscribes to trade updates for the specified instrument.
+    /// Subscribes to trade updates for the specified instruments.
+    ///
+    /// If a failed dispatch accepted any IDs, the client returns
+    /// [`SubscriptionError`](crate::messages::data::SubscriptionError) with exactly those IDs.
+    /// Accepted IDs must belong to the command. Acceptance records client dispatch;
+    /// venue acknowledgements arrive asynchronously.
     ///
     /// # Errors
     ///
@@ -181,7 +203,7 @@ pub trait DataClient {
         Ok(())
     }
 
-    /// Subscribes to mark price updates for the specified instrument.
+    /// Subscribes to mark price updates for the specified instruments.
     ///
     /// # Errors
     ///
@@ -191,7 +213,7 @@ pub trait DataClient {
         Ok(())
     }
 
-    /// Subscribes to index price updates for the specified instrument.
+    /// Subscribes to index price updates for the specified instruments.
     ///
     /// # Errors
     ///
@@ -201,7 +223,7 @@ pub trait DataClient {
         Ok(())
     }
 
-    /// Subscribes to funding rate updates for the specified instrument.
+    /// Subscribes to funding rate updates for the specified instruments.
     ///
     /// # Errors
     ///
@@ -211,7 +233,7 @@ pub trait DataClient {
         Ok(())
     }
 
-    /// Subscribes to bar updates of the specified bar type.
+    /// Subscribes to bar updates of the specified full bar types.
     ///
     /// # Errors
     ///
@@ -221,7 +243,7 @@ pub trait DataClient {
         Ok(())
     }
 
-    /// Subscribes to status updates for the specified instrument.
+    /// Subscribes to status updates for the specified instruments.
     ///
     /// # Errors
     ///
@@ -234,7 +256,7 @@ pub trait DataClient {
         Ok(())
     }
 
-    /// Subscribes to instrument close events for the specified instrument.
+    /// Subscribes to instrument close events for the specified instruments.
     ///
     /// # Errors
     ///
@@ -244,7 +266,7 @@ pub trait DataClient {
         Ok(())
     }
 
-    /// Subscribes to exchange-provided option greeks for the specified instrument.
+    /// Subscribes to exchange-provided option greeks for the specified instruments.
     ///
     /// # Errors
     ///
@@ -343,7 +365,7 @@ pub trait DataClient {
         Ok(())
     }
 
-    /// Unsubscribes from data for the specified instrument.
+    /// Unsubscribes from data for the specified instruments.
     ///
     /// # Errors
     ///
@@ -353,7 +375,7 @@ pub trait DataClient {
         Ok(())
     }
 
-    /// Unsubscribes from order book delta updates for the specified instrument.
+    /// Unsubscribes from order book delta updates for the specified instruments.
     ///
     /// # Errors
     ///
@@ -363,7 +385,7 @@ pub trait DataClient {
         Ok(())
     }
 
-    /// Unsubscribes from order book depth snapshot updates for the specified instrument.
+    /// Unsubscribes from order book depth snapshot updates for the specified instruments.
     ///
     /// # Errors
     ///
@@ -373,7 +395,7 @@ pub trait DataClient {
         Ok(())
     }
 
-    /// Unsubscribes from quote updates for the specified instrument.
+    /// Unsubscribes from quote updates for the specified instruments.
     ///
     /// # Errors
     ///
@@ -383,7 +405,7 @@ pub trait DataClient {
         Ok(())
     }
 
-    /// Unsubscribes from trade updates for the specified instrument.
+    /// Unsubscribes from trade updates for the specified instruments.
     ///
     /// # Errors
     ///
@@ -393,7 +415,7 @@ pub trait DataClient {
         Ok(())
     }
 
-    /// Unsubscribes from mark price updates for the specified instrument.
+    /// Unsubscribes from mark price updates for the specified instruments.
     ///
     /// # Errors
     ///
@@ -403,7 +425,7 @@ pub trait DataClient {
         Ok(())
     }
 
-    /// Unsubscribes from index price updates for the specified instrument.
+    /// Unsubscribes from index price updates for the specified instruments.
     ///
     /// # Errors
     ///
@@ -413,7 +435,7 @@ pub trait DataClient {
         Ok(())
     }
 
-    /// Unsubscribes from funding rate updates for the specified instrument.
+    /// Unsubscribes from funding rate updates for the specified instruments.
     ///
     /// # Errors
     ///
@@ -423,7 +445,7 @@ pub trait DataClient {
         Ok(())
     }
 
-    /// Unsubscribes from bar updates of the specified bar type.
+    /// Unsubscribes from bar updates of the specified full bar types.
     ///
     /// # Errors
     ///
@@ -433,7 +455,7 @@ pub trait DataClient {
         Ok(())
     }
 
-    /// Unsubscribes from instrument status updates for the specified instrument.
+    /// Unsubscribes from instrument status updates for the specified instruments.
     ///
     /// # Errors
     ///
@@ -446,7 +468,7 @@ pub trait DataClient {
         Ok(())
     }
 
-    /// Unsubscribes from instrument close events for the specified instrument.
+    /// Unsubscribes from instrument close events for the specified instruments.
     ///
     /// # Errors
     ///
@@ -459,7 +481,7 @@ pub trait DataClient {
         Ok(())
     }
 
-    /// Unsubscribes from exchange-provided option greeks for the specified instrument.
+    /// Unsubscribes from exchange-provided option greeks for the specified instruments.
     ///
     /// # Errors
     ///
@@ -666,5 +688,58 @@ pub trait DataClient {
     fn request_pool_snapshot(&self, request: RequestPoolSnapshot) -> anyhow::Result<()> {
         log_not_implemented(self.client_id(), &request);
         Ok(())
+    }
+}
+
+/// Executes each instrument operation in order and reports synchronous acceptance.
+///
+/// Validate command-wide settings before calling this function. A member failure does not stop
+/// later members; the returned error preserves the first failure and lists only accepted members.
+///
+/// # Errors
+///
+/// Returns an error if any member fails, with a [`SubscriptionError`] listing accepted members.
+pub fn execute_instrument_subscriptions(
+    members: &[InstrumentId],
+    execute: impl FnMut(InstrumentId) -> anyhow::Result<()>,
+) -> anyhow::Result<()> {
+    execute_members(members, execute)
+        .map_err(|(accepted, source)| SubscriptionError::instruments(accepted, source).into())
+}
+
+/// Executes each full bar type operation in order and reports synchronous acceptance.
+///
+/// Validate command-wide settings before calling this function. A member failure does not stop
+/// later members; acceptance uses full bar types, including types on the same instrument.
+///
+/// # Errors
+///
+/// Returns an error if any member fails, with a [`SubscriptionError`] listing accepted members.
+pub fn execute_bar_subscriptions(
+    members: &[BarType],
+    execute: impl FnMut(BarType) -> anyhow::Result<()>,
+) -> anyhow::Result<()> {
+    execute_members(members, execute)
+        .map_err(|(accepted, source)| SubscriptionError::bars(accepted, source).into())
+}
+
+fn execute_members<T: Copy>(
+    members: &[T],
+    mut execute: impl FnMut(T) -> anyhow::Result<()>,
+) -> Result<(), (Vec<T>, anyhow::Error)> {
+    let mut accepted = Vec::new();
+    let mut failure = None;
+
+    for &member in members {
+        match execute(member) {
+            Ok(()) => accepted.push(member),
+            Err(e) if failure.is_none() => failure = Some(e),
+            Err(_) => {}
+        }
+    }
+
+    match failure {
+        Some(e) => Err((accepted, e)),
+        None => Ok(()),
     }
 }

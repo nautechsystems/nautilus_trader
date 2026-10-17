@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use ahash::AHashSet;
+
 use super::*;
 
 #[rstest]
@@ -1122,7 +1124,7 @@ fn test_shared_book_snapshot_retries_source_after_client_failure(
         panic!("expected a book deltas source subscription");
     };
 
-    assert_eq!(command.instrument_id, audusd_sim.id);
+    assert_eq!(command.single_instrument_id().unwrap(), audusd_sim.id);
     assert_eq!(command.book_type, BookType::L3_MBO);
     assert_eq!(command.client_id, Some(client_id));
     assert_eq!(command.venue, Some(venue));
@@ -1159,7 +1161,7 @@ fn test_shared_book_snapshot_retries_source_after_client_failure(
         panic!("expected a book deltas source unsubscription");
     };
 
-    assert_eq!(command.instrument_id, audusd_sim.id);
+    assert_eq!(command.single_instrument_id().unwrap(), audusd_sim.id);
     assert_eq!(command.client_id, Some(client_id));
     assert_eq!(command.venue, Some(venue));
     assert_eq!(command.ts_init, UnixNanos::from(3));
@@ -1252,7 +1254,7 @@ fn test_book_snapshot_retains_existing_deltas_source(
         panic!("expected a book deltas source unsubscription");
     };
 
-    assert_eq!(command.instrument_id, audusd_sim.id);
+    assert_eq!(command.single_instrument_id().unwrap(), audusd_sim.id);
     assert_eq!(command.client_id, Some(client_id));
     assert_eq!(command.venue, Some(venue));
     assert_eq!(command.ts_init, UnixNanos::from(4));
@@ -1689,6 +1691,7 @@ fn test_process_book_snapshot_publish(
 
 #[rstest]
 fn test_process_book_snapshot_publish_for_multiple_instruments_same_interval(
+    #[values(false, true)] batch: bool,
     audusd_sim: CurrencyPair,
     gbpusd_sim: CurrencyPair,
     clock: Rc<RefCell<VirtualClock>>,
@@ -1723,8 +1726,18 @@ fn test_process_book_snapshot_publish_for_multiple_instruments_same_interval(
     msgbus::subscribe_book_snapshots(aud_topic.into(), aud_handler, None);
     msgbus::subscribe_book_snapshots(gbp_topic.into(), gbp_handler, None);
 
-    execute_book_snapshot_subscribe(&data_engine, audusd_sim.id, client_id, venue, interval_ms);
-    execute_book_snapshot_subscribe(&data_engine, gbpusd_sim.id, client_id, venue, interval_ms);
+    if batch {
+        execute_book_snapshot_subscribe(
+            &data_engine,
+            [audusd_sim.id, gbpusd_sim.id],
+            client_id,
+            venue,
+            interval_ms,
+        );
+    } else {
+        execute_book_snapshot_subscribe(&data_engine, audusd_sim.id, client_id, venue, interval_ms);
+        execute_book_snapshot_subscribe(&data_engine, gbpusd_sim.id, client_id, venue, interval_ms);
+    }
 
     process_book_delta(&data_engine, audusd_sim.id);
     process_book_delta(&data_engine, gbpusd_sim.id);
@@ -1734,6 +1747,16 @@ fn test_process_book_snapshot_publish_for_multiple_instruments_same_interval(
     assert_eq!(aud_saver.get_messages()[0].instrument_id, audusd_sim.id);
     assert_eq!(gbp_saver.get_messages().len(), 1);
     assert_eq!(gbp_saver.get_messages()[0].instrument_id, gbpusd_sim.id);
+    execute_book_snapshot_unsubscribe(
+        &data_engine,
+        [audusd_sim.id, gbpusd_sim.id],
+        client_id,
+        venue,
+        interval_ms,
+    );
+    advance_clock_and_dispatch(&clock, 400_000_000);
+    assert_eq!(aud_saver.get_messages().len(), 1);
+    assert_eq!(gbp_saver.get_messages().len(), 1);
 }
 
 #[rstest]
@@ -1788,7 +1811,7 @@ fn test_process_book_snapshot_publish_for_multiple_intervals_same_instrument(
     assert_eq!(recorded.len(), 1);
     assert!(matches!(
         &recorded[0],
-        DataCommand::Subscribe(SubscribeCommand::BookDeltas(cmd)) if cmd.instrument_id == audusd_sim.id
+        DataCommand::Subscribe(SubscribeCommand::BookDeltas(cmd)) if cmd.single_instrument_id().unwrap() == audusd_sim.id
     ));
     drop(recorded);
 
@@ -2338,4 +2361,97 @@ impl BookSubscriptionKind {
             Self::Depth => MockSubscribeFailure::BookDepth,
         }
     }
+}
+
+#[rstest]
+#[case::deltas(false)]
+#[case::depth(true)]
+fn test_book_preparation_error_continues_without_releasing_peers(
+    #[case] depth: bool,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let first = InstrumentId::from("AUD/USD.SIM");
+    let owned = InstrumentId::from("GBP/USD.SIM");
+    let second = InstrumentId::from("EUR/USD.SIM");
+    let conflicting = InstrumentId::from("CONFLICT.SIM");
+
+    let mut engine = data_engine.borrow_mut();
+    let recorder = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(clock, cache, client_id, venue, None, &recorder, &mut engine);
+
+    let family = if depth { "BookDepth" } else { "BookDeltas" };
+    let mut fields = json!({"instrument_ids": [owned], "book_type": "L2_MBP", "depth": 7, "managed": true,
+        "client_id": client_id, "venue": venue, "command_id": UUID4::new(), "ts_init": 17,
+        "correlation_id": null, "params": {"route": 23}});
+    let original: SubscribeCommand = serde_json::from_value(json!({family: fields})).unwrap();
+    engine.execute_subscribe(original.clone()).unwrap();
+    fields["command_id"] = json!(UUID4::new());
+    fields["instrument_ids"] = json!([conflicting]);
+    fields["params"] = json!({"route": 29});
+    let conflict: SubscribeCommand = serde_json::from_value(json!({family: fields})).unwrap();
+    engine.execute_subscribe(conflict.clone()).unwrap();
+    fields["command_id"] = json!(UUID4::new());
+    fields["instrument_ids"] = json!([first, conflicting, second, owned]);
+    fields["params"] = json!({"route": 23});
+    let failed: SubscribeCommand = serde_json::from_value(json!({family: fields})).unwrap();
+    let error = engine.execute_subscribe(failed.clone()).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "Conflicting book subscription for CONFLICT.SIM: shared book sources must use the same client, book type, depth, and parameters"
+    );
+    let prefix = failed.with_instrument_ids([first, second]).unwrap();
+
+    let recorded: Vec<_> = recorder
+        .borrow()
+        .iter()
+        .map(|command| match command {
+            DataCommand::Subscribe(command) => serde_json::to_value(command).unwrap(),
+            _ => unreachable!(),
+        })
+        .collect();
+
+    assert_eq!(
+        recorded,
+        vec![
+            serde_json::to_value(&original).unwrap(),
+            serde_json::to_value(&conflict).unwrap(),
+            serde_json::to_value(&prefix).unwrap()
+        ]
+    );
+    let release = failed.clone().into_unsubscribe(
+        UUID4::new(),
+        UnixNanos::from(31),
+        Some(failed.command_id()),
+    );
+    engine.execute_unsubscribe(&release).unwrap();
+    let active = if depth {
+        engine.subscribed_book_depth()
+    } else {
+        engine.subscribed_book_deltas()
+    };
+
+    assert_eq!(
+        AHashSet::from_iter(active),
+        AHashSet::from_iter([owned, conflicting])
+    );
+    assert_eq!(recorder.borrow().len(), 4);
+    let expected = prefix.into_unsubscribe(
+        release.command_id(),
+        release.ts_init(),
+        release.correlation_id(),
+    );
+    let recorded = recorder.borrow();
+
+    let DataCommand::Unsubscribe(actual) = &recorded[3] else {
+        panic!("expected prefix release");
+    };
+
+    assert_eq!(
+        serde_json::to_value(actual).unwrap(),
+        serde_json::to_value(expected).unwrap()
+    );
 }

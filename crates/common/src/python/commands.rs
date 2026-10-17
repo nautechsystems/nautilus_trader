@@ -196,9 +196,9 @@ impl SubscribeInstrument {
     }
 
     #[getter]
-    #[pyo3(name = "instrument_id")]
-    fn py_instrument_id(&self) -> InstrumentId {
-        self.instrument_id
+    #[pyo3(name = "instrument_ids")]
+    fn py_instrument_ids(&self) -> Vec<InstrumentId> {
+        self.instrument_ids.clone()
     }
 }
 
@@ -245,9 +245,9 @@ impl SubscribeBookDeltas {
     }
 
     #[getter]
-    #[pyo3(name = "instrument_id")]
-    fn py_instrument_id(&self) -> InstrumentId {
-        self.instrument_id
+    #[pyo3(name = "instrument_ids")]
+    fn py_instrument_ids(&self) -> Vec<InstrumentId> {
+        self.instrument_ids.clone()
     }
 
     #[getter]
@@ -312,9 +312,9 @@ impl SubscribeBookDepth {
     }
 
     #[getter]
-    #[pyo3(name = "instrument_id")]
-    fn py_instrument_id(&self) -> InstrumentId {
-        self.instrument_id
+    #[pyo3(name = "instrument_ids")]
+    fn py_instrument_ids(&self) -> Vec<InstrumentId> {
+        self.instrument_ids.clone()
     }
 
     #[getter]
@@ -379,9 +379,9 @@ impl SubscribeQuotes {
     }
 
     #[getter]
-    #[pyo3(name = "instrument_id")]
-    fn py_instrument_id(&self) -> InstrumentId {
-        self.instrument_id
+    #[pyo3(name = "instrument_ids")]
+    fn py_instrument_ids(&self) -> Vec<InstrumentId> {
+        self.instrument_ids.clone()
     }
 }
 
@@ -428,9 +428,9 @@ impl SubscribeTrades {
     }
 
     #[getter]
-    #[pyo3(name = "instrument_id")]
-    fn py_instrument_id(&self) -> InstrumentId {
-        self.instrument_id
+    #[pyo3(name = "instrument_ids")]
+    fn py_instrument_ids(&self) -> Vec<InstrumentId> {
+        self.instrument_ids.clone()
     }
 }
 
@@ -477,9 +477,9 @@ impl SubscribeMarkPrices {
     }
 
     #[getter]
-    #[pyo3(name = "instrument_id")]
-    fn py_instrument_id(&self) -> InstrumentId {
-        self.instrument_id
+    #[pyo3(name = "instrument_ids")]
+    fn py_instrument_ids(&self) -> Vec<InstrumentId> {
+        self.instrument_ids.clone()
     }
 }
 
@@ -526,9 +526,9 @@ impl SubscribeIndexPrices {
     }
 
     #[getter]
-    #[pyo3(name = "instrument_id")]
-    fn py_instrument_id(&self) -> InstrumentId {
-        self.instrument_id
+    #[pyo3(name = "instrument_ids")]
+    fn py_instrument_ids(&self) -> Vec<InstrumentId> {
+        self.instrument_ids.clone()
     }
 }
 
@@ -575,9 +575,9 @@ impl SubscribeFundingRates {
     }
 
     #[getter]
-    #[pyo3(name = "instrument_id")]
-    fn py_instrument_id(&self) -> InstrumentId {
-        self.instrument_id
+    #[pyo3(name = "instrument_ids")]
+    fn py_instrument_ids(&self) -> Vec<InstrumentId> {
+        self.instrument_ids.clone()
     }
 }
 
@@ -624,9 +624,9 @@ impl SubscribeBars {
     }
 
     #[getter]
-    #[pyo3(name = "bar_type")]
-    fn py_bar_type(&self) -> BarType {
-        self.bar_type
+    #[pyo3(name = "bar_types")]
+    fn py_bar_types(&self) -> Vec<BarType> {
+        self.bar_types.clone()
     }
 }
 
@@ -673,9 +673,9 @@ impl SubscribeInstrumentStatus {
     }
 
     #[getter]
-    #[pyo3(name = "instrument_id")]
-    fn py_instrument_id(&self) -> InstrumentId {
-        self.instrument_id
+    #[pyo3(name = "instrument_ids")]
+    fn py_instrument_ids(&self) -> Vec<InstrumentId> {
+        self.instrument_ids.clone()
     }
 }
 
@@ -722,9 +722,9 @@ impl SubscribeInstrumentClose {
     }
 
     #[getter]
-    #[pyo3(name = "instrument_id")]
-    fn py_instrument_id(&self) -> InstrumentId {
-        self.instrument_id
+    #[pyo3(name = "instrument_ids")]
+    fn py_instrument_ids(&self) -> Vec<InstrumentId> {
+        self.instrument_ids.clone()
     }
 }
 
@@ -771,9 +771,9 @@ impl SubscribeOptionGreeks {
     }
 
     #[getter]
-    #[pyo3(name = "instrument_id")]
-    fn py_instrument_id(&self) -> InstrumentId {
-        self.instrument_id
+    #[pyo3(name = "instrument_ids")]
+    fn py_instrument_ids(&self) -> Vec<InstrumentId> {
+        self.instrument_ids.clone()
     }
 }
 
@@ -912,9 +912,9 @@ impl UnsubscribeInstrument {
     }
 
     #[getter]
-    #[pyo3(name = "instrument_id")]
-    fn py_instrument_id(&self) -> InstrumentId {
-        self.instrument_id
+    #[pyo3(name = "instrument_ids")]
+    fn py_instrument_ids(&self) -> Vec<InstrumentId> {
+        self.instrument_ids.clone()
     }
 }
 
@@ -961,9 +961,9 @@ impl UnsubscribeBookDeltas {
     }
 
     #[getter]
-    #[pyo3(name = "instrument_id")]
-    fn py_instrument_id(&self) -> InstrumentId {
-        self.instrument_id
+    #[pyo3(name = "instrument_ids")]
+    fn py_instrument_ids(&self) -> Vec<InstrumentId> {
+        self.instrument_ids.clone()
     }
 }
 
@@ -1010,9 +1010,9 @@ impl UnsubscribeBookDepth {
     }
 
     #[getter]
-    #[pyo3(name = "instrument_id")]
-    fn py_instrument_id(&self) -> InstrumentId {
-        self.instrument_id
+    #[pyo3(name = "instrument_ids")]
+    fn py_instrument_ids(&self) -> Vec<InstrumentId> {
+        self.instrument_ids.clone()
     }
 }
 
@@ -1059,9 +1059,9 @@ impl UnsubscribeQuotes {
     }
 
     #[getter]
-    #[pyo3(name = "instrument_id")]
-    fn py_instrument_id(&self) -> InstrumentId {
-        self.instrument_id
+    #[pyo3(name = "instrument_ids")]
+    fn py_instrument_ids(&self) -> Vec<InstrumentId> {
+        self.instrument_ids.clone()
     }
 }
 
@@ -1108,9 +1108,9 @@ impl UnsubscribeTrades {
     }
 
     #[getter]
-    #[pyo3(name = "instrument_id")]
-    fn py_instrument_id(&self) -> InstrumentId {
-        self.instrument_id
+    #[pyo3(name = "instrument_ids")]
+    fn py_instrument_ids(&self) -> Vec<InstrumentId> {
+        self.instrument_ids.clone()
     }
 }
 
@@ -1157,9 +1157,9 @@ impl UnsubscribeMarkPrices {
     }
 
     #[getter]
-    #[pyo3(name = "instrument_id")]
-    fn py_instrument_id(&self) -> InstrumentId {
-        self.instrument_id
+    #[pyo3(name = "instrument_ids")]
+    fn py_instrument_ids(&self) -> Vec<InstrumentId> {
+        self.instrument_ids.clone()
     }
 }
 
@@ -1206,9 +1206,9 @@ impl UnsubscribeIndexPrices {
     }
 
     #[getter]
-    #[pyo3(name = "instrument_id")]
-    fn py_instrument_id(&self) -> InstrumentId {
-        self.instrument_id
+    #[pyo3(name = "instrument_ids")]
+    fn py_instrument_ids(&self) -> Vec<InstrumentId> {
+        self.instrument_ids.clone()
     }
 }
 
@@ -1255,9 +1255,9 @@ impl UnsubscribeFundingRates {
     }
 
     #[getter]
-    #[pyo3(name = "instrument_id")]
-    fn py_instrument_id(&self) -> InstrumentId {
-        self.instrument_id
+    #[pyo3(name = "instrument_ids")]
+    fn py_instrument_ids(&self) -> Vec<InstrumentId> {
+        self.instrument_ids.clone()
     }
 }
 
@@ -1304,9 +1304,9 @@ impl UnsubscribeBars {
     }
 
     #[getter]
-    #[pyo3(name = "bar_type")]
-    fn py_bar_type(&self) -> BarType {
-        self.bar_type
+    #[pyo3(name = "bar_types")]
+    fn py_bar_types(&self) -> Vec<BarType> {
+        self.bar_types.clone()
     }
 }
 
@@ -1353,9 +1353,9 @@ impl UnsubscribeInstrumentStatus {
     }
 
     #[getter]
-    #[pyo3(name = "instrument_id")]
-    fn py_instrument_id(&self) -> InstrumentId {
-        self.instrument_id
+    #[pyo3(name = "instrument_ids")]
+    fn py_instrument_ids(&self) -> Vec<InstrumentId> {
+        self.instrument_ids.clone()
     }
 }
 
@@ -1402,9 +1402,9 @@ impl UnsubscribeInstrumentClose {
     }
 
     #[getter]
-    #[pyo3(name = "instrument_id")]
-    fn py_instrument_id(&self) -> InstrumentId {
-        self.instrument_id
+    #[pyo3(name = "instrument_ids")]
+    fn py_instrument_ids(&self) -> Vec<InstrumentId> {
+        self.instrument_ids.clone()
     }
 }
 
@@ -1451,9 +1451,9 @@ impl UnsubscribeOptionGreeks {
     }
 
     #[getter]
-    #[pyo3(name = "instrument_id")]
-    fn py_instrument_id(&self) -> InstrumentId {
-        self.instrument_id
+    #[pyo3(name = "instrument_ids")]
+    fn py_instrument_ids(&self) -> Vec<InstrumentId> {
+        self.instrument_ids.clone()
     }
 }
 
@@ -2379,11 +2379,77 @@ impl GeneratePositionStatusReports {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_core::Params;
+    use nautilus_core::{Params, UnixNanos};
     use pyo3::{exceptions::PyAttributeError, types::PyList};
     use rstest::rstest;
 
     use super::*;
+
+    macro_rules! identifier_property_tests {
+        ($test_name:ident, $subscribe:ident, $unsubscribe:ident) => {
+            #[rstest]
+            #[case::subscribe(true)]
+            #[case::unsubscribe(false)]
+            fn $test_name(#[case] subscribe: bool) {
+                Python::initialize();
+                let first = InstrumentId::from("ESM4.GLBX");
+                let second = InstrumentId::from("NQM4.GLBX");
+
+                let command = $subscribe::new(
+                    [second, first],
+                    Some(ClientId::from("QUOTE-CLIENT")),
+                    Some(first.venue),
+                    UUID4::new(),
+                    UnixNanos::from(37),
+                    Some(UUID4::new()),
+                    None,
+                );
+                Python::attach(|py| {
+                    let object = if subscribe {
+                        Py::new(py, command).unwrap().into_any()
+                    } else {
+                        let command = $unsubscribe::new(
+                            command.instrument_ids,
+                            command.client_id,
+                            command.venue,
+                            command.command_id,
+                            command.ts_init,
+                            command.correlation_id,
+                            command.params,
+                        );
+                        Py::new(py, command).unwrap().into_any()
+                    };
+
+                    let object = object.bind(py);
+                    let ids = object.getattr("instrument_ids").unwrap();
+                    let before = ids.extract::<Vec<InstrumentId>>().unwrap();
+                    ids.call_method0("clear").unwrap();
+                    let after = object
+                        .getattr("instrument_ids")
+                        .unwrap()
+                        .extract::<Vec<InstrumentId>>()
+                        .unwrap();
+                    let old_field = object.getattr("instrument_id").unwrap_err();
+                    let assignment = object.setattr("instrument_ids", vec![first]).unwrap_err();
+                    assert_eq!(before, vec![second, first]);
+                    assert_eq!(after, vec![second, first]);
+                    assert!(old_field.is_instance_of::<PyAttributeError>(py));
+                    assert!(assignment.is_instance_of::<PyAttributeError>(py));
+                });
+            }
+        };
+    }
+
+    identifier_property_tests!(
+        test_quote_command_identifier_lists_are_isolated_and_read_only,
+        SubscribeQuotes,
+        UnsubscribeQuotes
+    );
+    identifier_property_tests!(
+        test_trade_command_identifier_lists_are_isolated_and_read_only,
+        SubscribeTrades,
+        UnsubscribeTrades
+    );
 
     #[rstest]
     #[case(Some(7), Some(19))]
@@ -2446,11 +2512,11 @@ mod tests {
             );
             assert_eq!(
                 bound
-                    .getattr("instrument_id")
+                    .getattr("instrument_ids")
                     .unwrap()
-                    .extract::<InstrumentId>()
+                    .extract::<Vec<InstrumentId>>()
                     .unwrap(),
-                command.instrument_id
+                command.instrument_ids
             );
             assert_eq!(
                 bound
@@ -2603,4 +2669,39 @@ mod tests {
             );
         });
     }
+    identifier_property_tests!(
+        instrument_identifiers_are_owned_and_read_only,
+        SubscribeInstrument,
+        UnsubscribeInstrument
+    );
+    identifier_property_tests!(
+        mark_prices_identifiers_are_owned_and_read_only,
+        SubscribeMarkPrices,
+        UnsubscribeMarkPrices
+    );
+    identifier_property_tests!(
+        index_prices_identifiers_are_owned_and_read_only,
+        SubscribeIndexPrices,
+        UnsubscribeIndexPrices
+    );
+    identifier_property_tests!(
+        funding_rates_identifiers_are_owned_and_read_only,
+        SubscribeFundingRates,
+        UnsubscribeFundingRates
+    );
+    identifier_property_tests!(
+        instrument_status_identifiers_are_owned_and_read_only,
+        SubscribeInstrumentStatus,
+        UnsubscribeInstrumentStatus
+    );
+    identifier_property_tests!(
+        instrument_close_identifiers_are_owned_and_read_only,
+        SubscribeInstrumentClose,
+        UnsubscribeInstrumentClose
+    );
+    identifier_property_tests!(
+        option_greeks_identifiers_are_owned_and_read_only,
+        SubscribeOptionGreeks,
+        UnsubscribeOptionGreeks
+    );
 }

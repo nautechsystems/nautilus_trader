@@ -27,7 +27,7 @@ use anyhow::Context;
 use jiff::Timestamp;
 use nautilus_common::{
     cache::InstrumentLookupError,
-    clients::DataClient,
+    clients::{DataClient, execute_bar_subscriptions, execute_instrument_subscriptions},
     live::{dst::time::Instant, runner::get_data_event_sender, sender::EventSender},
     messages::{
         DataEvent,
@@ -969,167 +969,173 @@ impl DataClient for HyperliquidDataClient {
     }
 
     fn subscribe_instrument(&mut self, cmd: SubscribeInstrument) -> anyhow::Result<()> {
-        let instruments = self.instruments.load();
-        if let Some(instrument) = instruments.get(&cmd.instrument_id) {
-            if let Err(e) = self
-                .data_sender
-                .send(DataEvent::Instrument(instrument.clone()))
-            {
-                log::error!("Failed to send instrument {}: {e}", cmd.instrument_id);
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let instruments = self.instruments.load();
+            if let Some(instrument) = instruments.get(&instrument_id) {
+                if let Err(e) = self
+                    .data_sender
+                    .send(DataEvent::Instrument(instrument.clone()))
+                {
+                    log::error!("Failed to send instrument {instrument_id}: {e}");
+                }
+            } else {
+                log::warn!("Instrument {instrument_id} not found in cache");
             }
-        } else {
-            log::warn!("Instrument {} not found in cache", cmd.instrument_id);
-        }
-        Ok(())
+
+            Ok(())
+        })
     }
 
     fn subscribe_book_deltas(&mut self, subscription: SubscribeBookDeltas) -> anyhow::Result<()> {
-        if subscription.book_type != BookType::L2_MBP {
-            anyhow::bail!("Hyperliquid only supports L2_MBP order book deltas");
-        }
-
-        let instrument_id = subscription.instrument_id;
-        let (n_sig_figs, mantissa) = parse_book_precision_params(subscription.params.as_ref())?;
-        self.register_stream_health(MarketDataChannel::Deltas, instrument_id);
-
-        match self.pending_tasks.spawner() {
-            Ok(tasks) => book::recovery::spawn_subscription_task(
-                instrument_id,
-                n_sig_figs,
-                mantissa,
-                self.book_sync.clone(),
-                self.ws_client.clone(),
-                self.book_snapshot_timeout(),
-                &tasks,
-            ),
-            Err(e) => {
-                log::warn!("Skipping Hyperliquid subscribe_book_deltas after shutdown began: {e}");
+        execute_instrument_subscriptions(&subscription.instrument_ids, |instrument_id| {
+            let subscription = subscription.with_instrument_ids(instrument_id);
+            if subscription.book_type != BookType::L2_MBP {
+                anyhow::bail!("Hyperliquid only supports L2_MBP order book deltas");
             }
-        }
 
-        Ok(())
+            let (n_sig_figs, mantissa) = parse_book_precision_params(subscription.params.as_ref())?;
+            self.register_stream_health(MarketDataChannel::Deltas, instrument_id);
+
+            match self.pending_tasks.spawner() {
+                Ok(tasks) => book::recovery::spawn_subscription_task(
+                    instrument_id,
+                    n_sig_figs,
+                    mantissa,
+                    self.book_sync.clone(),
+                    self.ws_client.clone(),
+                    self.book_snapshot_timeout(),
+                    &tasks,
+                ),
+                Err(e) => {
+                    log::warn!(
+                        "Skipping Hyperliquid subscribe_book_deltas after shutdown began: {e}"
+                    );
+                }
+            }
+
+            Ok(())
+        })
     }
 
     fn subscribe_book_depth(&mut self, subscription: SubscribeBookDepth) -> anyhow::Result<()> {
-        log::debug!("Subscribing to book depth: {}", subscription.instrument_id);
+        execute_instrument_subscriptions(&subscription.instrument_ids, |instrument_id| {
+            let subscription = subscription.with_instrument_ids(instrument_id);
+            log::debug!("Subscribing to book depth: {instrument_id}");
 
-        if subscription.book_type != BookType::L2_MBP {
-            anyhow::bail!("Hyperliquid only supports L2_MBP order book depth");
-        }
+            if subscription.book_type != BookType::L2_MBP {
+                anyhow::bail!("Hyperliquid only supports L2_MBP order book depth");
+            }
 
-        let ws = self.ws_client.clone();
-        let instrument_id = subscription.instrument_id;
-        let (n_sig_figs, mantissa) = parse_book_precision_params(subscription.params.as_ref())?;
-        self.register_stream_health(MarketDataChannel::Depth, instrument_id);
+            let ws = self.ws_client.clone();
+            let (n_sig_figs, mantissa) = parse_book_precision_params(subscription.params.as_ref())?;
+            self.register_stream_health(MarketDataChannel::Depth, instrument_id);
+            self.spawn_task("subscribe_book_depth", async move {
+                ws.subscribe_book_depth_with_options(instrument_id, n_sig_figs, mantissa)
+                    .await
+            });
 
-        self.spawn_task("subscribe_book_depth", async move {
-            ws.subscribe_book_depth_with_options(instrument_id, n_sig_figs, mantissa)
-                .await
-        });
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn subscribe_quotes(&mut self, subscription: SubscribeQuotes) -> anyhow::Result<()> {
-        let ws = self.ws_client.clone();
-        let instrument_id = subscription.instrument_id;
-        self.register_stream_health(MarketDataChannel::Quote, instrument_id);
+        execute_instrument_subscriptions(&subscription.instrument_ids, |instrument_id| {
+            let ws = self.ws_client.clone();
+            self.register_stream_health(MarketDataChannel::Quote, instrument_id);
+            self.spawn_task("subscribe_quotes", async move {
+                ws.subscribe_quotes(instrument_id).await
+            });
 
-        self.spawn_task("subscribe_quotes", async move {
-            ws.subscribe_quotes(instrument_id).await
-        });
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn subscribe_trades(&mut self, subscription: SubscribeTrades) -> anyhow::Result<()> {
-        let ws = self.ws_client.clone();
-        let instrument_id = subscription.instrument_id;
+        execute_instrument_subscriptions(&subscription.instrument_ids, |instrument_id| {
+            let ws = self.ws_client.clone();
+            self.spawn_task("subscribe_trades", async move {
+                ws.subscribe_trades(instrument_id).await
+            });
 
-        self.spawn_task("subscribe_trades", async move {
-            ws.subscribe_trades(instrument_id).await
-        });
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn subscribe_mark_prices(&mut self, cmd: SubscribeMarkPrices) -> anyhow::Result<()> {
-        let ws = self.ws_client.clone();
-        let instrument_id = cmd.instrument_id;
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let ws = self.ws_client.clone();
+            self.spawn_task("subscribe_mark_prices", async move {
+                ws.subscribe_mark_prices(instrument_id).await
+            });
 
-        self.spawn_task("subscribe_mark_prices", async move {
-            ws.subscribe_mark_prices(instrument_id).await
-        });
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn subscribe_index_prices(&mut self, cmd: SubscribeIndexPrices) -> anyhow::Result<()> {
-        let ws = self.ws_client.clone();
-        let instrument_id = cmd.instrument_id;
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let ws = self.ws_client.clone();
+            self.spawn_task("subscribe_index_prices", async move {
+                ws.subscribe_index_prices(instrument_id).await
+            });
 
-        self.spawn_task("subscribe_index_prices", async move {
-            ws.subscribe_index_prices(instrument_id).await
-        });
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn subscribe_funding_rates(&mut self, cmd: SubscribeFundingRates) -> anyhow::Result<()> {
-        let ws = self.ws_client.clone();
-        let instrument_id = cmd.instrument_id;
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let ws = self.ws_client.clone();
+            self.spawn_task("subscribe_funding_rates", async move {
+                ws.subscribe_funding_rates(instrument_id).await
+            });
 
-        self.spawn_task("subscribe_funding_rates", async move {
-            ws.subscribe_funding_rates(instrument_id).await
-        });
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn subscribe_bars(&mut self, subscription: SubscribeBars) -> anyhow::Result<()> {
-        let instrument_id = subscription.bar_type.instrument_id();
-        if !self.instruments.contains_key(&instrument_id) {
-            anyhow::bail!(InstrumentLookupError::not_found(instrument_id));
-        }
+        execute_bar_subscriptions(&subscription.bar_types, |bar_type| {
+            let instrument_id = bar_type.instrument_id();
+            if !self.instruments.contains_key(&instrument_id) {
+                anyhow::bail!(InstrumentLookupError::not_found(instrument_id));
+            }
 
-        let bar_type = subscription.bar_type;
-        let ws = self.ws_client.clone();
+            let ws = self.ws_client.clone();
+            self.spawn_task("subscribe_bars", async move {
+                ws.subscribe_bars(bar_type).await
+            });
 
-        self.spawn_task("subscribe_bars", async move {
-            ws.subscribe_bars(bar_type).await
-        });
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn subscribe_instrument_status(
         &mut self,
         cmd: SubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
-        log::debug!(
-            "Subscribing to instrument status: {} (detected by the instrument refresh)",
-            cmd.instrument_id,
-        );
-        let ts = self.clock.get_time_ns();
-        self.instrument_status
-            .lock()
-            .subscribe(cmd.instrument_id, &self.data_sender, ts);
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            log::debug!(
+                "Subscribing to instrument status: {instrument_id} (detected by the instrument refresh)"
+            );
+            let ts = self.clock.get_time_ns();
+            self.instrument_status
+                .lock()
+                .subscribe(instrument_id, &self.data_sender, ts);
 
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_instrument_status(
         &mut self,
         cmd: &UnsubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
-        log::debug!(
-            "Unsubscribing from instrument status: {}",
-            cmd.instrument_id
-        );
-        self.instrument_status
-            .lock()
-            .unsubscribe(&cmd.instrument_id);
-        Ok(())
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            log::debug!("Unsubscribing from instrument status: {instrument_id}");
+            self.instrument_status.lock().unsubscribe(&instrument_id);
+            Ok(())
+        })
     }
 
     fn unsubscribe_instrument(&mut self, _cmd: &UnsubscribeInstrument) -> anyhow::Result<()> {
@@ -1148,118 +1154,106 @@ impl DataClient for HyperliquidDataClient {
         &mut self,
         unsubscription: &UnsubscribeBookDeltas,
     ) -> anyhow::Result<()> {
-        log::debug!(
-            "Unsubscribing from book deltas: {}",
-            unsubscription.instrument_id
-        );
+        execute_instrument_subscriptions(&unsubscription.instrument_ids, |instrument_id| {
+            log::debug!("Unsubscribing from book deltas: {instrument_id}");
 
-        let ws = self.ws_client.clone();
-        let instrument_id = unsubscription.instrument_id;
-        self.remove_stream_health(MarketDataChannel::Deltas, instrument_id);
-        self.book_sync.remove(instrument_id);
+            let ws = self.ws_client.clone();
+            self.remove_stream_health(MarketDataChannel::Deltas, instrument_id);
+            self.book_sync.remove(instrument_id);
+            self.spawn_task("unsubscribe_book_deltas", async move {
+                ws.unsubscribe_book(instrument_id).await
+            });
 
-        self.spawn_task("unsubscribe_book_deltas", async move {
-            ws.unsubscribe_book(instrument_id).await
-        });
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_book_depth(
         &mut self,
         unsubscription: &UnsubscribeBookDepth,
     ) -> anyhow::Result<()> {
-        log::debug!(
-            "Unsubscribing from book depth: {}",
-            unsubscription.instrument_id
-        );
+        execute_instrument_subscriptions(&unsubscription.instrument_ids, |instrument_id| {
+            log::debug!("Unsubscribing from book depth: {instrument_id}");
 
-        let ws = self.ws_client.clone();
-        let instrument_id = unsubscription.instrument_id;
-        self.remove_stream_health(MarketDataChannel::Depth, instrument_id);
+            let ws = self.ws_client.clone();
+            self.remove_stream_health(MarketDataChannel::Depth, instrument_id);
+            self.spawn_task("unsubscribe_book_depth", async move {
+                ws.unsubscribe_book_depth(instrument_id).await
+            });
 
-        self.spawn_task("unsubscribe_book_depth", async move {
-            ws.unsubscribe_book_depth(instrument_id).await
-        });
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_quotes(&mut self, unsubscription: &UnsubscribeQuotes) -> anyhow::Result<()> {
-        log::debug!(
-            "Unsubscribing from quotes: {}",
-            unsubscription.instrument_id
-        );
+        execute_instrument_subscriptions(&unsubscription.instrument_ids, |instrument_id| {
+            log::debug!("Unsubscribing from quotes: {instrument_id}");
 
-        let ws = self.ws_client.clone();
-        let instrument_id = unsubscription.instrument_id;
-        self.remove_stream_health(MarketDataChannel::Quote, instrument_id);
+            let ws = self.ws_client.clone();
+            self.remove_stream_health(MarketDataChannel::Quote, instrument_id);
+            self.spawn_task("unsubscribe_quotes", async move {
+                ws.unsubscribe_quotes(instrument_id).await
+            });
 
-        self.spawn_task("unsubscribe_quotes", async move {
-            ws.unsubscribe_quotes(instrument_id).await
-        });
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_trades(&mut self, unsubscription: &UnsubscribeTrades) -> anyhow::Result<()> {
-        log::debug!(
-            "Unsubscribing from trades: {}",
-            unsubscription.instrument_id
-        );
+        execute_instrument_subscriptions(&unsubscription.instrument_ids, |instrument_id| {
+            log::debug!("Unsubscribing from trades: {instrument_id}");
 
-        let ws = self.ws_client.clone();
-        let instrument_id = unsubscription.instrument_id;
+            let ws = self.ws_client.clone();
+            self.spawn_task("unsubscribe_trades", async move {
+                ws.unsubscribe_trades(instrument_id).await
+            });
 
-        self.spawn_task("unsubscribe_trades", async move {
-            ws.unsubscribe_trades(instrument_id).await
-        });
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_mark_prices(&mut self, cmd: &UnsubscribeMarkPrices) -> anyhow::Result<()> {
-        let ws = self.ws_client.clone();
-        let instrument_id = cmd.instrument_id;
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let ws = self.ws_client.clone();
+            self.spawn_task("unsubscribe_mark_prices", async move {
+                ws.unsubscribe_mark_prices(instrument_id).await
+            });
 
-        self.spawn_task("unsubscribe_mark_prices", async move {
-            ws.unsubscribe_mark_prices(instrument_id).await
-        });
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_index_prices(&mut self, cmd: &UnsubscribeIndexPrices) -> anyhow::Result<()> {
-        let ws = self.ws_client.clone();
-        let instrument_id = cmd.instrument_id;
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let ws = self.ws_client.clone();
+            self.spawn_task("unsubscribe_index_prices", async move {
+                ws.unsubscribe_index_prices(instrument_id).await
+            });
 
-        self.spawn_task("unsubscribe_index_prices", async move {
-            ws.unsubscribe_index_prices(instrument_id).await
-        });
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_funding_rates(&mut self, cmd: &UnsubscribeFundingRates) -> anyhow::Result<()> {
-        let ws = self.ws_client.clone();
-        let instrument_id = cmd.instrument_id;
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let ws = self.ws_client.clone();
+            self.spawn_task("unsubscribe_funding_rates", async move {
+                ws.unsubscribe_funding_rates(instrument_id).await
+            });
 
-        self.spawn_task("unsubscribe_funding_rates", async move {
-            ws.unsubscribe_funding_rates(instrument_id).await
-        });
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_bars(&mut self, unsubscription: &UnsubscribeBars) -> anyhow::Result<()> {
-        let bar_type = unsubscription.bar_type;
-        let ws = self.ws_client.clone();
+        execute_bar_subscriptions(&unsubscription.bar_types, |bar_type| {
+            let ws = self.ws_client.clone();
+            self.spawn_task("unsubscribe_bars", async move {
+                ws.unsubscribe_bars(bar_type).await
+            });
 
-        self.spawn_task("unsubscribe_bars", async move {
-            ws.unsubscribe_bars(bar_type).await
-        });
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn request_instruments(&self, request: RequestInstruments) -> anyhow::Result<()> {

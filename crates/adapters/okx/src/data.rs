@@ -25,7 +25,7 @@ use anyhow::Context;
 use futures_util::{StreamExt, pin_mut};
 use nautilus_common::{
     cache::quote::QuoteCache,
-    clients::DataClient,
+    clients::{DataClient, execute_bar_subscriptions, execute_instrument_subscriptions},
     live::{
         dst::time::{self, Duration, Instant},
         runner::get_data_event_sender,
@@ -2113,522 +2113,561 @@ impl DataClient for OKXDataClient {
     }
 
     fn subscribe_instrument(&mut self, cmd: SubscribeInstrument) -> anyhow::Result<()> {
-        // OKX instruments channel doesn't support subscribing to individual instruments via instId
-        // Instead, subscribe to the instrument type if not already subscribed
-        let instrument_id = cmd.instrument_id;
-        let ws = self.public_ws()?.clone();
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            // OKX instruments channel doesn't support subscribing to individual instruments via instId
+            // Instead, subscribe to the instrument type if not already subscribed
+            let ws = self.public_ws()?.clone();
+            self.spawn_ws(
+                async move {
+                    ws.subscribe_instrument(instrument_id)
+                        .await
+                        .context("instrument type subscription")?;
+                    Ok(())
+                },
+                "subscribe_instrument",
+            );
 
-        self.spawn_ws(
-            async move {
-                ws.subscribe_instrument(instrument_id)
-                    .await
-                    .context("instrument type subscription")?;
-                Ok(())
-            },
-            "subscribe_instrument",
-        );
-        Ok(())
+            Ok(())
+        })
     }
 
     fn subscribe_book_deltas(&mut self, cmd: SubscribeBookDeltas) -> anyhow::Result<()> {
-        anyhow::ensure!(
-            cmd.book_type == BookType::L2_MBP,
-            "OKX only supports L2_MBP order books"
-        );
-        let channel = self.book_channel(cmd.instrument_id, cmd.depth, cmd.params.as_ref());
-        let was_subscribed = self.book_deltas.contains(&cmd.instrument_id);
-        self.book_deltas.insert(cmd.instrument_id);
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let cmd = cmd.with_instrument_ids(instrument_id);
+            anyhow::ensure!(
+                cmd.book_type == BookType::L2_MBP,
+                "OKX only supports L2_MBP order books"
+            );
+            let channel = self.book_channel(instrument_id, cmd.depth, cmd.params.as_ref());
+            let was_subscribed = self.book_deltas.contains(&instrument_id);
+            self.book_deltas.insert(instrument_id);
 
-        if let Err(e) = self.subscribe_book_channel(cmd.instrument_id, channel) {
-            if !was_subscribed {
-                self.book_deltas.remove(&cmd.instrument_id);
+            if let Err(e) = self.subscribe_book_channel(instrument_id, channel) {
+                if !was_subscribed {
+                    self.book_deltas.remove(&instrument_id);
+                }
+
+                return Err(e);
             }
 
-            return Err(e);
-        }
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn subscribe_book_depth(&mut self, cmd: SubscribeBookDepth) -> anyhow::Result<()> {
-        anyhow::ensure!(
-            cmd.book_type == BookType::L2_MBP,
-            "OKX only supports L2_MBP order books"
-        );
-        let depth = cmd
-            .depth
-            .map_or(BOOK_SNAPSHOT_DEPTH, std::num::NonZero::get);
-        anyhow::ensure!(
-            depth <= BOOK_SNAPSHOT_DEPTH,
-            "OKX depth snapshots support at most {BOOK_SNAPSHOT_DEPTH} levels"
-        );
-        anyhow::ensure!(
-            !cmd.params
-                .as_ref()
-                .and_then(|params| params.get_bool("rpi"))
-                .unwrap_or(false),
-            "OKX native depth snapshots do not support RPI"
-        );
-
-        if let Some(active) = self.book_depths.get_cloned(&cmd.instrument_id) {
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let cmd = cmd.with_instrument_ids(instrument_id);
             anyhow::ensure!(
-                active == depth,
-                "Conflicting OKX snapshot depth for {}",
-                cmd.instrument_id
+                cmd.book_type == BookType::L2_MBP,
+                "OKX only supports L2_MBP order books"
             );
-            return Ok(());
-        }
+            let depth = cmd
+                .depth
+                .map_or(BOOK_SNAPSHOT_DEPTH, std::num::NonZero::get);
+            anyhow::ensure!(
+                depth <= BOOK_SNAPSHOT_DEPTH,
+                "OKX depth snapshots support at most {BOOK_SNAPSHOT_DEPTH} levels"
+            );
+            anyhow::ensure!(
+                !cmd.params
+                    .as_ref()
+                    .and_then(|params| params.get_bool("rpi"))
+                    .unwrap_or(false),
+                "OKX native depth snapshots do not support RPI"
+            );
 
-        let instrument_id = cmd.instrument_id;
-        if self.http_client.is_spread(instrument_id) {
-            self.book_depths.insert(instrument_id, depth);
-            if let Err(e) = self.subscribe_book_channel(instrument_id, OKXBookChannel::SprdBooks5) {
-                self.book_depths.remove(&instrument_id);
-                return Err(e);
+            if let Some(active) = self.book_depths.get_cloned(&instrument_id) {
+                anyhow::ensure!(
+                    active == depth,
+                    "Conflicting OKX snapshot depth for {instrument_id}"
+                );
+                return Ok(());
             }
-        } else {
-            let ws = self.public_ws()?.clone();
-            self.book_depths.insert(instrument_id, depth);
-            self.spawn_ws(
-                async move {
-                    ws.subscribe_book_depth5(instrument_id)
-                        .await
-                        .context("book depth subscription")
-                },
-                "book depth subscription",
-            );
-        }
 
-        Ok(())
+            if self.http_client.is_spread(instrument_id) {
+                self.book_depths.insert(instrument_id, depth);
+                if let Err(e) =
+                    self.subscribe_book_channel(instrument_id, OKXBookChannel::SprdBooks5)
+                {
+                    self.book_depths.remove(&instrument_id);
+                    return Err(e);
+                }
+            } else {
+                let ws = self.public_ws()?.clone();
+                self.book_depths.insert(instrument_id, depth);
+                self.spawn_ws(
+                    async move {
+                        ws.subscribe_book_depth5(instrument_id)
+                            .await
+                            .context("book depth subscription")
+                    },
+                    "book depth subscription",
+                );
+            }
+
+            Ok(())
+        })
     }
 
     fn subscribe_quotes(&mut self, cmd: SubscribeQuotes) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            if self.http_client.is_spread(instrument_id) {
+                let ws = self.business_ws()?.clone();
+                self.spawn_ws(
+                    async move {
+                        ws.subscribe_spread_quotes(instrument_id)
+                            .await
+                            .context("spread quotes subscription")
+                    },
+                    "spread quote subscription",
+                );
 
-        if self.http_client.is_spread(instrument_id) {
-            let ws = self.business_ws()?.clone();
+                return Ok(());
+            }
+
+            let ws = self.public_ws()?.clone();
             self.spawn_ws(
                 async move {
-                    ws.subscribe_spread_quotes(instrument_id)
+                    ws.subscribe_quotes(instrument_id)
                         .await
-                        .context("spread quotes subscription")
+                        .context("quotes subscription")
                 },
-                "spread quote subscription",
+                "quote subscription",
             );
-            return Ok(());
-        }
 
-        let ws = self.public_ws()?.clone();
-        self.spawn_ws(
-            async move {
-                ws.subscribe_quotes(instrument_id)
-                    .await
-                    .context("quotes subscription")
-            },
-            "quote subscription",
-        );
-        Ok(())
+            Ok(())
+        })
     }
 
     fn subscribe_trades(&mut self, cmd: SubscribeTrades) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            if self.http_client.is_spread(instrument_id) {
+                let ws = self.business_ws()?.clone();
+                self.spawn_ws(
+                    async move {
+                        ws.subscribe_spread_trades(instrument_id)
+                            .await
+                            .context("spread trades subscription")
+                    },
+                    "spread trade subscription",
+                );
 
-        if self.http_client.is_spread(instrument_id) {
-            let ws = self.business_ws()?.clone();
+                return Ok(());
+            }
+
+            let ws = self.public_ws()?.clone();
             self.spawn_ws(
                 async move {
-                    ws.subscribe_spread_trades(instrument_id)
+                    ws.subscribe_trades(instrument_id, false)
                         .await
-                        .context("spread trades subscription")
+                        .context("trades subscription")
                 },
-                "spread trade subscription",
+                "trade subscription",
             );
-            return Ok(());
-        }
 
-        let ws = self.public_ws()?.clone();
-        self.spawn_ws(
-            async move {
-                ws.subscribe_trades(instrument_id, false)
-                    .await
-                    .context("trades subscription")
-            },
-            "trade subscription",
-        );
-        Ok(())
+            Ok(())
+        })
     }
 
     fn subscribe_mark_prices(&mut self, cmd: SubscribeMarkPrices) -> anyhow::Result<()> {
-        let ws = self.public_ws()?.clone();
-        let instrument_id = cmd.instrument_id;
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let ws = self.public_ws()?.clone();
+            self.spawn_ws(
+                async move {
+                    ws.subscribe_mark_prices(instrument_id)
+                        .await
+                        .context("mark price subscription")
+                },
+                "mark price subscription",
+            );
 
-        self.spawn_ws(
-            async move {
-                ws.subscribe_mark_prices(instrument_id)
-                    .await
-                    .context("mark price subscription")
-            },
-            "mark price subscription",
-        );
-        Ok(())
+            Ok(())
+        })
     }
 
     fn subscribe_index_prices(&mut self, cmd: SubscribeIndexPrices) -> anyhow::Result<()> {
-        let ws = self.public_ws()?.clone();
-        let instrument_id = cmd.instrument_id;
-        let symbol = instrument_id.symbol.inner();
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let ws = self.public_ws()?.clone();
+            let symbol = instrument_id.symbol.inner();
 
-        let (base, quote) = parse_base_quote_from_symbol(symbol.as_str())?;
-        let base_pair = Ustr::from(&format!("{base}-{quote}"));
-        self.index_ticker_map.rcu(|m| {
-            m.entry(base_pair).or_default().insert(symbol);
-        });
+            let (base, quote) = parse_base_quote_from_symbol(symbol.as_str())?;
+            let base_pair = Ustr::from(&format!("{base}-{quote}"));
+            self.index_ticker_map.rcu(|m| {
+                m.entry(base_pair).or_default().insert(symbol);
+            });
 
-        self.spawn_ws(
-            async move {
-                ws.subscribe_index_prices(instrument_id)
-                    .await
-                    .context("index price subscription")
-            },
-            "index price subscription",
-        );
-        Ok(())
+            self.spawn_ws(
+                async move {
+                    ws.subscribe_index_prices(instrument_id)
+                        .await
+                        .context("index price subscription")
+                },
+                "index price subscription",
+            );
+
+            Ok(())
+        })
     }
 
     fn subscribe_bars(&mut self, cmd: SubscribeBars) -> anyhow::Result<()> {
-        let ws = self.business_ws()?.clone();
-        let bar_type = cmd.bar_type;
+        execute_bar_subscriptions(&cmd.bar_types, |bar_type| {
+            let ws = self.business_ws()?.clone();
+            self.spawn_ws(
+                async move {
+                    ws.subscribe_bars(bar_type)
+                        .await
+                        .context("bars subscription")
+                },
+                "bar subscription",
+            );
 
-        self.spawn_ws(
-            async move {
-                ws.subscribe_bars(bar_type)
-                    .await
-                    .context("bars subscription")
-            },
-            "bar subscription",
-        );
-        Ok(())
+            Ok(())
+        })
     }
 
     fn subscribe_funding_rates(&mut self, cmd: SubscribeFundingRates) -> anyhow::Result<()> {
-        let ws = self.public_ws()?.clone();
-        let instrument_id = cmd.instrument_id;
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let ws = self.public_ws()?.clone();
+            self.spawn_ws(
+                async move {
+                    ws.subscribe_funding_rates(instrument_id)
+                        .await
+                        .context("funding rate subscription")
+                },
+                "funding rate subscription",
+            );
 
-        self.spawn_ws(
-            async move {
-                ws.subscribe_funding_rates(instrument_id)
-                    .await
-                    .context("funding rate subscription")
-            },
-            "funding rate subscription",
-        );
-        Ok(())
+            Ok(())
+        })
     }
 
     fn subscribe_option_greeks(&mut self, cmd: SubscribeOptionGreeks) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        let conventions = parse_greeks_conventions_from_params(cmd.params.as_ref());
-        self.option_greeks_subs.insert(instrument_id, conventions);
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let cmd = cmd.with_instrument_ids(instrument_id);
+            let conventions = parse_greeks_conventions_from_params(cmd.params.as_ref());
+            self.option_greeks_subs.insert(instrument_id, conventions);
 
-        let family = extract_inst_family(instrument_id.symbol.inner().as_str())?;
-        let is_first = {
-            let mut family_subs = self.option_summary_family_subs.lock();
-            let count = family_subs.entry(family).or_default();
-            *count += 1;
-            *count == 1
-        };
+            let family = extract_inst_family(instrument_id.symbol.inner().as_str())?;
 
-        if is_first {
-            let ws = self.public_ws()?.clone();
-            let family_subs = self.option_summary_family_subs.clone();
-            self.spawn_ws(
-                async move {
-                    let result = ws
-                        .subscribe_option_summary(family)
-                        .await
-                        .context("opt-summary subscription");
+            let is_first = {
+                let mut family_subs = self.option_summary_family_subs.lock();
+                let count = family_subs.entry(family).or_default();
+                *count += 1;
+                *count == 1
+            };
 
-                    if result.is_err() {
-                        // Roll back the refcount so a retry can re-arm the subscribe;
-                        // otherwise the family wedges and Greeks stay dark.
-                        let mut subs = family_subs.lock();
+            if is_first {
+                let ws = self.public_ws()?.clone();
+                let family_subs = self.option_summary_family_subs.clone();
+                self.spawn_ws(
+                    async move {
+                        let result = ws
+                            .subscribe_option_summary(family)
+                            .await
+                            .context("opt-summary subscription");
 
-                        if let Some(count) = subs.get_mut(&family) {
-                            *count = count.saturating_sub(1);
-                            if *count == 0 {
-                                subs.remove(&family);
+                        if result.is_err() {
+                            // Roll back the refcount so a retry can re-arm the subscribe;
+                            // otherwise the family wedges and Greeks stay dark.
+                            let mut subs = family_subs.lock();
+
+                            if let Some(count) = subs.get_mut(&family) {
+                                *count = count.saturating_sub(1);
+                                if *count == 0 {
+                                    subs.remove(&family);
+                                }
                             }
                         }
-                    }
-                    result
-                },
-                "option greeks subscription",
-            );
-        }
-        Ok(())
+
+                        result
+                    },
+                    "option greeks subscription",
+                );
+            }
+
+            Ok(())
+        })
     }
 
     fn subscribe_instrument_status(
         &mut self,
         cmd: SubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
-        let ws = self.public_ws()?.clone();
-        let instrument_id = cmd.instrument_id;
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let ws = self.public_ws()?.clone();
+            self.spawn_ws(
+                async move {
+                    ws.subscribe_instrument(instrument_id)
+                        .await
+                        .context("instrument status subscription")
+                },
+                "instrument status subscription",
+            );
 
-        self.spawn_ws(
-            async move {
-                ws.subscribe_instrument(instrument_id)
-                    .await
-                    .context("instrument status subscription")
-            },
-            "instrument status subscription",
-        );
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_instrument(&mut self, cmd: &UnsubscribeInstrument) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        let ws = self.public_ws()?.clone();
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let ws = self.public_ws()?.clone();
+            self.spawn_ws(
+                async move {
+                    ws.unsubscribe_instrument(instrument_id)
+                        .await
+                        .context("instrument unsubscribe")?;
+                    Ok(())
+                },
+                "unsubscribe_instrument",
+            );
 
-        self.spawn_ws(
-            async move {
-                ws.unsubscribe_instrument(instrument_id)
-                    .await
-                    .context("instrument unsubscribe")?;
-                Ok(())
-            },
-            "unsubscribe_instrument",
-        );
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
-        if !self.book_deltas.contains(&cmd.instrument_id) {
-            return Ok(());
-        }
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            if !self.book_deltas.contains(&instrument_id) {
+                return Ok(());
+            }
 
-        if !self.http_client.is_spread(cmd.instrument_id)
-            || !self.book_depths.contains_key(&cmd.instrument_id)
-        {
-            self.unsubscribe_book_channel(cmd.instrument_id)?;
-        }
+            if !self.http_client.is_spread(instrument_id)
+                || !self.book_depths.contains_key(&instrument_id)
+            {
+                self.unsubscribe_book_channel(instrument_id)?;
+            }
 
-        self.book_deltas.remove(&cmd.instrument_id);
-        Ok(())
+            self.book_deltas.remove(&instrument_id);
+            Ok(())
+        })
     }
 
     fn unsubscribe_book_depth(&mut self, cmd: &UnsubscribeBookDepth) -> anyhow::Result<()> {
-        if !self.book_depths.contains_key(&cmd.instrument_id) {
-            return Ok(());
-        }
-
-        let instrument_id = cmd.instrument_id;
-        if self.http_client.is_spread(instrument_id) {
-            if !self.book_deltas.contains(&instrument_id) {
-                self.unsubscribe_book_channel(instrument_id)?;
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            if !self.book_depths.contains_key(&instrument_id) {
+                return Ok(());
             }
-        } else {
-            let ws = self.public_ws()?.clone();
-            self.spawn_ws(
-                async move {
-                    ws.unsubscribe_book_depth5(instrument_id)
-                        .await
-                        .context("book depth unsubscribe")
-                },
-                "book depth unsubscribe",
-            );
-        }
 
-        self.book_depths.remove(&cmd.instrument_id);
-        Ok(())
+            if self.http_client.is_spread(instrument_id) {
+                if !self.book_deltas.contains(&instrument_id) {
+                    self.unsubscribe_book_channel(instrument_id)?;
+                }
+            } else {
+                let ws = self.public_ws()?.clone();
+                self.spawn_ws(
+                    async move {
+                        ws.unsubscribe_book_depth5(instrument_id)
+                            .await
+                            .context("book depth unsubscribe")
+                    },
+                    "book depth unsubscribe",
+                );
+            }
+
+            self.book_depths.remove(&instrument_id);
+            Ok(())
+        })
     }
 
     fn unsubscribe_quotes(&mut self, cmd: &UnsubscribeQuotes) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            if self.http_client.is_spread(instrument_id) {
+                let ws = self.business_ws()?.clone();
+                self.spawn_ws(
+                    async move {
+                        ws.unsubscribe_spread_quotes(instrument_id)
+                            .await
+                            .context("spread quotes unsubscribe")
+                    },
+                    "spread quote unsubscribe",
+                );
 
-        if self.http_client.is_spread(instrument_id) {
-            let ws = self.business_ws()?.clone();
-            self.spawn_ws(
-                async move {
-                    ws.unsubscribe_spread_quotes(instrument_id)
-                        .await
-                        .context("spread quotes unsubscribe")
-                },
-                "spread quote unsubscribe",
-            );
-            return Ok(());
-        }
-
-        let ws = self.public_ws()?.clone();
-        self.spawn_ws(
-            async move {
-                ws.unsubscribe_quotes(instrument_id)
-                    .await
-                    .context("quotes unsubscribe")
-            },
-            "quote unsubscribe",
-        );
-        Ok(())
-    }
-
-    fn unsubscribe_trades(&mut self, cmd: &UnsubscribeTrades) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-
-        if self.http_client.is_spread(instrument_id) {
-            let ws = self.business_ws()?.clone();
-            self.spawn_ws(
-                async move {
-                    ws.unsubscribe_spread_trades(instrument_id)
-                        .await
-                        .context("spread trades unsubscribe")
-                },
-                "spread trade unsubscribe",
-            );
-            return Ok(());
-        }
-
-        let ws = self.public_ws()?.clone();
-        self.spawn_ws(
-            async move {
-                ws.unsubscribe_trades(instrument_id, false) // TODO: Aggregated trades?
-                    .await
-                    .context("trades unsubscribe")
-            },
-            "trade unsubscribe",
-        );
-        Ok(())
-    }
-
-    fn unsubscribe_mark_prices(&mut self, cmd: &UnsubscribeMarkPrices) -> anyhow::Result<()> {
-        let ws = self.public_ws()?.clone();
-        let instrument_id = cmd.instrument_id;
-
-        self.spawn_ws(
-            async move {
-                ws.unsubscribe_mark_prices(instrument_id)
-                    .await
-                    .context("mark price unsubscribe")
-            },
-            "mark price unsubscribe",
-        );
-        Ok(())
-    }
-
-    fn unsubscribe_index_prices(&mut self, cmd: &UnsubscribeIndexPrices) -> anyhow::Result<()> {
-        let ws = self.public_ws()?.clone();
-        let instrument_id = cmd.instrument_id;
-        let symbol = instrument_id.symbol.inner();
-
-        // The OKX index-tickers channel is keyed by base pair, so multiple
-        // instruments on the same pair share one subscription. Per-base-pair
-        // refcounting lives on the WS client, so we always forward the
-        // unsubscribe and let the WS layer fire the venue request only when
-        // it knows the last subscriber dropped. Local routing in
-        // `index_ticker_map` is still maintained for downstream emit fan-out.
-        if let Ok((base, quote)) = parse_base_quote_from_symbol(symbol.as_str()) {
-            let base_pair = Ustr::from(&format!("{base}-{quote}"));
-            self.index_ticker_map.rcu(|m| {
-                if let Some(set) = m.get_mut(&base_pair) {
-                    set.remove(&symbol);
-                    if set.is_empty() {
-                        m.remove(&base_pair);
-                    }
-                }
-            });
-        }
-
-        self.spawn_ws(
-            async move {
-                ws.unsubscribe_index_prices(instrument_id)
-                    .await
-                    .context("index price unsubscribe")
-            },
-            "index price unsubscribe",
-        );
-        Ok(())
-    }
-
-    fn unsubscribe_bars(&mut self, cmd: &UnsubscribeBars) -> anyhow::Result<()> {
-        let ws = self.business_ws()?.clone();
-        let bar_type = cmd.bar_type;
-
-        self.spawn_ws(
-            async move {
-                ws.unsubscribe_bars(bar_type)
-                    .await
-                    .context("bars unsubscribe")
-            },
-            "bar unsubscribe",
-        );
-        Ok(())
-    }
-
-    fn unsubscribe_funding_rates(&mut self, cmd: &UnsubscribeFundingRates) -> anyhow::Result<()> {
-        let ws = self.public_ws()?.clone();
-        let instrument_id = cmd.instrument_id;
-
-        self.spawn_ws(
-            async move {
-                ws.unsubscribe_funding_rates(instrument_id)
-                    .await
-                    .context("funding rate unsubscribe")
-            },
-            "funding rate unsubscribe",
-        );
-        Ok(())
-    }
-
-    fn unsubscribe_option_greeks(&mut self, cmd: &UnsubscribeOptionGreeks) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        self.option_greeks_subs.remove(&instrument_id);
-
-        let family = extract_inst_family(instrument_id.symbol.inner().as_str())?;
-        let should_unsubscribe = {
-            let mut family_subs = self.option_summary_family_subs.lock();
-
-            if let Some(count) = family_subs.get_mut(&family) {
-                *count = count.saturating_sub(1);
-                if *count == 0 {
-                    family_subs.remove(&family);
-                    true
-                } else {
-                    false
-                }
-            } else {
-                false
+                return Ok(());
             }
-        };
 
-        if should_unsubscribe {
             let ws = self.public_ws()?.clone();
             self.spawn_ws(
                 async move {
-                    ws.unsubscribe_option_summary(family)
+                    ws.unsubscribe_quotes(instrument_id)
                         .await
-                        .context("opt-summary unsubscription")
+                        .context("quotes unsubscribe")
                 },
-                "option greeks unsubscription",
+                "quote unsubscribe",
             );
-        }
-        Ok(())
+
+            Ok(())
+        })
+    }
+
+    fn unsubscribe_trades(&mut self, cmd: &UnsubscribeTrades) -> anyhow::Result<()> {
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            if self.http_client.is_spread(instrument_id) {
+                let ws = self.business_ws()?.clone();
+                self.spawn_ws(
+                    async move {
+                        ws.unsubscribe_spread_trades(instrument_id)
+                            .await
+                            .context("spread trades unsubscribe")
+                    },
+                    "spread trade unsubscribe",
+                );
+
+                return Ok(());
+            }
+
+            let ws = self.public_ws()?.clone();
+            self.spawn_ws(
+                async move {
+                    ws.unsubscribe_trades(instrument_id, false) // TODO: Aggregated trades?
+                        .await
+                        .context("trades unsubscribe")
+                },
+                "trade unsubscribe",
+            );
+
+            Ok(())
+        })
+    }
+
+    fn unsubscribe_mark_prices(&mut self, cmd: &UnsubscribeMarkPrices) -> anyhow::Result<()> {
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let ws = self.public_ws()?.clone();
+            self.spawn_ws(
+                async move {
+                    ws.unsubscribe_mark_prices(instrument_id)
+                        .await
+                        .context("mark price unsubscribe")
+                },
+                "mark price unsubscribe",
+            );
+
+            Ok(())
+        })
+    }
+
+    fn unsubscribe_index_prices(&mut self, cmd: &UnsubscribeIndexPrices) -> anyhow::Result<()> {
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let ws = self.public_ws()?.clone();
+            let symbol = instrument_id.symbol.inner();
+
+            // The OKX index-tickers channel is keyed by base pair, so multiple
+            // instruments on the same pair share one subscription. Per-base-pair
+            // refcounting lives on the WS client, so we always forward the
+            // unsubscribe and let the WS layer fire the venue request only when
+            // it knows the last subscriber dropped. Local routing in
+            // `index_ticker_map` is still maintained for downstream emit fan-out.
+            if let Ok((base, quote)) = parse_base_quote_from_symbol(symbol.as_str()) {
+                let base_pair = Ustr::from(&format!("{base}-{quote}"));
+                self.index_ticker_map.rcu(|m| {
+                    if let Some(set) = m.get_mut(&base_pair) {
+                        set.remove(&symbol);
+                        if set.is_empty() {
+                            m.remove(&base_pair);
+                        }
+                    }
+                });
+            }
+
+            self.spawn_ws(
+                async move {
+                    ws.unsubscribe_index_prices(instrument_id)
+                        .await
+                        .context("index price unsubscribe")
+                },
+                "index price unsubscribe",
+            );
+
+            Ok(())
+        })
+    }
+
+    fn unsubscribe_bars(&mut self, cmd: &UnsubscribeBars) -> anyhow::Result<()> {
+        execute_bar_subscriptions(&cmd.bar_types, |bar_type| {
+            let ws = self.business_ws()?.clone();
+            self.spawn_ws(
+                async move {
+                    ws.unsubscribe_bars(bar_type)
+                        .await
+                        .context("bars unsubscribe")
+                },
+                "bar unsubscribe",
+            );
+
+            Ok(())
+        })
+    }
+
+    fn unsubscribe_funding_rates(&mut self, cmd: &UnsubscribeFundingRates) -> anyhow::Result<()> {
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let ws = self.public_ws()?.clone();
+            self.spawn_ws(
+                async move {
+                    ws.unsubscribe_funding_rates(instrument_id)
+                        .await
+                        .context("funding rate unsubscribe")
+                },
+                "funding rate unsubscribe",
+            );
+
+            Ok(())
+        })
+    }
+
+    fn unsubscribe_option_greeks(&mut self, cmd: &UnsubscribeOptionGreeks) -> anyhow::Result<()> {
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.option_greeks_subs.remove(&instrument_id);
+
+            let family = extract_inst_family(instrument_id.symbol.inner().as_str())?;
+
+            let should_unsubscribe = {
+                let mut family_subs = self.option_summary_family_subs.lock();
+
+                if let Some(count) = family_subs.get_mut(&family) {
+                    *count = count.saturating_sub(1);
+                    if *count == 0 {
+                        family_subs.remove(&family);
+                        true
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            };
+
+            if should_unsubscribe {
+                let ws = self.public_ws()?.clone();
+                self.spawn_ws(
+                    async move {
+                        ws.unsubscribe_option_summary(family)
+                            .await
+                            .context("opt-summary unsubscription")
+                    },
+                    "option greeks unsubscription",
+                );
+            }
+
+            Ok(())
+        })
     }
 
     fn unsubscribe_instrument_status(
         &mut self,
         cmd: &UnsubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
-        let ws = self.public_ws()?.clone();
-        let instrument_id = cmd.instrument_id;
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let ws = self.public_ws()?.clone();
+            self.spawn_ws(
+                async move {
+                    ws.unsubscribe_instrument(instrument_id)
+                        .await
+                        .context("instrument status unsubscription")
+                },
+                "instrument status unsubscription",
+            );
 
-        self.spawn_ws(
-            async move {
-                ws.unsubscribe_instrument(instrument_id)
-                    .await
-                    .context("instrument status unsubscription")
-            },
-            "instrument status unsubscription",
-        );
-        Ok(())
+            Ok(())
+        })
     }
 
     fn request_instruments(&self, request: RequestInstruments) -> anyhow::Result<()> {

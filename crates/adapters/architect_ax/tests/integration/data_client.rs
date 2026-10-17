@@ -296,7 +296,7 @@ async fn test_data_client_emits_quote_tick_via_channel() {
     // Use first instrument from HTTP fixture (EURUSD-PERP)
     let instrument_id = InstrumentId::from("EURUSD-PERP.AX");
     let subscribe_cmd = SubscribeQuotes {
-        instrument_id,
+        instrument_ids: vec![instrument_id],
         client_id: Some(client_id),
         venue: None,
         command_id: UUID4::new(),
@@ -360,7 +360,7 @@ async fn test_data_client_emits_trade_tick_via_channel() {
     // Use first instrument from HTTP fixture (EURUSD-PERP)
     let instrument_id = InstrumentId::from("EURUSD-PERP.AX");
     let subscribe_cmd = SubscribeTrades {
-        instrument_id,
+        instrument_ids: vec![instrument_id],
         client_id: Some(client_id),
         venue: None,
         command_id: UUID4::new(),

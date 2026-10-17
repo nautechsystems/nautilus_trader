@@ -18,5 +18,7 @@
 mod common;
 
 #[cfg(feature = "live")]
+mod batches;
+#[cfg(feature = "live")]
 mod feed_handler;
 mod python;

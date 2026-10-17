@@ -3421,7 +3421,7 @@ mod tests {
         match (decoded_subscribe, subscribe) {
             (SubscribeCommand::Quotes(decoded), SubscribeCommand::Quotes(expected)) => {
                 assert_eq!(decoded.command_id, expected.command_id);
-                assert_eq!(decoded.instrument_id, expected.instrument_id);
+                assert_eq!(decoded.instrument_ids, expected.instrument_ids);
                 assert_eq!(decoded.client_id, expected.client_id);
                 assert_eq!(decoded.venue, expected.venue);
                 assert_eq!(decoded.ts_init, expected.ts_init);

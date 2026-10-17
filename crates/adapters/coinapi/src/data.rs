@@ -30,7 +30,7 @@ use arc_swap::ArcSwap;
 use async_trait::async_trait;
 use jiff::Timestamp;
 use nautilus_common::{
-    clients::DataClient,
+    clients::{DataClient, execute_bar_subscriptions, execute_instrument_subscriptions},
     live::{dst::time, runner::get_data_event_sender, sender::EventSender},
     messages::{
         DataEvent, DataResponse,
@@ -623,78 +623,100 @@ impl DataClient for CoinApiDataClient {
     }
 
     fn subscribe_book_deltas(&mut self, cmd: SubscribeBookDeltas) -> anyhow::Result<()> {
-        let data_type = match cmd.book_type {
-            BookType::L2_MBP => DataType::Book,
-            BookType::L3_MBO => DataType::BookL3,
-            BookType::L1_MBP => anyhow::bail!("CoinAPI streams L2_MBP and L3_MBO book deltas"),
-        };
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let cmd = cmd.with_instrument_ids(instrument_id);
 
-        // Every channel sends the full book, so a depth limit cannot reduce the stream
-        self.subscribe_book(cmd.instrument_id, data_type, None)
+            let data_type = match cmd.book_type {
+                BookType::L2_MBP => DataType::Book,
+                BookType::L3_MBO => DataType::BookL3,
+                BookType::L1_MBP => anyhow::bail!("CoinAPI streams L2_MBP and L3_MBO book deltas"),
+            };
+
+            // Every channel sends the full book, so a depth limit cannot reduce the stream
+            self.subscribe_book(instrument_id, data_type, None)
+        })
     }
 
     fn subscribe_book_depth(&mut self, cmd: SubscribeBookDepth) -> anyhow::Result<()> {
-        anyhow::ensure!(
-            cmd.book_type == BookType::L2_MBP,
-            "CoinAPI depth snapshots are L2_MBP, was {}",
-            cmd.book_type
-        );
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let cmd = cmd.with_instrument_ids(instrument_id);
+            anyhow::ensure!(
+                cmd.book_type == BookType::L2_MBP,
+                "CoinAPI depth snapshots are L2_MBP, was {}",
+                cmd.book_type
+            );
 
-        let depth = cmd.depth.map_or(DEPTH10_LEN, NonZeroUsize::get);
-        let (data_type, _) = BOOK_DEPTH_CHANNELS
-            .into_iter()
-            .find(|(_, levels)| depth <= *levels)
-            .context(format!(
-                "CoinAPI depth snapshots list at most 50 levels, was {depth}"
-            ))?;
+            let depth = cmd.depth.map_or(DEPTH10_LEN, NonZeroUsize::get);
+            let (data_type, _) = BOOK_DEPTH_CHANNELS
+                .into_iter()
+                .find(|(_, levels)| depth <= *levels)
+                .context(format!(
+                    "CoinAPI depth snapshots list at most 50 levels, was {depth}"
+                ))?;
 
-        self.subscribe_book(cmd.instrument_id, data_type, Some(depth))
+            self.subscribe_book(instrument_id, data_type, Some(depth))
+        })
     }
 
     fn subscribe_quotes(&mut self, cmd: SubscribeQuotes) -> anyhow::Result<()> {
-        self.subscribe_channel(cmd.instrument_id, channel(DataType::Quote, None))
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.subscribe_channel(instrument_id, channel(DataType::Quote, None))
+        })
     }
 
     fn subscribe_trades(&mut self, cmd: SubscribeTrades) -> anyhow::Result<()> {
-        self.subscribe_channel(cmd.instrument_id, channel(DataType::Trade, None))
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.subscribe_channel(instrument_id, channel(DataType::Trade, None))
+        })
     }
 
     fn subscribe_bars(&mut self, cmd: SubscribeBars) -> anyhow::Result<()> {
-        let bar_type = cmd.bar_type;
-        anyhow::ensure!(
-            bar_type.aggregation_source() == AggregationSource::External,
-            "CoinAPI streams only external bars, was {bar_type}"
-        );
+        execute_bar_subscriptions(&cmd.bar_types, |bar_type| {
+            anyhow::ensure!(
+                bar_type.aggregation_source() == AggregationSource::External,
+                "CoinAPI streams only external bars, was {bar_type}"
+            );
 
-        let period_id = bar_spec_to_period_id(bar_type.spec())?;
-        self.subscribe_channel(
-            bar_type.instrument_id(),
-            channel(DataType::Ohlcv, Some(period_id)),
-        )
+            let period_id = bar_spec_to_period_id(bar_type.spec())?;
+            self.subscribe_channel(
+                bar_type.instrument_id(),
+                channel(DataType::Ohlcv, Some(period_id)),
+            )
+        })
     }
 
     fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
-        self.unsubscribe_book(cmd.instrument_id, false)
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.unsubscribe_book(instrument_id, false)
+        })
     }
 
     fn unsubscribe_book_depth(&mut self, cmd: &UnsubscribeBookDepth) -> anyhow::Result<()> {
-        self.unsubscribe_book(cmd.instrument_id, true)
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.unsubscribe_book(instrument_id, true)
+        })
     }
 
     fn unsubscribe_quotes(&mut self, cmd: &UnsubscribeQuotes) -> anyhow::Result<()> {
-        self.unsubscribe_channel(cmd.instrument_id, channel(DataType::Quote, None))
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.unsubscribe_channel(instrument_id, channel(DataType::Quote, None))
+        })
     }
 
     fn unsubscribe_trades(&mut self, cmd: &UnsubscribeTrades) -> anyhow::Result<()> {
-        self.unsubscribe_channel(cmd.instrument_id, channel(DataType::Trade, None))
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.unsubscribe_channel(instrument_id, channel(DataType::Trade, None))
+        })
     }
 
     fn unsubscribe_bars(&mut self, cmd: &UnsubscribeBars) -> anyhow::Result<()> {
-        let period_id = bar_spec_to_period_id(cmd.bar_type.spec())?;
-        self.unsubscribe_channel(
-            cmd.bar_type.instrument_id(),
-            channel(DataType::Ohlcv, Some(period_id)),
-        )
+        execute_bar_subscriptions(&cmd.bar_types, |bar_type| {
+            let period_id = bar_spec_to_period_id(bar_type.spec())?;
+            self.unsubscribe_channel(
+                bar_type.instrument_id(),
+                channel(DataType::Ohlcv, Some(period_id)),
+            )
+        })
     }
 
     fn request_instruments(&self, request: RequestInstruments) -> anyhow::Result<()> {

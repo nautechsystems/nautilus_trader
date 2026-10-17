@@ -42,14 +42,17 @@ use nautilus_common::{
         SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
         SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments,
         SubscribeMarkPrices, SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades,
-        UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth, UnsubscribeCommand,
-        UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
+        SubscriptionError, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth,
+        UnsubscribeCommand, UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
         UnsubscribeInstrument, UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus,
         UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeOptionGreeks, UnsubscribeQuotes,
         UnsubscribeTrades,
     },
 };
-use nautilus_model::identifiers::{ClientId, Venue};
+use nautilus_model::{
+    data::BarType,
+    identifiers::{ClientId, InstrumentId, Venue},
+};
 
 /// A mock implementation of [`DataClient`] for testing, with optional generic recorder.
 pub(crate) struct MockDataClient {
@@ -58,7 +61,11 @@ pub(crate) struct MockDataClient {
     pub recorder: Option<Rc<RefCell<Vec<DataCommand>>>>,
     fail_next_custom_subscribe: bool,
     fail_next_custom_unsubscribe: bool,
+    fail_next_quotes_unsubscribe: bool,
+    fail_next_trades_unsubscribe: bool,
+    fail_next_bars_unsubscribe: bool,
     fail_next_subscribe: Option<MockSubscribeFailure>,
+    fail_next_unsubscribe: Option<MockSubscribeFailure>,
     #[cfg(feature = "defi")]
     fail_next_blocks_subscribe: bool,
     #[cfg(feature = "defi")]
@@ -72,7 +79,11 @@ pub(crate) enum MockSubscribeFailure {
     BookDeltas,
     BookDepth,
     Quotes,
+    QuotesPartial(InstrumentId),
     Trades,
+    TradesPartial(InstrumentId),
+    MarkPricesPartial([InstrumentId; 3]),
+    BarsPartial([BarType; 3]),
 }
 
 impl MockDataClient {
@@ -92,7 +103,11 @@ impl MockDataClient {
             recorder: None,
             fail_next_custom_subscribe: false,
             fail_next_custom_unsubscribe: false,
+            fail_next_quotes_unsubscribe: false,
+            fail_next_trades_unsubscribe: false,
+            fail_next_bars_unsubscribe: false,
             fail_next_subscribe: None,
+            fail_next_unsubscribe: None,
             #[cfg(feature = "defi")]
             fail_next_blocks_subscribe: false,
             #[cfg(feature = "defi")]
@@ -115,7 +130,11 @@ impl MockDataClient {
             recorder,
             fail_next_custom_subscribe: false,
             fail_next_custom_unsubscribe: false,
+            fail_next_quotes_unsubscribe: false,
+            fail_next_trades_unsubscribe: false,
+            fail_next_bars_unsubscribe: false,
             fail_next_subscribe: None,
+            fail_next_unsubscribe: None,
             #[cfg(feature = "defi")]
             fail_next_blocks_subscribe: false,
             #[cfg(feature = "defi")]
@@ -138,8 +157,31 @@ impl MockDataClient {
     }
 
     #[must_use]
+    pub(crate) fn with_quotes_unsubscribe_failure(mut self) -> Self {
+        self.fail_next_quotes_unsubscribe = true;
+        self
+    }
+
+    #[must_use]
+    pub(crate) fn with_trades_unsubscribe_failure(mut self) -> Self {
+        self.fail_next_trades_unsubscribe = true;
+        self
+    }
+
+    #[must_use]
+    pub(crate) fn with_bars_unsubscribe_failure(mut self) -> Self {
+        self.fail_next_bars_unsubscribe = true;
+        self
+    }
+
+    #[must_use]
     pub(crate) fn with_subscribe_failure(mut self, failure: MockSubscribeFailure) -> Self {
         self.fail_next_subscribe = Some(failure);
+        self
+    }
+
+    pub(crate) fn with_unsubscribe_failure(mut self, failure: MockSubscribeFailure) -> Self {
+        self.fail_next_unsubscribe = Some(failure);
         self
     }
 
@@ -262,6 +304,23 @@ impl DataClient for MockDataClient {
             anyhow::bail!("test quotes subscribe failure");
         }
 
+        if let Some(MockSubscribeFailure::QuotesPartial(instrument_id)) = self.fail_next_subscribe {
+            self.fail_next_subscribe = None;
+
+            if let Some(recorder) = &self.recorder {
+                let accepted = cmd.with_instrument_ids(instrument_id);
+                recorder
+                    .borrow_mut()
+                    .push(DataCommand::Subscribe(SubscribeCommand::Quotes(accepted)));
+            }
+
+            return Err(SubscriptionError::instruments(
+                vec![instrument_id],
+                anyhow::anyhow!("test partial quote subscription failure"),
+            )
+            .into());
+        }
+
         if let Some(rec) = &self.recorder {
             rec.borrow_mut()
                 .push(DataCommand::Subscribe(SubscribeCommand::Quotes(cmd)));
@@ -273,6 +332,23 @@ impl DataClient for MockDataClient {
         if self.fail_next_subscribe == Some(MockSubscribeFailure::Trades) {
             self.fail_next_subscribe = None;
             anyhow::bail!("test trades subscribe failure");
+        }
+
+        if let Some(MockSubscribeFailure::TradesPartial(instrument_id)) = self.fail_next_subscribe {
+            self.fail_next_subscribe = None;
+
+            if let Some(recorder) = &self.recorder {
+                let accepted = cmd.with_instrument_ids(instrument_id);
+                recorder
+                    .borrow_mut()
+                    .push(DataCommand::Subscribe(SubscribeCommand::Trades(accepted)));
+            }
+
+            return Err(SubscriptionError::instruments(
+                vec![instrument_id],
+                anyhow::anyhow!("test partial trade subscription failure"),
+            )
+            .into());
         }
 
         if let Some(rec) = &self.recorder {
@@ -287,6 +363,16 @@ impl DataClient for MockDataClient {
             rec.borrow_mut()
                 .push(DataCommand::Subscribe(SubscribeCommand::Bars(cmd)));
         }
+
+        if let Some(MockSubscribeFailure::BarsPartial(accepted)) = self.fail_next_subscribe {
+            self.fail_next_subscribe = None;
+            return Err(SubscriptionError::bars(
+                accepted.to_vec(),
+                anyhow::anyhow!("test partial subscribe failure"),
+            )
+            .into());
+        }
+
         Ok(())
     }
 
@@ -295,6 +381,16 @@ impl DataClient for MockDataClient {
             rec.borrow_mut()
                 .push(DataCommand::Subscribe(SubscribeCommand::MarkPrices(cmd)));
         }
+
+        if let Some(MockSubscribeFailure::MarkPricesPartial(accepted)) = self.fail_next_subscribe {
+            self.fail_next_subscribe = None;
+            return Err(SubscriptionError::instruments(
+                accepted.to_vec(),
+                anyhow::anyhow!("test partial subscribe failure"),
+            )
+            .into());
+        }
+
         Ok(())
     }
 
@@ -468,6 +564,10 @@ impl DataClient for MockDataClient {
     }
 
     fn unsubscribe_quotes(&mut self, cmd: &UnsubscribeQuotes) -> anyhow::Result<()> {
+        if std::mem::take(&mut self.fail_next_quotes_unsubscribe) {
+            anyhow::bail!("test quotes unsubscribe failure");
+        }
+
         if let Some(rec) = &self.recorder {
             rec.borrow_mut()
                 .push(DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(
@@ -478,6 +578,10 @@ impl DataClient for MockDataClient {
     }
 
     fn unsubscribe_trades(&mut self, cmd: &UnsubscribeTrades) -> anyhow::Result<()> {
+        if std::mem::take(&mut self.fail_next_trades_unsubscribe) {
+            anyhow::bail!("test trades unsubscribe failure");
+        }
+
         if let Some(rec) = &self.recorder {
             rec.borrow_mut()
                 .push(DataCommand::Unsubscribe(UnsubscribeCommand::Trades(
@@ -488,12 +592,27 @@ impl DataClient for MockDataClient {
     }
 
     fn unsubscribe_bars(&mut self, cmd: &UnsubscribeBars) -> anyhow::Result<()> {
+        if self.fail_next_bars_unsubscribe {
+            self.fail_next_bars_unsubscribe = false;
+            anyhow::bail!("test bars unsubscribe failure");
+        }
+
         if let Some(rec) = &self.recorder {
             rec.borrow_mut()
                 .push(DataCommand::Unsubscribe(UnsubscribeCommand::Bars(
                     cmd.clone(),
                 )));
         }
+
+        if let Some(MockSubscribeFailure::BarsPartial(accepted)) = self.fail_next_unsubscribe {
+            self.fail_next_unsubscribe = None;
+            return Err(SubscriptionError::bars(
+                accepted.to_vec(),
+                anyhow::anyhow!("test partial unsubscribe failure"),
+            )
+            .into());
+        }
+
         Ok(())
     }
 
@@ -504,6 +623,17 @@ impl DataClient for MockDataClient {
                     cmd.clone(),
                 )));
         }
+
+        if let Some(MockSubscribeFailure::MarkPricesPartial(accepted)) = self.fail_next_unsubscribe
+        {
+            self.fail_next_unsubscribe = None;
+            return Err(SubscriptionError::instruments(
+                accepted.to_vec(),
+                anyhow::anyhow!("test partial unsubscribe failure"),
+            )
+            .into());
+        }
+
         Ok(())
     }
 

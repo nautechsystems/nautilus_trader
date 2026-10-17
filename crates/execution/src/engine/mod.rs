@@ -213,9 +213,8 @@ impl ExecutionEngine {
             .collect();
         {
             let mut cache = cache.borrow_mut();
-
             for client_id in &external_clients {
-                cache.add_external_client(*client_id);
+                cache.add_external_exec_client(*client_id);
             }
         }
 

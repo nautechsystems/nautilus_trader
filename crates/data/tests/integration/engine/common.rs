@@ -15,6 +15,7 @@
 
 #[cfg(feature = "streaming")]
 use indexmap::IndexMap;
+use nautilus_common::messages::data::IntoInstrumentIds;
 
 use super::*;
 
@@ -396,13 +397,13 @@ pub(super) fn data_engine_clock_at(now: u64) -> Rc<RefCell<dyn Clock>> {
 
 pub(super) fn execute_book_snapshot_subscribe(
     data_engine: &Rc<RefCell<DataEngine>>,
-    instrument_id: InstrumentId,
+    instrument_ids: impl IntoInstrumentIds,
     client_id: ClientId,
     venue: Venue,
     interval_ms: NonZeroUsize,
 ) {
     let subscribe = SubscribeBookSnapshots::new(
-        instrument_id,
+        instrument_ids,
         BookType::L2_MBP,
         Some(client_id),
         Some(venue),
@@ -423,13 +424,13 @@ pub(super) fn execute_book_snapshot_subscribe(
 
 pub(super) fn execute_book_snapshot_unsubscribe(
     data_engine: &Rc<RefCell<DataEngine>>,
-    instrument_id: InstrumentId,
+    instrument_ids: impl IntoInstrumentIds,
     client_id: ClientId,
     venue: Venue,
     interval_ms: NonZeroUsize,
 ) {
     let unsubscribe = UnsubscribeBookSnapshots::new(
-        instrument_id,
+        instrument_ids,
         interval_ms,
         Some(client_id),
         Some(venue),
@@ -584,9 +585,11 @@ pub(super) fn subscribe_synthetic_quotes_cmd(instrument_id: InstrumentId) -> Dat
     )))
 }
 
-pub(super) fn subscribe_synthetic_trades_cmd(instrument_id: InstrumentId) -> DataCommand {
+pub(super) fn subscribe_synthetic_trades_cmd(
+    instrument_ids: impl IntoInstrumentIds,
+) -> DataCommand {
     DataCommand::Subscribe(SubscribeCommand::Trades(SubscribeTrades::new(
-        instrument_id,
+        instrument_ids,
         None,
         Some(Venue::synthetic()),
         UUID4::new(),

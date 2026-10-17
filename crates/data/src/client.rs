@@ -25,6 +25,7 @@ use std::{
 };
 
 use ahash::AHashSet;
+use indexmap::IndexMap;
 #[cfg(feature = "defi")]
 use nautilus_common::messages::defi::DefiSubscribeCommand;
 use nautilus_common::{
@@ -38,11 +39,11 @@ use nautilus_common::{
         SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
         SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments,
         SubscribeMarkPrices, SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades,
-        UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth, UnsubscribeCommand,
-        UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
+        SubscriptionError, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth,
+        UnsubscribeCommand, UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
         UnsubscribeInstrument, UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus,
         UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeOptionGreeks, UnsubscribeQuotes,
-        UnsubscribeTrades,
+        UnsubscribeTrades, ensure_routable_bar_types, ensure_routable_instrument_ids,
     },
 };
 #[cfg(feature = "defi")]
@@ -57,7 +58,9 @@ use nautilus_model::{
 use crate::defi::client as _;
 #[cfg(feature = "defi")]
 use crate::subscription::DefiSubscriptionKey;
-use crate::subscription::{SubscriptionKey, SubscriptionRegistry, SubscriptionRelease};
+use crate::subscription::{
+    SubscriptionKey, SubscriptionRegistry, SubscriptionRelease, split_subscribe, split_unsubscribe,
+};
 
 /// Wraps a [`DataClient`], managing subscription state and forwarding commands.
 pub struct DataClientAdapter {
@@ -223,10 +226,68 @@ impl DataClientAdapter {
         retained: SubscribeCommand,
         retain_on_failure: bool,
     ) {
-        let key = SubscriptionKey::from_subscribe(&retained);
-        if self.has_active_subscription(&retained) {
-            self.subscriptions_active
-                .retain(key, retained.command_id(), retained);
+        for command in [&cmd, &retained] {
+            if let Some(bar_types) = command.bar_types()
+                && let Err(e) = ensure_routable_bar_types(bar_types, command.client_id().is_some())
+            {
+                log_command_error(
+                    &format_args!(
+                        "Subscribe {} command {}",
+                        self.client_id(),
+                        command.command_id()
+                    ),
+                    &e,
+                );
+                return;
+            }
+
+            if let Some(ids) = command.instrument_ids()
+                && let Err(e) = ensure_routable_instrument_ids(ids, command.client_id().is_some())
+            {
+                log_command_error(
+                    &format_args!(
+                        "Subscribe {} command {}",
+                        self.client_id(),
+                        command.command_id()
+                    ),
+                    &e,
+                );
+                return;
+            }
+        }
+
+        self.subscribe_retained(cmd, retained, retain_on_failure);
+    }
+
+    pub(crate) fn retain_intent(&mut self, command: &SubscribeCommand) {
+        for member in split_subscribe(command.clone()) {
+            self.subscriptions_active.retain(
+                SubscriptionKey::from_subscribe(&member),
+                member.command_id(),
+                member,
+            );
+        }
+    }
+
+    fn subscribe_retained(
+        &mut self,
+        cmd: SubscribeCommand,
+        retained: SubscribeCommand,
+        retain_on_failure: bool,
+    ) {
+        let mut pending = Vec::new();
+
+        for member in split_subscribe(retained) {
+            let key = SubscriptionKey::from_subscribe(&member);
+            if self.has_active_subscription(&member) {
+                self.subscriptions_active
+                    .retain(key, member.command_id(), member);
+            } else {
+                pending.push((key, member));
+            }
+        }
+
+        if pending.is_empty() {
             return;
         }
 
@@ -234,48 +295,63 @@ impl DataClientAdapter {
 
         let result = match cmd {
             SubscribeCommand::Data(cmd) => self.subscribe(cmd),
-            SubscribeCommand::Instrument(cmd) => self.subscribe_instrument(cmd),
+            SubscribeCommand::Instrument(cmd) => self.subscribe_instrument(&cmd),
             SubscribeCommand::Instruments(cmd) => self.subscribe_instruments(cmd),
-            SubscribeCommand::BookDeltas(cmd) => self.subscribe_book_deltas(cmd),
-            SubscribeCommand::BookDepth(cmd) => self.subscribe_book_depth(cmd),
+            SubscribeCommand::BookDeltas(cmd) => self.subscribe_book_deltas(&cmd),
+            SubscribeCommand::BookDepth(cmd) => self.subscribe_book_depth(&cmd),
             SubscribeCommand::BookSnapshots(_) => Ok(()), // Handled internally by engine
-            SubscribeCommand::Quotes(cmd) => self.subscribe_quotes(cmd),
-            SubscribeCommand::Trades(cmd) => self.subscribe_trades(cmd),
-            SubscribeCommand::MarkPrices(cmd) => self.subscribe_mark_prices(cmd),
-            SubscribeCommand::IndexPrices(cmd) => self.subscribe_index_prices(cmd),
-            SubscribeCommand::FundingRates(cmd) => self.subscribe_funding_rates(cmd),
-            SubscribeCommand::Bars(cmd) => self.subscribe_bars(cmd),
-            SubscribeCommand::InstrumentStatus(cmd) => self.subscribe_instrument_status(cmd),
-            SubscribeCommand::InstrumentClose(cmd) => self.subscribe_instrument_close(cmd),
-            SubscribeCommand::OptionGreeks(cmd) => self.subscribe_option_greeks(cmd),
+            SubscribeCommand::Quotes(cmd) => self.subscribe_quotes(&cmd),
+            SubscribeCommand::Trades(cmd) => self.subscribe_trades(&cmd),
+            SubscribeCommand::MarkPrices(cmd) => self.subscribe_mark_prices(&cmd),
+            SubscribeCommand::IndexPrices(cmd) => self.subscribe_index_prices(&cmd),
+            SubscribeCommand::FundingRates(cmd) => self.subscribe_funding_rates(&cmd),
+            SubscribeCommand::Bars(cmd) => self.subscribe_bars(&cmd),
+            SubscribeCommand::InstrumentStatus(cmd) => self.subscribe_instrument_status(&cmd),
+            SubscribeCommand::InstrumentClose(cmd) => self.subscribe_instrument_close(&cmd),
+            SubscribeCommand::OptionGreeks(cmd) => self.subscribe_option_greeks(&cmd),
             SubscribeCommand::OptionChain(_) => Ok(()), // Handled internally by engine
         };
 
-        if let Err(e) = result {
-            let subscription = key.log_context();
-
-            // Engine-owned intent survives failure until its matching release
-            if retain_on_failure {
-                self.subscriptions_active
-                    .retain(key, retained.command_id(), retained);
-            }
+        if let Err(e) = &result {
+            let subscription = pending
+                .iter()
+                .filter(|(_, member)| !self.has_active_subscription(member))
+                .map(|(key, _)| key.log_context())
+                .collect::<Vec<_>>()
+                .join(", ");
 
             log_command_error(
                 &format_args!(
-                    "Subscribe {} {subscription} command {command_id}",
+                    "Subscribe {} unaccepted [{subscription}] command {command_id}",
                     self.client_id()
                 ),
-                &e,
+                e,
             );
-            return;
         }
 
-        // A retry can establish a different physical identity from the failed attempt
-        if let Some(subscription) = self.subscriptions_active.get_mut(&key) {
-            subscription.command = retained.clone();
+        self.retain_subscriptions(pending, &result, retain_on_failure);
+    }
+
+    fn retain_subscriptions(
+        &mut self,
+        pending: Vec<(SubscriptionKey, SubscribeCommand)>,
+        result: &anyhow::Result<()>,
+        retain_on_failure: bool,
+    ) {
+        for (key, member) in pending {
+            let accepted = result.is_ok() || self.has_active_subscription(&member);
+            // Engine-owned intent survives failure until its matching release
+            if !accepted && !retain_on_failure {
+                continue;
+            }
+
+            if accepted && let Some(subscription) = self.subscriptions_active.get_mut(&key) {
+                subscription.command = member.clone();
+            }
+
+            self.subscriptions_active
+                .retain(key, member.command_id(), member);
         }
-        self.subscriptions_active
-            .retain(key, retained.command_id(), retained);
     }
 
     #[must_use]
@@ -283,19 +359,19 @@ impl DataClientAdapter {
     pub(crate) fn has_active_subscription(&self, cmd: &SubscribeCommand) -> bool {
         match cmd {
             SubscribeCommand::Data(cmd) => self.subscriptions_custom.contains(&cmd.data_type),
-            SubscribeCommand::Instrument(cmd) => self.subscriptions_instrument.contains(&cmd.instrument_id),
+            SubscribeCommand::Instrument(cmd) => !cmd.instrument_ids.is_empty() && cmd.instrument_ids.iter().all(|id| self.subscriptions_instrument.contains(id)),
             SubscribeCommand::Instruments(cmd) => self.subscriptions_instrument_venue.contains(&cmd.venue),
-            SubscribeCommand::BookDeltas(cmd) => self.subscriptions_book_deltas.contains(&cmd.instrument_id),
-            SubscribeCommand::BookDepth(cmd) => self.subscriptions_book_depth.contains(&cmd.instrument_id),
-            SubscribeCommand::Quotes(cmd) => self.subscriptions_quotes.contains(&cmd.instrument_id),
-            SubscribeCommand::Trades(cmd) => self.subscriptions_trades.contains(&cmd.instrument_id),
-            SubscribeCommand::Bars(cmd) => self.subscriptions_bars.contains(&cmd.bar_type),
-            SubscribeCommand::MarkPrices(cmd) => self.subscriptions_mark_prices.contains(&cmd.instrument_id),
-            SubscribeCommand::IndexPrices(cmd) => self.subscriptions_index_prices.contains(&cmd.instrument_id),
-            SubscribeCommand::FundingRates(cmd) => self.subscriptions_funding_rates.contains(&cmd.instrument_id),
-            SubscribeCommand::InstrumentStatus(cmd) => self.subscriptions_instrument_status.contains(&cmd.instrument_id),
-            SubscribeCommand::InstrumentClose(cmd) => self.subscriptions_instrument_close.contains(&cmd.instrument_id),
-            SubscribeCommand::OptionGreeks(cmd) => self.subscriptions_option_greeks.contains(&cmd.instrument_id),
+            SubscribeCommand::BookDeltas(cmd) => !cmd.instrument_ids.is_empty() && cmd.instrument_ids.iter().all(|id| self.subscriptions_book_deltas.contains(id)),
+            SubscribeCommand::BookDepth(cmd) => !cmd.instrument_ids.is_empty() && cmd.instrument_ids.iter().all(|id| self.subscriptions_book_depth.contains(id)),
+            SubscribeCommand::Quotes(cmd) => !cmd.instrument_ids.is_empty() && cmd.instrument_ids.iter().all(|id| self.subscriptions_quotes.contains(id)),
+            SubscribeCommand::Trades(cmd) => !cmd.instrument_ids.is_empty() && cmd.instrument_ids.iter().all(|id| self.subscriptions_trades.contains(id)),
+            SubscribeCommand::Bars(cmd) => !cmd.bar_types.is_empty() && cmd.bar_types.iter().all(|bar_type| self.subscriptions_bars.contains(bar_type)),
+            SubscribeCommand::MarkPrices(cmd) => !cmd.instrument_ids.is_empty() && cmd.instrument_ids.iter().all(|id| self.subscriptions_mark_prices.contains(id)),
+            SubscribeCommand::IndexPrices(cmd) => !cmd.instrument_ids.is_empty() && cmd.instrument_ids.iter().all(|id| self.subscriptions_index_prices.contains(id)),
+            SubscribeCommand::FundingRates(cmd) => !cmd.instrument_ids.is_empty() && cmd.instrument_ids.iter().all(|id| self.subscriptions_funding_rates.contains(id)),
+            SubscribeCommand::InstrumentStatus(cmd) => !cmd.instrument_ids.is_empty() && cmd.instrument_ids.iter().all(|id| self.subscriptions_instrument_status.contains(id)),
+            SubscribeCommand::InstrumentClose(cmd) => !cmd.instrument_ids.is_empty() && cmd.instrument_ids.iter().all(|id| self.subscriptions_instrument_close.contains(id)),
+            SubscribeCommand::OptionGreeks(cmd) => !cmd.instrument_ids.is_empty() && cmd.instrument_ids.iter().all(|id| self.subscriptions_option_greeks.contains(id)),
             SubscribeCommand::BookSnapshots(_) | SubscribeCommand::OptionChain(_) => self.subscriptions_active.contains(&SubscriptionKey::from_subscribe(cmd)),
         }
     }
@@ -331,16 +407,65 @@ impl DataClientAdapter {
 
     #[inline]
     pub fn execute_unsubscribe(&mut self, cmd: &UnsubscribeCommand) {
-        let key = SubscriptionKey::from_unsubscribe(cmd);
-        let command = match self.subscriptions_active.release(&key) {
-            SubscriptionRelease::Retained => return,
-            SubscriptionRelease::Final(subscribe) => {
-                subscribe.into_unsubscribe(cmd.command_id(), cmd.ts_init(), cmd.correlation_id())
-            }
-            SubscriptionRelease::Untracked => cmd.clone(),
-        };
+        if let Some(bar_types) = cmd.bar_types()
+            && let Err(e) = ensure_routable_bar_types(bar_types, cmd.client_id().is_some())
+        {
+            log_command_error(
+                &format_args!(
+                    "Unsubscribe {} command {}",
+                    self.client_id(),
+                    cmd.command_id()
+                ),
+                &e,
+            );
+            return;
+        }
 
-        if let Err(e) = match &command {
+        if let Some(ids) = cmd.instrument_ids()
+            && let Err(e) = ensure_routable_instrument_ids(ids, cmd.client_id().is_some())
+        {
+            log_command_error(
+                &format_args!(
+                    "Unsubscribe {} command {}",
+                    self.client_id(),
+                    cmd.command_id()
+                ),
+                &e,
+            );
+            return;
+        }
+
+        let mut releases = IndexMap::new();
+
+        for member in split_unsubscribe(cmd) {
+            let key = SubscriptionKey::from_unsubscribe(&member);
+
+            let (acquisition_id, command) = match self.subscriptions_active.release(&key) {
+                SubscriptionRelease::Retained => continue,
+                SubscriptionRelease::Final(subscribe) => (
+                    subscribe.command_id(),
+                    subscribe.into_unsubscribe(
+                        cmd.command_id(),
+                        cmd.ts_init(),
+                        cmd.correlation_id(),
+                    ),
+                ),
+                SubscriptionRelease::Untracked => (cmd.command_id(), member),
+            };
+
+            releases
+                .entry(acquisition_id)
+                .or_insert_with(Vec::new)
+                .push(command);
+        }
+
+        for command in releases.into_values().flat_map(UnsubscribeCommand::group) {
+            self.release_subscription(&command);
+        }
+    }
+
+    fn release_subscription(&mut self, command: &UnsubscribeCommand) {
+        let result = match command {
             UnsubscribeCommand::Data(cmd) => self.unsubscribe(cmd),
             UnsubscribeCommand::Instrument(cmd) => self.unsubscribe_instrument(cmd),
             UnsubscribeCommand::Instruments(cmd) => self.unsubscribe_instruments(cmd),
@@ -357,18 +482,38 @@ impl DataClientAdapter {
             UnsubscribeCommand::InstrumentClose(cmd) => self.unsubscribe_instrument_close(cmd),
             UnsubscribeCommand::OptionGreeks(cmd) => self.unsubscribe_option_greeks(cmd),
             UnsubscribeCommand::OptionChain(_) => Ok(()), // Handled internally by engine
-        } {
+        };
+
+        let members = split_unsubscribe(command);
+        for member in &members {
+            let key = SubscriptionKey::from_unsubscribe(member);
+            let subscribe = self
+                .subscriptions_active
+                .get_mut(&key)
+                .map(|entry| entry.command.clone());
+
+            if subscribe.is_none_or(|subscribe| !self.has_active_subscription(&subscribe)) {
+                self.subscriptions_active.remove(&key);
+            }
+        }
+
+        if let Err(e) = result {
+            let subscription = members
+                .iter()
+                .map(SubscriptionKey::from_unsubscribe)
+                .filter(|key| self.subscriptions_active.contains(key))
+                .map(|key| key.log_context())
+                .collect::<Vec<_>>()
+                .join(", ");
+
             log_command_error(
                 &format_args!(
-                    "Unsubscribe {} {} command {}",
+                    "Unsubscribe {} unreleased [{subscription}] command {}",
                     self.client_id(),
-                    key.log_context(),
-                    cmd.command_id()
+                    command.command_id()
                 ),
                 &e,
             );
-        } else {
-            self.subscriptions_active.remove(&key);
         }
     }
 
@@ -438,13 +583,16 @@ impl DataClientAdapter {
     /// # Errors
     ///
     /// Returns an error if the underlying client subscribe operation fails.
-    fn subscribe_instrument(&mut self, cmd: SubscribeInstrument) -> anyhow::Result<()> {
-        Self::execute_tracked_subscribe(
-            self.client.as_mut(),
+    fn subscribe_instrument(&mut self, cmd: &SubscribeInstrument) -> anyhow::Result<()> {
+        Self::subscribe_batch(
             &mut self.subscriptions_instrument,
-            cmd.instrument_id,
+            &cmd.instrument_ids,
             "instrument",
-            |client| client.subscribe_instrument(cmd),
+            |partial| &partial.instrument_ids_accepted,
+            |ids| {
+                self.client
+                    .subscribe_instrument(cmd.with_instrument_ids(ids))
+            },
         )
     }
 
@@ -454,12 +602,15 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client unsubscribe operation fails.
     fn unsubscribe_instrument(&mut self, cmd: &UnsubscribeInstrument) -> anyhow::Result<()> {
-        Self::execute_tracked_unsubscribe(
-            self.client.as_mut(),
+        Self::unsubscribe_batch(
             &mut self.subscriptions_instrument,
-            &cmd.instrument_id,
+            &cmd.instrument_ids,
             "instrument",
-            |client| client.unsubscribe_instrument(cmd),
+            |partial| &partial.instrument_ids_accepted,
+            |ids| {
+                self.client
+                    .unsubscribe_instrument(&cmd.with_instrument_ids(ids))
+            },
         )
     }
 
@@ -468,13 +619,16 @@ impl DataClientAdapter {
     /// # Errors
     ///
     /// Returns an error if the underlying client subscribe operation fails.
-    fn subscribe_book_deltas(&mut self, cmd: SubscribeBookDeltas) -> anyhow::Result<()> {
-        Self::execute_tracked_subscribe(
-            self.client.as_mut(),
+    fn subscribe_book_deltas(&mut self, cmd: &SubscribeBookDeltas) -> anyhow::Result<()> {
+        Self::subscribe_batch(
             &mut self.subscriptions_book_deltas,
-            cmd.instrument_id,
+            &cmd.instrument_ids,
             "order book deltas",
-            |client| client.subscribe_book_deltas(cmd),
+            |partial| &partial.instrument_ids_accepted,
+            |ids| {
+                self.client
+                    .subscribe_book_deltas(cmd.with_instrument_ids(ids))
+            },
         )
     }
 
@@ -484,12 +638,15 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client unsubscribe operation fails.
     fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
-        Self::execute_tracked_unsubscribe(
-            self.client.as_mut(),
+        Self::unsubscribe_batch(
             &mut self.subscriptions_book_deltas,
-            &cmd.instrument_id,
+            &cmd.instrument_ids,
             "order book deltas",
-            |client| client.unsubscribe_book_deltas(cmd),
+            |partial| &partial.instrument_ids_accepted,
+            |ids| {
+                self.client
+                    .unsubscribe_book_deltas(&cmd.with_instrument_ids(ids))
+            },
         )
     }
 
@@ -498,13 +655,16 @@ impl DataClientAdapter {
     /// # Errors
     ///
     /// Returns an error if the underlying client subscribe operation fails.
-    fn subscribe_book_depth(&mut self, cmd: SubscribeBookDepth) -> anyhow::Result<()> {
-        Self::execute_tracked_subscribe(
-            self.client.as_mut(),
+    fn subscribe_book_depth(&mut self, cmd: &SubscribeBookDepth) -> anyhow::Result<()> {
+        Self::subscribe_batch(
             &mut self.subscriptions_book_depth,
-            cmd.instrument_id,
+            &cmd.instrument_ids,
             "order book depth",
-            |client| client.subscribe_book_depth(cmd),
+            |partial| &partial.instrument_ids_accepted,
+            |ids| {
+                self.client
+                    .subscribe_book_depth(cmd.with_instrument_ids(ids))
+            },
         )
     }
 
@@ -514,73 +674,162 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client unsubscribe operation fails.
     fn unsubscribe_book_depth(&mut self, cmd: &UnsubscribeBookDepth) -> anyhow::Result<()> {
-        Self::execute_tracked_unsubscribe(
-            self.client.as_mut(),
+        Self::unsubscribe_batch(
             &mut self.subscriptions_book_depth,
-            &cmd.instrument_id,
+            &cmd.instrument_ids,
             "order book depth",
-            |client| client.unsubscribe_book_depth(cmd),
+            |partial| &partial.instrument_ids_accepted,
+            |ids| {
+                self.client
+                    .unsubscribe_book_depth(&cmd.with_instrument_ids(ids))
+            },
         )
     }
 
-    /// Subscribes to quotes for an instrument, updating internal state and forwarding to the client.
+    /// Subscribes to quotes for instruments, updating internal state and forwarding to the client.
     ///
     /// # Errors
     ///
     /// Returns an error if the underlying client subscribe operation fails.
-    fn subscribe_quotes(&mut self, cmd: SubscribeQuotes) -> anyhow::Result<()> {
-        Self::execute_tracked_subscribe(
-            self.client.as_mut(),
+    fn subscribe_quotes(&mut self, cmd: &SubscribeQuotes) -> anyhow::Result<()> {
+        Self::subscribe_batch(
             &mut self.subscriptions_quotes,
-            cmd.instrument_id,
+            &cmd.instrument_ids,
             "quotes",
-            |client| client.subscribe_quotes(cmd),
+            |partial| &partial.instrument_ids_accepted,
+            |ids| self.client.subscribe_quotes(cmd.with_instrument_ids(ids)),
         )
     }
 
-    /// Unsubscribes from quotes for an instrument, updating internal state and forwarding to the client.
+    /// Unsubscribes from quotes for instruments, updating internal state and forwarding to the client.
     ///
     /// # Errors
     ///
     /// Returns an error if the underlying client unsubscribe operation fails.
     fn unsubscribe_quotes(&mut self, cmd: &UnsubscribeQuotes) -> anyhow::Result<()> {
-        Self::execute_tracked_unsubscribe(
-            self.client.as_mut(),
+        Self::unsubscribe_batch(
             &mut self.subscriptions_quotes,
-            &cmd.instrument_id,
+            &cmd.instrument_ids,
             "quotes",
-            |client| client.unsubscribe_quotes(cmd),
+            |partial| &partial.instrument_ids_accepted,
+            |ids| {
+                self.client
+                    .unsubscribe_quotes(&cmd.with_instrument_ids(ids))
+            },
         )
     }
 
-    /// Subscribes to trades for an instrument, updating internal state and forwarding to the client.
+    /// Subscribes to trades for instruments, updating internal state and forwarding to the client.
     ///
     /// # Errors
     ///
     /// Returns an error if the underlying client subscribe operation fails.
-    fn subscribe_trades(&mut self, cmd: SubscribeTrades) -> anyhow::Result<()> {
-        Self::execute_tracked_subscribe(
-            self.client.as_mut(),
+    fn subscribe_trades(&mut self, cmd: &SubscribeTrades) -> anyhow::Result<()> {
+        Self::subscribe_batch(
             &mut self.subscriptions_trades,
-            cmd.instrument_id,
+            &cmd.instrument_ids,
             "trades",
-            |client| client.subscribe_trades(cmd),
+            |partial| &partial.instrument_ids_accepted,
+            |ids| self.client.subscribe_trades(cmd.with_instrument_ids(ids)),
         )
     }
 
-    /// Unsubscribes from trades for an instrument, updating internal state and forwarding to the client.
+    /// Unsubscribes from trades for instruments, updating internal state and forwarding to the client.
     ///
     /// # Errors
     ///
     /// Returns an error if the underlying client unsubscribe operation fails.
     fn unsubscribe_trades(&mut self, cmd: &UnsubscribeTrades) -> anyhow::Result<()> {
-        Self::execute_tracked_unsubscribe(
-            self.client.as_mut(),
+        Self::unsubscribe_batch(
             &mut self.subscriptions_trades,
-            &cmd.instrument_id,
+            &cmd.instrument_ids,
             "trades",
-            |client| client.unsubscribe_trades(cmd),
+            |partial| &partial.instrument_ids_accepted,
+            |ids| {
+                self.client
+                    .unsubscribe_trades(&cmd.with_instrument_ids(ids))
+            },
         )
+    }
+
+    fn subscribe_batch<T: Copy + Eq + Hash + Display>(
+        subscriptions: &mut AHashSet<T>,
+        members: &[T],
+        label: &str,
+        accepted: fn(&SubscriptionError) -> &[T],
+        dispatch: impl FnOnce(&[T]) -> anyhow::Result<()>,
+    ) -> anyhow::Result<()> {
+        let ids: Vec<_> = members
+            .iter()
+            .copied()
+            .filter(|id| !subscriptions.contains(id))
+            .collect();
+
+        if ids.is_empty() {
+            return Ok(());
+        }
+
+        let result = dispatch(&ids);
+
+        let reported: AHashSet<_> = match &result {
+            Ok(()) => AHashSet::new(),
+            Err(e) => e
+                .downcast_ref::<SubscriptionError>()
+                .map_or(&[][..], accepted)
+                .iter()
+                .copied()
+                .collect(),
+        };
+
+        for id in ids
+            .iter()
+            .filter(|id| result.is_ok() || reported.contains(*id))
+        {
+            subscriptions.insert(*id);
+            log_info!("Subscribed {id} {label}", color = LogColor::Blue);
+        }
+
+        result
+    }
+
+    fn unsubscribe_batch<T: Copy + Eq + Hash + Display>(
+        subscriptions: &mut AHashSet<T>,
+        members: &[T],
+        label: &str,
+        accepted: fn(&SubscriptionError) -> &[T],
+        dispatch: impl FnOnce(&[T]) -> anyhow::Result<()>,
+    ) -> anyhow::Result<()> {
+        let ids: Vec<_> = members
+            .iter()
+            .copied()
+            .filter(|id| subscriptions.contains(id))
+            .collect();
+
+        if ids.is_empty() {
+            return Ok(());
+        }
+
+        let result = dispatch(&ids);
+
+        let reported: AHashSet<_> = match &result {
+            Ok(()) => AHashSet::new(),
+            Err(e) => e
+                .downcast_ref::<SubscriptionError>()
+                .map_or(&[][..], accepted)
+                .iter()
+                .copied()
+                .collect(),
+        };
+
+        for id in ids
+            .iter()
+            .filter(|id| result.is_ok() || reported.contains(*id))
+        {
+            subscriptions.remove(id);
+            log_info!("Unsubscribed {id} {label}", color = LogColor::Blue);
+        }
+
+        result
     }
 
     /// Subscribes to bars for a bar type, updating internal state and forwarding to the client.
@@ -588,13 +837,13 @@ impl DataClientAdapter {
     /// # Errors
     ///
     /// Returns an error if the underlying client subscribe operation fails.
-    fn subscribe_bars(&mut self, cmd: SubscribeBars) -> anyhow::Result<()> {
-        Self::execute_tracked_subscribe(
-            self.client.as_mut(),
+    fn subscribe_bars(&mut self, cmd: &SubscribeBars) -> anyhow::Result<()> {
+        Self::subscribe_batch(
             &mut self.subscriptions_bars,
-            cmd.bar_type,
+            &cmd.bar_types,
             "bars",
-            |client| client.subscribe_bars(cmd),
+            |partial| &partial.bar_types_accepted,
+            |ids| self.client.subscribe_bars(cmd.with_bar_types(ids)),
         )
     }
 
@@ -604,12 +853,12 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client unsubscribe operation fails.
     fn unsubscribe_bars(&mut self, cmd: &UnsubscribeBars) -> anyhow::Result<()> {
-        Self::execute_tracked_unsubscribe(
-            self.client.as_mut(),
+        Self::unsubscribe_batch(
             &mut self.subscriptions_bars,
-            &cmd.bar_type,
+            &cmd.bar_types,
             "bars",
-            |client| client.unsubscribe_bars(cmd),
+            |partial| &partial.bar_types_accepted,
+            |ids| self.client.unsubscribe_bars(&cmd.with_bar_types(ids)),
         )
     }
 
@@ -618,13 +867,16 @@ impl DataClientAdapter {
     /// # Errors
     ///
     /// Returns an error if the underlying client subscribe operation fails.
-    fn subscribe_mark_prices(&mut self, cmd: SubscribeMarkPrices) -> anyhow::Result<()> {
-        Self::execute_tracked_subscribe(
-            self.client.as_mut(),
+    fn subscribe_mark_prices(&mut self, cmd: &SubscribeMarkPrices) -> anyhow::Result<()> {
+        Self::subscribe_batch(
             &mut self.subscriptions_mark_prices,
-            cmd.instrument_id,
+            &cmd.instrument_ids,
             "mark prices",
-            |client| client.subscribe_mark_prices(cmd),
+            |partial| &partial.instrument_ids_accepted,
+            |ids| {
+                self.client
+                    .subscribe_mark_prices(cmd.with_instrument_ids(ids))
+            },
         )
     }
 
@@ -634,12 +886,15 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client unsubscribe operation fails.
     fn unsubscribe_mark_prices(&mut self, cmd: &UnsubscribeMarkPrices) -> anyhow::Result<()> {
-        Self::execute_tracked_unsubscribe(
-            self.client.as_mut(),
+        Self::unsubscribe_batch(
             &mut self.subscriptions_mark_prices,
-            &cmd.instrument_id,
+            &cmd.instrument_ids,
             "mark prices",
-            |client| client.unsubscribe_mark_prices(cmd),
+            |partial| &partial.instrument_ids_accepted,
+            |ids| {
+                self.client
+                    .unsubscribe_mark_prices(&cmd.with_instrument_ids(ids))
+            },
         )
     }
 
@@ -648,13 +903,16 @@ impl DataClientAdapter {
     /// # Errors
     ///
     /// Returns an error if the underlying client subscribe operation fails.
-    fn subscribe_index_prices(&mut self, cmd: SubscribeIndexPrices) -> anyhow::Result<()> {
-        Self::execute_tracked_subscribe(
-            self.client.as_mut(),
+    fn subscribe_index_prices(&mut self, cmd: &SubscribeIndexPrices) -> anyhow::Result<()> {
+        Self::subscribe_batch(
             &mut self.subscriptions_index_prices,
-            cmd.instrument_id,
+            &cmd.instrument_ids,
             "index prices",
-            |client| client.subscribe_index_prices(cmd),
+            |partial| &partial.instrument_ids_accepted,
+            |ids| {
+                self.client
+                    .subscribe_index_prices(cmd.with_instrument_ids(ids))
+            },
         )
     }
 
@@ -664,12 +922,15 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client unsubscribe operation fails.
     fn unsubscribe_index_prices(&mut self, cmd: &UnsubscribeIndexPrices) -> anyhow::Result<()> {
-        Self::execute_tracked_unsubscribe(
-            self.client.as_mut(),
+        Self::unsubscribe_batch(
             &mut self.subscriptions_index_prices,
-            &cmd.instrument_id,
+            &cmd.instrument_ids,
             "index prices",
-            |client| client.unsubscribe_index_prices(cmd),
+            |partial| &partial.instrument_ids_accepted,
+            |ids| {
+                self.client
+                    .unsubscribe_index_prices(&cmd.with_instrument_ids(ids))
+            },
         )
     }
 
@@ -678,13 +939,16 @@ impl DataClientAdapter {
     /// # Errors
     ///
     /// Returns an error if the underlying client subscribe operation fails.
-    fn subscribe_funding_rates(&mut self, cmd: SubscribeFundingRates) -> anyhow::Result<()> {
-        Self::execute_tracked_subscribe(
-            self.client.as_mut(),
+    fn subscribe_funding_rates(&mut self, cmd: &SubscribeFundingRates) -> anyhow::Result<()> {
+        Self::subscribe_batch(
             &mut self.subscriptions_funding_rates,
-            cmd.instrument_id,
+            &cmd.instrument_ids,
             "funding rates",
-            |client| client.subscribe_funding_rates(cmd),
+            |partial| &partial.instrument_ids_accepted,
+            |ids| {
+                self.client
+                    .subscribe_funding_rates(cmd.with_instrument_ids(ids))
+            },
         )
     }
 
@@ -694,12 +958,15 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client unsubscribe operation fails.
     fn unsubscribe_funding_rates(&mut self, cmd: &UnsubscribeFundingRates) -> anyhow::Result<()> {
-        Self::execute_tracked_unsubscribe(
-            self.client.as_mut(),
+        Self::unsubscribe_batch(
             &mut self.subscriptions_funding_rates,
-            &cmd.instrument_id,
+            &cmd.instrument_ids,
             "funding rates",
-            |client| client.unsubscribe_funding_rates(cmd),
+            |partial| &partial.instrument_ids_accepted,
+            |ids| {
+                self.client
+                    .unsubscribe_funding_rates(&cmd.with_instrument_ids(ids))
+            },
         )
     }
 
@@ -710,14 +977,17 @@ impl DataClientAdapter {
     /// Returns an error if the underlying client subscribe operation fails.
     fn subscribe_instrument_status(
         &mut self,
-        cmd: SubscribeInstrumentStatus,
+        cmd: &SubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
-        Self::execute_tracked_subscribe(
-            self.client.as_mut(),
+        Self::subscribe_batch(
             &mut self.subscriptions_instrument_status,
-            cmd.instrument_id,
+            &cmd.instrument_ids,
             "instrument status",
-            |client| client.subscribe_instrument_status(cmd),
+            |partial| &partial.instrument_ids_accepted,
+            |ids| {
+                self.client
+                    .subscribe_instrument_status(cmd.with_instrument_ids(ids))
+            },
         )
     }
 
@@ -730,12 +1000,15 @@ impl DataClientAdapter {
         &mut self,
         cmd: &UnsubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
-        Self::execute_tracked_unsubscribe(
-            self.client.as_mut(),
+        Self::unsubscribe_batch(
             &mut self.subscriptions_instrument_status,
-            &cmd.instrument_id,
+            &cmd.instrument_ids,
             "instrument status",
-            |client| client.unsubscribe_instrument_status(cmd),
+            |partial| &partial.instrument_ids_accepted,
+            |ids| {
+                self.client
+                    .unsubscribe_instrument_status(&cmd.with_instrument_ids(ids))
+            },
         )
     }
 
@@ -744,13 +1017,16 @@ impl DataClientAdapter {
     /// # Errors
     ///
     /// Returns an error if the underlying client subscribe operation fails.
-    fn subscribe_instrument_close(&mut self, cmd: SubscribeInstrumentClose) -> anyhow::Result<()> {
-        Self::execute_tracked_subscribe(
-            self.client.as_mut(),
+    fn subscribe_instrument_close(&mut self, cmd: &SubscribeInstrumentClose) -> anyhow::Result<()> {
+        Self::subscribe_batch(
             &mut self.subscriptions_instrument_close,
-            cmd.instrument_id,
+            &cmd.instrument_ids,
             "instrument close",
-            |client| client.subscribe_instrument_close(cmd),
+            |partial| &partial.instrument_ids_accepted,
+            |ids| {
+                self.client
+                    .subscribe_instrument_close(cmd.with_instrument_ids(ids))
+            },
         )
     }
 
@@ -763,12 +1039,15 @@ impl DataClientAdapter {
         &mut self,
         cmd: &UnsubscribeInstrumentClose,
     ) -> anyhow::Result<()> {
-        Self::execute_tracked_unsubscribe(
-            self.client.as_mut(),
+        Self::unsubscribe_batch(
             &mut self.subscriptions_instrument_close,
-            &cmd.instrument_id,
+            &cmd.instrument_ids,
             "instrument close",
-            |client| client.unsubscribe_instrument_close(cmd),
+            |partial| &partial.instrument_ids_accepted,
+            |ids| {
+                self.client
+                    .unsubscribe_instrument_close(&cmd.with_instrument_ids(ids))
+            },
         )
     }
 
@@ -777,13 +1056,16 @@ impl DataClientAdapter {
     /// # Errors
     ///
     /// Returns an error if the underlying client subscribe operation fails.
-    fn subscribe_option_greeks(&mut self, cmd: SubscribeOptionGreeks) -> anyhow::Result<()> {
-        Self::execute_tracked_subscribe(
-            self.client.as_mut(),
+    fn subscribe_option_greeks(&mut self, cmd: &SubscribeOptionGreeks) -> anyhow::Result<()> {
+        Self::subscribe_batch(
             &mut self.subscriptions_option_greeks,
-            cmd.instrument_id,
+            &cmd.instrument_ids,
             "option greeks",
-            |client| client.subscribe_option_greeks(cmd),
+            |partial| &partial.instrument_ids_accepted,
+            |ids| {
+                self.client
+                    .subscribe_option_greeks(cmd.with_instrument_ids(ids))
+            },
         )
     }
 
@@ -793,12 +1075,15 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client unsubscribe operation fails.
     fn unsubscribe_option_greeks(&mut self, cmd: &UnsubscribeOptionGreeks) -> anyhow::Result<()> {
-        Self::execute_tracked_unsubscribe(
-            self.client.as_mut(),
+        Self::unsubscribe_batch(
             &mut self.subscriptions_option_greeks,
-            &cmd.instrument_id,
+            &cmd.instrument_ids,
             "option greeks",
-            |client| client.unsubscribe_option_greeks(cmd),
+            |partial| &partial.instrument_ids_accepted,
+            |ids| {
+                self.client
+                    .unsubscribe_option_greeks(&cmd.with_instrument_ids(ids))
+            },
         )
     }
 

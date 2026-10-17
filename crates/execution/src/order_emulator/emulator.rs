@@ -2200,7 +2200,7 @@ mod tests {
         assert!(matches!(
             &data_commands[0],
             DataCommand::Subscribe(SubscribeCommand::Quotes(command))
-                if command.instrument_id == instrument.id()
+                if command.instrument_ids == [instrument.id()]
         ));
     }
 
@@ -2615,7 +2615,7 @@ mod tests {
         assert!(matches!(
             &commands[0],
             DataCommand::Subscribe(SubscribeCommand::Quotes(command))
-                if command.instrument_id == instrument.id()
+                if command.instrument_ids == [instrument.id()]
         ));
 
         let quote = create_quote_tick(&instrument, "5060.00", "5070.00");
@@ -2653,7 +2653,7 @@ mod tests {
         assert!(matches!(
             &commands[0],
             DataCommand::Subscribe(SubscribeCommand::Trades(command))
-                if command.instrument_id == instrument.id()
+                if command.instrument_ids == [instrument.id()]
         ));
 
         let trade = create_trade_tick(&instrument, "5065.00");
@@ -2714,12 +2714,12 @@ mod tests {
         assert!(commands.iter().any(|command| matches!(
             command,
             DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(command))
-                if command.instrument_id == instrument.id()
+                if command.instrument_ids == [instrument.id()]
         )));
         assert!(commands.iter().any(|command| matches!(
             command,
             DataCommand::Unsubscribe(UnsubscribeCommand::Trades(command))
-                if command.instrument_id == instrument.id()
+                if command.instrument_ids == [instrument.id()]
         )));
 
         drop(emulator_ref);
@@ -2788,7 +2788,7 @@ mod tests {
             .iter()
             .filter_map(|command| match command {
                 DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(command)) => {
-                    Some(command.instrument_id)
+                    Some(command.single_instrument_id().unwrap())
                 }
                 _ => None,
             })
@@ -2861,7 +2861,7 @@ mod tests {
         assert!(commands.iter().any(|command| matches!(
             command,
             DataCommand::Subscribe(SubscribeCommand::Quotes(command))
-                if command.instrument_id == instrument.id()
+                if command.instrument_ids == [instrument.id()]
         )));
     }
 

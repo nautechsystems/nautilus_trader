@@ -384,7 +384,7 @@ impl DataEngine {
         &mut self,
         cmd: &SubscribeBars,
     ) -> anyhow::Result<()> {
-        let target_bar_type = cmd.bar_type;
+        let target_bar_type = cmd.single_bar_type()?;
         let target_key = target_bar_type.standard();
 
         if !target_bar_type.is_internally_aggregated() {
@@ -496,7 +496,10 @@ impl DataEngine {
     }
 
     pub(super) fn unsubscribe_continuous_future_bars(&mut self, cmd: &UnsubscribeBars) {
-        let target_key = cmd.bar_type.standard();
+        let target_key = cmd
+            .single_bar_type()
+            .expect("native engine receives one bar type")
+            .standard();
 
         let Some(mut state) = self.continuous_future_subscriptions.remove(&target_key) else {
             log::warn!(

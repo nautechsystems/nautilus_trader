@@ -37,8 +37,8 @@ use nautilus_common::{
         data::{
             RequestBars, RequestBookSnapshot, RequestInstrument, RequestInstruments, RequestQuotes,
             RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth, SubscribeQuotes,
-            SubscribeTrades, UnsubscribeBookDeltas, UnsubscribeBookDepth, UnsubscribeQuotes,
-            UnsubscribeTrades,
+            SubscribeTrades, SubscriptionError, UnsubscribeBookDeltas, UnsubscribeBookDepth,
+            UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
 };
@@ -109,6 +109,61 @@ fn config(http: &str, ws: &str, instrument_ids: &[&str]) -> CoinApiDataClientCon
         .max_retries(0)
         .transport_backend(TransportBackend::Tungstenite)
         .build()
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_trade_list_continues_after_unloaded_member_and_reports_partial_release() {
+    bounded(async {
+        let mut data_rx = data_channel();
+        let (http, http_address) = http_peer(vec![SYMBOLS.into()]).await;
+        let (ws_listener, ws_address) = listener().await;
+        let mut client = connected(&http_address, &ws_address, &mut data_rx).await;
+        let invalid = InstrumentId::from("ETH-USD.COINBASE");
+        let ids = [invalid, instrument_id()];
+
+        let subscribe = SubscribeTrades::new(
+            ids,
+            Some(client_id()),
+            None,
+            UUID4::new(),
+            UnixNanos::from(17),
+            Some(UUID4::new()),
+            None,
+        );
+        let error = client.subscribe_trades(subscribe).unwrap_err();
+        let partial = error.downcast_ref::<SubscriptionError>().unwrap();
+        assert_eq!(partial.instrument_ids_accepted, vec![instrument_id()]);
+        assert_eq!(partial.bar_types_accepted, Vec::<BarType>::new());
+        assert_eq!(
+            partial.source.to_string(),
+            "ETH-USD.COINBASE is not a loaded CoinAPI instrument"
+        );
+        let mut socket = accept(&ws_listener).await;
+        assert_eq!(next_text(&mut socket).await, HELLO_TRADE);
+
+        let unsubscribe = UnsubscribeTrades::new(
+            ids,
+            Some(client_id()),
+            None,
+            UUID4::new(),
+            UnixNanos::from(23),
+            Some(UUID4::new()),
+            None,
+        );
+        let error = client.unsubscribe_trades(&unsubscribe).unwrap_err();
+        let partial = error.downcast_ref::<SubscriptionError>().unwrap();
+        assert_eq!(partial.instrument_ids_accepted, vec![instrument_id()]);
+        assert_eq!(partial.bar_types_accepted, Vec::<BarType>::new());
+        assert_eq!(
+            partial.source.to_string(),
+            "ETH-USD.COINBASE is not a loaded CoinAPI instrument"
+        );
+        assert_eq!(http.await.unwrap(), vec![SYMBOLS_TARGET]);
+        client.disconnect().await.unwrap();
+        assert!(client.is_disconnected());
+    })
+    .await;
 }
 
 async fn listener() -> (TcpListener, String) {

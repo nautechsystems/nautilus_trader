@@ -647,6 +647,12 @@ Polymarket supports live `L2_MBP` order book deltas, quotes, trades, and resolut
 configured refreshes, on-demand loading, single-instrument requests, new-market discovery, and
 tick-size changes.
 
+Implemented data hooks accept compatible instrument lists for subscribe and unsubscribe:
+
+- Intent and reconcile operations run per member.
+- Uncached IDs enter the debounced Gamma loader.
+- The WebSocket pool sends per token; list delivery does not reduce venue messages.
+
 ## Orders capability
 
 Polymarket supports the order types and instructions below.

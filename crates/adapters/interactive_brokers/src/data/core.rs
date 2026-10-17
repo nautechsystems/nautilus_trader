@@ -33,7 +33,7 @@ use ibapi::{
     prelude::{StreamExt, SubscriptionItemStreamExt},
 };
 use nautilus_common::{
-    clients::DataClient,
+    clients::{DataClient, execute_bar_subscriptions, execute_instrument_subscriptions},
     live::{runner::get_data_event_sender, sender::EventSender},
     messages::{
         DataEvent, DataResponse,
@@ -722,864 +722,677 @@ impl DataClient for InteractiveBrokersDataClient {
 
     // Subscription handlers
     fn subscribe_quotes(&mut self, cmd: SubscribeQuotes) -> anyhow::Result<()> {
-        tracing::debug!("Subscribing to quotes for {}", cmd.instrument_id);
-
-        if self.has_subscription(cmd.instrument_id, SubscriptionType::Quotes)? {
-            tracing::debug!(
-                "Quote subscription already active for {}",
-                cmd.instrument_id
-            );
-            return Ok(());
-        }
-
-        let client = self
-            .ib_client
-            .as_ref()
-            .context("IB client not connected. Call connect() first")?;
-
-        // Get instrument from provider
-        let instrument = self
-            .instrument_provider
-            .find(&cmd.instrument_id)
-            .context(format!(
-                "Instrument {} not found in provider",
-                cmd.instrument_id
-            ))?;
-
-        let prices = IbPriceConverter::for_instrument(
-            &instrument,
-            self.instrument_provider
-                .get_price_magnifier(&cmd.instrument_id),
-        );
-        let size_precision = instrument.size_precision();
-
-        // Convert instrument_id to IB contract
-        let contract = self
-            .instrument_provider
-            .resolve_contract_for_instrument(cmd.instrument_id)
-            .context("Failed to convert instrument_id to IB contract")?;
-
-        // Check if contract is BAG (spread) or if batch_quotes parameter is set
-        // BAG contracts have SecurityType::Spread or combo_legs populated
-        let is_bag = matches!(
-            contract.security_type,
-            ibapi::contracts::SecurityType::Spread
-        ) || !contract.combo_legs.is_empty();
-        let batch_quotes = cmd
-            .params
-            .as_ref()
-            .and_then(|params| params.get_str("batch_quotes"))
-            .map_or(self.config.batch_quotes, parse_bool_param_value);
-
-        let use_market_data = is_bag || batch_quotes;
-
-        let instrument_id = cmd.instrument_id;
-        let data_sender = self.data_sender.clone();
-        let quote_cache = Arc::clone(&self.quote_cache);
-        let clock = self.clock;
-
-        let subscription_token = self.cancellation_token.child_token();
-
-        // Record the subscription before spawning so a fast-failing task cannot
-        // finish before its registry entry exists.
-        let subscription_id = next_subscription_id();
-        lock(&self.subscriptions)?.insert(
-            (cmd.instrument_id, SubscriptionType::Quotes),
-            SubscriptionInfo {
-                cancellation_token: subscription_token.clone(),
-                id: subscription_id,
-            },
-        );
-
-        let guard = SubscriptionGuard {
-            subscriptions: Arc::clone(&self.subscriptions),
-            key: (cmd.instrument_id, SubscriptionType::Quotes),
-            id: subscription_id,
-        };
-
-        // Spawn subscription task
-        let client_clone = client.as_arc().clone();
-        let ignore_size_updates = self.config.ignore_quote_tick_size_updates;
-        let data_farm_state = Arc::clone(&self.data_farm_state);
-        let stream_config = StreamConfig::new(self.client_id, &self.config);
-
-        let task = async move {
-            if use_market_data {
-                // Use market_data (reqMktData) for BAG contracts or when batch_quotes is requested
-                tracing::debug!(
-                    "Using market_data subscription for {} (BAG: {}, batch_quotes: {})",
-                    instrument_id,
-                    is_bag,
-                    batch_quotes
-                );
-
-                if let Err(e) = handle_quote_subscription(
-                    client_clone,
-                    contract,
-                    instrument_id,
-                    prices,
-                    size_precision,
-                    data_sender,
-                    quote_cache,
-                    clock,
-                    subscription_token,
-                    ignore_size_updates,
-                    Arc::clone(&data_farm_state),
-                    stream_config,
-                )
-                .await
-                {
-                    tracing::error!("Quote subscription error for {}: {:?}", instrument_id, e);
-                }
-            } else {
-                // Try tick_by_tick_bid_ask first for regular contracts (better performance)
-                // Fallback to market_data if it fails (e.g., for BAG contracts not detected upfront)
-                tracing::debug!(
-                    "Attempting tick_by_tick_bid_ask subscription for {}",
-                    instrument_id
-                );
-
-                match handle_tick_by_tick_quote_subscription(
-                    client_clone.clone(),
-                    contract.clone(),
-                    instrument_id,
-                    prices,
-                    size_precision,
-                    data_sender.clone(),
-                    clock,
-                    subscription_token.clone(),
-                    Arc::clone(&data_farm_state),
-                    stream_config,
-                )
-                .await
-                {
-                    Ok(()) => {
-                        // Success - subscription is active
-                    }
-                    Err(e) => {
-                        tracing::warn!(
-                            "tick_by_tick_bid_ask failed for {} (may be BAG contract), falling back to market_data: {:?}",
-                            instrument_id,
-                            e
-                        );
-
-                        // Fallback to market_data (reqMktData) - works for BAG contracts
-                        if let Err(fallback_err) = handle_quote_subscription(
-                            client_clone,
-                            contract,
-                            instrument_id,
-                            prices,
-                            size_precision,
-                            data_sender,
-                            quote_cache,
-                            clock,
-                            subscription_token,
-                            ignore_size_updates,
-                            Arc::clone(&data_farm_state),
-                            stream_config,
-                        )
-                        .await
-                        {
-                            tracing::error!(
-                                "Quote subscription fallback also failed for {}: {:?}",
-                                instrument_id,
-                                fallback_err
-                            );
-                        } else {
-                            tracing::debug!(
-                                "Successfully subscribed to {} using market_data fallback",
-                                instrument_id
-                            );
-                        }
-                    }
-                }
-            }
-
-            guard.release();
-        };
-
-        self.session_tasks
-            .spawn(task)
-            .context("failed to register IB data subscription task")?;
-
-        tracing::debug!(
-            "Quote subscription started for {} (method: {})",
-            cmd.instrument_id,
-            if use_market_data {
-                "market_data"
-            } else {
-                "tick_by_tick_bid_ask"
-            }
-        );
-        Ok(())
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.subscribe_quotes_member(instrument_id, &cmd)
+        })
     }
 
     fn subscribe_index_prices(&mut self, cmd: SubscribeIndexPrices) -> anyhow::Result<()> {
-        tracing::debug!("Subscribing to index prices for {}", cmd.instrument_id);
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            tracing::debug!("Subscribing to index prices for {}", instrument_id);
 
-        if self.has_subscription(cmd.instrument_id, SubscriptionType::IndexPrices)? {
-            tracing::debug!(
-                "Index price subscription already active for {}",
-                cmd.instrument_id
-            );
-            return Ok(());
-        }
-
-        let client = self
-            .ib_client
-            .as_ref()
-            .context("IB client not connected. Call connect() first")?;
-
-        let instrument = self
-            .instrument_provider
-            .find(&cmd.instrument_id)
-            .context(format!(
-                "Instrument {} not found in provider",
-                cmd.instrument_id
-            ))?;
-
-        let contract = self
-            .instrument_provider
-            .resolve_contract_for_instrument(cmd.instrument_id)
-            .context("Failed to convert instrument_id to IB contract")?;
-
-        if !matches!(contract.security_type, SecurityType::Index) {
-            tracing::warn!(
-                "Index price subscription not supported for security type {:?} on {}",
-                contract.security_type,
-                cmd.instrument_id
-            );
-            return Ok(());
-        }
-
-        let prices = IbPriceConverter::for_instrument(
-            &instrument,
-            self.instrument_provider
-                .get_price_magnifier(&cmd.instrument_id),
-        );
-        let instrument_id = cmd.instrument_id;
-        let data_sender = self.data_sender.clone();
-        let clock = self.clock;
-
-        let subscription_token = self.cancellation_token.child_token();
-
-        let subscription_id = next_subscription_id();
-        lock(&self.subscriptions)?.insert(
-            (cmd.instrument_id, SubscriptionType::IndexPrices),
-            SubscriptionInfo {
-                cancellation_token: subscription_token.clone(),
-                id: subscription_id,
-            },
-        );
-
-        let guard = SubscriptionGuard {
-            subscriptions: Arc::clone(&self.subscriptions),
-            key: (cmd.instrument_id, SubscriptionType::IndexPrices),
-            id: subscription_id,
-        };
-
-        let client_clone = client.as_arc().clone();
-        let data_farm_state = Arc::clone(&self.data_farm_state);
-        let stream_config = StreamConfig::new(self.client_id, &self.config);
-
-        let task = async move {
-            if let Err(e) = handle_index_price_subscription(
-                client_clone,
-                contract,
-                instrument_id,
-                prices,
-                data_sender,
-                clock,
-                subscription_token,
-                data_farm_state,
-                stream_config,
-            )
-            .await
-            {
-                tracing::error!(
-                    "Index price subscription error for {}: {:?}",
-                    instrument_id,
-                    e
+            if self.has_subscription(instrument_id, SubscriptionType::IndexPrices)? {
+                tracing::debug!(
+                    "Index price subscription already active for {}",
+                    instrument_id
                 );
+                return Ok(());
             }
 
-            guard.release();
-        };
+            let client = self
+                .ib_client
+                .as_ref()
+                .context("IB client not connected. Call connect() first")?;
 
-        self.session_tasks
-            .spawn(task)
-            .context("failed to register IB data subscription task")?;
+            let instrument = self
+                .instrument_provider
+                .find(&instrument_id)
+                .context(format!(
+                    "Instrument {} not found in provider",
+                    instrument_id
+                ))?;
 
-        tracing::debug!("Index price subscription started for {}", cmd.instrument_id);
-        Ok(())
+            let contract = self
+                .instrument_provider
+                .resolve_contract_for_instrument(instrument_id)
+                .context("Failed to convert instrument_id to IB contract")?;
+
+            if !matches!(contract.security_type, SecurityType::Index) {
+                tracing::warn!(
+                    "Index price subscription not supported for security type {:?} on {}",
+                    contract.security_type,
+                    instrument_id
+                );
+                return Ok(());
+            }
+
+            let prices = IbPriceConverter::for_instrument(
+                &instrument,
+                self.instrument_provider.get_price_magnifier(&instrument_id),
+            );
+            let data_sender = self.data_sender.clone();
+            let clock = self.clock;
+
+            let subscription_token = self.cancellation_token.child_token();
+
+            let subscription_id = next_subscription_id();
+            lock(&self.subscriptions)?.insert(
+                (instrument_id, SubscriptionType::IndexPrices),
+                SubscriptionInfo {
+                    cancellation_token: subscription_token.clone(),
+                    id: subscription_id,
+                },
+            );
+
+            let guard = SubscriptionGuard {
+                subscriptions: Arc::clone(&self.subscriptions),
+                key: (instrument_id, SubscriptionType::IndexPrices),
+                id: subscription_id,
+            };
+
+            let client_clone = client.as_arc().clone();
+            let data_farm_state = Arc::clone(&self.data_farm_state);
+            let stream_config = StreamConfig::new(self.client_id, &self.config);
+
+            let task = async move {
+                if let Err(e) = handle_index_price_subscription(
+                    client_clone,
+                    contract,
+                    instrument_id,
+                    prices,
+                    data_sender,
+                    clock,
+                    subscription_token,
+                    data_farm_state,
+                    stream_config,
+                )
+                .await
+                {
+                    tracing::error!(
+                        "Index price subscription error for {}: {:?}",
+                        instrument_id,
+                        e
+                    );
+                }
+
+                guard.release();
+            };
+
+            self.session_tasks
+                .spawn(task)
+                .context("failed to register IB data subscription task")?;
+
+            tracing::debug!("Index price subscription started for {}", instrument_id);
+            Ok(())
+        })
     }
 
     fn subscribe_option_greeks(&mut self, cmd: SubscribeOptionGreeks) -> anyhow::Result<()> {
-        tracing::debug!("Subscribing to option greeks for {}", cmd.instrument_id);
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            tracing::debug!("Subscribing to option greeks for {}", instrument_id);
 
-        if lock(&self.option_greeks_subscriptions)?.contains_key(&cmd.instrument_id) {
-            tracing::debug!(
-                "Option greeks subscription already active for {}",
-                cmd.instrument_id
-            );
-            return Ok(());
-        }
-
-        let client = self
-            .ib_client
-            .as_ref()
-            .context("IB client not connected. Call connect() first")?;
-
-        let instrument = self
-            .instrument_provider
-            .find(&cmd.instrument_id)
-            .context(format!(
-                "Instrument {} not found in provider",
-                cmd.instrument_id
-            ))?;
-
-        if !matches!(
-            instrument,
-            InstrumentAny::OptionContract(_)
-                | InstrumentAny::FuturesContract(_)
-                | InstrumentAny::CryptoOption(_)
-        ) && !matches!(
-            self.instrument_provider
-                .resolve_contract_for_instrument(cmd.instrument_id)?
-                .security_type,
-            SecurityType::Option | SecurityType::FuturesOption
-        ) {
-            tracing::warn!(
-                "Option greeks subscription is only supported for option instruments: {}",
-                cmd.instrument_id
-            );
-            return Ok(());
-        }
-
-        let contract = self
-            .instrument_provider
-            .resolve_contract_for_instrument(cmd.instrument_id)
-            .context("Failed to convert instrument_id to IB contract")?;
-
-        let instrument_id = cmd.instrument_id;
-        let data_sender = self.data_sender.clone();
-        let option_greeks_cache = Arc::clone(&self.option_greeks_cache);
-        let clock = self.clock;
-        let subscription_token = self.cancellation_token.child_token();
-        let subscription_token_clone = subscription_token.clone();
-        let client_clone = client.as_arc().clone();
-        let data_farm_state = Arc::clone(&self.data_farm_state);
-        let stream_config = StreamConfig::new(self.client_id, &self.config);
-
-        let task = async move {
-            if let Err(e) = handle_option_greeks_subscription(
-                client_clone,
-                contract,
-                instrument_id,
-                data_sender,
-                option_greeks_cache,
-                clock,
-                subscription_token_clone,
-                data_farm_state,
-                stream_config,
-            )
-            .await
-            {
-                tracing::error!(
-                    "Option greeks subscription error for {}: {:?}",
-                    instrument_id,
-                    e
+            if lock(&self.option_greeks_subscriptions)?.contains_key(&instrument_id) {
+                tracing::debug!(
+                    "Option greeks subscription already active for {}",
+                    instrument_id
                 );
+                return Ok(());
             }
-        };
 
-        self.session_tasks
-            .spawn(task)
-            .context("failed to register IB data subscription task")?;
+            let client = self
+                .ib_client
+                .as_ref()
+                .context("IB client not connected. Call connect() first")?;
 
-        let mut subscriptions = lock(&self.option_greeks_subscriptions)?;
-        subscriptions.insert(cmd.instrument_id, subscription_token);
+            let instrument = self
+                .instrument_provider
+                .find(&instrument_id)
+                .context(format!(
+                    "Instrument {} not found in provider",
+                    instrument_id
+                ))?;
 
-        tracing::debug!(
-            "Option greeks subscription started for {}",
-            cmd.instrument_id
-        );
-        Ok(())
+            if !matches!(
+                instrument,
+                InstrumentAny::OptionContract(_)
+                    | InstrumentAny::FuturesContract(_)
+                    | InstrumentAny::CryptoOption(_)
+            ) && !matches!(
+                self.instrument_provider
+                    .resolve_contract_for_instrument(instrument_id)?
+                    .security_type,
+                SecurityType::Option | SecurityType::FuturesOption
+            ) {
+                tracing::warn!(
+                    "Option greeks subscription is only supported for option instruments: {}",
+                    instrument_id
+                );
+                return Ok(());
+            }
+
+            let contract = self
+                .instrument_provider
+                .resolve_contract_for_instrument(instrument_id)
+                .context("Failed to convert instrument_id to IB contract")?;
+
+            let data_sender = self.data_sender.clone();
+            let option_greeks_cache = Arc::clone(&self.option_greeks_cache);
+            let clock = self.clock;
+            let subscription_token = self.cancellation_token.child_token();
+            let subscription_token_clone = subscription_token.clone();
+            let client_clone = client.as_arc().clone();
+            let data_farm_state = Arc::clone(&self.data_farm_state);
+            let stream_config = StreamConfig::new(self.client_id, &self.config);
+
+            let task = async move {
+                if let Err(e) = handle_option_greeks_subscription(
+                    client_clone,
+                    contract,
+                    instrument_id,
+                    data_sender,
+                    option_greeks_cache,
+                    clock,
+                    subscription_token_clone,
+                    data_farm_state,
+                    stream_config,
+                )
+                .await
+                {
+                    tracing::error!(
+                        "Option greeks subscription error for {}: {:?}",
+                        instrument_id,
+                        e
+                    );
+                }
+            };
+
+            self.session_tasks
+                .spawn(task)
+                .context("failed to register IB data subscription task")?;
+
+            let mut subscriptions = lock(&self.option_greeks_subscriptions)?;
+            subscriptions.insert(instrument_id, subscription_token);
+
+            tracing::debug!("Option greeks subscription started for {}", instrument_id);
+            Ok(())
+        })
     }
 
     fn unsubscribe_quotes(&mut self, cmd: &UnsubscribeQuotes) -> anyhow::Result<()> {
-        tracing::debug!("Unsubscribing from quotes for {}", cmd.instrument_id);
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            tracing::debug!("Unsubscribing from quotes for {instrument_id}");
 
-        let mut subscriptions = lock(&self.subscriptions)?;
-        if let Some(sub_info) = subscriptions.remove(&(cmd.instrument_id, SubscriptionType::Quotes))
-        {
-            sub_info.cancellation_token.cancel();
-            tracing::debug!("Unsubscribed from quotes for {}", cmd.instrument_id);
-        } else {
-            tracing::warn!(
-                "No active quote subscription found for {}",
-                cmd.instrument_id
-            );
-        }
+            let mut subscriptions = lock(&self.subscriptions)?;
+            if let Some(sub_info) = subscriptions.remove(&(instrument_id, SubscriptionType::Quotes))
+            {
+                sub_info.cancellation_token.cancel();
+                tracing::debug!("Unsubscribed from quotes for {instrument_id}");
+            } else {
+                tracing::warn!("No active quote subscription found for {instrument_id}");
+            }
 
-        // Clear quote cache for this instrument
-        {
-            // Quote cache doesn't have per-instrument clear, but we can clear all
-            // In practice, the cache will naturally expire as new quotes arrive
-        }
+            // Clear quote cache for this instrument
+            {
+                // Quote cache doesn't have per-instrument clear, but we can clear all
+                // In practice, the cache will naturally expire as new quotes arrive
+            }
 
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_index_prices(&mut self, cmd: &UnsubscribeIndexPrices) -> anyhow::Result<()> {
-        tracing::debug!("Unsubscribing from index prices for {}", cmd.instrument_id);
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            tracing::debug!("Unsubscribing from index prices for {}", instrument_id);
 
-        let mut subscriptions = lock(&self.subscriptions)?;
+            let mut subscriptions = lock(&self.subscriptions)?;
 
-        if let Some(sub_info) =
-            subscriptions.remove(&(cmd.instrument_id, SubscriptionType::IndexPrices))
-        {
-            sub_info.cancellation_token.cancel();
-            tracing::debug!("Unsubscribed from index prices for {}", cmd.instrument_id);
-        } else {
-            tracing::warn!(
-                "No active index price subscription found for {}",
-                cmd.instrument_id
-            );
-        }
-
-        Ok(())
-    }
-
-    fn unsubscribe_option_greeks(&mut self, cmd: &UnsubscribeOptionGreeks) -> anyhow::Result<()> {
-        tracing::debug!("Unsubscribing from option greeks for {}", cmd.instrument_id);
-
-        let mut subscriptions = lock(&self.option_greeks_subscriptions)?;
-        if let Some(subscription_token) = subscriptions.remove(&cmd.instrument_id) {
-            subscription_token.cancel();
-            tracing::debug!("Unsubscribed from option greeks for {}", cmd.instrument_id);
-        } else {
-            tracing::warn!(
-                "No active option greeks subscription found for {}",
-                cmd.instrument_id
-            );
-        }
-
-        Ok(())
-    }
-
-    fn subscribe_trades(&mut self, cmd: SubscribeTrades) -> anyhow::Result<()> {
-        tracing::debug!("Subscribing to trades for {}", cmd.instrument_id);
-
-        if self.has_subscription(cmd.instrument_id, SubscriptionType::Trades)? {
-            tracing::debug!(
-                "Trade subscription already active for {}",
-                cmd.instrument_id
-            );
-            return Ok(());
-        }
-
-        let client = self
-            .ib_client
-            .as_ref()
-            .context("IB client not connected. Call connect() first")?;
-
-        // Get instrument from provider
-        let instrument = self
-            .instrument_provider
-            .find(&cmd.instrument_id)
-            .context(format!(
-                "Instrument {} not found in provider",
-                cmd.instrument_id
-            ))?;
-
-        // Check if instrument is a CurrencyPair (IB doesn't support trades for CurrencyPair)
-        if matches!(instrument, InstrumentAny::CurrencyPair(_)) {
-            tracing::error!(
-                "Interactive Brokers does not support trades for CurrencyPair instruments: {}",
-                cmd.instrument_id
-            );
-            return Ok(());
-        }
-
-        let prices = IbPriceConverter::for_instrument(
-            &instrument,
-            self.instrument_provider
-                .get_price_magnifier(&cmd.instrument_id),
-        );
-        let size_precision = instrument.size_precision();
-
-        // Convert instrument_id to IB contract
-        let contract = self
-            .instrument_provider
-            .resolve_contract_for_instrument(cmd.instrument_id)
-            .context("Failed to convert instrument_id to IB contract")?;
-
-        let instrument_id = cmd.instrument_id;
-        let data_sender = self.data_sender.clone();
-        let clock = self.clock;
-
-        // Create subscription-specific cancellation token
-        let subscription_token = self.cancellation_token.child_token();
-
-        let subscription_id = next_subscription_id();
-        lock(&self.subscriptions)?.insert(
-            (cmd.instrument_id, SubscriptionType::Trades),
-            SubscriptionInfo {
-                cancellation_token: subscription_token.clone(),
-                id: subscription_id,
-            },
-        );
-
-        let guard = SubscriptionGuard {
-            subscriptions: Arc::clone(&self.subscriptions),
-            key: (cmd.instrument_id, SubscriptionType::Trades),
-            id: subscription_id,
-        };
-
-        // Spawn subscription task
-        let client_clone = client.as_arc().clone();
-        let data_farm_state = Arc::clone(&self.data_farm_state);
-        let stream_config = StreamConfig::new(self.client_id, &self.config);
-
-        let task = async move {
-            if let Err(e) = handle_trade_subscription(
-                client_clone,
-                contract,
-                instrument_id,
-                prices,
-                size_precision,
-                data_sender,
-                clock,
-                subscription_token,
-                data_farm_state,
-                stream_config,
-            )
-            .await
+            if let Some(sub_info) =
+                subscriptions.remove(&(instrument_id, SubscriptionType::IndexPrices))
             {
-                tracing::error!("Trade subscription error for {}: {:?}", instrument_id, e);
-            }
-
-            guard.release();
-        };
-
-        self.session_tasks
-            .spawn(task)
-            .context("failed to register IB data subscription task")?;
-
-        tracing::debug!("Trade subscription started for {}", cmd.instrument_id);
-        Ok(())
-    }
-
-    fn unsubscribe_trades(&mut self, cmd: &UnsubscribeTrades) -> anyhow::Result<()> {
-        tracing::debug!("Unsubscribing from trades for {}", cmd.instrument_id);
-
-        let mut subscriptions = lock(&self.subscriptions)?;
-        if let Some(sub_info) = subscriptions.remove(&(cmd.instrument_id, SubscriptionType::Trades))
-        {
-            sub_info.cancellation_token.cancel();
-            tracing::debug!("Unsubscribed from trades for {}", cmd.instrument_id);
-        } else {
-            tracing::warn!(
-                "No active trade subscription found for {}",
-                cmd.instrument_id
-            );
-        }
-
-        Ok(())
-    }
-
-    fn subscribe_bars(&mut self, cmd: SubscribeBars) -> anyhow::Result<()> {
-        tracing::debug!("Subscribing to bars for {}", cmd.bar_type);
-
-        let client = self
-            .ib_client
-            .as_ref()
-            .context("IB client not connected. Call connect() first")?;
-
-        // Get instrument from provider
-        let instrument_id = cmd.bar_type.instrument_id();
-        if self.has_subscription(instrument_id, SubscriptionType::Bars(cmd.bar_type))? {
-            tracing::debug!("Bar subscription already active for {}", cmd.bar_type);
-            return Ok(());
-        }
-
-        let instrument = self
-            .instrument_provider
-            .find(&instrument_id)
-            .context(format!("Instrument {instrument_id} not found in provider"))?;
-
-        let prices = IbPriceConverter::for_instrument(
-            &instrument,
-            self.instrument_provider.get_price_magnifier(&instrument_id),
-        );
-        let size_precision = instrument.size_precision();
-
-        // Convert instrument_id to IB contract
-        let contract = self
-            .instrument_provider
-            .resolve_contract_for_instrument(instrument_id)
-            .context("Failed to convert instrument_id to IB contract")?;
-
-        let bar_type = cmd.bar_type;
-        let bar_type_str = bar_type.to_string();
-        let data_sender = self.data_sender.clone();
-        let clock = self.clock;
-        let last_bars = Arc::clone(&self.last_bars);
-        let bar_timeout_tasks = Arc::clone(&self.bar_timeout_tasks);
-        let handle_revised_bars = self.config.handle_revised_bars;
-        let use_rth = self.config.use_regular_trading_hours;
-        let start_ns = parse_start_ns(cmd.params.as_ref());
-        // Crypto (ZEROHASH/PAXOS) trade-price bars must request AGGTRADES, not
-        // TRADES (TWS rejects TRADES for crypto, error 10299) - on BOTH the
-        // realtime (reqRealTimeBars) and historical (reqHistoricalData) paths, per
-        // the Java engine's whatToShowFor rule. Capture the flag before `contract`
-        // is moved into the subscription task below.
-        let is_crypto = is_crypto_contract(&contract);
-
-        // Create subscription-specific cancellation token
-        let subscription_token = self.cancellation_token.child_token();
-
-        let subscription_id = next_subscription_id();
-        lock(&self.subscriptions)?.insert(
-            (instrument_id, SubscriptionType::Bars(bar_type)),
-            SubscriptionInfo {
-                cancellation_token: subscription_token.clone(),
-                id: subscription_id,
-            },
-        );
-
-        let guard = SubscriptionGuard {
-            subscriptions: Arc::clone(&self.subscriptions),
-            key: (instrument_id, SubscriptionType::Bars(bar_type)),
-            id: subscription_id,
-        };
-
-        // Spawn subscription task
-        let client_clone = client.as_arc().clone();
-        let data_farm_state = Arc::clone(&self.data_farm_state);
-        let stream_config = StreamConfig::new(self.client_id, &self.config);
-
-        let task = async move {
-            let result = if bar_type.spec().timedelta().as_secs() == 5 {
-                handle_realtime_bars_subscription(
-                    client_clone,
-                    contract,
-                    bar_type,
-                    bar_type_str,
-                    instrument_id,
-                    price_type_to_ib_realtime_what_to_show_for_security(
-                        bar_type.spec().price_type,
-                        is_crypto,
-                    ),
-                    prices,
-                    size_precision,
-                    data_sender,
-                    clock,
-                    last_bars,
-                    bar_timeout_tasks,
-                    handle_revised_bars,
-                    use_rth,
-                    subscription_token,
-                    Arc::clone(&data_farm_state),
-                    stream_config,
-                )
-                .await
+                sub_info.cancellation_token.cancel();
+                tracing::debug!("Unsubscribed from index prices for {}", instrument_id);
             } else {
-                handle_historical_bars_subscription(
-                    client_clone,
-                    contract,
-                    bar_type,
-                    price_type_to_ib_what_to_show_for_security(
-                        bar_type.spec().price_type,
-                        is_crypto,
-                    ),
-                    prices,
-                    size_precision,
-                    use_rth,
-                    start_ns,
-                    data_sender,
-                    handle_revised_bars,
-                    clock,
-                    subscription_token,
-                    Arc::clone(&data_farm_state),
-                    stream_config,
-                )
-                .await
-            };
-
-            if let Err(e) = result {
-                tracing::error!("Bars subscription error for {}: {:?}", bar_type, e);
-            }
-
-            guard.release();
-        };
-
-        self.session_tasks
-            .spawn(task)
-            .context("failed to register IB data subscription task")?;
-
-        tracing::debug!("Real-time bars subscription started for {}", bar_type);
-        Ok(())
-    }
-
-    fn unsubscribe_bars(&mut self, cmd: &UnsubscribeBars) -> anyhow::Result<()> {
-        tracing::debug!("Unsubscribing from bars for {}", cmd.bar_type);
-
-        let instrument_id = cmd.bar_type.instrument_id();
-        let mut subscriptions = lock(&self.subscriptions)?;
-
-        if let Some(sub_info) =
-            subscriptions.remove(&(instrument_id, SubscriptionType::Bars(cmd.bar_type)))
-        {
-            sub_info.cancellation_token.cancel();
-            tracing::debug!("Unsubscribed from bars for {}", cmd.bar_type);
-        } else {
-            tracing::warn!("No active bar subscription found for {}", cmd.bar_type);
-        }
-
-        Ok(())
-    }
-
-    fn subscribe_book_deltas(&mut self, cmd: SubscribeBookDeltas) -> anyhow::Result<()> {
-        tracing::debug!("Subscribing to book deltas for {}", cmd.instrument_id);
-
-        if self.has_subscription(cmd.instrument_id, SubscriptionType::BookDeltas)? {
-            tracing::debug!(
-                "Book delta subscription already active for {}",
-                cmd.instrument_id
-            );
-            return Ok(());
-        }
-
-        // Validate book type (IB doesn't support L3_MBO)
-        if cmd.book_type == BookType::L3_MBO {
-            tracing::error!(
-                "Cannot subscribe to order book deltas: L3_MBO data is not published by Interactive Brokers. Valid book types are L1_MBP, L2_MBP"
-            );
-            return Ok(());
-        }
-
-        let client = self
-            .ib_client
-            .as_ref()
-            .context("IB client not connected. Call connect() first")?;
-
-        // Get instrument from provider
-        let instrument = self
-            .instrument_provider
-            .find(&cmd.instrument_id)
-            .context(format!(
-                "Instrument {} not found in provider",
-                cmd.instrument_id
-            ))?;
-
-        // Book levels are not rounded to the increment: two IB levels could round to one price
-        let prices = IbPriceConverter::new(instrument.price_precision()).with_price_magnifier(
-            self.instrument_provider
-                .get_price_magnifier(&cmd.instrument_id),
-        );
-        let size_precision = instrument.size_precision();
-
-        // Convert instrument_id to IB contract
-        let contract = self
-            .instrument_provider
-            .resolve_contract_for_instrument(cmd.instrument_id)
-            .context("Failed to convert instrument_id to IB contract")?;
-
-        let instrument_id = cmd.instrument_id;
-        let data_sender = self.data_sender.clone();
-        let clock = self.clock;
-
-        // Create subscription-specific cancellation token
-        let subscription_token = self.cancellation_token.child_token();
-
-        // Get depth from command or default to 20 (Python default)
-        let depth_rows = cmd.depth.map_or(20, |d| d.get() as i32);
-
-        // Get is_smart_depth from params or default to true
-        let is_smart_depth = cmd
-            .params
-            .as_ref()
-            .and_then(|params| params.get_str("is_smart_depth"))
-            .is_none_or(parse_bool_param_value);
-
-        let subscription_id = next_subscription_id();
-        lock(&self.subscriptions)?.insert(
-            (cmd.instrument_id, SubscriptionType::BookDeltas),
-            SubscriptionInfo {
-                cancellation_token: subscription_token.clone(),
-                id: subscription_id,
-            },
-        );
-
-        let guard = SubscriptionGuard {
-            subscriptions: Arc::clone(&self.subscriptions),
-            key: (cmd.instrument_id, SubscriptionType::BookDeltas),
-            id: subscription_id,
-        };
-
-        // Spawn subscription task
-        let client_clone = client.as_arc().clone();
-        let data_farm_state = Arc::clone(&self.data_farm_state);
-        let stream_config = StreamConfig::new(self.client_id, &self.config);
-
-        let task = async move {
-            if let Err(e) = handle_market_depth_subscription(
-                client_clone,
-                contract,
-                instrument_id,
-                prices,
-                size_precision,
-                depth_rows,
-                is_smart_depth,
-                data_sender,
-                clock,
-                subscription_token,
-                data_farm_state,
-                stream_config,
-            )
-            .await
-            {
-                tracing::error!(
-                    "Market depth subscription error for {}: {:?}",
-                    instrument_id,
-                    e
+                tracing::warn!(
+                    "No active index price subscription found for {}",
+                    instrument_id
                 );
             }
 
-            guard.release();
-        };
+            Ok(())
+        })
+    }
 
-        self.session_tasks
-            .spawn(task)
-            .context("failed to register IB data subscription task")?;
+    fn unsubscribe_option_greeks(&mut self, cmd: &UnsubscribeOptionGreeks) -> anyhow::Result<()> {
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            tracing::debug!("Unsubscribing from option greeks for {}", instrument_id);
 
-        tracing::debug!(
-            "Market depth subscription started for {}",
-            cmd.instrument_id
-        );
-        Ok(())
+            let mut subscriptions = lock(&self.option_greeks_subscriptions)?;
+            if let Some(subscription_token) = subscriptions.remove(&instrument_id) {
+                subscription_token.cancel();
+                tracing::debug!("Unsubscribed from option greeks for {}", instrument_id);
+            } else {
+                tracing::warn!(
+                    "No active option greeks subscription found for {}",
+                    instrument_id
+                );
+            }
+
+            Ok(())
+        })
+    }
+
+    fn subscribe_trades(&mut self, cmd: SubscribeTrades) -> anyhow::Result<()> {
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            tracing::debug!("Subscribing to trades for {}", instrument_id);
+
+            if self.has_subscription(instrument_id, SubscriptionType::Trades)? {
+                tracing::debug!("Trade subscription already active for {}", instrument_id);
+                return Ok(());
+            }
+
+            let client = self
+                .ib_client
+                .as_ref()
+                .context("IB client not connected. Call connect() first")?;
+
+            // Get instrument from provider
+            let instrument = self
+                .instrument_provider
+                .find(&instrument_id)
+                .context(format!(
+                    "Instrument {} not found in provider",
+                    instrument_id
+                ))?;
+
+            // Check if instrument is a CurrencyPair (IB doesn't support trades for CurrencyPair)
+            if matches!(instrument, InstrumentAny::CurrencyPair(_)) {
+                tracing::error!(
+                    "Interactive Brokers does not support trades for CurrencyPair instruments: {}",
+                    instrument_id
+                );
+                return Ok(());
+            }
+
+            let prices = IbPriceConverter::for_instrument(
+                &instrument,
+                self.instrument_provider.get_price_magnifier(&instrument_id),
+            );
+            let size_precision = instrument.size_precision();
+
+            // Convert instrument_id to IB contract
+            let contract = self
+                .instrument_provider
+                .resolve_contract_for_instrument(instrument_id)
+                .context("Failed to convert instrument_id to IB contract")?;
+
+            let data_sender = self.data_sender.clone();
+            let clock = self.clock;
+
+            // Create subscription-specific cancellation token
+            let subscription_token = self.cancellation_token.child_token();
+
+            let subscription_id = next_subscription_id();
+            lock(&self.subscriptions)?.insert(
+                (instrument_id, SubscriptionType::Trades),
+                SubscriptionInfo {
+                    cancellation_token: subscription_token.clone(),
+                    id: subscription_id,
+                },
+            );
+
+            let guard = SubscriptionGuard {
+                subscriptions: Arc::clone(&self.subscriptions),
+                key: (instrument_id, SubscriptionType::Trades),
+                id: subscription_id,
+            };
+
+            // Spawn subscription task
+            let client_clone = client.as_arc().clone();
+            let data_farm_state = Arc::clone(&self.data_farm_state);
+            let stream_config = StreamConfig::new(self.client_id, &self.config);
+
+            let task = async move {
+                if let Err(e) = handle_trade_subscription(
+                    client_clone,
+                    contract,
+                    instrument_id,
+                    prices,
+                    size_precision,
+                    data_sender,
+                    clock,
+                    subscription_token,
+                    data_farm_state,
+                    stream_config,
+                )
+                .await
+                {
+                    tracing::error!("Trade subscription error for {}: {:?}", instrument_id, e);
+                }
+
+                guard.release();
+            };
+
+            self.session_tasks
+                .spawn(task)
+                .context("failed to register IB data subscription task")?;
+
+            tracing::debug!("Trade subscription started for {}", instrument_id);
+            Ok(())
+        })
+    }
+
+    fn unsubscribe_trades(&mut self, cmd: &UnsubscribeTrades) -> anyhow::Result<()> {
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            tracing::debug!("Unsubscribing from trades for {}", instrument_id);
+
+            let mut subscriptions = lock(&self.subscriptions)?;
+            if let Some(sub_info) = subscriptions.remove(&(instrument_id, SubscriptionType::Trades))
+            {
+                sub_info.cancellation_token.cancel();
+                tracing::debug!("Unsubscribed from trades for {}", instrument_id);
+            } else {
+                tracing::warn!("No active trade subscription found for {}", instrument_id);
+            }
+
+            Ok(())
+        })
+    }
+
+    fn subscribe_bars(&mut self, cmd: SubscribeBars) -> anyhow::Result<()> {
+        execute_bar_subscriptions(&cmd.bar_types, |bar_type| {
+            let cmd = cmd.with_bar_types(bar_type);
+            tracing::debug!("Subscribing to bars for {}", bar_type);
+
+            let client = self
+                .ib_client
+                .as_ref()
+                .context("IB client not connected. Call connect() first")?;
+
+            // Get instrument from provider
+            let instrument_id = bar_type.instrument_id();
+            if self.has_subscription(instrument_id, SubscriptionType::Bars(bar_type))? {
+                tracing::debug!("Bar subscription already active for {}", bar_type);
+                return Ok(());
+            }
+
+            let instrument = self
+                .instrument_provider
+                .find(&instrument_id)
+                .context(format!("Instrument {instrument_id} not found in provider"))?;
+
+            let prices = IbPriceConverter::for_instrument(
+                &instrument,
+                self.instrument_provider.get_price_magnifier(&instrument_id),
+            );
+            let size_precision = instrument.size_precision();
+
+            // Convert instrument_id to IB contract
+            let contract = self
+                .instrument_provider
+                .resolve_contract_for_instrument(instrument_id)
+                .context("Failed to convert instrument_id to IB contract")?;
+
+            let bar_type_str = bar_type.to_string();
+            let data_sender = self.data_sender.clone();
+            let clock = self.clock;
+            let last_bars = Arc::clone(&self.last_bars);
+            let bar_timeout_tasks = Arc::clone(&self.bar_timeout_tasks);
+            let handle_revised_bars = self.config.handle_revised_bars;
+            let use_rth = self.config.use_regular_trading_hours;
+            let start_ns = parse_start_ns(cmd.params.as_ref());
+            // Crypto (ZEROHASH/PAXOS) trade-price bars must request AGGTRADES, not
+            // TRADES (TWS rejects TRADES for crypto, error 10299) - on BOTH the
+            // realtime (reqRealTimeBars) and historical (reqHistoricalData) paths, per
+            // the Java engine's whatToShowFor rule. Capture the flag before `contract`
+            // is moved into the subscription task below.
+            let is_crypto = is_crypto_contract(&contract);
+
+            // Create subscription-specific cancellation token
+            let subscription_token = self.cancellation_token.child_token();
+
+            let subscription_id = next_subscription_id();
+            lock(&self.subscriptions)?.insert(
+                (instrument_id, SubscriptionType::Bars(bar_type)),
+                SubscriptionInfo {
+                    cancellation_token: subscription_token.clone(),
+                    id: subscription_id,
+                },
+            );
+
+            let guard = SubscriptionGuard {
+                subscriptions: Arc::clone(&self.subscriptions),
+                key: (instrument_id, SubscriptionType::Bars(bar_type)),
+                id: subscription_id,
+            };
+
+            // Spawn subscription task
+            let client_clone = client.as_arc().clone();
+            let data_farm_state = Arc::clone(&self.data_farm_state);
+            let stream_config = StreamConfig::new(self.client_id, &self.config);
+
+            let task = async move {
+                let result = if bar_type.spec().timedelta().as_secs() == 5 {
+                    handle_realtime_bars_subscription(
+                        client_clone,
+                        contract,
+                        bar_type,
+                        bar_type_str,
+                        instrument_id,
+                        price_type_to_ib_realtime_what_to_show_for_security(
+                            bar_type.spec().price_type,
+                            is_crypto,
+                        ),
+                        prices,
+                        size_precision,
+                        data_sender,
+                        clock,
+                        last_bars,
+                        bar_timeout_tasks,
+                        handle_revised_bars,
+                        use_rth,
+                        subscription_token,
+                        Arc::clone(&data_farm_state),
+                        stream_config,
+                    )
+                    .await
+                } else {
+                    handle_historical_bars_subscription(
+                        client_clone,
+                        contract,
+                        bar_type,
+                        price_type_to_ib_what_to_show_for_security(
+                            bar_type.spec().price_type,
+                            is_crypto,
+                        ),
+                        prices,
+                        size_precision,
+                        use_rth,
+                        start_ns,
+                        data_sender,
+                        handle_revised_bars,
+                        clock,
+                        subscription_token,
+                        Arc::clone(&data_farm_state),
+                        stream_config,
+                    )
+                    .await
+                };
+
+                if let Err(e) = result {
+                    tracing::error!("Bars subscription error for {}: {:?}", bar_type, e);
+                }
+
+                guard.release();
+            };
+
+            self.session_tasks
+                .spawn(task)
+                .context("failed to register IB data subscription task")?;
+
+            tracing::debug!("Real-time bars subscription started for {}", bar_type);
+            Ok(())
+        })
+    }
+
+    fn unsubscribe_bars(&mut self, cmd: &UnsubscribeBars) -> anyhow::Result<()> {
+        execute_bar_subscriptions(&cmd.bar_types, |bar_type| {
+            tracing::debug!("Unsubscribing from bars for {}", bar_type);
+
+            let instrument_id = bar_type.instrument_id();
+            let mut subscriptions = lock(&self.subscriptions)?;
+
+            if let Some(sub_info) =
+                subscriptions.remove(&(instrument_id, SubscriptionType::Bars(bar_type)))
+            {
+                sub_info.cancellation_token.cancel();
+                tracing::debug!("Unsubscribed from bars for {}", bar_type);
+            } else {
+                tracing::warn!("No active bar subscription found for {}", bar_type);
+            }
+
+            Ok(())
+        })
+    }
+
+    fn subscribe_book_deltas(&mut self, cmd: SubscribeBookDeltas) -> anyhow::Result<()> {
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let cmd = cmd.with_instrument_ids(instrument_id);
+            tracing::debug!("Subscribing to book deltas for {}", instrument_id);
+
+            if self.has_subscription(instrument_id, SubscriptionType::BookDeltas)? {
+                tracing::debug!(
+                    "Book delta subscription already active for {}",
+                    instrument_id
+                );
+                return Ok(());
+            }
+
+            // Validate book type (IB doesn't support L3_MBO)
+            if cmd.book_type == BookType::L3_MBO {
+                tracing::error!(
+                    "Cannot subscribe to order book deltas: L3_MBO data is not published by Interactive Brokers. Valid book types are L1_MBP, L2_MBP"
+                );
+                return Ok(());
+            }
+
+            let client = self
+                .ib_client
+                .as_ref()
+                .context("IB client not connected. Call connect() first")?;
+
+            // Get instrument from provider
+            let instrument = self
+                .instrument_provider
+                .find(&instrument_id)
+                .context(format!(
+                    "Instrument {} not found in provider",
+                    instrument_id
+                ))?;
+
+            // Book levels are not rounded to the increment: two IB levels could round to one price
+            let prices = IbPriceConverter::new(instrument.price_precision())
+                .with_price_magnifier(self.instrument_provider.get_price_magnifier(&instrument_id));
+            let size_precision = instrument.size_precision();
+
+            // Convert instrument_id to IB contract
+            let contract = self
+                .instrument_provider
+                .resolve_contract_for_instrument(instrument_id)
+                .context("Failed to convert instrument_id to IB contract")?;
+
+            let data_sender = self.data_sender.clone();
+            let clock = self.clock;
+
+            // Create subscription-specific cancellation token
+            let subscription_token = self.cancellation_token.child_token();
+
+            // Get depth from command or default to 20 (Python default)
+            let depth_rows = cmd.depth.map_or(20, |d| d.get() as i32);
+
+            // Get is_smart_depth from params or default to true
+            let is_smart_depth = cmd
+                .params
+                .as_ref()
+                .and_then(|params| params.get_str("is_smart_depth"))
+                .is_none_or(parse_bool_param_value);
+
+            let subscription_id = next_subscription_id();
+            lock(&self.subscriptions)?.insert(
+                (instrument_id, SubscriptionType::BookDeltas),
+                SubscriptionInfo {
+                    cancellation_token: subscription_token.clone(),
+                    id: subscription_id,
+                },
+            );
+
+            let guard = SubscriptionGuard {
+                subscriptions: Arc::clone(&self.subscriptions),
+                key: (instrument_id, SubscriptionType::BookDeltas),
+                id: subscription_id,
+            };
+
+            // Spawn subscription task
+            let client_clone = client.as_arc().clone();
+            let data_farm_state = Arc::clone(&self.data_farm_state);
+            let stream_config = StreamConfig::new(self.client_id, &self.config);
+
+            let task = async move {
+                if let Err(e) = handle_market_depth_subscription(
+                    client_clone,
+                    contract,
+                    instrument_id,
+                    prices,
+                    size_precision,
+                    depth_rows,
+                    is_smart_depth,
+                    data_sender,
+                    clock,
+                    subscription_token,
+                    data_farm_state,
+                    stream_config,
+                )
+                .await
+                {
+                    tracing::error!(
+                        "Market depth subscription error for {}: {:?}",
+                        instrument_id,
+                        e
+                    );
+                }
+
+                guard.release();
+            };
+
+            self.session_tasks
+                .spawn(task)
+                .context("failed to register IB data subscription task")?;
+
+            tracing::debug!("Market depth subscription started for {}", instrument_id);
+            Ok(())
+        })
     }
 
     fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
-        tracing::debug!("Unsubscribing from book deltas for {}", cmd.instrument_id);
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            tracing::debug!("Unsubscribing from book deltas for {}", instrument_id);
 
-        let mut subscriptions = lock(&self.subscriptions)?;
+            let mut subscriptions = lock(&self.subscriptions)?;
 
-        if let Some(sub_info) =
-            subscriptions.remove(&(cmd.instrument_id, SubscriptionType::BookDeltas))
-        {
-            sub_info.cancellation_token.cancel();
-            tracing::debug!("Unsubscribed from book deltas for {}", cmd.instrument_id);
-        } else {
-            tracing::warn!(
-                "No active book delta subscription found for {}",
-                cmd.instrument_id
-            );
-        }
+            if let Some(sub_info) =
+                subscriptions.remove(&(instrument_id, SubscriptionType::BookDeltas))
+            {
+                sub_info.cancellation_token.cancel();
+                tracing::debug!("Unsubscribed from book deltas for {}", instrument_id);
+            } else {
+                tracing::warn!(
+                    "No active book delta subscription found for {}",
+                    instrument_id
+                );
+            }
 
-        Ok(())
+            Ok(())
+        })
     }
 
     // Request handlers
@@ -2464,6 +2277,196 @@ impl InteractiveBrokersDataClient {
 impl Drop for InteractiveBrokersDataClient {
     fn drop(&mut self) {
         let _ = self.stop();
+    }
+}
+
+impl InteractiveBrokersDataClient {
+    fn subscribe_quotes_member(
+        &self,
+        instrument_id: InstrumentId,
+        cmd: &SubscribeQuotes,
+    ) -> anyhow::Result<()> {
+        tracing::debug!("Subscribing to quotes for {instrument_id}");
+
+        if self.has_subscription(instrument_id, SubscriptionType::Quotes)? {
+            tracing::debug!("Quote subscription already active for {instrument_id}");
+            return Ok(());
+        }
+
+        let client = self
+            .ib_client
+            .as_ref()
+            .context("IB client not connected. Call connect() first")?;
+
+        // Get instrument from provider
+        let instrument = self
+            .instrument_provider
+            .find(&instrument_id)
+            .context(format!("Instrument {instrument_id} not found in provider"))?;
+
+        let prices = IbPriceConverter::for_instrument(
+            &instrument,
+            self.instrument_provider.get_price_magnifier(&instrument_id),
+        );
+        let size_precision = instrument.size_precision();
+
+        // Convert instrument_id to IB contract
+        let contract = self
+            .instrument_provider
+            .resolve_contract_for_instrument(instrument_id)
+            .context("Failed to convert instrument_id to IB contract")?;
+
+        // Check if contract is BAG (spread) or if batch_quotes parameter is set
+        // BAG contracts have SecurityType::Spread or combo_legs populated
+        let is_bag = matches!(
+            contract.security_type,
+            ibapi::contracts::SecurityType::Spread
+        ) || !contract.combo_legs.is_empty();
+        let batch_quotes = cmd
+            .params
+            .as_ref()
+            .and_then(|params| params.get_str("batch_quotes"))
+            .map_or(self.config.batch_quotes, parse_bool_param_value);
+
+        let use_market_data = is_bag || batch_quotes;
+
+        let data_sender = self.data_sender.clone();
+        let quote_cache = Arc::clone(&self.quote_cache);
+        let clock = self.clock;
+
+        let subscription_token = self.cancellation_token.child_token();
+
+        // Record the subscription before spawning so a fast-failing task cannot
+        // finish before its registry entry exists.
+        let subscription_id = next_subscription_id();
+        lock(&self.subscriptions)?.insert(
+            (instrument_id, SubscriptionType::Quotes),
+            SubscriptionInfo {
+                cancellation_token: subscription_token.clone(),
+                id: subscription_id,
+            },
+        );
+
+        let guard = SubscriptionGuard {
+            subscriptions: Arc::clone(&self.subscriptions),
+            key: (instrument_id, SubscriptionType::Quotes),
+            id: subscription_id,
+        };
+
+        // Spawn subscription task
+        let client_clone = client.as_arc().clone();
+        let ignore_size_updates = self.config.ignore_quote_tick_size_updates;
+        let data_farm_state = Arc::clone(&self.data_farm_state);
+        let stream_config = StreamConfig::new(self.client_id, &self.config);
+
+        let task = async move {
+            if use_market_data {
+                // Use market_data (reqMktData) for BAG contracts or when batch_quotes is requested
+                tracing::debug!(
+                    "Using market_data subscription for {} (BAG: {}, batch_quotes: {})",
+                    instrument_id,
+                    is_bag,
+                    batch_quotes
+                );
+
+                if let Err(e) = handle_quote_subscription(
+                    client_clone,
+                    contract,
+                    instrument_id,
+                    prices,
+                    size_precision,
+                    data_sender,
+                    quote_cache,
+                    clock,
+                    subscription_token,
+                    ignore_size_updates,
+                    Arc::clone(&data_farm_state),
+                    stream_config,
+                )
+                .await
+                {
+                    tracing::error!("Quote subscription error for {}: {:?}", instrument_id, e);
+                }
+            } else {
+                // Try tick_by_tick_bid_ask first for regular contracts (better performance)
+                // Fallback to market_data if it fails (e.g., for BAG contracts not detected upfront)
+                tracing::debug!(
+                    "Attempting tick_by_tick_bid_ask subscription for {}",
+                    instrument_id
+                );
+
+                match handle_tick_by_tick_quote_subscription(
+                    client_clone.clone(),
+                    contract.clone(),
+                    instrument_id,
+                    prices,
+                    size_precision,
+                    data_sender.clone(),
+                    clock,
+                    subscription_token.clone(),
+                    Arc::clone(&data_farm_state),
+                    stream_config,
+                )
+                .await
+                {
+                    Ok(()) => {
+                        // Success - subscription is active
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            "tick_by_tick_bid_ask failed for {} (may be BAG contract), falling back to market_data: {:?}",
+                            instrument_id,
+                            e
+                        );
+
+                        // Fallback to market_data (reqMktData) - works for BAG contracts
+                        if let Err(fallback_err) = handle_quote_subscription(
+                            client_clone,
+                            contract,
+                            instrument_id,
+                            prices,
+                            size_precision,
+                            data_sender,
+                            quote_cache,
+                            clock,
+                            subscription_token,
+                            ignore_size_updates,
+                            Arc::clone(&data_farm_state),
+                            stream_config,
+                        )
+                        .await
+                        {
+                            tracing::error!(
+                                "Quote subscription fallback also failed for {}: {:?}",
+                                instrument_id,
+                                fallback_err
+                            );
+                        } else {
+                            tracing::debug!(
+                                "Successfully subscribed to {} using market_data fallback",
+                                instrument_id
+                            );
+                        }
+                    }
+                }
+            }
+
+            guard.release();
+        };
+
+        self.session_tasks
+            .spawn(task)
+            .context("failed to register IB data subscription task")?;
+
+        tracing::debug!(
+            "Quote subscription started for {instrument_id} (method: {})",
+            if use_market_data {
+                "market_data"
+            } else {
+                "tick_by_tick_bid_ask"
+            }
+        );
+        Ok(())
     }
 }
 

@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use ahash::AHashSet;
+
 use super::*;
 
 #[rstest]
@@ -323,7 +325,7 @@ fn test_shared_internal_bars_retry_failed_source(
         panic!("expected a trade source subscription");
     };
 
-    assert_eq!(command.instrument_id, audusd_sim.id);
+    assert_eq!(command.single_instrument_id().unwrap(), audusd_sim.id);
     assert_eq!(command.client_id, Some(client_id));
     assert_eq!(command.venue, Some(venue));
     assert_eq!(command.ts_init, UnixNanos::from(1));
@@ -431,7 +433,7 @@ fn test_unsubscribe_chained_composite_bars_releases_retained_source(
     };
 
     assert_eq!(
-        command.bar_type,
+        command.single_bar_type().unwrap(),
         BarType::from("AUD/USD.SIM-1-MINUTE-BID-EXTERNAL")
     );
     assert_eq!(command.client_id, Some(client_id));
@@ -597,4 +599,252 @@ fn test_external_bars_release_after_final_owner(
         &recorded[1],
         DataCommand::Unsubscribe(UnsubscribeCommand::Bars(_))
     ));
+}
+
+#[rstest]
+fn test_bar_list_mixes_aggregation_modes_and_releases_shared_sources(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut engine = data_engine.borrow_mut();
+    let recorder = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        Rc::clone(&clock),
+        Rc::clone(&cache),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut engine,
+    );
+    let instrument_id = audusd_sim.id;
+    engine.process(&InstrumentAny::CurrencyPair(audusd_sim) as &dyn Any);
+    let external = BarType::from("AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL");
+    let trade = BarType::from("AUD/USD.SIM-1-MINUTE-LAST-INTERNAL");
+    let quote = BarType::from("AUD/USD.SIM-2-MINUTE-BID-INTERNAL");
+    let composite = BarType::from("AUD/USD.SIM-5-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL");
+    let types = [external, trade, quote, composite];
+
+    let command = SubscribeBars::new(
+        types,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::from(23),
+        None,
+        None,
+    );
+    engine
+        .execute_subscribe(SubscribeCommand::Bars(command))
+        .unwrap();
+    assert_eq!(
+        engine.subscribed_bars(),
+        vec![external, trade, quote, composite.standard()]
+    );
+    assert_eq!(engine.subscribed_trades(), vec![instrument_id]);
+    assert_eq!(engine.subscribed_quotes(), vec![instrument_id]);
+    assert_eq!(engine.clock().borrow().timer_count(), 3);
+
+    let release = UnsubscribeBars::new(
+        types,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::from(31),
+        None,
+        None,
+    );
+    engine
+        .execute_unsubscribe(&UnsubscribeCommand::Bars(release))
+        .unwrap();
+    assert_eq!(engine.subscribed_bars(), Vec::<BarType>::new());
+    assert_eq!(engine.subscribed_trades(), Vec::<InstrumentId>::new());
+    assert_eq!(engine.subscribed_quotes(), Vec::<InstrumentId>::new());
+    assert_eq!(engine.clock().borrow().timer_count(), 0);
+    assert_eq!(
+        msgbus::exact_subscriber_count_bars(switchboard::get_bars_topic(external)),
+        0
+    );
+    assert_eq!(
+        msgbus::exact_subscriber_count_trades(switchboard::get_trades_topic(instrument_id)),
+        0
+    );
+    assert_eq!(
+        msgbus::exact_subscriber_count_quotes(switchboard::get_quotes_topic(instrument_id)),
+        0
+    );
+}
+
+#[rstest]
+fn test_bar_list_native_failure_continues_independent_members(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut engine = data_engine.borrow_mut();
+    let recorder = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(clock, cache, client_id, venue, None, &recorder, &mut engine);
+    let first = BarType::from("AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL");
+    let invalid = BarType::from("SYNTH.SYNTH-1-MINUTE-LAST-EXTERNAL");
+    let last = BarType::from("AUD/USD.SIM-5-MINUTE-LAST-EXTERNAL");
+
+    let command = SubscribeBars::new(
+        [first, invalid, last],
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::from(53),
+        Some(UUID4::new()),
+        Some(params_from_json(json!({"start_ns": 91}))),
+    );
+    let error = engine
+        .execute_subscribe(SubscribeCommand::Bars(command.clone()))
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "Cannot subscribe for externally aggregated synthetic instrument bar data"
+    );
+    assert_eq!(
+        AHashSet::from_iter(engine.subscribed_bars()),
+        AHashSet::from_iter([first, last])
+    );
+    let recorded = recorder.borrow();
+
+    let [DataCommand::Subscribe(SubscribeCommand::Bars(actual))] = recorded.as_slice() else {
+        panic!("expected both valid bar members, was {recorded:?}");
+    };
+
+    assert_eq!(
+        serde_json::to_value(actual).unwrap(),
+        serde_json::to_value(command.with_bar_types([first, last])).unwrap()
+    );
+    drop(recorded);
+    engine
+        .execute_unsubscribe(&UnsubscribeCommand::Bars(UnsubscribeBars::new(
+            command.bar_types,
+            command.client_id,
+            command.venue,
+            UUID4::new(),
+            UnixNanos::from(61),
+            None,
+            command.params,
+        )))
+        .unwrap();
+    assert_eq!(engine.subscribed_bars(), Vec::<BarType>::new());
+    let recorded = recorder.borrow();
+
+    let DataCommand::Unsubscribe(UnsubscribeCommand::Bars(release)) = &recorded[1] else {
+        panic!("expected valid members to release");
+    };
+
+    assert_eq!(release.bar_types, vec![first, last]);
+}
+
+#[rstest]
+fn test_skipped_bar_release_preserves_other_owner(
+    #[values(false, true)] continuous_future: bool,
+    #[values(false, true)] scalar: bool,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut engine = data_engine.borrow_mut();
+    let recorder = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(clock, cache, client_id, venue, None, &recorder, &mut engine);
+    let owned = BarType::from("AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL");
+    let invalid = BarType::from("SYNTH.SYNTH-1-MINUTE-LAST-EXTERNAL");
+    let topic = switchboard::get_bars_topic(owned);
+    let handler = TypedHandler::from(|_: &Bar| {});
+    msgbus::subscribe_bars(topic.into(), handler.clone(), None);
+    engine
+        .execute_subscribe(SubscribeCommand::Bars(SubscribeBars::new(
+            owned,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::from(17),
+            None,
+            None,
+        )))
+        .unwrap();
+    assert_eq!(engine.subscribed_bars(), vec![owned]);
+    assert_eq!(recorder.borrow().len(), 1);
+
+    let types = if scalar {
+        vec![owned]
+    } else {
+        vec![invalid, owned]
+    };
+
+    let params = if continuous_future || scalar {
+        Some(params_from_json(
+            json!({"continuous_future_transitions": []}),
+        ))
+    } else {
+        None
+    };
+
+    let error = engine
+        .execute_subscribe(SubscribeCommand::Bars(SubscribeBars::new(
+            types.clone(),
+            Some(client_id),
+            None,
+            UUID4::new(),
+            UnixNanos::from(23),
+            None,
+            params,
+        )))
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        if continuous_future || scalar {
+            format!(
+                "Continuous future bar subscriptions require an internally aggregated target, was {}",
+                types[0]
+            )
+        } else {
+            "Cannot subscribe for externally aggregated synthetic instrument bar data".to_string()
+        }
+    );
+    assert_eq!(engine.subscribed_bars(), vec![owned]);
+    assert_eq!(recorder.borrow().len(), 1);
+    engine
+        .execute_unsubscribe(&UnsubscribeCommand::Bars(UnsubscribeBars::new(
+            types,
+            Some(client_id),
+            None,
+            UUID4::new(),
+            UnixNanos::from(31),
+            None,
+            None,
+        )))
+        .unwrap();
+    assert_eq!(msgbus::exact_subscriber_count_bars(topic), 1);
+    assert_eq!(engine.subscribed_bars(), vec![owned]);
+    assert_eq!(recorder.borrow().len(), 1);
+
+    msgbus::unsubscribe_bars(topic.into(), &handler);
+    engine
+        .execute_unsubscribe(&UnsubscribeCommand::Bars(UnsubscribeBars::new(
+            owned,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::from(37),
+            None,
+            None,
+        )))
+        .unwrap();
+
+    assert_eq!(msgbus::exact_subscriber_count_bars(topic), 0);
+    assert_eq!(engine.subscribed_bars(), Vec::<BarType>::new());
+    assert_eq!(recorder.borrow().len(), 2);
 }

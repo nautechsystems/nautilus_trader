@@ -52,21 +52,21 @@ impl SubscriptionKey {
     pub(crate) fn from_subscribe(command: &SubscribeCommand) -> Self {
         match command {
             SubscribeCommand::Data(command) => Self::Data(command.data_type.clone()),
-            SubscribeCommand::Instrument(command) => Self::Instrument(command.instrument_id),
+            SubscribeCommand::Instrument(command) => Self::Instrument(command.single_instrument_id().expect("ownership is keyed by one instrument")),
             SubscribeCommand::Instruments(command) => Self::Instruments(command.venue),
-            SubscribeCommand::BookDeltas(command) => Self::BookDeltas(command.instrument_id),
-            SubscribeCommand::BookDepth(command) => Self::BookDepth(command.instrument_id),
-            SubscribeCommand::BookSnapshots(command) => Self::BookSnapshots(command.instrument_id, command.interval_ms),
+            SubscribeCommand::BookDeltas(command) => Self::BookDeltas(command.single_instrument_id().expect("ownership is keyed by one instrument")),
+            SubscribeCommand::BookDepth(command) => Self::BookDepth(command.single_instrument_id().expect("ownership is keyed by one instrument")),
+            SubscribeCommand::BookSnapshots(command) => Self::BookSnapshots(command.single_instrument_id().expect("ownership is keyed by one instrument"), command.interval_ms),
             SubscribeCommand::OptionChain(command) => Self::OptionChain(command.series_id),
-            SubscribeCommand::Quotes(command) => Self::Quotes(command.instrument_id),
-            SubscribeCommand::Trades(command) => Self::Trades(command.instrument_id),
-            SubscribeCommand::Bars(command) => Self::Bars(command.bar_type),
-            SubscribeCommand::MarkPrices(command) => Self::MarkPrices(command.instrument_id),
-            SubscribeCommand::IndexPrices(command) => Self::IndexPrices(command.instrument_id),
-            SubscribeCommand::FundingRates(command) => Self::FundingRates(command.instrument_id),
-            SubscribeCommand::InstrumentStatus(command) => Self::InstrumentStatus(command.instrument_id),
-            SubscribeCommand::InstrumentClose(command) => Self::InstrumentClose(command.instrument_id),
-            SubscribeCommand::OptionGreeks(command) => Self::OptionGreeks(command.instrument_id),
+            SubscribeCommand::Quotes(command) => Self::Quotes(command.single_instrument_id().expect("quote ownership is keyed by one instrument")),
+            SubscribeCommand::Trades(command) => Self::Trades(command.single_instrument_id().expect("trade ownership is keyed by one instrument")),
+            SubscribeCommand::Bars(command) => Self::Bars(command.single_bar_type().expect("bar ownership is keyed by one type")),
+            SubscribeCommand::MarkPrices(command) => Self::MarkPrices(command.single_instrument_id().expect("ownership is keyed by one instrument")),
+            SubscribeCommand::IndexPrices(command) => Self::IndexPrices(command.single_instrument_id().expect("ownership is keyed by one instrument")),
+            SubscribeCommand::FundingRates(command) => Self::FundingRates(command.single_instrument_id().expect("ownership is keyed by one instrument")),
+            SubscribeCommand::InstrumentStatus(command) => Self::InstrumentStatus(command.single_instrument_id().expect("ownership is keyed by one instrument")),
+            SubscribeCommand::InstrumentClose(command) => Self::InstrumentClose(command.single_instrument_id().expect("ownership is keyed by one instrument")),
+            SubscribeCommand::OptionGreeks(command) => Self::OptionGreeks(command.single_instrument_id().expect("ownership is keyed by one instrument")),
         }
     }
 
@@ -74,21 +74,21 @@ impl SubscriptionKey {
     pub(crate) fn from_unsubscribe(command: &UnsubscribeCommand) -> Self {
         match command {
             UnsubscribeCommand::Data(command) => Self::Data(command.data_type.clone()),
-            UnsubscribeCommand::Instrument(command) => Self::Instrument(command.instrument_id),
+            UnsubscribeCommand::Instrument(command) => Self::Instrument(command.single_instrument_id().expect("ownership is keyed by one instrument")),
             UnsubscribeCommand::Instruments(command) => Self::Instruments(command.venue),
-            UnsubscribeCommand::BookDeltas(command) => Self::BookDeltas(command.instrument_id),
-            UnsubscribeCommand::BookDepth(command) => Self::BookDepth(command.instrument_id),
-            UnsubscribeCommand::BookSnapshots(command) => Self::BookSnapshots(command.instrument_id, command.interval_ms),
+            UnsubscribeCommand::BookDeltas(command) => Self::BookDeltas(command.single_instrument_id().expect("ownership is keyed by one instrument")),
+            UnsubscribeCommand::BookDepth(command) => Self::BookDepth(command.single_instrument_id().expect("ownership is keyed by one instrument")),
+            UnsubscribeCommand::BookSnapshots(command) => Self::BookSnapshots(command.single_instrument_id().expect("ownership is keyed by one instrument"), command.interval_ms),
             UnsubscribeCommand::OptionChain(command) => Self::OptionChain(command.series_id),
-            UnsubscribeCommand::Quotes(command) => Self::Quotes(command.instrument_id),
-            UnsubscribeCommand::Trades(command) => Self::Trades(command.instrument_id),
-            UnsubscribeCommand::Bars(command) => Self::Bars(command.bar_type),
-            UnsubscribeCommand::MarkPrices(command) => Self::MarkPrices(command.instrument_id),
-            UnsubscribeCommand::IndexPrices(command) => Self::IndexPrices(command.instrument_id),
-            UnsubscribeCommand::FundingRates(command) => Self::FundingRates(command.instrument_id),
-            UnsubscribeCommand::InstrumentStatus(command) => Self::InstrumentStatus(command.instrument_id),
-            UnsubscribeCommand::InstrumentClose(command) => Self::InstrumentClose(command.instrument_id),
-            UnsubscribeCommand::OptionGreeks(command) => Self::OptionGreeks(command.instrument_id),
+            UnsubscribeCommand::Quotes(command) => Self::Quotes(command.single_instrument_id().expect("quote ownership is keyed by one instrument")),
+            UnsubscribeCommand::Trades(command) => Self::Trades(command.single_instrument_id().expect("trade ownership is keyed by one instrument")),
+            UnsubscribeCommand::Bars(command) => Self::Bars(command.single_bar_type().expect("bar ownership is keyed by one type")),
+            UnsubscribeCommand::MarkPrices(command) => Self::MarkPrices(command.single_instrument_id().expect("ownership is keyed by one instrument")),
+            UnsubscribeCommand::IndexPrices(command) => Self::IndexPrices(command.single_instrument_id().expect("ownership is keyed by one instrument")),
+            UnsubscribeCommand::FundingRates(command) => Self::FundingRates(command.single_instrument_id().expect("ownership is keyed by one instrument")),
+            UnsubscribeCommand::InstrumentStatus(command) => Self::InstrumentStatus(command.single_instrument_id().expect("ownership is keyed by one instrument")),
+            UnsubscribeCommand::InstrumentClose(command) => Self::InstrumentClose(command.single_instrument_id().expect("ownership is keyed by one instrument")),
+            UnsubscribeCommand::OptionGreeks(command) => Self::OptionGreeks(command.single_instrument_id().expect("ownership is keyed by one instrument")),
         }
     }
 
@@ -198,6 +198,58 @@ pub(crate) enum SubscriptionRelease<T> {
     Retained,
     Final(T),
     Untracked,
+}
+
+pub(crate) fn split_subscribe(command: SubscribeCommand) -> Vec<SubscribeCommand> {
+    if let Some(bar_types) = command.bar_types() {
+        return bar_types
+            .iter()
+            .map(|bar_type| {
+                command
+                    .with_bar_types(*bar_type)
+                    .expect("bar command has types")
+            })
+            .collect();
+    }
+
+    let Some(instrument_ids) = command.instrument_ids() else {
+        return vec![command];
+    };
+
+    instrument_ids
+        .iter()
+        .map(|instrument_id| {
+            command
+                .with_instrument_ids(*instrument_id)
+                .expect("instrument command has IDs")
+        })
+        .collect()
+}
+
+pub(crate) fn split_unsubscribe(command: &UnsubscribeCommand) -> Vec<UnsubscribeCommand> {
+    if let Some(bar_types) = command.bar_types() {
+        return bar_types
+            .iter()
+            .map(|bar_type| {
+                command
+                    .with_bar_types(*bar_type)
+                    .expect("bar command has types")
+            })
+            .collect();
+    }
+
+    let Some(instrument_ids) = command.instrument_ids() else {
+        return vec![command.clone()];
+    };
+
+    instrument_ids
+        .iter()
+        .map(|instrument_id| {
+            command
+                .with_instrument_ids(*instrument_id)
+                .expect("instrument command has IDs")
+        })
+        .collect()
 }
 
 #[cfg(test)]

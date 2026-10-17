@@ -13,6 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_common::{
+    actor::DataActorCore, messages::data::IntoInstrumentIds, msgbus::ShareableMessageHandler,
+};
+
 use super::*;
 
 #[rstest]
@@ -1113,6 +1117,269 @@ fn test_execute_subscribe_quotes(
     assert_eq!(recorder.borrow().as_slice(), &[sub_cmd, unsub_cmd]);
 }
 
+macro_rules! batch_subscription_tests {
+    ($validation_test:ident, $ownership_test:ident, $subscribe:ident, $unsubscribe:ident, $variant:ident, $subscribed:ident, $synthetic:ident, $mixed_error:literal) => {
+        #[rstest]
+        #[case::empty(Vec::new(), false, "instrument IDs cannot be empty")]
+        #[case::duplicate(vec![InstrumentId::from("BTC/USD.SIM"), InstrumentId::from("BTC/USD.SIM")], false, "instrument IDs must be unique")]
+        #[case::mixed_venues(vec![InstrumentId::from("BTC/USD.SIM"), InstrumentId::from("ETH/USD.OTHER")], false, "multiple instrument venues require an explicit client ID")]
+        #[case::mixed_routes(vec![InstrumentId::from("BTC/USD.SIM"), InstrumentId::from("SYNTH.SYNTH")], true, $mixed_error)]
+        fn $validation_test(
+            #[case] ids: Vec<InstrumentId>,
+            #[case] explicit_client: bool,
+            #[case] error: &str,
+            data_engine: Rc<RefCell<DataEngine>>,
+            clock: Rc<RefCell<VirtualClock>>,
+            cache: Rc<RefCell<Cache>>,
+            client_id: ClientId,
+        ) {
+            let venue = Venue::from("SIM");
+            let mut engine = data_engine.borrow_mut();
+            let recorder = Rc::new(RefCell::new(Vec::new()));
+            register_mock_client(clock, cache, client_id, venue, None, &recorder, &mut engine);
+
+            let command = $subscribe {
+                instrument_ids: ids,
+                client_id: explicit_client.then_some(client_id),
+                venue: Some(venue),
+                command_id: UUID4::new(),
+                ts_init: UnixNanos::from(47),
+                correlation_id: Some(UUID4::new()),
+                params: None,
+            };
+
+            let original = serde_json::to_value(&command).unwrap();
+
+            let release =
+                UnsubscribeCommand::$variant($unsubscribe {
+                    instrument_ids: command.instrument_ids.clone(),
+                    client_id: command.client_id,
+                    venue: command.venue,
+                    command_id: UUID4::new(),
+                    ts_init: UnixNanos::from(53),
+                    correlation_id: Some(UUID4::new()),
+                    params: None,
+                });
+
+            let subscribe_error = engine
+                .execute_subscribe(SubscribeCommand::$variant(command.clone()))
+                .unwrap_err();
+            let unsubscribe_error = engine.execute_unsubscribe(&release).unwrap_err();
+            assert_eq!(subscribe_error.to_string(), error);
+            assert_eq!(unsubscribe_error.to_string(), error);
+            assert!(engine.$subscribed().is_empty());
+            assert!(engine.$synthetic().is_empty());
+            assert!(recorder.borrow().is_empty());
+            assert_eq!(serde_json::to_value(command).unwrap(), original);
+        }
+
+        #[rstest]
+        #[case::native(false)]
+        #[case::external(true)]
+        fn $ownership_test(
+            #[case] external: bool,
+            #[values(false, true)] same_params: bool,
+            _stub_msgbus: Rc<RefCell<MessageBus>>,
+            clock: Rc<RefCell<VirtualClock>>,
+            cache: Rc<RefCell<Cache>>,
+            client_id: ClientId,
+            venue: Venue,
+        ) {
+            let config = DataEngineConfig {
+                external_clients: external.then(|| vec![client_id]),
+                ..DataEngineConfig::default()
+            };
+
+            let engine_clock = Rc::clone(&clock);
+            let engine_cache = Rc::clone(&cache);
+            let mut engine = DataEngine::new(engine_clock, engine_cache, Some(config));
+            let recorder = Rc::new(RefCell::new(Vec::new()));
+            if !external {
+                register_mock_client(clock, cache, client_id, venue, None, &recorder, &mut engine);
+            }
+
+            let topic = format!("commands.data.{client_id}");
+            let (subscribe_handler, subscribe_saver) =
+                get_any_saving_handler::<SubscribeCommand>(None);
+            let (unsubscribe_handler, unsubscribe_saver) =
+                get_any_saving_handler::<UnsubscribeCommand>(None);
+            msgbus::subscribe_any(topic.as_str().into(), subscribe_handler, None);
+            msgbus::subscribe_any(topic.as_str().into(), unsubscribe_handler, None);
+            let first = InstrumentId::from("BTC/USD.SIM");
+            let second = InstrumentId::from("ETH/USD.SIM");
+            let third = InstrumentId::from("SOL/USD.SIM");
+            let first_params: Params =
+                serde_json::from_value(serde_json::json!({"owner": 37})).unwrap();
+            let second_params: Params = if same_params {
+                first_params.clone()
+            } else {
+                serde_json::from_value(serde_json::json!({"owner": 59})).unwrap()
+            };
+
+            let first_command = $subscribe::new(
+                [second, first, second],
+                Some(client_id),
+                Some(venue),
+                UUID4::new(),
+                UnixNanos::from(17),
+                Some(UUID4::new()),
+                Some(first_params),
+            );
+
+            let second_command = $subscribe::new(
+                [first, third],
+                Some(client_id),
+                Some(venue),
+                UUID4::new(),
+                UnixNanos::from(23),
+                Some(UUID4::new()),
+                Some(second_params),
+            );
+            let original_first = serde_json::to_value(&first_command).unwrap();
+            let original_second = serde_json::to_value(&second_command).unwrap();
+            engine
+                .execute_subscribe(SubscribeCommand::$variant(
+                    first_command.clone(),
+                ))
+                .unwrap();
+            engine
+                .execute_subscribe(SubscribeCommand::$variant(
+                    first_command.clone(),
+                ))
+                .unwrap();
+            engine
+                .execute_subscribe(SubscribeCommand::$variant(
+                    second_command.clone(),
+                ))
+                .unwrap();
+
+            let release = $unsubscribe::new(
+                [second, first, third],
+                Some(client_id),
+                Some(venue),
+                UUID4::new(),
+                UnixNanos::from(31),
+                Some(UUID4::new()),
+                None,
+            );
+            let original_release = serde_json::to_value(&release).unwrap();
+            engine
+                .execute_unsubscribe(&UnsubscribeCommand::$variant(
+                    release.clone(),
+                ))
+                .unwrap();
+
+            if !external {
+                assert_eq!(engine.$subscribed(), vec![first]);
+            }
+
+            let final_release = release.with_instrument_ids(first);
+            engine
+                .execute_unsubscribe(&UnsubscribeCommand::$variant(
+                    final_release.clone(),
+                ))
+                .unwrap();
+            let expected_subscribes = vec![
+                SubscribeCommand::$variant(first_command.clone()),
+                SubscribeCommand::$variant(
+                    second_command.with_instrument_ids(third),
+                ),
+            ];
+            let expected_releases = vec![
+                SubscribeCommand::$variant(
+                    first_command.with_instrument_ids(second),
+                )
+                .into_unsubscribe(
+                    release.command_id,
+                    release.ts_init,
+                    release.correlation_id,
+                ),
+                SubscribeCommand::$variant(
+                    second_command.with_instrument_ids(third),
+                )
+                .into_unsubscribe(
+                    release.command_id,
+                    release.ts_init,
+                    release.correlation_id,
+                ),
+                SubscribeCommand::$variant(first_command.with_instrument_ids(first))
+                    .into_unsubscribe(
+                        final_release.command_id,
+                        final_release.ts_init,
+                        final_release.correlation_id,
+                    ),
+            ];
+
+            if external {
+                assert_eq!(
+                    serde_json::to_value(subscribe_saver.get_messages()).unwrap(),
+                    serde_json::to_value(expected_subscribes).unwrap()
+                );
+                assert_eq!(
+                    serde_json::to_value(unsubscribe_saver.get_messages()).unwrap(),
+                    serde_json::to_value(expected_releases).unwrap()
+                );
+            } else {
+                let expected: Vec<_> = expected_subscribes
+                    .into_iter()
+                    .map(DataCommand::Subscribe)
+                    .chain(expected_releases.into_iter().map(DataCommand::Unsubscribe))
+                    .collect();
+
+                let serialize = |commands: &[DataCommand]| {
+                    commands
+                        .iter()
+                        .map(|command| match command {
+                            DataCommand::Subscribe(command) => {
+                                serde_json::to_value(command).unwrap()
+                            }
+                            DataCommand::Unsubscribe(command) => {
+                                serde_json::to_value(command).unwrap()
+                            }
+                            _ => panic!("unexpected subscription command {command:?}"),
+                        })
+                        .collect::<Vec<_>>()
+                };
+
+                assert_eq!(serialize(&recorder.borrow()), serialize(&expected));
+                assert_eq!(
+                    engine.$subscribed(),
+                    Vec::<InstrumentId>::new()
+                );
+            }
+
+            assert_eq!(serde_json::to_value(first_command).unwrap(), original_first);
+            assert_eq!(
+                serde_json::to_value(second_command).unwrap(),
+                original_second
+            );
+            assert_eq!(serde_json::to_value(release).unwrap(), original_release);
+        }
+    };
+}
+
+batch_subscription_tests!(
+    test_quote_batches_reject_invalid_intents_before_effects,
+    test_quote_batches_filter_dispatch_and_preserve_each_owner,
+    SubscribeQuotes,
+    UnsubscribeQuotes,
+    Quotes,
+    subscribed_quotes,
+    subscribed_synthetic_quotes,
+    "quote identifier lists cannot mix client, synthetic, and spread routes"
+);
+
+batch_subscription_tests!(
+    test_trade_batches_reject_invalid_intents_before_effects,
+    test_trade_batches_filter_dispatch_and_preserve_each_owner,
+    SubscribeTrades,
+    UnsubscribeTrades,
+    Trades,
+    subscribed_trades,
+    subscribed_synthetic_trades,
+    "trade identifier lists cannot mix client and synthetic routes"
+);
+
 #[rstest]
 fn test_unsubscribe_quotes_keeps_client_subscribed_until_final_owner(
     audusd_sim: CurrencyPair,
@@ -1415,7 +1682,10 @@ fn test_execute_subscribe_internal_bars_stays_local(
 
         match &recorded[0] {
             DataCommand::Subscribe(SubscribeCommand::Trades(cmd)) => {
-                assert_eq!(cmd.instrument_id, bar_type.instrument_id());
+                assert_eq!(
+                    cmd.single_instrument_id().unwrap(),
+                    bar_type.instrument_id()
+                );
                 assert_eq!(cmd.correlation_id, Some(subscribe_command_id));
             }
             other => panic!("expected source trade subscription, was {other:?}"),
@@ -1444,7 +1714,10 @@ fn test_execute_subscribe_internal_bars_stays_local(
 
         match &recorded[1] {
             DataCommand::Unsubscribe(UnsubscribeCommand::Trades(cmd)) => {
-                assert_eq!(cmd.instrument_id, bar_type.instrument_id());
+                assert_eq!(
+                    cmd.single_instrument_id().unwrap(),
+                    bar_type.instrument_id()
+                );
                 assert_eq!(cmd.correlation_id, Some(unsubscribe_command_id));
             }
             other => panic!("expected source trade unsubscription, was {other:?}"),
@@ -1514,7 +1787,10 @@ fn test_unsubscribe_internal_bars_stays_local_with_remaining_exact_subscribers(
 
         match &recorded[0] {
             DataCommand::Subscribe(SubscribeCommand::Trades(cmd)) => {
-                assert_eq!(cmd.instrument_id, bar_type.instrument_id());
+                assert_eq!(
+                    cmd.single_instrument_id().unwrap(),
+                    bar_type.instrument_id()
+                );
                 assert_eq!(cmd.correlation_id, Some(subscribe_command_id));
             }
             other => panic!("expected source trade subscription, was {other:?}"),
@@ -1708,7 +1984,7 @@ fn test_external_client_releases_after_final_owner(
         panic!("expected one final external unsubscribe, was {commands:?}");
     };
 
-    assert_eq!(command.instrument_id, audusd_sim.id);
+    assert_eq!(command.instrument_ids, vec![audusd_sim.id]);
     assert_eq!(command.client_id, Some(client_id));
     assert_eq!(command.venue, Some(venue));
     assert_eq!(command.command_id, final_command_id);
@@ -3144,31 +3420,40 @@ fn test_synthetic_quotes_release_after_final_owner(stub_msgbus: Rc<RefCell<Messa
 }
 
 #[rstest]
-fn test_synthetic_trades_release_after_final_owner(stub_msgbus: Rc<RefCell<MessageBus>>) {
+fn test_synthetic_trades_release_after_final_owner(
+    #[values(false, true)] batch: bool,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
     let _ = stub_msgbus;
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
     let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
-    let (synthetic, _, _) = synthetic_index();
+    let (synthetic, component_a, component_b) = synthetic_index();
     let synthetic_id = synthetic.id;
     cache.borrow_mut().add_synthetic(synthetic).unwrap();
+    let mut instrument_ids = vec![synthetic_id];
 
-    data_engine.execute(subscribe_synthetic_trades_cmd(synthetic_id));
-    data_engine.execute(subscribe_synthetic_trades_cmd(synthetic_id));
-    data_engine.execute(unsubscribe_synthetic_trades_cmd(synthetic_id));
+    if batch {
+        let synthetic = synthetic_index_with_components("BTC-ETH-SECOND", component_a, component_b);
+        instrument_ids.push(synthetic.id);
+        cache.borrow_mut().add_synthetic(synthetic).unwrap();
+    }
 
-    assert!(
-        data_engine
-            .subscribed_synthetic_trades()
-            .contains(&synthetic_id)
-    );
+    instrument_ids.sort();
 
-    data_engine.execute(unsubscribe_synthetic_trades_cmd(synthetic_id));
+    data_engine.execute(subscribe_synthetic_trades_cmd(&instrument_ids));
+    data_engine.execute(subscribe_synthetic_trades_cmd(&instrument_ids));
+    data_engine.execute(unsubscribe_synthetic_trades_cmd(&instrument_ids));
 
-    assert!(
-        !data_engine
-            .subscribed_synthetic_trades()
-            .contains(&synthetic_id)
+    let mut subscribed = data_engine.subscribed_synthetic_trades();
+    subscribed.sort();
+    assert_eq!(subscribed, instrument_ids);
+
+    data_engine.execute(unsubscribe_synthetic_trades_cmd(&instrument_ids));
+
+    assert_eq!(
+        data_engine.subscribed_synthetic_trades(),
+        Vec::<InstrumentId>::new(),
     );
 }
 
@@ -3655,7 +3940,7 @@ fn test_duplicate_book_snapshot_subscriptions_require_matching_unsubscribes(
     assert_eq!(recorded.len(), 2);
     assert!(matches!(
         &recorded[1],
-        DataCommand::Unsubscribe(UnsubscribeCommand::BookDeltas(cmd)) if cmd.instrument_id == audusd_sim.id
+        DataCommand::Unsubscribe(UnsubscribeCommand::BookDeltas(cmd)) if cmd.single_instrument_id().unwrap() == audusd_sim.id
     ));
     drop(recorded);
 
@@ -3718,7 +4003,7 @@ fn test_unsubscribe_book_snapshots_during_publish_does_not_panic(
     assert_eq!(recorded.len(), 2);
     assert!(matches!(
         &recorded[1],
-        DataCommand::Unsubscribe(UnsubscribeCommand::BookDeltas(cmd)) if cmd.instrument_id == audusd_sim.id
+        DataCommand::Unsubscribe(UnsubscribeCommand::BookDeltas(cmd)) if cmd.single_instrument_id().unwrap() == audusd_sim.id
     ));
     drop(recorded);
 
@@ -4475,7 +4760,7 @@ fn book_deltas_subscribe_count(recorded: &[DataCommand], instrument_id: Instrume
             matches!(
                 cmd,
                 DataCommand::Subscribe(SubscribeCommand::BookDeltas(cmd))
-                    if cmd.instrument_id == instrument_id
+                    if cmd.single_instrument_id().unwrap() == instrument_id
             )
         })
         .count()
@@ -4488,7 +4773,7 @@ fn book_deltas_unsubscribe_count(recorded: &[DataCommand], instrument_id: Instru
             matches!(
                 cmd,
                 DataCommand::Unsubscribe(UnsubscribeCommand::BookDeltas(cmd))
-                    if cmd.instrument_id == instrument_id
+                    if cmd.single_instrument_id().unwrap() == instrument_id
             )
         })
         .count()
@@ -4587,9 +4872,9 @@ fn unsubscribe_synthetic_quotes_cmd(instrument_id: InstrumentId) -> DataCommand 
     )))
 }
 
-fn unsubscribe_synthetic_trades_cmd(instrument_id: InstrumentId) -> DataCommand {
+fn unsubscribe_synthetic_trades_cmd(instrument_ids: impl IntoInstrumentIds) -> DataCommand {
     DataCommand::Unsubscribe(UnsubscribeCommand::Trades(UnsubscribeTrades::new(
-        instrument_id,
+        instrument_ids,
         None,
         Some(Venue::synthetic()),
         UUID4::new(),
@@ -4713,4 +4998,817 @@ fn build_synthetic_unsubscribe(
         )),
         other => panic!("unknown synthetic unsubscribe variant: {other}"),
     }
+}
+
+#[rstest]
+#[case((
+    "Quotes",
+    "quote identifier lists cannot mix client, synthetic, and spread routes"
+))]
+#[case(("Instrument", REJECTED_NATIVE_BATCH_ERROR))]
+#[case(("InstrumentStatus", REJECTED_NATIVE_BATCH_ERROR))]
+#[case(("InstrumentClose", REJECTED_NATIVE_BATCH_ERROR))]
+#[case(("OptionGreeks", REJECTED_NATIVE_BATCH_ERROR))]
+fn test_rejected_actor_list_release_preserves_peer(
+    #[case] rejection: (&str, &str),
+    #[values((false, false), (false, true), (true, false), (true, true))] release_order: (
+        bool,
+        bool,
+    ),
+    #[values(false, true)] invalid_first: bool,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let (family, expected_error) = rejection;
+    let (partial, peer_first) = release_order;
+    let mut actor = DataActorCore::new(Default::default());
+    let actor_clock = Rc::clone(&clock);
+    actor
+        .register(TraderId::test_default(), actor_clock, Rc::clone(&cache))
+        .unwrap();
+    let engine = create_snapshot_test_engine(Rc::clone(&clock), Rc::clone(&cache));
+    let recorder = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut engine.borrow_mut(),
+    );
+    let endpoint_engine = Rc::clone(&engine);
+    let actor_commands = Rc::new(RefCell::new(Vec::new()));
+    let commands = Rc::clone(&actor_commands);
+    let handler = TypedIntoHandler::from(move |command: DataCommand| {
+        commands.borrow_mut().push(command.clone());
+        endpoint_engine.borrow_mut().execute(command);
+    });
+
+    msgbus::register_data_command_endpoint(
+        MessagingSwitchboard::data_engine_queue_execute(),
+        handler,
+    );
+    let real = InstrumentId::from("AUD/USD.SIM");
+    let synthetic = synthetic_instrument_id();
+    let fields = json!({
+        "instrument_ids": [real], "client_id": client_id, "venue": venue,
+        "command_id": UUID4::new(), "ts_init": 17, "correlation_id": UUID4::new(),
+        "params": {"owner": 23, "start_ns": 29}
+    });
+    let peer: SubscribeCommand = serde_json::from_value(json!({family: fields})).unwrap();
+    engine.borrow_mut().execute_subscribe(peer.clone()).unwrap();
+
+    let ids = if invalid_first {
+        [synthetic, real]
+    } else {
+        [real, synthetic]
+    };
+
+    let params = Some(params_from_json(json!({"owner": 31, "start_ns": 37})));
+
+    let error = match family {
+        "Quotes" => actor.subscribe_quotes(
+            TypedHandler::from(|_: &QuoteTick| {}),
+            ids,
+            Some(client_id),
+            params,
+        ),
+        "Instrument" => actor.subscribe_instrument(
+            TypedHandler::from(|_: &InstrumentAny| {}),
+            ids,
+            Some(client_id),
+            params,
+        ),
+        "InstrumentStatus" => actor.subscribe_instrument_status(
+            ShareableMessageHandler::from_typed(|_: &InstrumentStatus| {}),
+            ids,
+            Some(client_id),
+            params,
+        ),
+        "InstrumentClose" => actor.subscribe_instrument_close(
+            ShareableMessageHandler::from_typed(|_: &InstrumentClose| {}),
+            ids,
+            Some(client_id),
+            params,
+        ),
+        "OptionGreeks" => actor.subscribe_option_greeks(
+            TypedHandler::from(|_: &OptionGreeks| {}),
+            ids,
+            Some(client_id),
+            params,
+        ),
+        _ => unreachable!(),
+    }
+    .unwrap_err();
+
+    assert_eq!(error.to_string(), expected_error);
+    assert!(actor_commands.borrow().is_empty());
+    let release = peer
+        .clone()
+        .into_unsubscribe(UUID4::new(), UnixNanos::from(41), None);
+
+    if peer_first {
+        engine.borrow_mut().execute_unsubscribe(&release).unwrap();
+        assert_eq!(recorder.borrow().len(), 2);
+    }
+
+    let mut release_actor = |ids: Vec<InstrumentId>| match family {
+        "Quotes" => actor.unsubscribe_quotes(ids, Some(client_id), None),
+        "Instrument" => actor.unsubscribe_instrument(ids, Some(client_id), None),
+        "InstrumentStatus" => actor.unsubscribe_instrument_status(ids, Some(client_id), None),
+        "InstrumentClose" => actor.unsubscribe_instrument_close(ids, Some(client_id), None),
+        "OptionGreeks" => actor.unsubscribe_option_greeks(ids, Some(client_id), None),
+        _ => unreachable!(),
+    };
+
+    release_actor(if partial { vec![real] } else { ids.to_vec() }).unwrap();
+    if partial {
+        release_actor(vec![synthetic]).unwrap();
+    }
+
+    assert!(actor_commands.borrow().is_empty());
+
+    if !peer_first {
+        assert_eq!(recorder.borrow().len(), 1);
+        engine.borrow_mut().execute_unsubscribe(&release).unwrap();
+    }
+
+    let commands = recorder.borrow();
+
+    let [
+        DataCommand::Subscribe(acquired),
+        DataCommand::Unsubscribe(released),
+    ] = commands.as_slice()
+    else {
+        panic!("expected only the peer's acquisition and release: {commands:?}");
+    };
+
+    assert_eq!(
+        serde_json::to_value(acquired).unwrap(),
+        serde_json::to_value(peer).unwrap()
+    );
+    assert_eq!(
+        serde_json::to_value(released).unwrap(),
+        serde_json::to_value(release).unwrap()
+    );
+}
+
+const REJECTED_NATIVE_BATCH_ERROR: &str =
+    "Cannot subscribe synthetic instruments for this data type";
+
+#[rstest]
+fn test_rejected_parent_does_not_retain_client_ownership(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut engine = data_engine.borrow_mut();
+    let recorder = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(clock, cache, client_id, venue, None, &recorder, &mut engine);
+    let first = InstrumentId::from("AUD/USD.SIM");
+    let second = InstrumentId::from("GBP/USD.SIM");
+    let peer = SubscribeCommand::Quotes(SubscribeQuotes::new(
+        [first, second],
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::from(17),
+        None,
+        Some(params_from_json(json!({"owner": 23, "start_ns": 29}))),
+    ));
+    let rejected = SubscribeCommand::Quotes(SubscribeQuotes::new(
+        [synthetic_instrument_id(), first, second],
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::from(31),
+        None,
+        Some(params_from_json(json!({"owner": 37, "start_ns": 41}))),
+    ));
+    engine.execute_subscribe(peer.clone()).unwrap();
+    let error = engine.execute_subscribe(rejected.clone()).unwrap_err();
+    let release = peer
+        .clone()
+        .into_unsubscribe(UUID4::new(), UnixNanos::from(43), None);
+    engine.execute_unsubscribe(&release).unwrap();
+    assert_eq!(recorder.borrow().len(), 2);
+    let final_release = rejected.into_unsubscribe(UUID4::new(), UnixNanos::from(47), None);
+    let release_error = engine.execute_unsubscribe(&final_release).unwrap_err();
+    let commands = recorder.borrow();
+
+    let [
+        DataCommand::Subscribe(acquired),
+        DataCommand::Unsubscribe(released),
+    ] = commands.as_slice()
+    else {
+        panic!("expected one batched acquisition and release: {commands:?}");
+    };
+
+    assert_eq!(
+        error.to_string(),
+        "quote identifier lists cannot mix client, synthetic, and spread routes"
+    );
+    assert_eq!(release_error.to_string(), error.to_string());
+    assert_eq!(
+        serde_json::to_value(acquired).unwrap(),
+        serde_json::to_value(peer).unwrap()
+    );
+    assert_eq!(
+        serde_json::to_value(released).unwrap(),
+        serde_json::to_value(release).unwrap()
+    );
+    assert_eq!(engine.subscribed_quotes(), Vec::<InstrumentId>::new());
+}
+
+#[rstest]
+#[case("Instrument")]
+#[case("BookDeltas")]
+#[case("BookDepth")]
+#[case("BookSnapshots")]
+#[case("MarkPrices")]
+#[case("IndexPrices")]
+#[case("FundingRates")]
+#[case("InstrumentStatus")]
+#[case("InstrumentClose")]
+#[case("OptionGreeks")]
+fn test_external_instrument_lists_filter_overlap_and_keep_release_acquisitions(
+    #[case] family: &str,
+    _stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+    let cache = Rc::new(RefCell::new(Cache::default()));
+
+    let mut engine = DataEngine::new(
+        clock,
+        cache,
+        Some(DataEngineConfig {
+            external_clients: Some(vec![client_id]),
+            ..Default::default()
+        }),
+    );
+
+    let first = InstrumentId::from("AUD/USD.SIM");
+    let second = InstrumentId::from("EUR/USD.SIM");
+    let third = InstrumentId::from("GBP/USD.SIM");
+    let topic = format!("commands.data.{client_id}");
+    let (handler, acquisitions) = get_any_saving_handler::<SubscribeCommand>(None);
+    msgbus::subscribe_any(topic.as_str().into(), handler, None);
+    let (handler, releases) = get_any_saving_handler::<UnsubscribeCommand>(None);
+    msgbus::subscribe_any(topic.as_str().into(), handler, None);
+    let mut fields = serde_json::json!({"instrument_ids": [first, second], "client_id": client_id,
+        "venue": venue, "command_id": UUID4::new(), "ts_init": 41, "correlation_id": UUID4::new(), "params": {"owner": 59}});
+
+    if family.starts_with("Book") {
+        fields["book_type"] = serde_json::json!(BookType::L2_MBP);
+        fields["depth"] = serde_json::json!(7);
+        if family == "BookSnapshots" {
+            fields["interval_ms"] = serde_json::json!(13);
+        } else {
+            fields["managed"] = serde_json::json!(true);
+        }
+    }
+
+    let original: SubscribeCommand =
+        serde_json::from_value(serde_json::json!({family: fields})).unwrap();
+    fields["instrument_ids"] = serde_json::json!([second, third]);
+    fields["command_id"] = serde_json::json!(UUID4::new());
+    fields["params"] = serde_json::json!({"owner": 61});
+    let overlapping: SubscribeCommand =
+        serde_json::from_value(serde_json::json!({family: fields})).unwrap();
+    engine.execute_subscribe(original.clone()).unwrap();
+    engine.execute_subscribe(overlapping.clone()).unwrap();
+    let first_release_id = UUID4::new();
+    engine
+        .execute_unsubscribe(&original.clone().into_unsubscribe(
+            first_release_id,
+            UnixNanos::from(43),
+            None,
+        ))
+        .unwrap();
+    let after_first_release = releases.get_messages();
+    let final_release_id = UUID4::new();
+    engine
+        .execute_unsubscribe(&overlapping.clone().into_unsubscribe(
+            final_release_id,
+            UnixNanos::from(47),
+            None,
+        ))
+        .unwrap();
+    let expected_first = original
+        .with_instrument_ids(first)
+        .unwrap()
+        .into_unsubscribe(first_release_id, UnixNanos::from(43), None);
+    let expected_final = vec![
+        expected_first.clone(),
+        original
+            .with_instrument_ids(second)
+            .unwrap()
+            .into_unsubscribe(final_release_id, UnixNanos::from(47), None),
+        overlapping
+            .with_instrument_ids(third)
+            .unwrap()
+            .into_unsubscribe(final_release_id, UnixNanos::from(47), None),
+    ];
+    assert_eq!(
+        serde_json::to_value(acquisitions.get_messages()).unwrap(),
+        serde_json::to_value([original, overlapping.with_instrument_ids(third).unwrap()]).unwrap()
+    );
+    assert_eq!(
+        serde_json::to_value(after_first_release).unwrap(),
+        serde_json::to_value([expected_first]).unwrap()
+    );
+    assert_eq!(
+        serde_json::to_value(releases.get_messages()).unwrap(),
+        serde_json::to_value(expected_final).unwrap()
+    );
+}
+
+#[rstest]
+#[case("Instrument")]
+#[case("BookDeltas")]
+#[case("BookDepth")]
+#[case("BookSnapshots")]
+#[case("InstrumentStatus")]
+#[case("InstrumentClose")]
+#[case("OptionGreeks")]
+fn test_native_instrument_batch_rejects_synthetic_before_dispatch(
+    #[case] family: &str,
+    #[values(true, false)] subscribe: bool,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut engine = data_engine.borrow_mut();
+    let recorder = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(clock, cache, client_id, venue, None, &recorder, &mut engine);
+    let first = InstrumentId::from("AUD/USD.SIM");
+    let mut fields = serde_json::json!({
+        "instrument_ids": [first, synthetic_instrument_id()],
+        "client_id": client_id, "venue": venue, "command_id": UUID4::new(),
+        "ts_init": 41, "correlation_id": UUID4::new(), "params": {"owner": 59}
+    });
+
+    if family.starts_with("Book") {
+        fields["book_type"] = serde_json::json!(BookType::L2_MBP);
+        fields["depth"] = serde_json::json!(7);
+        if family == "BookSnapshots" {
+            fields["interval_ms"] = serde_json::json!(13);
+        } else {
+            fields["managed"] = serde_json::json!(true);
+        }
+    }
+
+    let command: SubscribeCommand =
+        serde_json::from_value(serde_json::json!({family: fields})).unwrap();
+
+    let result = if subscribe {
+        engine.execute_subscribe(command)
+    } else {
+        engine.execute_unsubscribe(&command.into_unsubscribe(
+            UUID4::new(),
+            UnixNanos::from(43),
+            None,
+        ))
+    };
+
+    let action = if subscribe {
+        "subscribe"
+    } else {
+        "unsubscribe"
+    };
+
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        format!("Cannot {action} synthetic instruments for this data type")
+    );
+    assert_eq!(recorder.borrow().len(), 0);
+}
+
+#[rstest]
+#[case("BookDeltas")]
+#[case("BookDepth")]
+#[case("BookSnapshots")]
+fn test_actor_mixed_venue_book_batch_releases_engine_ownership(
+    #[case] family: &str,
+    audusd_sim: CurrencyPair,
+    mut gbpusd_sim: CurrencyPair,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut actor = DataActorCore::new(Default::default());
+    let actor_clock = Rc::clone(&clock);
+    actor
+        .register(TraderId::test_default(), actor_clock, Rc::clone(&cache))
+        .unwrap();
+    let engine = create_snapshot_test_engine(Rc::clone(&clock), Rc::clone(&cache));
+    let recorder = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        Rc::clone(&clock),
+        Rc::clone(&cache),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut engine.borrow_mut(),
+    );
+    let endpoint_engine = Rc::clone(&engine);
+    let handler = TypedIntoHandler::from(move |command: DataCommand| {
+        endpoint_engine.borrow_mut().execute(command);
+    });
+
+    msgbus::register_data_command_endpoint(
+        MessagingSwitchboard::data_engine_queue_execute(),
+        handler,
+    );
+    gbpusd_sim.id = InstrumentId::from("GBP/USD.OTHER");
+    let ids = [audusd_sim.id, gbpusd_sim.id];
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .unwrap();
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(gbpusd_sim))
+        .unwrap();
+    let interval = NonZeroUsize::new(13).unwrap();
+    let params: Params = serde_json::from_value(serde_json::json!({"route": 59})).unwrap();
+
+    match family {
+        "BookDeltas" => actor.subscribe_book_deltas(
+            TypedHandler::from(|_: &OrderBookDeltas| {}),
+            ids,
+            BookType::L2_MBP,
+            None,
+            Some(client_id),
+            true,
+            Some(params),
+        ),
+        "BookDepth" => actor.subscribe_book_depth(
+            TypedHandler::from(|_: &OrderBookDepth| {}),
+            ids,
+            BookType::L2_MBP,
+            None,
+            Some(client_id),
+            true,
+            Some(params),
+        ),
+        "BookSnapshots" => actor.subscribe_book_at_interval(
+            TypedHandler::from(|_: &OrderBook| {}),
+            ids,
+            BookType::L2_MBP,
+            None,
+            interval,
+            Some(client_id),
+            Some(params),
+        ),
+        _ => unreachable!(),
+    }
+    .unwrap();
+
+    let acquired = recorder.borrow().len();
+    let timers_acquired = clock.borrow().timer_count();
+
+    match family {
+        "BookDeltas" => actor.unsubscribe_book_deltas(ids, Some(client_id), None),
+        "BookDepth" => actor.unsubscribe_book_depth(ids, Some(client_id), None),
+        "BookSnapshots" => actor.unsubscribe_book_at_interval(ids, interval, Some(client_id), None),
+        _ => unreachable!(),
+    }
+    .unwrap();
+
+    let calls = if family == "BookSnapshots" { 2 } else { 1 };
+    assert_eq!(acquired, calls);
+    assert_eq!(timers_acquired, usize::from(family == "BookSnapshots"));
+    assert_eq!(recorder.borrow().len(), calls * 2);
+    assert_eq!(
+        engine.borrow().subscribed_book_deltas(),
+        Vec::<InstrumentId>::new()
+    );
+    assert_eq!(
+        engine.borrow().subscribed_book_depth(),
+        Vec::<InstrumentId>::new()
+    );
+    assert_eq!(
+        engine.borrow().subscribed_book_snapshots(),
+        Vec::<InstrumentId>::new()
+    );
+    assert_eq!(clock.borrow().timer_count(), 0);
+
+    for id in ids {
+        assert_eq!(
+            msgbus::subscriber_count_deltas(switchboard::get_book_deltas_topic(id)),
+            0
+        );
+        assert_eq!(
+            msgbus::subscriber_count_depth(switchboard::get_book_depth_topic(id)),
+            0
+        );
+    }
+}
+
+#[rstest]
+#[case::native(false, true)]
+#[case::external_overlap(true, true)]
+#[case::external_grouped_release(true, false)]
+fn test_bar_lists_filter_overlap_and_retain_release_acquisitions(
+    #[case] external: bool,
+    #[case] overlap: bool,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+
+    let config = DataEngineConfig {
+        external_clients: external.then(|| vec![client_id]),
+        ..DataEngineConfig::default()
+    };
+
+    let mut engine = DataEngine::new(
+        Rc::clone(&clock) as Rc<RefCell<dyn Clock>>,
+        Rc::clone(&cache),
+        Some(config),
+    );
+    let recorder = Rc::new(RefCell::new(Vec::new()));
+    if !external {
+        register_mock_client(clock, cache, client_id, venue, None, &recorder, &mut engine);
+    }
+
+    let topic = format!("commands.data.{client_id}");
+    let (handler, subscribes) = get_any_saving_handler::<SubscribeCommand>(None);
+    msgbus::subscribe_any(topic.as_str().into(), handler, None);
+    let (handler, releases) = get_any_saving_handler::<UnsubscribeCommand>(None);
+    msgbus::subscribe_any(topic.as_str().into(), handler, None);
+    let first = BarType::from("AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL");
+    let second = BarType::from("AUD/USD.SIM-5-MINUTE-LAST-EXTERNAL");
+    let third = BarType::from("GBP/USD.SIM-1-MINUTE-BID-EXTERNAL");
+
+    let first_command = SubscribeBars::new(
+        [second, first, second],
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::from(17),
+        Some(UUID4::new()),
+        Some(params_from_json(json!({"route": 37, "start_ns": 91}))),
+    );
+
+    let second_command = SubscribeBars::new(
+        if overlap {
+            vec![first, third]
+        } else {
+            vec![third]
+        },
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::from(23),
+        Some(UUID4::new()),
+        Some(params_from_json(json!({"route": 59, "start_ns": 97}))),
+    );
+
+    for command in [&first_command, &first_command, &second_command] {
+        engine
+            .execute_subscribe(SubscribeCommand::Bars(command.clone()))
+            .unwrap();
+    }
+
+    let release = UnsubscribeBars::new(
+        [second, first, third],
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::from(31),
+        Some(UUID4::new()),
+        Some(params_from_json(json!({"route": "fallback"}))),
+    );
+    engine
+        .execute_unsubscribe(&UnsubscribeCommand::Bars(release.clone()))
+        .unwrap();
+
+    if !external {
+        assert_eq!(engine.subscribed_bars(), vec![first]);
+    }
+
+    let final_release = UnsubscribeBars {
+        command_id: UUID4::new(),
+        ..release.with_bar_types(first)
+    };
+
+    if overlap {
+        engine
+            .execute_unsubscribe(&UnsubscribeCommand::Bars(final_release.clone()))
+            .unwrap();
+    }
+
+    let expected_subscribes = vec![first_command.clone(), second_command.with_bar_types(third)];
+
+    let mut expected_releases = vec![
+        (&first_command, second, &release),
+        (&second_command, third, &release),
+        (&first_command, first, &final_release),
+    ]
+    .into_iter()
+    .map(|(retained, bar_type, release)| {
+        SubscribeCommand::Bars(retained.with_bar_types(bar_type)).into_unsubscribe(
+            release.command_id,
+            release.ts_init,
+            release.correlation_id,
+        )
+    })
+    .collect::<Vec<_>>();
+
+    if !overlap {
+        expected_releases =
+            vec![
+                SubscribeCommand::Bars(first_command.with_bar_types([second, first]))
+                    .into_unsubscribe(release.command_id, release.ts_init, release.correlation_id),
+                SubscribeCommand::Bars(second_command.with_bar_types(third)).into_unsubscribe(
+                    release.command_id,
+                    release.ts_init,
+                    release.correlation_id,
+                ),
+            ];
+    }
+
+    if external {
+        assert_eq!(
+            serde_json::to_value(subscribes.get_messages()).unwrap(),
+            serde_json::to_value(
+                expected_subscribes
+                    .into_iter()
+                    .map(SubscribeCommand::Bars)
+                    .collect::<Vec<_>>()
+            )
+            .unwrap()
+        );
+        assert_eq!(
+            serde_json::to_value(releases.get_messages()).unwrap(),
+            serde_json::to_value(expected_releases).unwrap()
+        );
+    } else {
+        let expected = expected_subscribes
+            .into_iter()
+            .map(|cmd| serde_json::to_value(SubscribeCommand::Bars(cmd)).unwrap())
+            .chain(
+                expected_releases
+                    .into_iter()
+                    .map(|cmd| serde_json::to_value(cmd).unwrap()),
+            )
+            .collect::<Vec<_>>();
+
+        let actual = recorder
+            .borrow()
+            .iter()
+            .map(|cmd| match cmd {
+                DataCommand::Subscribe(cmd) => serde_json::to_value(cmd).unwrap(),
+                DataCommand::Unsubscribe(cmd) => serde_json::to_value(cmd).unwrap(),
+                _ => panic!("unexpected command"),
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(actual, expected);
+        assert_eq!(engine.subscribed_bars(), Vec::<BarType>::new());
+    }
+}
+
+#[rstest]
+#[case::empty(vec![], "bar types cannot be empty")]
+#[case::duplicate(vec![BarType::from("AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL"); 2], "bar types must be unique")]
+#[case::mixed_venues(vec![BarType::from("AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL"), BarType::from("AUD/USD.OTHER-5-MINUTE-LAST-INTERNAL")], "multiple bar type venues require an explicit client ID")]
+fn test_engine_bar_lists_reject_invalid_intents_before_effects(
+    #[case] bar_types: Vec<BarType>,
+    #[case] error: &str,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut engine = data_engine.borrow_mut();
+    let recorder = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(clock, cache, client_id, venue, None, &recorder, &mut engine);
+
+    let command = SubscribeBars {
+        bar_types,
+        client_id: None,
+        venue: Some(venue),
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::from(41),
+        correlation_id: None,
+        params: None,
+    };
+
+    let release = UnsubscribeBars {
+        bar_types: command.bar_types.clone(),
+        client_id: None,
+        venue: Some(venue),
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::from(43),
+        correlation_id: None,
+        params: None,
+    };
+
+    assert_eq!(
+        engine
+            .execute_subscribe(SubscribeCommand::Bars(command))
+            .unwrap_err()
+            .to_string(),
+        error
+    );
+    assert_eq!(
+        engine
+            .execute_unsubscribe(&UnsubscribeCommand::Bars(release))
+            .unwrap_err()
+            .to_string(),
+        error
+    );
+    assert_eq!(engine.subscribed_bars(), Vec::<BarType>::new());
+    assert_eq!(engine.subscribed_trades(), Vec::<InstrumentId>::new());
+    assert!(recorder.borrow().is_empty());
+}
+
+#[rstest]
+#[case("Instrument")]
+#[case("BookDeltas")]
+#[case("BookDepth")]
+#[case("Quotes")]
+#[case("Trades")]
+#[case("MarkPrices")]
+#[case("IndexPrices")]
+#[case("FundingRates")]
+#[case("InstrumentStatus")]
+#[case("InstrumentClose")]
+#[case("OptionGreeks")]
+#[case("Bars")]
+fn test_direct_lists_reach_hooks_with_parent_metadata(
+    #[case] family: &str,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut engine = data_engine.borrow_mut();
+    let recorder = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(clock, cache, client_id, venue, None, &recorder, &mut engine);
+    let mut fields = json!({
+        "instrument_ids": ["GBP/USD.SIM", "AUD/USD.SIM", "GBP/USD.SIM"],
+        "client_id": client_id, "venue": venue, "command_id": UUID4::new(),
+        "ts_init": 43, "correlation_id": UUID4::new(),
+        "params": {"route": 59, "start_ns": 71, "nested": {"value": 83}}
+    });
+
+    if family == "Bars" {
+        fields.as_object_mut().unwrap().remove("instrument_ids");
+        fields["bar_types"] = json!([
+            "AUD/USD.SIM-5-MINUTE-LAST-EXTERNAL",
+            "AUD/USD.SIM-1-MINUTE-BID-EXTERNAL",
+            "AUD/USD.SIM-5-MINUTE-LAST-EXTERNAL"
+        ]);
+    } else if family.starts_with("Book") {
+        fields["book_type"] = json!(BookType::L2_MBP);
+        fields["depth"] = json!(7);
+        fields["managed"] = json!(false);
+    }
+
+    let command: SubscribeCommand = serde_json::from_value(json!({family: fields})).unwrap();
+    engine.execute_subscribe(command.clone()).unwrap();
+    let release = command.clone().into_unsubscribe(
+        UUID4::new(),
+        UnixNanos::from(97),
+        Some(command.command_id()),
+    );
+    engine.execute_unsubscribe(&release).unwrap();
+
+    let actual: Vec<_> = recorder
+        .borrow()
+        .iter()
+        .map(|command| match command {
+            DataCommand::Subscribe(command) => serde_json::to_value(command).unwrap(),
+            DataCommand::Unsubscribe(command) => serde_json::to_value(command).unwrap(),
+            _ => panic!("unexpected command"),
+        })
+        .collect();
+
+    assert_eq!(
+        actual,
+        vec![
+            serde_json::to_value(command).unwrap(),
+            serde_json::to_value(release).unwrap()
+        ]
+    );
 }

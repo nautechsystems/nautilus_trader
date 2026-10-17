@@ -306,11 +306,50 @@ mod tests {
     use log::{Level, LevelFilter, Log, Metadata, Record};
     use nautilus_common::messages::data::RequestInstruments;
     use nautilus_core::{UUID4, UnixNanos};
-    use nautilus_model::identifiers::{InstrumentId, OptionSeriesId};
+    use nautilus_model::{
+        data::BarType,
+        identifiers::{InstrumentId, OptionSeriesId},
+    };
     use rstest::rstest;
     use ustr::Ustr;
 
     use super::*;
+
+    #[rstest::rstest]
+    fn test_bar_list_hooks_accept_every_full_type() {
+        let venue = Venue::from("SIM");
+
+        let mut client = BacktestDataClient::new(
+            ClientId::from("SIM"),
+            venue,
+            Rc::new(RefCell::new(Cache::default())),
+        );
+
+        let command = SubscribeBars::new(
+            [
+                BarType::from("AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL"),
+                BarType::from("AUD/USD.SIM-5-MINUTE-LAST-EXTERNAL"),
+            ],
+            Some(client.client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::from(17),
+            Some(UUID4::new()),
+            None,
+        );
+
+        let unsubscribe = UnsubscribeBars::new(
+            command.bar_types.clone(),
+            command.client_id,
+            command.venue,
+            UUID4::new(),
+            UnixNanos::from(23),
+            command.correlation_id,
+            command.params.clone(),
+        );
+        assert!(client.subscribe_bars(command).is_ok());
+        assert!(client.unsubscribe_bars(&unsubscribe).is_ok());
+    }
 
     struct RequestWarnCapture {
         messages: Mutex<Vec<String>>,

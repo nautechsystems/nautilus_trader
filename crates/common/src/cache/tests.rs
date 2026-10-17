@@ -6477,14 +6477,14 @@ fn test_cache_client_routes_survive_index_rebuild_and_reset(mut cache: Cache) {
     let xnas = Venue::from("XNAS");
     cache.add_client_route(alpha_id, sim);
     cache.set_default_client(bravo_id);
-    cache.add_external_client(external_id);
+    cache.add_external_exec_client(external_id);
 
     let resolve = |cache: &Cache| {
         (
             cache.client_id_for_venue(&sim).copied(),
             cache.client_id_for_venue(&xnas).copied(),
-            cache.is_external_client(&external_id),
-            cache.is_external_client(&alpha_id),
+            cache.is_external_exec_client(&external_id),
+            cache.is_external_exec_client(&alpha_id),
         )
     };
 
@@ -6505,6 +6505,63 @@ fn test_cache_client_routes_survive_index_rebuild_and_reset(mut cache: Cache) {
         (Some(bravo_id), Some(bravo_id), true, false)
     );
     assert_eq!(after_remove_default, (None, None, true, false));
+}
+
+#[rstest]
+fn test_cache_external_clients_are_independent_and_survive_reset(mut cache: Cache) {
+    let data_ids = [
+        ClientId::from("DATA-ALPHA"),
+        ClientId::from("DATA-BRAVO"),
+        ClientId::from("SHARED"),
+    ];
+    let exec_ids = [
+        ClientId::from("EXEC-ALPHA"),
+        ClientId::from("EXEC-BRAVO"),
+        data_ids[2],
+    ];
+
+    for client_id in data_ids {
+        cache.add_external_data_client(client_id);
+    }
+
+    for client_id in exec_ids {
+        cache.add_external_exec_client(client_id);
+    }
+
+    let ids = [
+        data_ids[0],
+        data_ids[1],
+        exec_ids[0],
+        exec_ids[1],
+        data_ids[2],
+        ClientId::from("UNKNOWN"),
+    ];
+
+    let registrations = |cache: &Cache| {
+        ids.map(|id| {
+            (
+                cache.is_external_data_client(&id),
+                cache.is_external_exec_client(&id),
+            )
+        })
+    };
+
+    let registered = registrations(&cache);
+    cache.clear_index();
+    cache.build_index();
+    let rebuilt = registrations(&cache);
+    cache.reset();
+    let reset = registrations(&cache);
+    let expected = [
+        (true, false),
+        (true, false),
+        (false, true),
+        (false, true),
+        (true, true),
+        (false, false),
+    ];
+
+    assert_eq!([registered, rebuilt, reset], [expected; 3]);
 }
 
 #[rstest]

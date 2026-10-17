@@ -32,7 +32,7 @@ use async_trait::async_trait;
 use dashmap::DashMap;
 use nautilus_common::{
     cache::{InstrumentLookupError, fifo::FifoCache, quote::QuoteCache},
-    clients::DataClient,
+    clients::{DataClient, execute_instrument_subscriptions},
     live::{
         dst::time::{self, Instant},
         runner::get_data_event_sender,
@@ -1018,259 +1018,290 @@ impl DataClient for DeriveDataClient {
     }
 
     fn subscribe_book_deltas(&mut self, cmd: SubscribeBookDeltas) -> anyhow::Result<()> {
-        if cmd.book_type != BookType::L2_MBP {
-            anyhow::bail!("Derive only supports L2_MBP order book deltas");
-        }
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let cmd = cmd.with_instrument_ids(instrument_id);
+            if cmd.book_type != BookType::L2_MBP {
+                anyhow::bail!("Derive only supports L2_MBP order book deltas");
+            }
 
-        let instrument_id = cmd.instrument_id;
-        let owner = ChannelOwner::BookDeltas(instrument_id);
-        let lifecycle = self.subscription_lifecycle();
-        if lifecycle.is_active(owner) {
-            return Ok(());
-        }
-
-        let instrument_name = format_venue_symbol(&instrument_id)?.to_string();
-        let group = orderbook_group(&cmd.params)?;
-        let depth = orderbook_depth(cmd.depth.map(|d| d.get()), &cmd.params)?;
-        let channel = orderbook_channel(&instrument_name, &group, &depth);
-        let request = ChannelRequest::from_channel(&channel)?;
-        let needs_load = self.prepare_subscribe(instrument_id)?;
-
-        let Some(generation) = lifecycle.activate(owner, Some(&channel)) else {
-            return Ok(());
-        };
-
-        let ws = self.ws_handle();
-        let http_client = self.http_client.clone();
-        let include_expired = self.config.include_expired;
-        let instruments = Arc::clone(&self.instruments);
-
-        self.spawn_task("subscribe_book_deltas", async move {
-            if needs_load
-                && let Err(e) = Self::lazy_load_instrument(
-                    http_client,
-                    instruments,
-                    instrument_id,
-                    include_expired,
-                )
-                .await
-            {
-                lifecycle.rollback(owner, generation);
-                log::error!("Lazy-load failed for {instrument_id} (book deltas): {e}");
+            let owner = ChannelOwner::BookDeltas(instrument_id);
+            let lifecycle = self.subscription_lifecycle();
+            if lifecycle.is_active(owner) {
                 return Ok(());
             }
 
-            run_channel_subscribe(lifecycle, owner, generation, request, ws).await
-        });
+            let instrument_name = format_venue_symbol(&instrument_id)?.to_string();
+            let group = orderbook_group(&cmd.params)?;
+            let depth = orderbook_depth(cmd.depth.map(|d| d.get()), &cmd.params)?;
+            let channel = orderbook_channel(&instrument_name, &group, &depth);
+            let request = ChannelRequest::from_channel(&channel)?;
+            let needs_load = self.prepare_subscribe(instrument_id)?;
 
-        Ok(())
+            let Some(generation) = lifecycle.activate(owner, Some(&channel)) else {
+                return Ok(());
+            };
+
+            let ws = self.ws_handle();
+            let http_client = self.http_client.clone();
+            let include_expired = self.config.include_expired;
+            let instruments = Arc::clone(&self.instruments);
+
+            self.spawn_task("subscribe_book_deltas", async move {
+                if needs_load
+                    && let Err(e) = Self::lazy_load_instrument(
+                        http_client,
+                        instruments,
+                        instrument_id,
+                        include_expired,
+                    )
+                    .await
+                {
+                    lifecycle.rollback(owner, generation);
+                    log::error!("Lazy-load failed for {instrument_id} (book deltas): {e}");
+                    return Ok(());
+                }
+
+                run_channel_subscribe(lifecycle, owner, generation, request, ws).await
+            });
+
+            Ok(())
+        })
     }
 
     fn subscribe_book_depth(&mut self, cmd: SubscribeBookDepth) -> anyhow::Result<()> {
-        if cmd.book_type != BookType::L2_MBP {
-            anyhow::bail!("Derive only supports L2_MBP order book depth");
-        }
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let cmd = cmd.with_instrument_ids(instrument_id);
+            if cmd.book_type != BookType::L2_MBP {
+                anyhow::bail!("Derive only supports L2_MBP order book depth");
+            }
 
-        let instrument_id = cmd.instrument_id;
-        let owner = ChannelOwner::BookDepth(instrument_id);
-        let lifecycle = self.subscription_lifecycle();
-        if lifecycle.is_active(owner) {
-            return Ok(());
-        }
-
-        let instrument_name = format_venue_symbol(&instrument_id)?.to_string();
-        let group = orderbook_group(&cmd.params)?;
-        let depth = DeriveOrderbookDepth::D10.to_string();
-        let channel = orderbook_channel(&instrument_name, &group, &depth);
-        let request = ChannelRequest::from_channel(&channel)?;
-        let needs_load = self.prepare_subscribe(instrument_id)?;
-
-        let Some(generation) = lifecycle.activate(owner, Some(&channel)) else {
-            return Ok(());
-        };
-
-        let ws = self.ws_handle();
-        let http_client = self.http_client.clone();
-        let include_expired = self.config.include_expired;
-        let instruments = Arc::clone(&self.instruments);
-
-        self.spawn_task("subscribe_book_depth", async move {
-            if needs_load
-                && let Err(e) = Self::lazy_load_instrument(
-                    http_client,
-                    instruments,
-                    instrument_id,
-                    include_expired,
-                )
-                .await
-            {
-                lifecycle.rollback(owner, generation);
-                log::error!("Lazy-load failed for {instrument_id} (book depth): {e}");
+            let owner = ChannelOwner::BookDepth(instrument_id);
+            let lifecycle = self.subscription_lifecycle();
+            if lifecycle.is_active(owner) {
                 return Ok(());
             }
 
-            run_channel_subscribe(lifecycle, owner, generation, request, ws).await
-        });
+            let instrument_name = format_venue_symbol(&instrument_id)?.to_string();
+            let group = orderbook_group(&cmd.params)?;
+            let depth = DeriveOrderbookDepth::D10.to_string();
+            let channel = orderbook_channel(&instrument_name, &group, &depth);
+            let request = ChannelRequest::from_channel(&channel)?;
+            let needs_load = self.prepare_subscribe(instrument_id)?;
 
-        Ok(())
+            let Some(generation) = lifecycle.activate(owner, Some(&channel)) else {
+                return Ok(());
+            };
+
+            let ws = self.ws_handle();
+            let http_client = self.http_client.clone();
+            let include_expired = self.config.include_expired;
+            let instruments = Arc::clone(&self.instruments);
+
+            self.spawn_task("subscribe_book_depth", async move {
+                if needs_load
+                    && let Err(e) = Self::lazy_load_instrument(
+                        http_client,
+                        instruments,
+                        instrument_id,
+                        include_expired,
+                    )
+                    .await
+                {
+                    lifecycle.rollback(owner, generation);
+                    log::error!("Lazy-load failed for {instrument_id} (book depth): {e}");
+                    return Ok(());
+                }
+
+                run_channel_subscribe(lifecycle, owner, generation, request, ws).await
+            });
+
+            Ok(())
+        })
     }
 
     fn subscribe_quotes(&mut self, cmd: SubscribeQuotes) -> anyhow::Result<()> {
-        self.subscribe_ticker_feed(cmd.instrument_id, &cmd.params, TickerFeed::Quote, "quotes")
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let cmd = cmd.with_instrument_ids(instrument_id);
+            self.subscribe_ticker_feed(instrument_id, &cmd.params, TickerFeed::Quote, "quotes")
+        })
     }
 
     fn subscribe_trades(&mut self, cmd: SubscribeTrades) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        let owner = ChannelOwner::Trades(instrument_id);
-        let lifecycle = self.subscription_lifecycle();
-        if lifecycle.is_active(owner) {
-            return Ok(());
-        }
-
-        let needs_load = self.prepare_subscribe(instrument_id)?;
-
-        let Some(generation) = lifecycle.activate(owner, None) else {
-            return Ok(());
-        };
-
-        let ws = self.ws_handle();
-        let http_client = self.http_client.clone();
-        let include_expired = self.config.include_expired;
-        let instruments = Arc::clone(&self.instruments);
-
-        self.spawn_task("subscribe_trades", async move {
-            if needs_load
-                && let Err(e) = Self::lazy_load_instrument(
-                    http_client,
-                    Arc::clone(&instruments),
-                    instrument_id,
-                    include_expired,
-                )
-                .await
-            {
-                lifecycle.rollback(owner, generation);
-                log::error!("Lazy-load failed for {instrument_id} (trades): {e}");
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let owner = ChannelOwner::Trades(instrument_id);
+            let lifecycle = self.subscription_lifecycle();
+            if lifecycle.is_active(owner) {
                 return Ok(());
             }
 
-            if !lifecycle.is_current(owner, generation) {
-                return Ok(());
-            }
+            let needs_load = self.prepare_subscribe(instrument_id)?;
 
-            let Some(instrument) = instruments.get_cloned(&instrument_id) else {
-                lifecycle.rollback(owner, generation);
-                log::error!("Instrument {instrument_id} not found for Derive trades");
+            let Some(generation) = lifecycle.activate(owner, None) else {
                 return Ok(());
             };
 
-            let channel = match trade_channel(&instrument) {
-                Ok(channel) => channel,
-                Err(e) => {
+            let ws = self.ws_handle();
+            let http_client = self.http_client.clone();
+            let include_expired = self.config.include_expired;
+            let instruments = Arc::clone(&self.instruments);
+
+            self.spawn_task("subscribe_trades", async move {
+                if needs_load
+                    && let Err(e) = Self::lazy_load_instrument(
+                        http_client,
+                        Arc::clone(&instruments),
+                        instrument_id,
+                        include_expired,
+                    )
+                    .await
+                {
                     lifecycle.rollback(owner, generation);
-                    log::error!("Failed to resolve Derive trades channel: {e}");
+                    log::error!("Lazy-load failed for {instrument_id} (trades): {e}");
                     return Ok(());
                 }
-            };
 
-            let request = match ChannelRequest::from_channel(&channel) {
-                Ok(request) => request,
-                Err(e) => {
-                    lifecycle.rollback(owner, generation);
-                    log::error!("Invalid Derive trades channel `{channel}`: {e}");
+                if !lifecycle.is_current(owner, generation) {
                     return Ok(());
                 }
-            };
 
-            if !lifecycle.attach_channel(owner, generation, channel) {
-                return Ok(());
-            }
+                let Some(instrument) = instruments.get_cloned(&instrument_id) else {
+                    lifecycle.rollback(owner, generation);
+                    log::error!("Instrument {instrument_id} not found for Derive trades");
+                    return Ok(());
+                };
 
-            run_channel_subscribe(lifecycle, owner, generation, request, ws).await
-        });
+                let channel = match trade_channel(&instrument) {
+                    Ok(channel) => channel,
+                    Err(e) => {
+                        lifecycle.rollback(owner, generation);
+                        log::error!("Failed to resolve Derive trades channel: {e}");
+                        return Ok(());
+                    }
+                };
 
-        Ok(())
+                let request = match ChannelRequest::from_channel(&channel) {
+                    Ok(request) => request,
+                    Err(e) => {
+                        lifecycle.rollback(owner, generation);
+                        log::error!("Invalid Derive trades channel `{channel}`: {e}");
+                        return Ok(());
+                    }
+                };
+
+                if !lifecycle.attach_channel(owner, generation, channel) {
+                    return Ok(());
+                }
+
+                run_channel_subscribe(lifecycle, owner, generation, request, ws).await
+            });
+
+            Ok(())
+        })
     }
 
     fn subscribe_mark_prices(&mut self, cmd: SubscribeMarkPrices) -> anyhow::Result<()> {
-        self.subscribe_ticker_feed(
-            cmd.instrument_id,
-            &cmd.params,
-            TickerFeed::Mark,
-            "mark prices",
-        )
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let cmd = cmd.with_instrument_ids(instrument_id);
+            self.subscribe_ticker_feed(instrument_id, &cmd.params, TickerFeed::Mark, "mark prices")
+        })
     }
 
     fn subscribe_index_prices(&mut self, cmd: SubscribeIndexPrices) -> anyhow::Result<()> {
-        self.subscribe_ticker_feed(
-            cmd.instrument_id,
-            &cmd.params,
-            TickerFeed::Index,
-            "index prices",
-        )
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let cmd = cmd.with_instrument_ids(instrument_id);
+            self.subscribe_ticker_feed(
+                instrument_id,
+                &cmd.params,
+                TickerFeed::Index,
+                "index prices",
+            )
+        })
     }
 
     fn subscribe_funding_rates(&mut self, cmd: SubscribeFundingRates) -> anyhow::Result<()> {
-        self.subscribe_ticker_feed(
-            cmd.instrument_id,
-            &cmd.params,
-            TickerFeed::Funding,
-            "funding rates",
-        )
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let cmd = cmd.with_instrument_ids(instrument_id);
+            self.subscribe_ticker_feed(
+                instrument_id,
+                &cmd.params,
+                TickerFeed::Funding,
+                "funding rates",
+            )
+        })
     }
 
     fn subscribe_option_greeks(&mut self, cmd: SubscribeOptionGreeks) -> anyhow::Result<()> {
-        self.subscribe_ticker_feed(
-            cmd.instrument_id,
-            &cmd.params,
-            TickerFeed::Greeks,
-            "option greeks",
-        )
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let cmd = cmd.with_instrument_ids(instrument_id);
+            self.subscribe_ticker_feed(
+                instrument_id,
+                &cmd.params,
+                TickerFeed::Greeks,
+                "option greeks",
+            )
+        })
     }
 
     fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
-        self.unsubscribe_channel_owner(ChannelOwner::BookDeltas(cmd.instrument_id))
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.unsubscribe_channel_owner(ChannelOwner::BookDeltas(instrument_id))
+        })
     }
 
     fn unsubscribe_book_depth(&mut self, cmd: &UnsubscribeBookDepth) -> anyhow::Result<()> {
-        self.unsubscribe_channel_owner(ChannelOwner::BookDepth(cmd.instrument_id))
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.unsubscribe_channel_owner(ChannelOwner::BookDepth(instrument_id))
+        })
     }
 
     fn unsubscribe_quotes(&mut self, cmd: &UnsubscribeQuotes) -> anyhow::Result<()> {
-        self.unsubscribe_channel_owner(ChannelOwner::Ticker {
-            instrument_id: cmd.instrument_id,
-            feed: TickerFeed::Quote,
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.unsubscribe_channel_owner(ChannelOwner::Ticker {
+                instrument_id,
+                feed: TickerFeed::Quote,
+            })
         })
     }
 
     fn unsubscribe_trades(&mut self, cmd: &UnsubscribeTrades) -> anyhow::Result<()> {
-        self.unsubscribe_channel_owner(ChannelOwner::Trades(cmd.instrument_id))
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.unsubscribe_channel_owner(ChannelOwner::Trades(instrument_id))
+        })
     }
 
     fn unsubscribe_mark_prices(&mut self, cmd: &UnsubscribeMarkPrices) -> anyhow::Result<()> {
-        self.unsubscribe_channel_owner(ChannelOwner::Ticker {
-            instrument_id: cmd.instrument_id,
-            feed: TickerFeed::Mark,
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.unsubscribe_channel_owner(ChannelOwner::Ticker {
+                instrument_id,
+                feed: TickerFeed::Mark,
+            })
         })
     }
 
     fn unsubscribe_index_prices(&mut self, cmd: &UnsubscribeIndexPrices) -> anyhow::Result<()> {
-        self.unsubscribe_channel_owner(ChannelOwner::Ticker {
-            instrument_id: cmd.instrument_id,
-            feed: TickerFeed::Index,
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.unsubscribe_channel_owner(ChannelOwner::Ticker {
+                instrument_id,
+                feed: TickerFeed::Index,
+            })
         })
     }
 
     fn unsubscribe_funding_rates(&mut self, cmd: &UnsubscribeFundingRates) -> anyhow::Result<()> {
-        self.unsubscribe_channel_owner(ChannelOwner::Ticker {
-            instrument_id: cmd.instrument_id,
-            feed: TickerFeed::Funding,
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.unsubscribe_channel_owner(ChannelOwner::Ticker {
+                instrument_id,
+                feed: TickerFeed::Funding,
+            })
         })
     }
 
     fn unsubscribe_option_greeks(&mut self, cmd: &UnsubscribeOptionGreeks) -> anyhow::Result<()> {
-        self.unsubscribe_channel_owner(ChannelOwner::Ticker {
-            instrument_id: cmd.instrument_id,
-            feed: TickerFeed::Greeks,
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.unsubscribe_channel_owner(ChannelOwner::Ticker {
+                instrument_id,
+                feed: TickerFeed::Greeks,
+            })
         })
     }
 

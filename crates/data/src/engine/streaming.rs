@@ -70,8 +70,11 @@ impl DataEngine {
         cmd: SubscribeCommand,
     ) -> anyhow::Result<SubscribeCommand> {
         match cmd {
-            SubscribeCommand::Quotes(cmd) if Self::is_start_ns_missing(cmd.params.as_ref()) => {
-                let identifier = cmd.instrument_id.to_string();
+            SubscribeCommand::Quotes(cmd)
+                if cmd.instrument_ids.len() == 1
+                    && Self::is_start_ns_missing(cmd.params.as_ref()) =>
+            {
+                let identifier = cmd.instrument_ids[0].to_string();
                 let params = self.params_with_prefilled_start_ns(
                     cmd.params.as_ref(),
                     &NautilusDataType::QuoteTick,
@@ -79,8 +82,11 @@ impl DataEngine {
                 )?;
                 Ok(SubscribeCommand::Quotes(SubscribeQuotes { params, ..cmd }))
             }
-            SubscribeCommand::Trades(cmd) if Self::is_start_ns_missing(cmd.params.as_ref()) => {
-                let identifier = cmd.instrument_id.to_string();
+            SubscribeCommand::Trades(cmd)
+                if cmd.instrument_ids.len() == 1
+                    && Self::is_start_ns_missing(cmd.params.as_ref()) =>
+            {
+                let identifier = cmd.instrument_ids[0].to_string();
                 let params = self.params_with_prefilled_start_ns(
                     cmd.params.as_ref(),
                     &NautilusDataType::TradeTick,
@@ -89,10 +95,11 @@ impl DataEngine {
                 Ok(SubscribeCommand::Trades(SubscribeTrades { params, ..cmd }))
             }
             SubscribeCommand::Bars(cmd)
-                if cmd.bar_type.is_externally_aggregated()
+                if cmd.bar_types.len() == 1
+                    && cmd.single_bar_type()?.is_externally_aggregated()
                     && Self::is_start_ns_missing(cmd.params.as_ref()) =>
             {
-                let identifier = cmd.bar_type.to_string();
+                let identifier = cmd.single_bar_type()?.to_string();
                 let params = self.params_with_prefilled_start_ns(
                     cmd.params.as_ref(),
                     &NautilusDataType::Bar,

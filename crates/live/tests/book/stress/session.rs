@@ -756,11 +756,11 @@ mod tests {
         }
 
         fn subscribe_book_deltas(&mut self, cmd: SubscribeBookDeltas) -> anyhow::Result<()> {
+            let instrument_id = cmd.single_instrument_id()?;
             let sender = get_data_event_sender();
-            sender.send(snapshot(cmd.instrument_id, 1))?;
-
+            sender.send(snapshot(instrument_id, 1))?;
             for sequence in 2..=4 {
-                sender.send(update(cmd.instrument_id, sequence))?;
+                sender.send(update(instrument_id, sequence))?;
             }
 
             Ok(())

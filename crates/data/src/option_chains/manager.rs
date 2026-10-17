@@ -250,7 +250,7 @@ impl OptionChainManager {
 
         for instrument_id in instrument_ids {
             client.execute_subscribe_intent(SubscribeCommand::Quotes(SubscribeQuotes {
-                instrument_id: *instrument_id,
+                instrument_ids: vec![*instrument_id],
                 client_id: cmd.client_id,
                 venue: Some(venue),
                 command_id: UUID4::new(),
@@ -260,7 +260,7 @@ impl OptionChainManager {
             }));
             client.execute_subscribe_intent(SubscribeCommand::OptionGreeks(
                 SubscribeOptionGreeks {
-                    instrument_id: *instrument_id,
+                    instrument_ids: vec![*instrument_id],
                     client_id: cmd.client_id,
                     venue: Some(venue),
                     command_id: UUID4::new(),
@@ -271,7 +271,7 @@ impl OptionChainManager {
             ));
             client.execute_subscribe_intent(SubscribeCommand::InstrumentStatus(
                 SubscribeInstrumentStatus {
-                    instrument_id: *instrument_id,
+                    instrument_ids: vec![*instrument_id],
                     client_id: cmd.client_id,
                     venue: Some(venue),
                     command_id: UUID4::new(),
@@ -578,7 +578,7 @@ impl OptionChainManager {
         let mut queue = self.deferred_cmd_queue.borrow_mut();
         queue.push_back(DeferredCommand::Subscribe(SubscribeCommand::Quotes(
             SubscribeQuotes {
-                instrument_id,
+                instrument_ids: vec![instrument_id],
                 client_id: self.client_id,
                 venue: Some(venue),
                 command_id: UUID4::new(),
@@ -589,7 +589,7 @@ impl OptionChainManager {
         )));
         queue.push_back(DeferredCommand::Subscribe(SubscribeCommand::OptionGreeks(
             SubscribeOptionGreeks {
-                instrument_id,
+                instrument_ids: vec![instrument_id],
                 client_id: self.client_id,
                 venue: Some(venue),
                 command_id: UUID4::new(),
@@ -600,7 +600,7 @@ impl OptionChainManager {
         )));
         queue.push_back(DeferredCommand::Subscribe(
             SubscribeCommand::InstrumentStatus(SubscribeInstrumentStatus {
-                instrument_id,
+                instrument_ids: vec![instrument_id],
                 client_id: self.client_id,
                 venue: Some(venue),
                 command_id: UUID4::new(),
@@ -618,7 +618,7 @@ impl OptionChainManager {
         let mut queue = self.deferred_cmd_queue.borrow_mut();
         queue.push_back(DeferredCommand::Unsubscribe(UnsubscribeCommand::Quotes(
             UnsubscribeQuotes {
-                instrument_id,
+                instrument_ids: vec![instrument_id],
                 client_id: self.client_id,
                 venue: Some(venue),
                 command_id: UUID4::new(),
@@ -629,7 +629,7 @@ impl OptionChainManager {
         )));
         queue.push_back(DeferredCommand::Unsubscribe(
             UnsubscribeCommand::OptionGreeks(UnsubscribeOptionGreeks {
-                instrument_id,
+                instrument_ids: vec![instrument_id],
                 client_id: self.client_id,
                 venue: Some(venue),
                 command_id: UUID4::new(),
@@ -640,7 +640,7 @@ impl OptionChainManager {
         ));
         queue.push_back(DeferredCommand::Unsubscribe(
             UnsubscribeCommand::InstrumentStatus(UnsubscribeInstrumentStatus {
-                instrument_id,
+                instrument_ids: vec![instrument_id],
                 client_id: self.client_id,
                 venue: Some(venue),
                 command_id: UUID4::new(),
@@ -668,7 +668,7 @@ impl OptionChainManager {
         let ts_init = clock.borrow().timestamp_ns();
 
         client.execute_subscribe_intent(SubscribeCommand::Quotes(SubscribeQuotes {
-            instrument_id,
+            instrument_ids: vec![instrument_id],
             client_id: None,
             venue: Some(venue),
             command_id: UUID4::new(),
@@ -677,7 +677,7 @@ impl OptionChainManager {
             params: None,
         }));
         client.execute_subscribe_intent(SubscribeCommand::OptionGreeks(SubscribeOptionGreeks {
-            instrument_id,
+            instrument_ids: vec![instrument_id],
             client_id: None,
             venue: Some(venue),
             command_id: UUID4::new(),
@@ -687,7 +687,7 @@ impl OptionChainManager {
         }));
         client.execute_subscribe_intent(SubscribeCommand::InstrumentStatus(
             SubscribeInstrumentStatus {
-                instrument_id,
+                instrument_ids: vec![instrument_id],
                 client_id: None,
                 venue: Some(venue),
                 command_id: UUID4::new(),

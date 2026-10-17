@@ -428,6 +428,154 @@ The system distinguishes between two data flows:
    - Processed through specific handlers like `on_bar()`, `on_quote()`, etc.
    - Used for ongoing event processing.
 
+### Subscription lists
+
+Actor and Strategy subscriptions accept one identifier or a non-empty collection. The matching
+unsubscribe methods accept the same inputs.
+
+| Data                   | Subscribe methods                                                             | Python argument |
+| ---------------------- | ----------------------------------------------------------------------------- | --------------- |
+| Instrument definitions | `subscribe_instrument`                                                        | `instrument_id` |
+| Order books            | `subscribe_book_deltas`, `subscribe_book_depth`, `subscribe_book_at_interval` | `instrument_id` |
+| Quotes and trades      | `subscribe_quotes`, `subscribe_trades`                                        | `instrument_id` |
+| Mark and index prices  | `subscribe_mark_prices`, `subscribe_index_prices`                             | `instrument_id` |
+| Funding rates          | `subscribe_funding_rates`                                                     | `instrument_id` |
+| Instrument events      | `subscribe_instrument_status`, `subscribe_instrument_close`                   | `instrument_id` |
+| Option Greeks          | `subscribe_option_greeks`                                                     | `instrument_id` |
+| Bars                   | `subscribe_bars`                                                              | `bar_type`      |
+
+Rust accepts scalar values, vectors, arrays, and slices. Python keeps the scalar keyword for both
+scalar and sequence inputs. Duplicate IDs or full bar types are removed in first-occurrence order.
+Different bar specifications for one instrument stay distinct.
+
+```rust tab="Rust"
+self.subscribe_quotes(instrument_id, None, None);
+self.subscribe_quotes([first_id, second_id], None, None);
+self.unsubscribe_quotes([first_id, second_id], None, None);
+self.subscribe_trades([first_id, second_id], None, None);
+```
+
+```python tab="Python"
+self.subscribe_quotes(instrument_id=instrument_id)
+self.subscribe_quotes(instrument_id=[first_id, second_id])
+self.unsubscribe_quotes(instrument_id=[first_id, second_id])
+self.subscribe_trades(instrument_id=[first_id, second_id])
+```
+
+Historical requests keep their scalar instrument or bar input. These list rules do not change custom
+data, venue-wide `subscribe_instruments(Venue)`, option-chain, or DeFi inputs.
+
+#### Routing and validation
+
+- **Venues**: IDs must share a venue unless `client_id` is explicit. This applies to subscribe and unsubscribe.
+- **Book settings**: Settings apply to every ID. Unsubscribe with the original `is_parent` parameter and snapshot interval.
+- **Trades**: The actor groups synthetic IDs separately from other IDs, even with an explicit client.
+
+For non-external data clients, the actor also checks these subscription routes:
+
+- Quote lists must share one route: client, synthetic, or aggregated spread. Spread routing requires
+  `aggregate_spread_quotes=true` and a cached spread instrument.
+- Instrument definitions, books, status, closes, and option Greeks reject any list with multiple IDs
+  and a synthetic member.
+
+External data clients handle those quote and synthetic route mixtures themselves.
+
+Empty or missing-client mixed-venue lists fail before any subscription changes, including releases.
+Unsupported subscription routes fail before ownership is retained or handlers are registered:
+
+| API             | Validation failure |
+| --------------- | ------------------ |
+| Rust actor      | Panic              |
+| `DataActorCore` | `Err`              |
+| Python          | `ValueError`       |
+
+Invalid Python elements raise `TypeError` before any subscription changes, including releases.
+
+#### Bar ownership
+
+The actor acquires one subscription per standard output bar type. The first full requested type
+supplies the source; later source variants for that output do not acquire another owner.
+
+Unsubscribe with the original full type or its `standard()` alias. Both release the original full type.
+
+```rust tab="Rust"
+self.subscribe_bars([first_bar_type, second_bar_type], None, None);
+self.unsubscribe_bars([first_bar_type, second_bar_type], None, None);
+```
+
+```python tab="Python"
+self.subscribe_bars(bar_type=[first_bar_type, second_bar_type])
+self.unsubscribe_bars(bar_type=[first_bar_type, second_bar_type])
+```
+
+#### Ownership and releases
+
+- The actor retains ownership per instrument and dispatches only newly acquired IDs. A shared feed
+  stays active until its last owner releases it.
+- Releases use the original route and parameters. Members acquired in separate calls remain in
+  separate release commands; a scalar acquisition therefore has a scalar release.
+- The client adapter keeps failed non-book final release commands for explicit retries. Actors do not
+  retry failed releases automatically.
+
+:::warning
+Non-book releases remove one anonymous ownership claim per member. Balance subscribe and unsubscribe
+calls. Repeating a whole release list after partial success is not guaranteed to have no further effects.
+:::
+
+#### Adapter delivery and failures
+
+Compatible direct members reach native and Python hooks as one ordered list, with their parent command
+ID and metadata. This applies to subscribe and unsubscribe; external MessageBus clients also receive lists.
+
+Hooks reject unsupported lists before effects. Supported lists process independent members best effort
+without rolling back accepted work. The engine logs preparation failures and forwards successfully
+prepared members. Adapters can batch venue requests or iterate locally.
+
+Internal and composite bars, book snapshots, spreads, and continuous futures acquire separate source
+subscriptions. These derived commands keep their own ownership and can contain one member even when
+the parent contains several.
+
+Native hooks report synchronous acceptance:
+
+| Hook result         | Accepted members                                        |
+| ------------------- | ------------------------------------------------------- |
+| `Ok(())`            | Every dispatched member                                 |
+| `SubscriptionError` | Exact `instrument_ids_accepted` or `bar_types_accepted` |
+| Other error         | None                                                    |
+
+Bar outcomes use full bar types. Unsubscribe acceptance means successful release. Failure logs identify
+unaccepted or unreleased members.
+
+The Python bridge accepts the whole command when the runtime admits it to the client queue. Later async
+hook failures are logged without per-member outcomes to the engine. Venue acknowledgements remain separate.
+
+#### Catalog start times
+
+With `streaming`, the engine infers catalog `start_ns` only when `params` does not supply it:
+
+| Subscription       | Catalog start inference |
+| ------------------ | ----------------------- |
+| Single quote/trade | Per instrument          |
+| Quote/trade list   | None                    |
+| External bars      | Per full bar type       |
+
+Pass explicit `start_ns` for one shared batch start. External bar types with equal effective parameters
+stay in one list; different starts produce ordered subsets with the same command ID.
+
+Releases can regroup those subsets using their original parameters, routes, and acquisition boundaries.
+Scalar derived sources keep their own catalog inference.
+
+#### Custom Rust integrations
+
+- Override instrument methods with `impl IntoInstrumentIds` and bar methods with `impl IntoBarTypes`.
+  Pass explicit `InstrumentId` or `BarType` values where `.into()` relied on scalar inference.
+- Migrated `DataActorCore` list methods return `Result<()>`. Remove `topic` or `pattern` from migrated
+  subscribe calls; the core derives topics from each member.
+- Read `instrument_ids` or `bar_types` in commands. The serialized fields also carry lists, so upgrade
+  producers and consumers together. Python command properties are read-only and return list copies.
+- Hooks limited to one member can reject lists before effects with `single_instrument_id()` or
+  `single_bar_type()`. Construct partial errors with `SubscriptionError::instruments` or `SubscriptionError::bars`.
+
 ### Callback handlers
 
 Common data operations map to these handlers:

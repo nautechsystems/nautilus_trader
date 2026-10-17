@@ -48,7 +48,8 @@ use nautilus_common::{
             InstrumentResponse, RequestCustomData, RequestInstrument,
             RequestOptionChainReferencePrice, SubscribeBars, SubscribeBookDeltas,
             SubscribeBookDepth, SubscribeFundingRates, SubscribeIndexPrices, SubscribeMarkPrices,
-            SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, UnsubscribeTrades,
+            SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, SubscriptionError,
+            UnsubscribeTrades,
         },
         system::SocketState,
     },
@@ -932,7 +933,7 @@ async fn test_data_client_connect_disconnect() {
 
 #[rstest]
 #[tokio::test]
-async fn test_data_client_subscribe_trades() {
+async fn test_data_client_subscribe_trades(#[values(false, true)] batch: bool) {
     let (addr, state) = start_test_server().await.unwrap();
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
     set_data_event_sender(tx);
@@ -950,8 +951,13 @@ async fn test_data_client_subscribe_trades() {
     while rx.try_recv().is_ok() {}
 
     let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
+
     let cmd = SubscribeTrades::new(
-        instrument_id,
+        if batch {
+            vec![InstrumentId::from("UNCACHED.DERIBIT"), instrument_id]
+        } else {
+            vec![instrument_id]
+        },
         Some(*DERIBIT_CLIENT_ID),
         None,
         UUID4::new(),
@@ -959,7 +965,17 @@ async fn test_data_client_subscribe_trades() {
         None,
         None,
     );
-    client.subscribe_trades(cmd).unwrap();
+
+    let result = client.subscribe_trades(cmd);
+    if batch {
+        let error = result.unwrap_err();
+        let partial = error.downcast_ref::<SubscriptionError>().unwrap();
+        assert_eq!(partial.instrument_ids_accepted, vec![instrument_id]);
+        assert_eq!(partial.bar_types_accepted, Vec::<BarType>::new());
+        assert!(partial.source.to_string().contains("UNCACHED.DERIBIT"));
+    } else {
+        result.unwrap();
+    }
 
     wait_until_async(
         || async { !state.subscription_events.lock().await.is_empty() },

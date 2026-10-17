@@ -1316,7 +1316,7 @@ impl RiskEngine {
         };
 
         let account_id = match client_id {
-            Some(client_id) if cache.is_external_client(&client_id) => None,
+            Some(client_id) if cache.is_external_exec_client(&client_id) => None,
             Some(client_id) => cache
                 .account_id_for_client(&client_id)
                 .or_else(routed_account_id),

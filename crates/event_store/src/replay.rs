@@ -2325,8 +2325,14 @@ mod tests {
             &[],
         ),
         cache_mutation(
+            // Reapplied from data engine configuration on every node start
+            "add_external_data_client",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
             // Reapplied from execution engine configuration on every node start
-            "add_external_client",
+            "add_external_exec_client",
             CacheMutationRecoveryClass::SnapshotOwned,
             &[],
         ),

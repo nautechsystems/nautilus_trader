@@ -69,19 +69,22 @@ use crate::{
         data::{
             BarsResponse, BookDeltasResponse, BookDepthResponse, BookResponse, CustomDataResponse,
             DataCommand, FundingRatesResponse, InstrumentResponse, InstrumentsResponse,
-            QuotesResponse, RequestBars, RequestBookDeltas, RequestBookDepth, RequestBookSnapshot,
-            RequestCommand, RequestCustomData, RequestFundingRates, RequestInstrument,
-            RequestInstruments, RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas,
-            SubscribeBookDepth, SubscribeBookSnapshots, SubscribeCommand, SubscribeCustomData,
-            SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
-            SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments,
-            SubscribeMarkPrices, SubscribeOptionChain, SubscribeOptionGreeks, SubscribeQuotes,
-            SubscribeTrades, TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas,
-            UnsubscribeBookDepth, UnsubscribeBookSnapshots, UnsubscribeCommand,
-            UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
-            UnsubscribeInstrument, UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus,
-            UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeOptionChain,
-            UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades, is_parent_subscription,
+            IntoBarTypes, IntoInstrumentIds, QuotesResponse, RequestBars, RequestBookDeltas,
+            RequestBookDepth, RequestBookSnapshot, RequestCommand, RequestCustomData,
+            RequestFundingRates, RequestInstrument, RequestInstruments, RequestQuotes,
+            RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth,
+            SubscribeBookSnapshots, SubscribeCommand, SubscribeCustomData, SubscribeFundingRates,
+            SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
+            SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices,
+            SubscribeOptionChain, SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades,
+            TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth,
+            UnsubscribeBookSnapshots, UnsubscribeCommand, UnsubscribeCustomData,
+            UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
+            UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus, UnsubscribeInstruments,
+            UnsubscribeMarkPrices, UnsubscribeOptionChain, UnsubscribeOptionGreeks,
+            UnsubscribeQuotes, UnsubscribeTrades, ensure_routable_bar_types,
+            ensure_routable_instrument_ids, ensure_subscription_routes, is_parent_subscription,
+            quote_routing,
         },
         system::{QueueStateChanged, ShutdownSystem, SocketStateChanged},
     },
@@ -1564,10 +1567,19 @@ pub trait DataActor {
         );
     }
 
-    /// Subscribe to streaming [`QuoteTick`] data for the `instrument_id`.
+    /// Subscribe to streaming [`QuoteTick`] data for one or more instruments.
+    ///
+    /// Duplicate IDs are removed in first-occurrence order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if:
+    /// - The identifier collection is empty.
+    /// - The IDs span venues without an explicit client.
+    /// - The client is not external and the list mixes client, synthetic, or spread quote routes.
     fn subscribe_quotes(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
@@ -1575,8 +1587,6 @@ pub trait DataActor {
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.core().actor_id().inner();
-        let topic = get_quotes_topic(instrument_id);
-
         let handler = TypedHandler::from(move |quote: &QuoteTick| {
             if let Some(mut actor) = try_get_actor_unchecked::<Self>(&actor_id) {
                 actor.handle_quote(quote);
@@ -1587,12 +1597,12 @@ pub trait DataActor {
 
         DataActorCore::subscribe_quotes(
             self.core_mut(),
-            topic,
             handler,
-            instrument_id,
+            instrument_ids,
             client_id,
             params,
-        );
+        )
+        .expect("invalid quote subscription identifier list");
     }
 
     /// Subscribe to streaming [`InstrumentAny`] data for the `venue`.
@@ -1626,10 +1636,19 @@ pub trait DataActor {
         );
     }
 
-    /// Subscribe to streaming [`InstrumentAny`] data for the `instrument_id`.
+    /// Subscribe to streaming [`InstrumentAny`] data for one or more instruments.
+    ///
+    /// Duplicate IDs are removed in first-occurrence order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if:
+    /// - The IDs are empty.
+    /// - The IDs span venues without an explicit client.
+    /// - The client is not external and the list contains multiple IDs with a synthetic member.
     fn subscribe_instrument(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
@@ -1637,8 +1656,6 @@ pub trait DataActor {
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.core().actor_id().inner();
-        let topic = get_instrument_topic(instrument_id);
-
         let handler = TypedHandler::from(move |instrument: &InstrumentAny| {
             if let Some(mut actor) = try_get_actor_unchecked::<Self>(&actor_id) {
                 actor.handle_instrument(instrument);
@@ -1649,22 +1666,31 @@ pub trait DataActor {
 
         DataActorCore::subscribe_instrument(
             self.core_mut(),
-            topic,
             handler,
-            instrument_id,
+            instrument_ids,
             client_id,
             params,
-        );
+        )
+        .expect("invalid instrument subscription identifier list");
     }
 
-    /// Subscribe to streaming [`OrderBookDeltas`] data for the `instrument_id`.
+    /// Subscribe to streaming [`OrderBookDeltas`] data for one or more instruments.
     ///
     /// When `managed` is true, the data engine maintains an [`OrderBook`] in the cache for each
     /// instrument the subscription resolves to, applying each batch of deltas as it arrives.
     /// A parent subscription resolves to every matching underlying instrument.
+    ///
+    /// Duplicate IDs are removed in first-occurrence order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if:
+    /// - The IDs are empty.
+    /// - The IDs span venues without an explicit client.
+    /// - The client is not external and the list contains multiple IDs with a synthetic member.
     fn subscribe_book_deltas(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         book_type: BookType,
         depth: Option<NonZeroUsize>,
         client_id: Option<ClientId>,
@@ -1675,13 +1701,6 @@ pub trait DataActor {
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.core().actor_id().inner();
-        let is_parent = is_parent_subscription(params.as_ref());
-        let pattern = if is_parent {
-            get_book_deltas_pattern(instrument_id)
-        } else {
-            get_book_deltas_topic(instrument_id).into()
-        };
-
         let handler = TypedHandler::from(move |deltas: &OrderBookDeltas| {
             if let Some(mut actor) = try_get_actor_unchecked::<Self>(&actor_id) {
                 actor.handle_book_deltas(deltas);
@@ -1692,18 +1711,18 @@ pub trait DataActor {
 
         DataActorCore::subscribe_book_deltas(
             self.core_mut(),
-            pattern,
             handler,
-            instrument_id,
+            instrument_ids,
             book_type,
             depth,
             client_id,
             managed,
             params,
-        );
+        )
+        .expect("invalid instrument subscription identifier list");
     }
 
-    /// Subscribe to streaming [`OrderBookDepth`] data for the `instrument_id`.
+    /// Subscribe to streaming [`OrderBookDepth`] data for one or more instruments.
     ///
     /// `depth` limits the number of levels per side; `None` uses the adapter default.
     /// Venue channel limits still apply.
@@ -1711,9 +1730,18 @@ pub trait DataActor {
     /// When `managed` is true, the data engine maintains an [`OrderBook`] in the cache for each
     /// instrument the subscription resolves to, applying each update as it arrives.
     /// A parent subscription resolves to every matching underlying instrument.
+    ///
+    /// Duplicate IDs are removed in first-occurrence order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if:
+    /// - The IDs are empty.
+    /// - The IDs span venues without an explicit client.
+    /// - The client is not external and the list contains multiple IDs with a synthetic member.
     fn subscribe_book_depth(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         book_type: BookType,
         depth: Option<NonZeroUsize>,
         client_id: Option<ClientId>,
@@ -1724,12 +1752,6 @@ pub trait DataActor {
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.core().actor_id().inner();
-        let pattern = if is_parent_subscription(params.as_ref()) {
-            get_book_depth_pattern(instrument_id)
-        } else {
-            get_book_depth_topic(instrument_id).into()
-        };
-
         let handler = TypedHandler::from(move |depth: &OrderBookDepth| {
             if let Some(mut actor) = try_get_actor_unchecked::<Self>(&actor_id) {
                 actor.handle_book_depth(depth);
@@ -1740,21 +1762,30 @@ pub trait DataActor {
 
         DataActorCore::subscribe_book_depth(
             self.core_mut(),
-            pattern,
             handler,
-            instrument_id,
+            instrument_ids,
             book_type,
             depth,
             client_id,
             managed,
             params,
-        );
+        )
+        .expect("invalid instrument subscription identifier list");
     }
 
-    /// Subscribe to [`OrderBook`] snapshots at a specified interval for the `instrument_id`.
+    /// Subscribe to [`OrderBook`] snapshots at a specified interval for one or more instruments.
+    ///
+    /// Duplicate IDs are removed in first-occurrence order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if:
+    /// - The IDs are empty.
+    /// - The IDs span venues without an explicit client.
+    /// - The client is not external and the list contains multiple IDs with a synthetic member.
     fn subscribe_book_at_interval(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         book_type: BookType,
         depth: Option<NonZeroUsize>,
         interval_ms: NonZeroUsize,
@@ -1765,8 +1796,6 @@ pub trait DataActor {
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.core().actor_id().inner();
-        let topic = get_book_snapshots_topic(instrument_id, interval_ms);
-
         let handler = TypedHandler::from(move |book: &OrderBook| {
             if let Some(mut actor) = try_get_actor_unchecked::<Self>(&actor_id) {
                 actor.handle_book(book);
@@ -1777,21 +1806,29 @@ pub trait DataActor {
 
         DataActorCore::subscribe_book_at_interval(
             self.core_mut(),
-            topic,
             handler,
-            instrument_id,
+            instrument_ids,
             book_type,
             depth,
             interval_ms,
             client_id,
             params,
-        );
+        )
+        .expect("invalid instrument subscription identifier list");
     }
 
-    /// Subscribe to streaming [`TradeTick`] data for the `instrument_id`.
+    /// Subscribe to streaming [`TradeTick`] data for one or more instruments.
+    ///
+    /// Duplicate IDs are removed in first-occurrence order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if:
+    /// - The identifier collection is empty.
+    /// - The IDs span venues without an explicit client.
     fn subscribe_trades(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
@@ -1799,8 +1836,6 @@ pub trait DataActor {
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.core().actor_id().inner();
-        let topic = get_trades_topic(instrument_id);
-
         let handler = TypedHandler::from(move |trade: &TradeTick| {
             if let Some(mut actor) = try_get_actor_unchecked::<Self>(&actor_id) {
                 actor.handle_trade(trade);
@@ -1811,18 +1846,24 @@ pub trait DataActor {
 
         DataActorCore::subscribe_trades(
             self.core_mut(),
-            topic,
             handler,
-            instrument_id,
+            instrument_ids,
             client_id,
             params,
-        );
+        )
+        .expect("invalid trade subscription identifier list");
     }
 
-    /// Subscribe to streaming [`Bar`] data for the `bar_type`.
+    /// Subscribe to streaming [`Bar`] data for one or more bar types.
+    ///
+    /// Duplicate types are removed in first-occurrence order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the list is empty or spans venues without an explicit client.
     fn subscribe_bars(
         &mut self,
-        bar_type: BarType,
+        bar_types: impl IntoBarTypes,
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
@@ -1830,9 +1871,6 @@ pub trait DataActor {
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.core().actor_id().inner();
-        // Aggregators publish emitted bars under the standard type, so subscribe on that topic
-        let topic = get_bars_topic(bar_type.standard());
-
         let handler = TypedHandler::from(move |bar: &Bar| {
             if let Some(mut actor) = try_get_actor_unchecked::<Self>(&actor_id) {
                 actor.handle_bar(bar);
@@ -1841,13 +1879,22 @@ pub trait DataActor {
             }
         });
 
-        DataActorCore::subscribe_bars(self.core_mut(), topic, handler, bar_type, client_id, params);
+        DataActorCore::subscribe_bars(self.core_mut(), handler, bar_types, client_id, params)
+            .expect("invalid bar subscription type list");
     }
 
-    /// Subscribe to streaming [`MarkPriceUpdate`] data for the `instrument_id`.
+    /// Subscribe to streaming [`MarkPriceUpdate`] data for one or more instruments.
+    ///
+    /// Duplicate IDs are removed in first-occurrence order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if:
+    /// - The IDs are empty.
+    /// - The IDs span venues without an explicit client.
     fn subscribe_mark_prices(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
@@ -1855,8 +1902,6 @@ pub trait DataActor {
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.core().actor_id().inner();
-        let topic = get_mark_price_topic(instrument_id);
-
         let handler = TypedHandler::from(move |mark_price: &MarkPriceUpdate| {
             if let Some(mut actor) = try_get_actor_unchecked::<Self>(&actor_id) {
                 actor.handle_mark_price(mark_price);
@@ -1867,18 +1912,26 @@ pub trait DataActor {
 
         DataActorCore::subscribe_mark_prices(
             self.core_mut(),
-            topic,
             handler,
-            instrument_id,
+            instrument_ids,
             client_id,
             params,
-        );
+        )
+        .expect("invalid instrument subscription identifier list");
     }
 
-    /// Subscribe to streaming [`IndexPriceUpdate`] data for the `instrument_id`.
+    /// Subscribe to streaming [`IndexPriceUpdate`] data for one or more instruments.
+    ///
+    /// Duplicate IDs are removed in first-occurrence order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if:
+    /// - The IDs are empty.
+    /// - The IDs span venues without an explicit client.
     fn subscribe_index_prices(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
@@ -1886,8 +1939,6 @@ pub trait DataActor {
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.core().actor_id().inner();
-        let topic = get_index_price_topic(instrument_id);
-
         let handler = TypedHandler::from(move |index_price: &IndexPriceUpdate| {
             if let Some(mut actor) = try_get_actor_unchecked::<Self>(&actor_id) {
                 actor.handle_index_price(index_price);
@@ -1898,18 +1949,26 @@ pub trait DataActor {
 
         DataActorCore::subscribe_index_prices(
             self.core_mut(),
-            topic,
             handler,
-            instrument_id,
+            instrument_ids,
             client_id,
             params,
-        );
+        )
+        .expect("invalid instrument subscription identifier list");
     }
 
-    /// Subscribe to streaming [`FundingRateUpdate`] data for the `instrument_id`.
+    /// Subscribe to streaming [`FundingRateUpdate`] data for one or more instruments.
+    ///
+    /// Duplicate IDs are removed in first-occurrence order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if:
+    /// - The IDs are empty.
+    /// - The IDs span venues without an explicit client.
     fn subscribe_funding_rates(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
@@ -1917,8 +1976,6 @@ pub trait DataActor {
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.core().actor_id().inner();
-        let topic = get_funding_rate_topic(instrument_id);
-
         let handler = TypedHandler::from(move |funding_rate: &FundingRateUpdate| {
             if let Some(mut actor) = try_get_actor_unchecked::<Self>(&actor_id) {
                 actor.handle_funding_rate(funding_rate);
@@ -1929,18 +1986,27 @@ pub trait DataActor {
 
         DataActorCore::subscribe_funding_rates(
             self.core_mut(),
-            topic,
             handler,
-            instrument_id,
+            instrument_ids,
             client_id,
             params,
-        );
+        )
+        .expect("invalid instrument subscription identifier list");
     }
 
-    /// Subscribe to streaming [`OptionGreeks`] data for the `instrument_id`.
+    /// Subscribe to streaming [`OptionGreeks`] data for one or more instruments.
+    ///
+    /// Duplicate IDs are removed in first-occurrence order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if:
+    /// - The IDs are empty.
+    /// - The IDs span venues without an explicit client.
+    /// - The client is not external and the list contains multiple IDs with a synthetic member.
     fn subscribe_option_greeks(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
@@ -1948,8 +2014,6 @@ pub trait DataActor {
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.core().actor_id().inner();
-        let topic = get_option_greeks_topic(instrument_id);
-
         let handler = TypedHandler::from(move |option_greeks: &OptionGreeks| {
             if let Some(mut actor) = try_get_actor_unchecked::<Self>(&actor_id) {
                 actor.handle_option_greeks(option_greeks);
@@ -1960,18 +2024,27 @@ pub trait DataActor {
 
         DataActorCore::subscribe_option_greeks(
             self.core_mut(),
-            topic,
             handler,
-            instrument_id,
+            instrument_ids,
             client_id,
             params,
-        );
+        )
+        .expect("invalid instrument subscription identifier list");
     }
 
-    /// Subscribe to streaming [`InstrumentStatus`] data for the `instrument_id`.
+    /// Subscribe to streaming [`InstrumentStatus`] data for one or more instruments.
+    ///
+    /// Duplicate IDs are removed in first-occurrence order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if:
+    /// - The IDs are empty.
+    /// - The IDs span venues without an explicit client.
+    /// - The client is not external and the list contains multiple IDs with a synthetic member.
     fn subscribe_instrument_status(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
@@ -1979,8 +2052,6 @@ pub trait DataActor {
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.core().actor_id().inner();
-        let topic = get_instrument_status_topic(instrument_id);
-
         let handler = ShareableMessageHandler::from_typed(move |status: &InstrumentStatus| {
             if let Some(mut actor) = try_get_actor_unchecked::<Self>(&actor_id) {
                 actor.handle_instrument_status(status);
@@ -1991,18 +2062,27 @@ pub trait DataActor {
 
         DataActorCore::subscribe_instrument_status(
             self.core_mut(),
-            topic,
             handler,
-            instrument_id,
+            instrument_ids,
             client_id,
             params,
-        );
+        )
+        .expect("invalid instrument subscription identifier list");
     }
 
-    /// Subscribe to streaming [`InstrumentClose`] data for the `instrument_id`.
+    /// Subscribe to streaming [`InstrumentClose`] data for one or more instruments.
+    ///
+    /// Duplicate IDs are removed in first-occurrence order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if:
+    /// - The IDs are empty.
+    /// - The IDs span venues without an explicit client.
+    /// - The client is not external and the list contains multiple IDs with a synthetic member.
     fn subscribe_instrument_close(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
@@ -2010,8 +2090,6 @@ pub trait DataActor {
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.core().actor_id().inner();
-        let topic = get_instrument_close_topic(instrument_id);
-
         let handler = ShareableMessageHandler::from_typed(move |close: &InstrumentClose| {
             if let Some(mut actor) = try_get_actor_unchecked::<Self>(&actor_id) {
                 actor.handle_instrument_close(close);
@@ -2022,12 +2100,12 @@ pub trait DataActor {
 
         DataActorCore::subscribe_instrument_close(
             self.core_mut(),
-            topic,
             handler,
-            instrument_id,
+            instrument_ids,
             client_id,
             params,
-        );
+        )
+        .expect("invalid instrument subscription identifier list");
     }
 
     /// Subscribe to streaming [`OptionChainSlice`] snapshots for the option `series_id`.
@@ -2310,49 +2388,84 @@ pub trait DataActor {
         DataActorCore::unsubscribe_instruments(self.core_mut(), venue, client_id, params);
     }
 
-    /// Unsubscribe from streaming [`InstrumentAny`] data for the `instrument_id`.
+    /// Unsubscribe from streaming [`InstrumentAny`] data for one or more instruments.
+    ///
+    /// Duplicate IDs are removed in first-occurrence order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if:
+    /// - The IDs are empty.
+    /// - The IDs span venues without an explicit client.
     fn unsubscribe_instrument(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
         Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        DataActorCore::unsubscribe_instrument(self.core_mut(), instrument_id, client_id, params);
+        DataActorCore::unsubscribe_instrument(self.core_mut(), instrument_ids, client_id, params)
+            .expect("invalid instrument subscription identifier list");
     }
 
-    /// Unsubscribe from streaming [`OrderBookDeltas`] data for the `instrument_id`.
+    /// Unsubscribe from streaming [`OrderBookDeltas`] data for one or more instruments.
+    ///
+    /// Duplicate IDs are removed in first-occurrence order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if:
+    /// - The IDs are empty.
+    /// - The IDs span venues without an explicit client.
     fn unsubscribe_book_deltas(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
         Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        DataActorCore::unsubscribe_book_deltas(self.core_mut(), instrument_id, client_id, params);
+        DataActorCore::unsubscribe_book_deltas(self.core_mut(), instrument_ids, client_id, params)
+            .expect("invalid instrument subscription identifier list");
     }
 
-    /// Unsubscribe from streaming [`OrderBookDepth`] data for the `instrument_id`.
+    /// Unsubscribe from streaming [`OrderBookDepth`] data for one or more instruments.
+    ///
+    /// Duplicate IDs are removed in first-occurrence order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if:
+    /// - The IDs are empty.
+    /// - The IDs span venues without an explicit client.
     fn unsubscribe_book_depth(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
         Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        DataActorCore::unsubscribe_book_depth(self.core_mut(), instrument_id, client_id, params);
+        DataActorCore::unsubscribe_book_depth(self.core_mut(), instrument_ids, client_id, params)
+            .expect("invalid instrument subscription identifier list");
     }
 
-    /// Unsubscribe from [`OrderBook`] snapshots at a specified interval for the `instrument_id`.
+    /// Unsubscribe from [`OrderBook`] snapshots at a specified interval for one or more instruments.
+    ///
+    /// Duplicate IDs are removed in first-occurrence order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if:
+    /// - The IDs are empty.
+    /// - The IDs span venues without an explicit client.
     fn unsubscribe_book_at_interval(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         interval_ms: NonZeroUsize,
         client_id: Option<ClientId>,
         params: Option<Params>,
@@ -2362,108 +2475,188 @@ pub trait DataActor {
     {
         DataActorCore::unsubscribe_book_at_interval(
             self.core_mut(),
-            instrument_id,
+            instrument_ids,
             interval_ms,
             client_id,
             params,
-        );
+        )
+        .expect("invalid instrument subscription identifier list");
     }
 
-    /// Unsubscribe from streaming [`QuoteTick`] data for the `instrument_id`.
+    /// Unsubscribe from streaming [`QuoteTick`] data for one or more instruments.
+    ///
+    /// Duplicate IDs are removed in first-occurrence order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if:
+    /// - The identifier collection is empty.
+    /// - The IDs span venues without an explicit client.
     fn unsubscribe_quotes(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
         Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        DataActorCore::unsubscribe_quotes(self.core_mut(), instrument_id, client_id, params);
+        DataActorCore::unsubscribe_quotes(self.core_mut(), instrument_ids, client_id, params)
+            .expect("invalid quote subscription identifier list");
     }
 
-    /// Unsubscribe from streaming [`TradeTick`] data for the `instrument_id`.
+    /// Unsubscribe from streaming [`TradeTick`] data for one or more instruments.
+    ///
+    /// Duplicate IDs are removed in first-occurrence order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if:
+    /// - The identifier collection is empty.
+    /// - The IDs span venues without an explicit client.
     fn unsubscribe_trades(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
         Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        DataActorCore::unsubscribe_trades(self.core_mut(), instrument_id, client_id, params);
+        DataActorCore::unsubscribe_trades(self.core_mut(), instrument_ids, client_id, params)
+            .expect("invalid trade subscription identifier list");
     }
 
-    /// Unsubscribe from streaming [`Bar`] data for the `bar_type`.
+    /// Unsubscribe from streaming [`Bar`] data for one or more bar types.
+    ///
+    /// Duplicate types are removed in first-occurrence order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the list is empty or spans venues without an explicit client.
     fn unsubscribe_bars(
         &mut self,
-        bar_type: BarType,
+        bar_types: impl IntoBarTypes,
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
         Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        DataActorCore::unsubscribe_bars(self.core_mut(), bar_type, client_id, params);
+        DataActorCore::unsubscribe_bars(self.core_mut(), bar_types, client_id, params)
+            .expect("invalid bar subscription type list");
     }
 
-    /// Unsubscribe from streaming [`MarkPriceUpdate`] data for the `instrument_id`.
+    /// Unsubscribe from streaming [`MarkPriceUpdate`] data for one or more instruments.
+    ///
+    /// Duplicate IDs are removed in first-occurrence order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if:
+    /// - The IDs are empty.
+    /// - The IDs span venues without an explicit client.
     fn unsubscribe_mark_prices(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
         Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        DataActorCore::unsubscribe_mark_prices(self.core_mut(), instrument_id, client_id, params);
+        DataActorCore::unsubscribe_mark_prices(self.core_mut(), instrument_ids, client_id, params)
+            .expect("invalid instrument subscription identifier list");
     }
 
-    /// Unsubscribe from streaming [`IndexPriceUpdate`] data for the `instrument_id`.
+    /// Unsubscribe from streaming [`IndexPriceUpdate`] data for one or more instruments.
+    ///
+    /// Duplicate IDs are removed in first-occurrence order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if:
+    /// - The IDs are empty.
+    /// - The IDs span venues without an explicit client.
     fn unsubscribe_index_prices(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
         Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        DataActorCore::unsubscribe_index_prices(self.core_mut(), instrument_id, client_id, params);
+        DataActorCore::unsubscribe_index_prices(self.core_mut(), instrument_ids, client_id, params)
+            .expect("invalid instrument subscription identifier list");
     }
 
-    /// Unsubscribe from streaming [`FundingRateUpdate`] data for the `instrument_id`.
+    /// Unsubscribe from streaming [`FundingRateUpdate`] data for one or more instruments.
+    ///
+    /// Duplicate IDs are removed in first-occurrence order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if:
+    /// - The IDs are empty.
+    /// - The IDs span venues without an explicit client.
     fn unsubscribe_funding_rates(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
         Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        DataActorCore::unsubscribe_funding_rates(self.core_mut(), instrument_id, client_id, params);
+        DataActorCore::unsubscribe_funding_rates(
+            self.core_mut(),
+            instrument_ids,
+            client_id,
+            params,
+        )
+        .expect("invalid instrument subscription identifier list");
     }
 
-    /// Unsubscribe from streaming [`OptionGreeks`] data for the `instrument_id`.
+    /// Unsubscribe from streaming [`OptionGreeks`] data for one or more instruments.
+    ///
+    /// Duplicate IDs are removed in first-occurrence order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if:
+    /// - The IDs are empty.
+    /// - The IDs span venues without an explicit client.
     fn unsubscribe_option_greeks(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
         Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        DataActorCore::unsubscribe_option_greeks(self.core_mut(), instrument_id, client_id, params);
+        DataActorCore::unsubscribe_option_greeks(
+            self.core_mut(),
+            instrument_ids,
+            client_id,
+            params,
+        )
+        .expect("invalid instrument subscription identifier list");
     }
 
-    /// Unsubscribe from streaming [`InstrumentStatus`] data for the `instrument_id`.
+    /// Unsubscribe from streaming [`InstrumentStatus`] data for one or more instruments.
+    ///
+    /// Duplicate IDs are removed in first-occurrence order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if:
+    /// - The IDs are empty.
+    /// - The IDs span venues without an explicit client.
     fn unsubscribe_instrument_status(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
@@ -2472,16 +2665,25 @@ pub trait DataActor {
     {
         DataActorCore::unsubscribe_instrument_status(
             self.core_mut(),
-            instrument_id,
+            instrument_ids,
             client_id,
             params,
-        );
+        )
+        .expect("invalid instrument subscription identifier list");
     }
 
-    /// Unsubscribe from streaming [`InstrumentClose`] data for the `instrument_id`.
+    /// Unsubscribe from streaming [`InstrumentClose`] data for one or more instruments.
+    ///
+    /// Duplicate IDs are removed in first-occurrence order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if:
+    /// - The IDs are empty.
+    /// - The IDs span venues without an explicit client.
     fn unsubscribe_instrument_close(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
@@ -2490,10 +2692,11 @@ pub trait DataActor {
     {
         DataActorCore::unsubscribe_instrument_close(
             self.core_mut(),
-            instrument_id,
+            instrument_ids,
             client_id,
             params,
-        );
+        )
+        .expect("invalid instrument subscription identifier list");
     }
 
     /// Unsubscribe from streaming [`OptionChainSlice`] snapshots for the option `series_id`.
@@ -3301,12 +3504,9 @@ impl DataActorCore {
         command: DataCommand,
     ) -> bool {
         if self.bar_handlers.contains_key(&topic) {
-            log::warn!(
-                "Actor {} attempted duplicate bar subscription to '{topic}'",
-                self.actor_id
-            );
             return false;
         }
+
         self.bar_handlers.insert(
             topic,
             Subscription {
@@ -3318,8 +3518,8 @@ impl DataActorCore {
         true
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn remove_bar_subscription(&mut self, topic: MStr<Topic>) -> Option<DataCommand> {
+    fn remove_bar_subscription(&mut self, bar_type: BarType) -> Option<DataCommand> {
+        let topic = get_bars_topic(bar_type.standard());
         let subscription = self.bar_handlers.remove(&topic)?;
         msgbus::unsubscribe_bars(topic.into(), &subscription.handler);
         subscription.command
@@ -3948,6 +4148,20 @@ impl DataActorCore {
         #[cfg(feature = "defi")]
         self.unsubscribe_all_defi(&mut commands);
 
+        let mut retained = Vec::new();
+        commands.retain(|command| {
+            if matches!(command, DataCommand::Subscribe(subscribe)
+                if subscribe.instrument_ids().is_some() || subscribe.bar_types().is_some())
+            {
+                retained.push(command.clone());
+                false
+            } else {
+                true
+            }
+        });
+
+        self.release_subscriptions(retained);
+
         for command in commands {
             if let Some(command) = command.into_unsubscribe(UUID4::new(), self.timestamp_ns()) {
                 self.send_data_cmd(command);
@@ -4527,29 +4741,66 @@ impl DataActorCore {
     }
 
     /// Subscribes the actor to quotes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The list is empty.
+    /// - The IDs span venues without an explicit client.
+    /// - The client is not external and the list mixes client, synthetic, or spread quote routes.
     pub fn subscribe_quotes(
         &mut self,
-        topic: MStr<Topic>,
         handler: TypedHandler<QuoteTick>,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         client_id: Option<ClientId>,
         params: Option<Params>,
-    ) {
+    ) -> anyhow::Result<()> {
         self.check_registered();
+        let instrument_ids = instrument_ids.into_instrument_ids()?;
+        ensure_routable_instrument_ids(&instrument_ids, client_id.is_some())?;
+        quote_routing(
+            &instrument_ids,
+            client_id.as_ref(),
+            params.as_ref(),
+            &self.cache_ref(),
+        )?;
+        let first_venue = instrument_ids[0].venue;
+        let venue = instrument_ids
+            .iter()
+            .all(|id| id.venue == first_venue)
+            .then_some(first_venue);
 
-        let command = DataCommand::Subscribe(SubscribeCommand::Quotes(SubscribeQuotes {
-            instrument_id,
+        let command = SubscribeQuotes {
+            instrument_ids,
             client_id,
-            venue: Some(instrument_id.venue),
+            venue,
             command_id: UUID4::new(),
             ts_init: self.timestamp_ns(),
             correlation_id: None,
             params,
-        }));
+        };
 
-        if self.add_quote_subscription(topic, handler, command.clone()) {
-            self.send_data_cmd(command);
+        let mut acquired = Vec::with_capacity(command.instrument_ids.len());
+        let handlers = std::iter::repeat_n(handler, command.instrument_ids.len());
+        for (instrument_id, handler) in command.instrument_ids.iter().zip(handlers) {
+            let member = command.with_instrument_ids(*instrument_id);
+
+            let topic = get_quotes_topic(*instrument_id);
+            if self.add_quote_subscription(
+                topic,
+                handler,
+                DataCommand::Subscribe(SubscribeCommand::Quotes(member)),
+            ) {
+                acquired.push(*instrument_id);
+            }
         }
+
+        if !acquired.is_empty() {
+            let dispatch = command.with_instrument_ids(acquired);
+            self.send_data_cmd(DataCommand::Subscribe(SubscribeCommand::Quotes(dispatch)));
+        }
+
+        Ok(())
     }
 
     /// Subscribes the actor to instruments.
@@ -4578,343 +4829,744 @@ impl DataActorCore {
     }
 
     /// Subscribes the actor to instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The IDs are empty.
+    /// - The IDs span venues without an explicit client.
+    /// - The client is not external and the list contains multiple IDs with a synthetic member.
     pub fn subscribe_instrument(
         &mut self,
-        topic: MStr<Topic>,
         handler: TypedHandler<InstrumentAny>,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         client_id: Option<ClientId>,
         params: Option<Params>,
-    ) {
+    ) -> anyhow::Result<()> {
         self.check_registered();
+        let instrument_ids = instrument_ids.into_instrument_ids()?;
+        self.validate_subscription(&instrument_ids, client_id.as_ref())?;
+        let venue = instrument_ids
+            .iter()
+            .all(|id| id.venue == instrument_ids[0].venue)
+            .then_some(instrument_ids[0].venue);
 
-        let command = DataCommand::Subscribe(SubscribeCommand::Instrument(SubscribeInstrument {
-            instrument_id,
+        let command = SubscribeInstrument {
+            instrument_ids,
             client_id,
-            venue: Some(instrument_id.venue),
+            venue,
             command_id: UUID4::new(),
             ts_init: self.timestamp_ns(),
             correlation_id: None,
             params,
-        }));
+        };
 
-        if self.add_instrument_subscription(topic.into(), handler, command.clone()) {
-            self.send_data_cmd(command);
+        let mut acquired = Vec::new();
+        let handlers = std::iter::repeat_n(handler, command.instrument_ids.len());
+        for (&instrument_id, handler) in command.instrument_ids.iter().zip(handlers) {
+            let member = command.with_instrument_ids(instrument_id);
+
+            let topic = get_instrument_topic(instrument_id);
+            if self.add_instrument_subscription(
+                topic.into(),
+                handler,
+                DataCommand::Subscribe(SubscribeCommand::Instrument(member)),
+            ) {
+                acquired.push(instrument_id);
+            }
         }
+
+        if !acquired.is_empty() {
+            let dispatch = command.with_instrument_ids(acquired);
+            self.send_data_cmd(DataCommand::Subscribe(SubscribeCommand::Instrument(
+                dispatch,
+            )));
+        }
+
+        Ok(())
     }
 
     /// Subscribes the actor to book deltas.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The IDs are empty.
+    /// - The IDs span venues without an explicit client.
+    /// - The client is not external and the list contains multiple IDs with a synthetic member.
     #[expect(clippy::too_many_arguments)]
     pub fn subscribe_book_deltas(
         &mut self,
-        pattern: MStr<Pattern>,
         handler: TypedHandler<OrderBookDeltas>,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         book_type: BookType,
         depth: Option<NonZeroUsize>,
         client_id: Option<ClientId>,
         managed: bool,
         params: Option<Params>,
-    ) {
+    ) -> anyhow::Result<()> {
         self.check_registered();
+        let instrument_ids = instrument_ids.into_instrument_ids()?;
+        self.validate_subscription(&instrument_ids, client_id.as_ref())?;
+        let venue = instrument_ids
+            .iter()
+            .all(|id| id.venue == instrument_ids[0].venue)
+            .then_some(instrument_ids[0].venue);
 
-        let command = DataCommand::Subscribe(SubscribeCommand::BookDeltas(SubscribeBookDeltas {
-            instrument_id,
+        let command = SubscribeBookDeltas {
+            instrument_ids,
             book_type,
             client_id,
-            venue: Some(instrument_id.venue),
+            venue,
             command_id: UUID4::new(),
             ts_init: self.timestamp_ns(),
             depth,
             managed,
             correlation_id: None,
             params,
-        }));
+        };
 
-        if self.add_deltas_subscription(pattern, handler, command.clone()) {
-            self.send_data_cmd(command);
+        let mut acquired = Vec::new();
+        let handlers = std::iter::repeat_n(handler, command.instrument_ids.len());
+        for (&instrument_id, handler) in command.instrument_ids.iter().zip(handlers) {
+            let member = command.with_instrument_ids(instrument_id);
+            let topic = if is_parent_subscription(command.params.as_ref()) {
+                get_book_deltas_pattern(instrument_id)
+            } else {
+                get_book_deltas_topic(instrument_id).into()
+            };
+
+            if self.add_deltas_subscription(
+                topic,
+                handler,
+                DataCommand::Subscribe(SubscribeCommand::BookDeltas(member)),
+            ) {
+                acquired.push(instrument_id);
+            }
         }
+
+        if !acquired.is_empty() {
+            let dispatch = command.with_instrument_ids(acquired);
+            self.send_data_cmd(DataCommand::Subscribe(SubscribeCommand::BookDeltas(
+                dispatch,
+            )));
+        }
+
+        Ok(())
     }
 
     /// Subscribes the actor to book depth.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The IDs are empty.
+    /// - The IDs span venues without an explicit client.
+    /// - The client is not external and the list contains multiple IDs with a synthetic member.
     #[expect(clippy::too_many_arguments)]
     pub fn subscribe_book_depth(
         &mut self,
-        pattern: MStr<Pattern>,
         handler: TypedHandler<OrderBookDepth>,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         book_type: BookType,
         depth: Option<NonZeroUsize>,
         client_id: Option<ClientId>,
         managed: bool,
         params: Option<Params>,
-    ) {
+    ) -> anyhow::Result<()> {
         self.check_registered();
+        let instrument_ids = instrument_ids.into_instrument_ids()?;
+        self.validate_subscription(&instrument_ids, client_id.as_ref())?;
+        let venue = instrument_ids
+            .iter()
+            .all(|id| id.venue == instrument_ids[0].venue)
+            .then_some(instrument_ids[0].venue);
 
-        let command = DataCommand::Subscribe(SubscribeCommand::BookDepth(SubscribeBookDepth {
-            instrument_id,
+        let command = SubscribeBookDepth {
+            instrument_ids,
             book_type,
             client_id,
-            venue: Some(instrument_id.venue),
+            venue,
             command_id: UUID4::new(),
             ts_init: self.timestamp_ns(),
             depth,
             managed,
             correlation_id: None,
             params,
-        }));
+        };
 
-        if self.add_depth_subscription(pattern, handler, command.clone()) {
-            self.send_data_cmd(command);
+        let mut acquired = Vec::new();
+        let handlers = std::iter::repeat_n(handler, command.instrument_ids.len());
+        for (&instrument_id, handler) in command.instrument_ids.iter().zip(handlers) {
+            let member = command.with_instrument_ids(instrument_id);
+            let topic = if is_parent_subscription(command.params.as_ref()) {
+                get_book_depth_pattern(instrument_id)
+            } else {
+                get_book_depth_topic(instrument_id).into()
+            };
+
+            if self.add_depth_subscription(
+                topic,
+                handler,
+                DataCommand::Subscribe(SubscribeCommand::BookDepth(member)),
+            ) {
+                acquired.push(instrument_id);
+            }
         }
+
+        if !acquired.is_empty() {
+            let dispatch = command.with_instrument_ids(acquired);
+            self.send_data_cmd(DataCommand::Subscribe(SubscribeCommand::BookDepth(
+                dispatch,
+            )));
+        }
+
+        Ok(())
     }
 
     /// Subscribes the actor to book snapshots.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The IDs are empty.
+    /// - The IDs span venues without an explicit client.
+    /// - The client is not external and the list contains multiple IDs with a synthetic member.
     #[expect(clippy::too_many_arguments)]
     pub fn subscribe_book_at_interval(
         &mut self,
-        topic: MStr<Topic>,
         handler: TypedHandler<OrderBook>,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         book_type: BookType,
         depth: Option<NonZeroUsize>,
         interval_ms: NonZeroUsize,
         client_id: Option<ClientId>,
         params: Option<Params>,
-    ) {
+    ) -> anyhow::Result<()> {
         self.check_registered();
+        let instrument_ids = instrument_ids.into_instrument_ids()?;
+        self.validate_subscription(&instrument_ids, client_id.as_ref())?;
+        let venue = instrument_ids
+            .iter()
+            .all(|id| id.venue == instrument_ids[0].venue)
+            .then_some(instrument_ids[0].venue);
 
-        let command =
-            DataCommand::Subscribe(SubscribeCommand::BookSnapshots(SubscribeBookSnapshots {
-                instrument_id,
-                book_type,
-                client_id,
-                venue: Some(instrument_id.venue),
-                command_id: UUID4::new(),
-                ts_init: self.timestamp_ns(),
-                depth,
-                interval_ms,
-                correlation_id: None,
-                params,
-            }));
+        let command = SubscribeBookSnapshots {
+            instrument_ids,
+            book_type,
+            client_id,
+            venue,
+            command_id: UUID4::new(),
+            ts_init: self.timestamp_ns(),
+            depth,
+            interval_ms,
+            correlation_id: None,
+            params,
+        };
 
-        if self.add_book_snapshot_subscription(topic, handler, command.clone()) {
-            self.send_data_cmd(command);
+        let mut acquired = Vec::new();
+        let handlers = std::iter::repeat_n(handler, command.instrument_ids.len());
+        for (&instrument_id, handler) in command.instrument_ids.iter().zip(handlers) {
+            let member = command.with_instrument_ids(instrument_id);
+
+            let topic = get_book_snapshots_topic(instrument_id, interval_ms);
+            if self.add_book_snapshot_subscription(
+                topic,
+                handler,
+                DataCommand::Subscribe(SubscribeCommand::BookSnapshots(member)),
+            ) {
+                acquired.push(instrument_id);
+            }
         }
+
+        if !acquired.is_empty() {
+            let dispatch = command.with_instrument_ids(acquired);
+            self.send_data_cmd(DataCommand::Subscribe(SubscribeCommand::BookSnapshots(
+                dispatch,
+            )));
+        }
+
+        Ok(())
     }
 
     /// Subscribes the actor to trades.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The list is empty.
+    /// - The IDs span venues without an explicit client.
     pub fn subscribe_trades(
         &mut self,
-        topic: MStr<Topic>,
         handler: TypedHandler<TradeTick>,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         client_id: Option<ClientId>,
         params: Option<Params>,
-    ) {
+    ) -> anyhow::Result<()> {
         self.check_registered();
-
-        let command = DataCommand::Subscribe(SubscribeCommand::Trades(SubscribeTrades {
-            instrument_id,
-            client_id,
-            venue: Some(instrument_id.venue),
-            command_id: UUID4::new(),
-            ts_init: self.timestamp_ns(),
-            correlation_id: None,
-            params,
-        }));
-
-        if self.add_trade_subscription(topic, handler, command.clone()) {
-            self.send_data_cmd(command);
+        let instrument_ids = instrument_ids.into_instrument_ids()?;
+        ensure_routable_instrument_ids(&instrument_ids, client_id.is_some())?;
+        let mut groups: IndexMap<Option<Venue>, Vec<InstrumentId>> = IndexMap::new();
+        for id in instrument_ids {
+            groups
+                .entry(id.is_synthetic().then_some(id.venue))
+                .or_default()
+                .push(id);
         }
+
+        let contexts = std::iter::repeat_n((handler, params), groups.len());
+        for ((venue, ids), (handler, params)) in groups.into_iter().zip(contexts) {
+            let venue = venue.or_else(|| {
+                ids.iter()
+                    .all(|id| id.venue == ids[0].venue)
+                    .then_some(ids[0].venue)
+            });
+
+            let command = SubscribeTrades::new(
+                ids,
+                client_id,
+                venue,
+                UUID4::new(),
+                self.timestamp_ns(),
+                None,
+                params,
+            );
+            let mut acquired = Vec::new();
+
+            let handlers = std::iter::repeat_n(handler, command.instrument_ids.len());
+            for (id, handler) in command.instrument_ids.iter().zip(handlers) {
+                let member = command.with_instrument_ids(*id);
+
+                let topic = get_trades_topic(*id);
+                if self.add_trade_subscription(
+                    topic,
+                    handler,
+                    DataCommand::Subscribe(SubscribeCommand::Trades(member)),
+                ) {
+                    acquired.push(*id);
+                }
+            }
+
+            if !acquired.is_empty() {
+                let dispatch = command.with_instrument_ids(acquired);
+                self.send_data_cmd(DataCommand::Subscribe(SubscribeCommand::Trades(dispatch)));
+            }
+        }
+
+        Ok(())
     }
 
-    /// Subscribes the actor to bars.
+    /// Subscribes the actor to bars for one or more full bar types.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the list is empty or spans venues without an explicit client.
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "preserves the owned bar handler API"
+    )]
     pub fn subscribe_bars(
         &mut self,
-        topic: MStr<Topic>,
         handler: TypedHandler<Bar>,
-        bar_type: BarType,
+        bar_types: impl IntoBarTypes,
         client_id: Option<ClientId>,
         params: Option<Params>,
-    ) {
+    ) -> anyhow::Result<()> {
         self.check_registered();
+        let bar_types = bar_types.into_bar_types()?;
+        ensure_routable_bar_types(&bar_types, client_id.is_some())?;
+        let first_venue = bar_types[0].instrument_id().venue;
+        let venue = bar_types
+            .iter()
+            .all(|bt| bt.instrument_id().venue == first_venue)
+            .then_some(first_venue);
 
-        let command = DataCommand::Subscribe(SubscribeCommand::Bars(SubscribeBars {
-            bar_type,
+        let command = SubscribeBars::new(
+            bar_types,
             client_id,
-            venue: Some(bar_type.instrument_id().venue),
-            command_id: UUID4::new(),
-            ts_init: self.timestamp_ns(),
-            correlation_id: None,
+            venue,
+            UUID4::new(),
+            self.timestamp_ns(),
+            None,
             params,
-        }));
+        );
+        let mut acquired = Vec::new();
 
-        if self.add_bar_subscription(topic, handler, command.clone()) {
-            self.send_data_cmd(command);
+        for bar_type in &command.bar_types {
+            let member = command.with_bar_types(*bar_type);
+            let topic = get_bars_topic(bar_type.standard());
+            if self.add_bar_subscription(
+                topic,
+                handler.clone(),
+                DataCommand::Subscribe(SubscribeCommand::Bars(member)),
+            ) {
+                acquired.push(*bar_type);
+            }
         }
+
+        if !acquired.is_empty() {
+            let dispatch = command.with_bar_types(acquired);
+            self.send_data_cmd(DataCommand::Subscribe(SubscribeCommand::Bars(dispatch)));
+        }
+
+        Ok(())
     }
 
     /// Subscribes the actor to mark prices.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The IDs are empty.
+    /// - The IDs span venues without an explicit client.
     pub fn subscribe_mark_prices(
         &mut self,
-        topic: MStr<Topic>,
         handler: TypedHandler<MarkPriceUpdate>,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         client_id: Option<ClientId>,
         params: Option<Params>,
-    ) {
+    ) -> anyhow::Result<()> {
         self.check_registered();
+        let instrument_ids = instrument_ids.into_instrument_ids()?;
+        ensure_routable_instrument_ids(&instrument_ids, client_id.is_some())?;
+        let venue = instrument_ids
+            .iter()
+            .all(|id| id.venue == instrument_ids[0].venue)
+            .then_some(instrument_ids[0].venue);
 
-        let command = DataCommand::Subscribe(SubscribeCommand::MarkPrices(SubscribeMarkPrices {
-            instrument_id,
+        let command = SubscribeMarkPrices {
+            instrument_ids,
             client_id,
-            venue: Some(instrument_id.venue),
+            venue,
             command_id: UUID4::new(),
             ts_init: self.timestamp_ns(),
             correlation_id: None,
             params,
-        }));
+        };
 
-        if self.add_mark_price_subscription(topic, handler, command.clone()) {
-            self.send_data_cmd(command);
+        let mut acquired = Vec::new();
+        let handlers = std::iter::repeat_n(handler, command.instrument_ids.len());
+        for (&instrument_id, handler) in command.instrument_ids.iter().zip(handlers) {
+            let member = command.with_instrument_ids(instrument_id);
+
+            let topic = get_mark_price_topic(instrument_id);
+            if self.add_mark_price_subscription(
+                topic,
+                handler,
+                DataCommand::Subscribe(SubscribeCommand::MarkPrices(member)),
+            ) {
+                acquired.push(instrument_id);
+            }
         }
+
+        if !acquired.is_empty() {
+            let dispatch = command.with_instrument_ids(acquired);
+            self.send_data_cmd(DataCommand::Subscribe(SubscribeCommand::MarkPrices(
+                dispatch,
+            )));
+        }
+
+        Ok(())
     }
 
     /// Subscribes the actor to index prices.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The IDs are empty.
+    /// - The IDs span venues without an explicit client.
     pub fn subscribe_index_prices(
         &mut self,
-        topic: MStr<Topic>,
         handler: TypedHandler<IndexPriceUpdate>,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         client_id: Option<ClientId>,
         params: Option<Params>,
-    ) {
+    ) -> anyhow::Result<()> {
         self.check_registered();
+        let instrument_ids = instrument_ids.into_instrument_ids()?;
+        ensure_routable_instrument_ids(&instrument_ids, client_id.is_some())?;
+        let venue = instrument_ids
+            .iter()
+            .all(|id| id.venue == instrument_ids[0].venue)
+            .then_some(instrument_ids[0].venue);
 
-        let command = DataCommand::Subscribe(SubscribeCommand::IndexPrices(SubscribeIndexPrices {
-            instrument_id,
+        let command = SubscribeIndexPrices {
+            instrument_ids,
             client_id,
-            venue: Some(instrument_id.venue),
+            venue,
             command_id: UUID4::new(),
             ts_init: self.timestamp_ns(),
             correlation_id: None,
             params,
-        }));
+        };
 
-        if self.add_index_price_subscription(topic, handler, command.clone()) {
-            self.send_data_cmd(command);
+        let mut acquired = Vec::new();
+        let handlers = std::iter::repeat_n(handler, command.instrument_ids.len());
+        for (&instrument_id, handler) in command.instrument_ids.iter().zip(handlers) {
+            let member = command.with_instrument_ids(instrument_id);
+
+            let topic = get_index_price_topic(instrument_id);
+            if self.add_index_price_subscription(
+                topic,
+                handler,
+                DataCommand::Subscribe(SubscribeCommand::IndexPrices(member)),
+            ) {
+                acquired.push(instrument_id);
+            }
         }
+
+        if !acquired.is_empty() {
+            let dispatch = command.with_instrument_ids(acquired);
+            self.send_data_cmd(DataCommand::Subscribe(SubscribeCommand::IndexPrices(
+                dispatch,
+            )));
+        }
+
+        Ok(())
     }
 
     /// Subscribes the actor to funding rates.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The IDs are empty.
+    /// - The IDs span venues without an explicit client.
     pub fn subscribe_funding_rates(
         &mut self,
-        topic: MStr<Topic>,
         handler: TypedHandler<FundingRateUpdate>,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         client_id: Option<ClientId>,
         params: Option<Params>,
-    ) {
+    ) -> anyhow::Result<()> {
         self.check_registered();
+        let instrument_ids = instrument_ids.into_instrument_ids()?;
+        ensure_routable_instrument_ids(&instrument_ids, client_id.is_some())?;
+        let venue = instrument_ids
+            .iter()
+            .all(|id| id.venue == instrument_ids[0].venue)
+            .then_some(instrument_ids[0].venue);
 
-        let command =
-            DataCommand::Subscribe(SubscribeCommand::FundingRates(SubscribeFundingRates {
-                instrument_id,
-                client_id,
-                venue: Some(instrument_id.venue),
-                command_id: UUID4::new(),
-                ts_init: self.timestamp_ns(),
-                correlation_id: None,
-                params,
-            }));
+        let command = SubscribeFundingRates {
+            instrument_ids,
+            client_id,
+            venue,
+            command_id: UUID4::new(),
+            ts_init: self.timestamp_ns(),
+            correlation_id: None,
+            params,
+        };
 
-        if self.add_funding_rate_subscription(topic, handler, command.clone()) {
-            self.send_data_cmd(command);
+        let mut acquired = Vec::new();
+        let handlers = std::iter::repeat_n(handler, command.instrument_ids.len());
+        for (&instrument_id, handler) in command.instrument_ids.iter().zip(handlers) {
+            let member = command.with_instrument_ids(instrument_id);
+
+            let topic = get_funding_rate_topic(instrument_id);
+            if self.add_funding_rate_subscription(
+                topic,
+                handler,
+                DataCommand::Subscribe(SubscribeCommand::FundingRates(member)),
+            ) {
+                acquired.push(instrument_id);
+            }
         }
+
+        if !acquired.is_empty() {
+            let dispatch = command.with_instrument_ids(acquired);
+            self.send_data_cmd(DataCommand::Subscribe(SubscribeCommand::FundingRates(
+                dispatch,
+            )));
+        }
+
+        Ok(())
     }
 
     /// Subscribes the actor to option greeks.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The IDs are empty.
+    /// - The IDs span venues without an explicit client.
+    /// - The client is not external and the list contains multiple IDs with a synthetic member.
     pub fn subscribe_option_greeks(
         &mut self,
-        topic: MStr<Topic>,
         handler: TypedHandler<OptionGreeks>,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         client_id: Option<ClientId>,
         params: Option<Params>,
-    ) {
+    ) -> anyhow::Result<()> {
         self.check_registered();
+        let instrument_ids = instrument_ids.into_instrument_ids()?;
+        self.validate_subscription(&instrument_ids, client_id.as_ref())?;
+        let venue = instrument_ids
+            .iter()
+            .all(|id| id.venue == instrument_ids[0].venue)
+            .then_some(instrument_ids[0].venue);
 
-        let command =
-            DataCommand::Subscribe(SubscribeCommand::OptionGreeks(SubscribeOptionGreeks {
-                instrument_id,
-                client_id,
-                venue: Some(instrument_id.venue),
-                command_id: UUID4::new(),
-                ts_init: self.timestamp_ns(),
-                correlation_id: None,
-                params,
-            }));
+        let command = SubscribeOptionGreeks {
+            instrument_ids,
+            client_id,
+            venue,
+            command_id: UUID4::new(),
+            ts_init: self.timestamp_ns(),
+            correlation_id: None,
+            params,
+        };
 
-        if self.add_option_greeks_subscription(topic, handler, command.clone()) {
-            self.send_data_cmd(command);
+        let mut acquired = Vec::new();
+        let handlers = std::iter::repeat_n(handler, command.instrument_ids.len());
+        for (&instrument_id, handler) in command.instrument_ids.iter().zip(handlers) {
+            let member = command.with_instrument_ids(instrument_id);
+
+            let topic = get_option_greeks_topic(instrument_id);
+            if self.add_option_greeks_subscription(
+                topic,
+                handler,
+                DataCommand::Subscribe(SubscribeCommand::OptionGreeks(member)),
+            ) {
+                acquired.push(instrument_id);
+            }
         }
+
+        if !acquired.is_empty() {
+            let dispatch = command.with_instrument_ids(acquired);
+            self.send_data_cmd(DataCommand::Subscribe(SubscribeCommand::OptionGreeks(
+                dispatch,
+            )));
+        }
+
+        Ok(())
     }
 
     /// Subscribes the actor to instrument status.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The IDs are empty.
+    /// - The IDs span venues without an explicit client.
+    /// - The client is not external and the list contains multiple IDs with a synthetic member.
     pub fn subscribe_instrument_status(
         &mut self,
-        topic: MStr<Topic>,
         handler: ShareableMessageHandler,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         client_id: Option<ClientId>,
         params: Option<Params>,
-    ) {
+    ) -> anyhow::Result<()> {
         self.check_registered();
+        let instrument_ids = instrument_ids.into_instrument_ids()?;
+        self.validate_subscription(&instrument_ids, client_id.as_ref())?;
+        let venue = instrument_ids
+            .iter()
+            .all(|id| id.venue == instrument_ids[0].venue)
+            .then_some(instrument_ids[0].venue);
 
-        let command = DataCommand::Subscribe(SubscribeCommand::InstrumentStatus(
-            SubscribeInstrumentStatus {
-                instrument_id,
-                client_id,
-                venue: Some(instrument_id.venue),
-                command_id: UUID4::new(),
-                ts_init: self.timestamp_ns(),
-                correlation_id: None,
-                params,
-            },
-        ));
+        let command = SubscribeInstrumentStatus {
+            instrument_ids,
+            client_id,
+            venue,
+            command_id: UUID4::new(),
+            ts_init: self.timestamp_ns(),
+            correlation_id: None,
+            params,
+        };
 
-        if self.add_subscription_any(topic, handler, None, Some(command.clone())) {
-            self.send_data_cmd(command);
+        let mut acquired = Vec::new();
+        let handlers = std::iter::repeat_n(handler, command.instrument_ids.len());
+        for (&instrument_id, handler) in command.instrument_ids.iter().zip(handlers) {
+            let member = command.with_instrument_ids(instrument_id);
+
+            let topic = get_instrument_status_topic(instrument_id);
+            if self.add_subscription_any(
+                topic,
+                handler,
+                None,
+                Some(DataCommand::Subscribe(SubscribeCommand::InstrumentStatus(
+                    member,
+                ))),
+            ) {
+                acquired.push(instrument_id);
+            }
         }
+
+        if !acquired.is_empty() {
+            let dispatch = command.with_instrument_ids(acquired);
+            self.send_data_cmd(DataCommand::Subscribe(SubscribeCommand::InstrumentStatus(
+                dispatch,
+            )));
+        }
+
+        Ok(())
     }
 
     /// Subscribes the actor to instrument close.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The IDs are empty.
+    /// - The IDs span venues without an explicit client.
+    /// - The client is not external and the list contains multiple IDs with a synthetic member.
     pub fn subscribe_instrument_close(
         &mut self,
-        topic: MStr<Topic>,
         handler: ShareableMessageHandler,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         client_id: Option<ClientId>,
         params: Option<Params>,
-    ) {
+    ) -> anyhow::Result<()> {
         self.check_registered();
+        let instrument_ids = instrument_ids.into_instrument_ids()?;
+        self.validate_subscription(&instrument_ids, client_id.as_ref())?;
+        let venue = instrument_ids
+            .iter()
+            .all(|id| id.venue == instrument_ids[0].venue)
+            .then_some(instrument_ids[0].venue);
 
-        let command = DataCommand::Subscribe(SubscribeCommand::InstrumentClose(
-            SubscribeInstrumentClose {
-                instrument_id,
-                client_id,
-                venue: Some(instrument_id.venue),
-                command_id: UUID4::new(),
-                ts_init: self.timestamp_ns(),
-                correlation_id: None,
-                params,
-            },
-        ));
+        let command = SubscribeInstrumentClose {
+            instrument_ids,
+            client_id,
+            venue,
+            command_id: UUID4::new(),
+            ts_init: self.timestamp_ns(),
+            correlation_id: None,
+            params,
+        };
 
-        if self.add_instrument_close_subscription(topic, handler, command.clone()) {
-            self.send_data_cmd(command);
+        let mut acquired = Vec::new();
+        let handlers = std::iter::repeat_n(handler, command.instrument_ids.len());
+        for (&instrument_id, handler) in command.instrument_ids.iter().zip(handlers) {
+            let member = command.with_instrument_ids(instrument_id);
+
+            let topic = get_instrument_close_topic(instrument_id);
+            if self.add_instrument_close_subscription(
+                topic,
+                handler,
+                DataCommand::Subscribe(SubscribeCommand::InstrumentClose(member)),
+            ) {
+                acquired.push(instrument_id);
+            }
         }
+
+        if !acquired.is_empty() {
+            let dispatch = command.with_instrument_ids(acquired);
+            self.send_data_cmd(DataCommand::Subscribe(SubscribeCommand::InstrumentClose(
+                dispatch,
+            )));
+        }
+
+        Ok(())
+    }
+
+    fn validate_subscription(
+        &self,
+        instrument_ids: &[InstrumentId],
+        client_id: Option<&ClientId>,
+    ) -> anyhow::Result<()> {
+        ensure_routable_instrument_ids(instrument_ids, client_id.is_some())?;
+        ensure_subscription_routes(instrument_ids, client_id, &self.cache_ref())
     }
 
     /// Subscribes the actor to option chain snapshots.
@@ -5067,339 +5719,500 @@ impl DataActorCore {
     }
 
     /// Unsubscribes the actor from instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The IDs are empty.
+    /// - The IDs span venues without an explicit client.
     pub fn unsubscribe_instrument(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         client_id: Option<ClientId>,
-        params: Option<Params>,
-    ) {
+        _params: Option<Params>,
+    ) -> anyhow::Result<()> {
         self.check_registered();
+        let instrument_ids = instrument_ids.into_instrument_ids()?;
+        ensure_routable_instrument_ids(&instrument_ids, client_id.is_some())?;
+        let mut retained = Vec::new();
 
-        let topic = get_instrument_topic(instrument_id);
-        let retained = self.remove_instrument_subscription(topic.into());
+        for instrument_id in instrument_ids {
+            let topic = get_instrument_topic(instrument_id);
+            if let Some(command) = self.remove_instrument_subscription(topic.into()) {
+                retained.push(command);
+            }
+        }
 
-        let command = UnsubscribeCommand::Instrument(UnsubscribeInstrument {
-            instrument_id,
-            client_id,
-            venue: Some(instrument_id.venue),
-            command_id: UUID4::new(),
-            ts_init: self.timestamp_ns(),
-            correlation_id: None,
-            params,
-        });
-
-        self.send_unsubscribe_cmd(retained, DataCommand::Unsubscribe(command));
+        self.release_subscriptions(retained);
+        Ok(())
     }
 
     /// Unsubscribes the actor from book deltas.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The IDs are empty.
+    /// - The IDs span venues without an explicit client.
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "preserves the instrument unsubscribe API"
+    )]
     pub fn unsubscribe_book_deltas(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         client_id: Option<ClientId>,
         params: Option<Params>,
-    ) {
+    ) -> anyhow::Result<()> {
         self.check_registered();
+        let instrument_ids = instrument_ids.into_instrument_ids()?;
+        ensure_routable_instrument_ids(&instrument_ids, client_id.is_some())?;
+        let mut retained = Vec::new();
 
-        let pattern = if is_parent_subscription(params.as_ref()) {
-            get_book_deltas_pattern(instrument_id)
-        } else {
-            get_book_deltas_topic(instrument_id).into()
-        };
-        let retained = self.remove_deltas_subscription(pattern);
+        for instrument_id in instrument_ids {
+            let topic = if is_parent_subscription(params.as_ref()) {
+                get_book_deltas_pattern(instrument_id)
+            } else {
+                get_book_deltas_topic(instrument_id).into()
+            };
 
-        let command = UnsubscribeCommand::BookDeltas(UnsubscribeBookDeltas {
-            instrument_id,
-            client_id,
-            venue: Some(instrument_id.venue),
-            command_id: UUID4::new(),
-            ts_init: self.timestamp_ns(),
-            correlation_id: None,
-            params,
-        });
+            if let Some(command) = self.remove_deltas_subscription(topic) {
+                retained.push(command);
+            }
+        }
 
-        self.send_unsubscribe_cmd(retained, DataCommand::Unsubscribe(command));
+        self.release_subscriptions(retained);
+        Ok(())
     }
 
     /// Unsubscribes the actor from book depth snapshots.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The IDs are empty.
+    /// - The IDs span venues without an explicit client.
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "preserves the instrument unsubscribe API"
+    )]
     pub fn unsubscribe_book_depth(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         client_id: Option<ClientId>,
         params: Option<Params>,
-    ) {
+    ) -> anyhow::Result<()> {
         self.check_registered();
+        let instrument_ids = instrument_ids.into_instrument_ids()?;
+        ensure_routable_instrument_ids(&instrument_ids, client_id.is_some())?;
+        let mut retained = Vec::new();
 
-        let pattern = if is_parent_subscription(params.as_ref()) {
-            get_book_depth_pattern(instrument_id)
-        } else {
-            get_book_depth_topic(instrument_id).into()
-        };
-        let retained = self.remove_depth_subscription(pattern);
+        for instrument_id in instrument_ids {
+            let topic = if is_parent_subscription(params.as_ref()) {
+                get_book_depth_pattern(instrument_id)
+            } else {
+                get_book_depth_topic(instrument_id).into()
+            };
 
-        let command = UnsubscribeCommand::BookDepth(UnsubscribeBookDepth {
-            instrument_id,
-            client_id,
-            venue: Some(instrument_id.venue),
-            command_id: UUID4::new(),
-            ts_init: self.timestamp_ns(),
-            correlation_id: None,
-            params,
-        });
+            if let Some(command) = self.remove_depth_subscription(topic) {
+                retained.push(command);
+            }
+        }
 
-        self.send_unsubscribe_cmd(retained, DataCommand::Unsubscribe(command));
+        self.release_subscriptions(retained);
+        Ok(())
     }
 
     /// Unsubscribes the actor from book snapshots at interval.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The IDs are empty.
+    /// - The IDs span venues without an explicit client.
     pub fn unsubscribe_book_at_interval(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         interval_ms: NonZeroUsize,
         client_id: Option<ClientId>,
-        params: Option<Params>,
-    ) {
+        _params: Option<Params>,
+    ) -> anyhow::Result<()> {
         self.check_registered();
+        let instrument_ids = instrument_ids.into_instrument_ids()?;
+        ensure_routable_instrument_ids(&instrument_ids, client_id.is_some())?;
+        let mut retained = Vec::new();
 
-        let topic = get_book_snapshots_topic(instrument_id, interval_ms);
-        let retained = self.remove_book_snapshot_subscription(topic);
+        for instrument_id in instrument_ids {
+            let topic = get_book_snapshots_topic(instrument_id, interval_ms);
+            if let Some(command) = self.remove_book_snapshot_subscription(topic) {
+                retained.push(command);
+            }
+        }
 
-        let command = UnsubscribeCommand::BookSnapshots(UnsubscribeBookSnapshots {
-            instrument_id,
-            interval_ms,
-            client_id,
-            venue: Some(instrument_id.venue),
-            command_id: UUID4::new(),
-            ts_init: self.timestamp_ns(),
-            correlation_id: None,
-            params,
-        });
-
-        self.send_unsubscribe_cmd(retained, DataCommand::Unsubscribe(command));
+        self.release_subscriptions(retained);
+        Ok(())
     }
 
     /// Unsubscribes the actor from quotes.
+    ///
+    /// Groups releases by acquisition and assigns a unique ID to each emitted command.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The list is empty.
+    /// - The IDs span venues without an explicit client.
     pub fn unsubscribe_quotes(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         client_id: Option<ClientId>,
-        params: Option<Params>,
-    ) {
+        _params: Option<Params>,
+    ) -> anyhow::Result<()> {
         self.check_registered();
+        let instrument_ids = instrument_ids.into_instrument_ids()?;
+        ensure_routable_instrument_ids(&instrument_ids, client_id.is_some())?;
+        let mut retained = Vec::new();
+        for instrument_id in instrument_ids {
+            retained.extend(self.remove_quote_subscription(get_quotes_topic(instrument_id)));
+        }
 
-        let topic = get_quotes_topic(instrument_id);
-        let retained = self.remove_quote_subscription(topic);
-
-        let command = UnsubscribeCommand::Quotes(UnsubscribeQuotes {
-            instrument_id,
-            client_id,
-            venue: Some(instrument_id.venue),
-            command_id: UUID4::new(),
-            ts_init: self.timestamp_ns(),
-            correlation_id: None,
-            params,
-        });
-
-        self.send_unsubscribe_cmd(retained, DataCommand::Unsubscribe(command));
+        self.release_subscriptions(retained);
+        Ok(())
     }
 
-    /// Unsubscribes the actor from trades.
+    /// Unsubscribes the actor from trades using each instrument's retained route.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The list is empty.
+    /// - The IDs span venues without an explicit client.
     pub fn unsubscribe_trades(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         client_id: Option<ClientId>,
-        params: Option<Params>,
-    ) {
+        _params: Option<Params>,
+    ) -> anyhow::Result<()> {
         self.check_registered();
+        let instrument_ids = instrument_ids.into_instrument_ids()?;
+        ensure_routable_instrument_ids(&instrument_ids, client_id.is_some())?;
+        let mut retained = Vec::new();
+        for instrument_id in instrument_ids {
+            retained.extend(self.remove_trade_subscription(get_trades_topic(instrument_id)));
+        }
 
-        let topic = get_trades_topic(instrument_id);
-        let retained = self.remove_trade_subscription(topic);
-
-        let command = UnsubscribeCommand::Trades(UnsubscribeTrades {
-            instrument_id,
-            client_id,
-            venue: Some(instrument_id.venue),
-            command_id: UUID4::new(),
-            ts_init: self.timestamp_ns(),
-            correlation_id: None,
-            params,
-        });
-
-        self.send_unsubscribe_cmd(retained, DataCommand::Unsubscribe(command));
+        self.release_subscriptions(retained);
+        Ok(())
     }
 
-    /// Unsubscribes the actor from bars.
+    fn release_subscriptions(&self, retained: Vec<DataCommand>) {
+        let ts_init = self.timestamp_ns();
+        let mut releases = IndexMap::new();
+
+        for retained in retained {
+            let DataCommand::Subscribe(subscribe) = &retained else {
+                unreachable!("instrument subscriptions retain a subscribe command");
+            };
+
+            let acquisition_id = subscribe.command_id();
+
+            let Some(DataCommand::Unsubscribe(command)) =
+                retained.into_unsubscribe(acquisition_id, ts_init)
+            else {
+                unreachable!("instrument subscriptions retain a subscribe command");
+            };
+
+            releases
+                .entry(acquisition_id)
+                .or_insert_with(Vec::new)
+                .push(command);
+        }
+
+        for group in releases.into_values() {
+            for command in UnsubscribeCommand::group(group) {
+                let command_id = UUID4::new();
+
+                let command = match command {
+                    UnsubscribeCommand::Instrument(command) => {
+                        UnsubscribeCommand::Instrument(UnsubscribeInstrument {
+                            command_id,
+                            ..command
+                        })
+                    }
+                    UnsubscribeCommand::BookDeltas(command) => {
+                        UnsubscribeCommand::BookDeltas(UnsubscribeBookDeltas {
+                            command_id,
+                            ..command
+                        })
+                    }
+                    UnsubscribeCommand::BookDepth(command) => {
+                        UnsubscribeCommand::BookDepth(UnsubscribeBookDepth {
+                            command_id,
+                            ..command
+                        })
+                    }
+                    UnsubscribeCommand::BookSnapshots(command) => {
+                        UnsubscribeCommand::BookSnapshots(UnsubscribeBookSnapshots {
+                            command_id,
+                            ..command
+                        })
+                    }
+                    UnsubscribeCommand::Quotes(command) => {
+                        UnsubscribeCommand::Quotes(UnsubscribeQuotes {
+                            command_id,
+                            ..command
+                        })
+                    }
+                    UnsubscribeCommand::Trades(command) => {
+                        UnsubscribeCommand::Trades(UnsubscribeTrades {
+                            command_id,
+                            ..command
+                        })
+                    }
+                    UnsubscribeCommand::Bars(command) => {
+                        UnsubscribeCommand::Bars(UnsubscribeBars {
+                            command_id,
+                            ..command
+                        })
+                    }
+                    UnsubscribeCommand::MarkPrices(command) => {
+                        UnsubscribeCommand::MarkPrices(UnsubscribeMarkPrices {
+                            command_id,
+                            ..command
+                        })
+                    }
+                    UnsubscribeCommand::IndexPrices(command) => {
+                        UnsubscribeCommand::IndexPrices(UnsubscribeIndexPrices {
+                            command_id,
+                            ..command
+                        })
+                    }
+                    UnsubscribeCommand::FundingRates(command) => {
+                        UnsubscribeCommand::FundingRates(UnsubscribeFundingRates {
+                            command_id,
+                            ..command
+                        })
+                    }
+                    UnsubscribeCommand::InstrumentStatus(command) => {
+                        UnsubscribeCommand::InstrumentStatus(UnsubscribeInstrumentStatus {
+                            command_id,
+                            ..command
+                        })
+                    }
+                    UnsubscribeCommand::InstrumentClose(command) => {
+                        UnsubscribeCommand::InstrumentClose(UnsubscribeInstrumentClose {
+                            command_id,
+                            ..command
+                        })
+                    }
+                    UnsubscribeCommand::OptionGreeks(command) => {
+                        UnsubscribeCommand::OptionGreeks(UnsubscribeOptionGreeks {
+                            command_id,
+                            ..command
+                        })
+                    }
+                    _ => unreachable!("instrument releases retain instrument commands"),
+                };
+
+                self.send_data_cmd(DataCommand::Unsubscribe(command));
+            }
+        }
+    }
+
+    /// Unsubscribes the actor from bars using each type's retained route.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the list is empty or spans venues without an explicit client.
     pub fn unsubscribe_bars(
         &mut self,
-        bar_type: BarType,
+        bar_types: impl IntoBarTypes,
         client_id: Option<ClientId>,
-        params: Option<Params>,
-    ) {
+        _params: Option<Params>,
+    ) -> anyhow::Result<()> {
         self.check_registered();
-
-        // Match the standard topic used at subscribe time (see `subscribe_bars`)
-        let topic = get_bars_topic(bar_type.standard());
-        let retained = self.remove_bar_subscription(topic);
-
-        let command = UnsubscribeCommand::Bars(UnsubscribeBars {
-            bar_type,
-            client_id,
-            venue: Some(bar_type.instrument_id().venue),
-            command_id: UUID4::new(),
-            ts_init: self.timestamp_ns(),
-            correlation_id: None,
-            params,
-        });
-
-        self.send_unsubscribe_cmd(retained, DataCommand::Unsubscribe(command));
+        let bar_types = bar_types.into_bar_types()?;
+        ensure_routable_bar_types(&bar_types, client_id.is_some())?;
+        let retained = bar_types
+            .into_iter()
+            .filter_map(|bar_type| self.remove_bar_subscription(bar_type))
+            .collect();
+        self.release_subscriptions(retained);
+        Ok(())
     }
 
     /// Unsubscribes the actor from mark prices.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The IDs are empty.
+    /// - The IDs span venues without an explicit client.
     pub fn unsubscribe_mark_prices(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         client_id: Option<ClientId>,
-        params: Option<Params>,
-    ) {
+        _params: Option<Params>,
+    ) -> anyhow::Result<()> {
         self.check_registered();
+        let instrument_ids = instrument_ids.into_instrument_ids()?;
+        ensure_routable_instrument_ids(&instrument_ids, client_id.is_some())?;
+        let mut retained = Vec::new();
 
-        let topic = get_mark_price_topic(instrument_id);
-        let retained = self.remove_mark_price_subscription(topic);
+        for instrument_id in instrument_ids {
+            let topic = get_mark_price_topic(instrument_id);
+            if let Some(command) = self.remove_mark_price_subscription(topic) {
+                retained.push(command);
+            }
+        }
 
-        let command = UnsubscribeCommand::MarkPrices(UnsubscribeMarkPrices {
-            instrument_id,
-            client_id,
-            venue: Some(instrument_id.venue),
-            command_id: UUID4::new(),
-            ts_init: self.timestamp_ns(),
-            correlation_id: None,
-            params,
-        });
-
-        self.send_unsubscribe_cmd(retained, DataCommand::Unsubscribe(command));
+        self.release_subscriptions(retained);
+        Ok(())
     }
 
     /// Unsubscribes the actor from index prices.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The IDs are empty.
+    /// - The IDs span venues without an explicit client.
     pub fn unsubscribe_index_prices(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         client_id: Option<ClientId>,
-        params: Option<Params>,
-    ) {
+        _params: Option<Params>,
+    ) -> anyhow::Result<()> {
         self.check_registered();
+        let instrument_ids = instrument_ids.into_instrument_ids()?;
+        ensure_routable_instrument_ids(&instrument_ids, client_id.is_some())?;
+        let mut retained = Vec::new();
 
-        let topic = get_index_price_topic(instrument_id);
-        let retained = self.remove_index_price_subscription(topic);
+        for instrument_id in instrument_ids {
+            let topic = get_index_price_topic(instrument_id);
+            if let Some(command) = self.remove_index_price_subscription(topic) {
+                retained.push(command);
+            }
+        }
 
-        let command = UnsubscribeCommand::IndexPrices(UnsubscribeIndexPrices {
-            instrument_id,
-            client_id,
-            venue: Some(instrument_id.venue),
-            command_id: UUID4::new(),
-            ts_init: self.timestamp_ns(),
-            correlation_id: None,
-            params,
-        });
-
-        self.send_unsubscribe_cmd(retained, DataCommand::Unsubscribe(command));
+        self.release_subscriptions(retained);
+        Ok(())
     }
 
     /// Unsubscribes the actor from funding rates.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The IDs are empty.
+    /// - The IDs span venues without an explicit client.
     pub fn unsubscribe_funding_rates(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         client_id: Option<ClientId>,
-        params: Option<Params>,
-    ) {
+        _params: Option<Params>,
+    ) -> anyhow::Result<()> {
         self.check_registered();
+        let instrument_ids = instrument_ids.into_instrument_ids()?;
+        ensure_routable_instrument_ids(&instrument_ids, client_id.is_some())?;
+        let mut retained = Vec::new();
 
-        let topic = get_funding_rate_topic(instrument_id);
-        let retained = self.remove_funding_rate_subscription(topic);
+        for instrument_id in instrument_ids {
+            let topic = get_funding_rate_topic(instrument_id);
+            if let Some(command) = self.remove_funding_rate_subscription(topic) {
+                retained.push(command);
+            }
+        }
 
-        let command = UnsubscribeCommand::FundingRates(UnsubscribeFundingRates {
-            instrument_id,
-            client_id,
-            venue: Some(instrument_id.venue),
-            command_id: UUID4::new(),
-            ts_init: self.timestamp_ns(),
-            correlation_id: None,
-            params,
-        });
-
-        self.send_unsubscribe_cmd(retained, DataCommand::Unsubscribe(command));
+        self.release_subscriptions(retained);
+        Ok(())
     }
 
     /// Unsubscribes the actor from option greeks.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The IDs are empty.
+    /// - The IDs span venues without an explicit client.
     pub fn unsubscribe_option_greeks(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         client_id: Option<ClientId>,
-        params: Option<Params>,
-    ) {
+        _params: Option<Params>,
+    ) -> anyhow::Result<()> {
         self.check_registered();
+        let instrument_ids = instrument_ids.into_instrument_ids()?;
+        ensure_routable_instrument_ids(&instrument_ids, client_id.is_some())?;
+        let mut retained = Vec::new();
 
-        let topic = get_option_greeks_topic(instrument_id);
-        let retained = self.remove_option_greeks_subscription(topic);
+        for instrument_id in instrument_ids {
+            let topic = get_option_greeks_topic(instrument_id);
+            if let Some(command) = self.remove_option_greeks_subscription(topic) {
+                retained.push(command);
+            }
+        }
 
-        let command = UnsubscribeCommand::OptionGreeks(UnsubscribeOptionGreeks {
-            instrument_id,
-            client_id,
-            venue: Some(instrument_id.venue),
-            command_id: UUID4::new(),
-            ts_init: self.timestamp_ns(),
-            correlation_id: None,
-            params,
-        });
-
-        self.send_unsubscribe_cmd(retained, DataCommand::Unsubscribe(command));
+        self.release_subscriptions(retained);
+        Ok(())
     }
 
     /// Unsubscribes the actor from instrument status.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The IDs are empty.
+    /// - The IDs span venues without an explicit client.
     pub fn unsubscribe_instrument_status(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         client_id: Option<ClientId>,
-        params: Option<Params>,
-    ) {
+        _params: Option<Params>,
+    ) -> anyhow::Result<()> {
         self.check_registered();
+        let instrument_ids = instrument_ids.into_instrument_ids()?;
+        ensure_routable_instrument_ids(&instrument_ids, client_id.is_some())?;
+        let mut retained = Vec::new();
 
-        let topic = get_instrument_status_topic(instrument_id);
-        let retained = self.remove_subscription_any(topic);
+        for instrument_id in instrument_ids {
+            let topic = get_instrument_status_topic(instrument_id);
+            if let Some(command) = self.remove_subscription_any(topic) {
+                retained.push(command);
+            }
+        }
 
-        let command = UnsubscribeCommand::InstrumentStatus(UnsubscribeInstrumentStatus {
-            instrument_id,
-            client_id,
-            venue: Some(instrument_id.venue),
-            command_id: UUID4::new(),
-            ts_init: self.timestamp_ns(),
-            correlation_id: None,
-            params,
-        });
-
-        self.send_unsubscribe_cmd(retained, DataCommand::Unsubscribe(command));
+        self.release_subscriptions(retained);
+        Ok(())
     }
 
     /// Unsubscribes the actor from instrument close.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The IDs are empty.
+    /// - The IDs span venues without an explicit client.
     pub fn unsubscribe_instrument_close(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         client_id: Option<ClientId>,
-        params: Option<Params>,
-    ) {
+        _params: Option<Params>,
+    ) -> anyhow::Result<()> {
         self.check_registered();
+        let instrument_ids = instrument_ids.into_instrument_ids()?;
+        ensure_routable_instrument_ids(&instrument_ids, client_id.is_some())?;
+        let mut retained = Vec::new();
 
-        let topic = get_instrument_close_topic(instrument_id);
-        let retained = self.remove_instrument_close_subscription(topic);
+        for instrument_id in instrument_ids {
+            let topic = get_instrument_close_topic(instrument_id);
+            if let Some(command) = self.remove_instrument_close_subscription(topic) {
+                retained.push(command);
+            }
+        }
 
-        let command = UnsubscribeCommand::InstrumentClose(UnsubscribeInstrumentClose {
-            instrument_id,
-            client_id,
-            venue: Some(instrument_id.venue),
-            command_id: UUID4::new(),
-            ts_init: self.timestamp_ns(),
-            correlation_id: None,
-            params,
-        });
-
-        self.send_unsubscribe_cmd(retained, DataCommand::Unsubscribe(command));
+        self.release_subscriptions(retained);
+        Ok(())
     }
 
     /// Unsubscribes the actor from option chain snapshots.

@@ -412,16 +412,23 @@ fn test_backtest_client_overrides_when_registered_as_default(
 
 #[rstest]
 fn test_external_client_forwards_subscribe_and_unsubscribe_commands(
+    #[values(0, 1, 2)] client_index: usize,
     audusd_sim: CurrencyPair,
     _stub_msgbus: Rc<RefCell<MessageBus>>,
-    client_id: ClientId,
     venue: Venue,
 ) {
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let client_ids = [
+        ClientId::from("EXTERNAL-ALPHA"),
+        ClientId::from("EXTERNAL-BRAVO"),
+        ClientId::from("EXTERNAL-PREVIOUS"),
+    ];
+    let client_id = client_ids[client_index];
+    cache.borrow_mut().add_external_data_client(client_ids[2]);
 
     let config = DataEngineConfig {
-        external_clients: Some(vec![client_id]),
+        external_clients: Some(client_ids[..2].to_vec()),
         ..DataEngineConfig::default()
     };
 
@@ -589,6 +596,95 @@ async fn test_data_engine_connect_omits_provider_errors(
             .is_disconnected()
     );
     assert!(!data_engine.check_connected());
+}
+
+#[rstest]
+#[case::instruments(false)]
+#[case::bars(true)]
+fn test_partial_subscription_logs_only_failed_members(
+    #[case] bars: bool,
+    #[values(false, true)] release: bool,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let first = InstrumentId::from("AUD/USD.SIM");
+    let second = InstrumentId::from("GBP/USD.SIM");
+    let foreign = InstrumentId::from("FOREIGN.SIM");
+    let first_bar = BarType::from("AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL");
+    let second_bar = BarType::from("AUD/USD.SIM-5-MINUTE-LAST-EXTERNAL");
+    let foreign_bar = BarType::from("AUD/USD.SIM-1-HOUR-LAST-EXTERNAL");
+    let outcome = if bars {
+        MockSubscribeFailure::BarsPartial([first_bar, first_bar, foreign_bar])
+    } else {
+        MockSubscribeFailure::MarkPricesPartial([first, first, foreign])
+    };
+
+    let mut client =
+        MockDataClient::new(clock, cache, client_id, Some(venue)).with_unsubscribe_failure(outcome);
+    if !release {
+        client = client.with_subscribe_failure(outcome);
+    }
+
+    let mut adapter =
+        DataClientAdapter::new(client_id, Some(venue), false, false, Box::new(client));
+    let command_id = UUID4::new();
+    let params = Some(params_from_json(json!({"private": "must-not-log"})));
+
+    let command = if bars {
+        SubscribeCommand::Bars(SubscribeBars::new(
+            [first_bar, second_bar],
+            Some(client_id),
+            Some(venue),
+            command_id,
+            UnixNanos::from(31),
+            None,
+            params,
+        ))
+    } else {
+        SubscribeCommand::MarkPrices(SubscribeMarkPrices::new(
+            [first, second],
+            Some(client_id),
+            Some(venue),
+            command_id,
+            UnixNanos::from(31),
+            None,
+            params,
+        ))
+    };
+
+    capture_connection_logs();
+    adapter.execute_subscribe(command.clone());
+
+    let (direction, outcome, operation_id) = if release {
+        take_connection_logs();
+        let release = command.into_unsubscribe(UUID4::new(), UnixNanos::from(37), None);
+        adapter.execute_unsubscribe(&release);
+        ("Unsubscribe", "unreleased", release.command_id())
+    } else {
+        ("Subscribe", "unaccepted", command_id)
+    };
+
+    let failed = if bars {
+        format!("Bars({second_bar:?})")
+    } else {
+        format!("MarkPrices({second:?})")
+    };
+
+    let errors: Vec<_> = take_connection_logs()
+        .into_iter()
+        .filter(|(level, _)| *level == Level::Error)
+        .collect();
+    assert_eq!(
+        errors,
+        vec![(
+            Level::Error,
+            format!(
+                "Client command failed: {direction} {client_id} {outcome} [{failed}] command {operation_id}"
+            )
+        )]
+    );
 }
 
 fn capture_connection_logs() {
@@ -862,16 +958,16 @@ fn test_data_subscription_logging(
     )));
 
     let expected = if error_message.is_some() {
-        let (name, command_id) = if operation == "subscribe" {
-            ("Subscribe", subscribe_id)
+        let (name, outcome, command_id) = if operation == "subscribe" {
+            ("Subscribe", "unaccepted", subscribe_id)
         } else {
-            ("Unsubscribe", unsubscribe_id)
+            ("Unsubscribe", "unreleased", unsubscribe_id)
         };
 
         vec![(
             Level::Error,
             format!(
-                "Client command failed: {name} SUBSCRIPTIONS Quotes(\"SYN.SYN\") command {command_id}"
+                "Client command failed: {name} SUBSCRIPTIONS {outcome} [Quotes(\"SYN.SYN\")] command {command_id}"
             ),
         )]
     } else {
@@ -1152,7 +1248,56 @@ fn test_unimplemented_command_logging_omits_parameters() {
 }
 
 #[rstest]
+fn test_engine_preparation_logs_each_failure_reason(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    capture_connection_logs();
+    let command_id = UUID4::new();
+    let bar_types = [
+        BarType::from("FIRST.SIM-1-MINUTE-LAST-INTERNAL"),
+        BarType::from("SECOND.SIM-5-MINUTE-LAST-INTERNAL"),
+    ];
+
+    let command = SubscribeBars::new(
+        bar_types,
+        Some(ClientId::from("PUBLIC")),
+        Some(Venue::from("SIM")),
+        command_id,
+        UnixNanos::from(17),
+        None,
+        Some(params_from_json(json!({"private": "must-not-log"}))),
+    );
+    let mut engine = DataEngine::new(clock, cache, None);
+    take_connection_logs();
+
+    let error = engine
+        .execute_subscribe(SubscribeCommand::Bars(command))
+        .unwrap_err();
+
+    let expected: Vec<_> = bar_types
+        .into_iter()
+        .map(|bar_type| {
+            (
+                Level::Error,
+                format!(
+                    "Subscribe preparation failed: command={command_id}, client=Some(\"PUBLIC\"), instrument_ids=None, bar_types=Some([{bar_type:?}]): Cannot start bar aggregation: no instrument found for {}",
+                    bar_type.instrument_id(),
+                ),
+            )
+        })
+        .collect();
+
+    assert_eq!(
+        error.to_string(),
+        "Cannot start bar aggregation: no instrument found for FIRST.SIM"
+    );
+    assert_eq!(take_connection_logs(), expected);
+}
+
+#[rstest]
 fn test_engine_validation_logging_preserves_reason(
+    #[values(false, true)] subscribe: bool,
     clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
 ) {
@@ -1160,7 +1305,7 @@ fn test_engine_validation_logging_preserves_reason(
     let command_id = UUID4::new();
 
     let command = SubscribeInstrument {
-        instrument_id: InstrumentId::from("SYNTH.SYNTH"),
+        instrument_ids: vec![InstrumentId::from("SYNTH.SYNTH")],
         client_id: Some(ClientId::from("PUBLIC")),
         venue: Some(Venue::from("SYNTH")),
         command_id,
@@ -1171,16 +1316,42 @@ fn test_engine_validation_logging_preserves_reason(
 
     let mut engine = DataEngine::new(clock, cache, None);
     take_connection_logs();
-    engine.execute(DataCommand::Subscribe(SubscribeCommand::Instrument(
-        command,
-    )));
+    let command = SubscribeCommand::Instrument(command);
+
+    let (action, reason, command) = if subscribe {
+        (
+            "Subscribe",
+            "Cannot subscribe for synthetic instrument `Instrument` data",
+            DataCommand::Subscribe(command),
+        )
+    } else {
+        (
+            "Unsubscribe",
+            "Cannot unsubscribe from synthetic instrument `Instrument` data",
+            DataCommand::Unsubscribe(command.into_unsubscribe(
+                command_id,
+                UnixNanos::from(1),
+                None,
+            )),
+        )
+    };
+
+    engine.execute(command);
     assert_eq!(
         take_connection_logs(),
-        vec![(
-            Level::Error,
-            format!(
-                "Data command failed: (\"Subscribe\", Some(\"PUBLIC\"), Some(\"SYNTH\"), Some({command_id:?})): Cannot subscribe for synthetic instrument `Instrument` data"
+        vec![
+            (
+                Level::Error,
+                format!(
+                    "{action} preparation failed: command={command_id}, client=Some(\"PUBLIC\"), instrument_ids=Some([\"SYNTH.SYNTH\"]), bar_types=None: {reason}"
+                )
+            ),
+            (
+                Level::Error,
+                format!(
+                    "Data command failed: (\"{action}\", Some(\"PUBLIC\"), Some(\"SYNTH\"), Some({command_id:?})): {reason}"
+                )
             )
-        )]
+        ]
     );
 }

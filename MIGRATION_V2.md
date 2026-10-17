@@ -220,6 +220,77 @@ step.
 | `cache.quote_tick_count`             | `cache.quote_count`            |
 | `cache.trade_tick_count`             | `cache.trade_count`            |
 
+### Data subscription lists
+
+Actor and Strategy subscriptions and their matching unsubscribe methods accept a scalar or non-empty sequence:
+
+| Subscription family                             | Python argument |
+| ----------------------------------------------- | --------------- |
+| Instrument definitions (`subscribe_instrument`) | `instrument_id` |
+| Book deltas, depth, and interval snapshots      | `instrument_id` |
+| Quotes and trades                               | `instrument_id` |
+| Mark and index prices                           | `instrument_id` |
+| Funding rates                                   | `instrument_id` |
+| Instrument status and closes                    | `instrument_id` |
+| Option Greeks                                   | `instrument_id` |
+| Bars                                            | `bar_type`      |
+
+Keep the existing Python keywords for both input forms:
+
+```python
+from nautilus_trader.model import BarType, InstrumentId
+
+instrument_ids = [
+    InstrumentId.from_str("BTCUSDT.BINANCE"),
+    InstrumentId.from_str("ETHUSDT.BINANCE"),
+]
+self.subscribe_quotes(instrument_id=instrument_ids)
+self.unsubscribe_quotes(instrument_id=instrument_ids)
+
+bar_types = [
+    BarType.from_str("BTCUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL"),
+    BarType.from_str("BTCUSDT.BINANCE-5-MINUTE-LAST-EXTERNAL"),
+]
+self.subscribe_bars(bar_type=bar_types)
+self.unsubscribe_bars(bar_type=bar_types)
+```
+
+**Input rules**:
+
+- Duplicate IDs or full bar types are removed in first-occurrence order. Different bar specifications
+  for one instrument stay distinct.
+- Mixed-venue lists require `client_id`.
+- Empty lists, missing-client mixed-venue lists, and unsupported routes raise `ValueError` before
+  subscriptions change.
+- Invalid Python elements raise `TypeError` before any subscription changes, including releases.
+
+Historical requests retain their scalar instrument or bar input. Custom data, venue-wide
+`subscribe_instruments`, option chains, and DeFi keep their existing inputs.
+
+#### Bar ownership
+
+The actor acquires one subscription per standard output bar type. The first full type supplies the
+source and retained route. Unsubscribe with that full type or its `standard()` alias to release the
+original acquisition.
+
+#### Adapter command fields
+
+Update readers in both subscribe and unsubscribe hooks:
+
+| Command kind     | Scalar field    | List field       |
+| ---------------- | --------------- | ---------------- |
+| Instrument-keyed | `instrument_id` | `instrument_ids` |
+| Bars             | `bar_type`      | `bar_types`      |
+
+The serialized fields change too; upgrade producers and consumers together. Python properties are
+read-only and return list copies. Mutating a copy does not change the command.
+
+Native and Python hooks receive compatible lists, as do external MessageBus clients. Unsupported lists
+must be rejected before effects; supported lists process independent members best effort.
+
+See [Data subscription APIs](#data-subscription-apis) for Rust integration changes and
+[Subscription lists](docs/concepts/actors.md#subscription-lists) for routing and release rules.
+
 ### Identity and lifecycle inspection
 
 Replace generic identity names:
@@ -863,6 +934,67 @@ fsspec-only options to `object_store` keys, such as `anon` to `skip_signature`. 
 options](docs/concepts/data/catalog.md#filesystem-protocols-and-storage-options).
 
 ## Update Rust integrations
+
+### Data subscription APIs
+
+Update actor subscribe and unsubscribe overrides using these traits from `nautilus_common::messages::data`:
+
+| Input kind     | Override parameter       | Explicit scalar type |
+| -------------- | ------------------------ | -------------------- |
+| Instrument IDs | `impl IntoInstrumentIds` | `InstrumentId`       |
+| Bar types      | `impl IntoBarTypes`      | `BarType`            |
+
+Use the explicit scalar type where `.into()` relied on scalar inference.
+
+Migrated `DataActorCore` list methods return `Result<()>`. Remove `topic` or `pattern` from migrated
+subscribe calls, including `topic` from `subscribe_bars`; the core derives topics from the members.
+
+#### Validation
+
+Empty or missing-client mixed-venue lists fail before any subscription changes, including releases.
+Unsupported subscription routes fail before ownership is retained or handlers are registered.
+
+Rust actor methods panic; `DataActorCore` returns an error.
+
+For non-external data clients:
+
+- Quote lists must share one route: client, synthetic, or aggregated spread. Spread routing requires
+  `aggregate_spread_quotes=true` and a cached spread instrument.
+- Instrument definitions, books, status, closes, and option Greeks reject lists with multiple IDs and
+  a synthetic member.
+
+#### Dispatch and partial outcomes
+
+Compatible direct members retain their parent command ID, metadata, and list at the adapter boundary.
+Internal/composite bars, book snapshots, spreads, and continuous futures keep separate source acquisitions.
+
+- Hooks limited to one member can reject larger lists before effects with `single_instrument_id()` or
+  `single_bar_type()`.
+- Supported lists attempt every independent member without rolling back accepted work.
+- Native hooks keep `anyhow::Result<()>`: `Ok(())` accepts all dispatched members, `SubscriptionError`
+  reports the exact accepted subset, and any other error accepts none.
+
+Construct partial outcomes with:
+
+- `SubscriptionError::instruments(accepted, source)` for instrument IDs.
+- `SubscriptionError::bars(accepted, source)` for full bar types.
+
+Unsubscribe acceptance means successful release. Failed non-book final releases retain their saved
+inverse for explicit retries.
+
+The Python bridge accepts the whole command at queue admission. Later async hook failures, including
+unsupported-list errors, are logged without per-member outcomes. Venue acknowledgements remain separate.
+
+#### Catalog starts
+
+With `streaming`:
+
+- Direct quote/trade lists skip per-member start inference. Scalar subscriptions, including derived
+  sources, keep their inference.
+- External bars infer starts per full type and split only when effective parameters differ.
+- Explicit `start_ns` suppresses inference. Releases retain original parameters and routes.
+
+Historical requests, including `RequestBars.bar_type`, retain their scalar inputs.
 
 ### Catalog traits and backends
 

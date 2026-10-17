@@ -1208,7 +1208,7 @@ fn test_subscribe_continuous_future_bars_dispatches_child_trade_subscription(
         );
     };
 
-    assert_eq!(child.instrument_id, pre_id);
+    assert_eq!(child.single_instrument_id().unwrap(), pre_id);
     assert_eq!(child.venue, Some(Venue::from("GLBX")));
     assert_eq!(child.correlation_id, Some(parent_id));
     let child_params = child.params.as_ref().unwrap();
@@ -1278,7 +1278,7 @@ fn test_subscribe_continuous_future_bars_external_uses_bar_source(
     };
 
     assert_eq!(
-        child.bar_type,
+        child.single_bar_type().unwrap(),
         BarType::from("ESH24.GLBX-1-MINUTE-LAST-EXTERNAL")
     );
 }
@@ -1345,7 +1345,7 @@ fn test_continuous_future_subscription_transition_swaps_source(
         );
     };
 
-    assert_eq!(unsub.instrument_id, pre_id);
+    assert_eq!(unsub.single_instrument_id().unwrap(), pre_id);
 
     let DataCommand::Subscribe(SubscribeCommand::Trades(sub2)) = recorder.borrow()[2].clone()
     else {
@@ -1355,7 +1355,7 @@ fn test_continuous_future_subscription_transition_swaps_source(
         );
     };
 
-    assert_eq!(sub2.instrument_id, post_id);
+    assert_eq!(sub2.single_instrument_id().unwrap(), post_id);
 
     // Trade in the post segment now publishes a bar with no adjustment for the final
     // segment, BACKWARD_SPREAD cumulative offset is zero.
@@ -1419,7 +1419,7 @@ fn test_unsubscribe_continuous_future_bars_tears_down_subscription(
         );
     };
 
-    assert_eq!(child.instrument_id, pre_id);
+    assert_eq!(child.single_instrument_id().unwrap(), pre_id);
     assert_eq!(child.venue, Some(Venue::from("GLBX")));
 
     let leftover_roll_timers = test_clock
@@ -1625,8 +1625,12 @@ fn test_continuous_future_subscription_walks_multiple_transitions(
         .borrow()
         .iter()
         .map(|cmd| match cmd {
-            DataCommand::Subscribe(SubscribeCommand::Trades(c)) => c.instrument_id,
-            DataCommand::Unsubscribe(UnsubscribeCommand::Trades(c)) => c.instrument_id,
+            DataCommand::Subscribe(SubscribeCommand::Trades(c)) => {
+                c.single_instrument_id().unwrap()
+            }
+            DataCommand::Unsubscribe(UnsubscribeCommand::Trades(c)) => {
+                c.single_instrument_id().unwrap()
+            }
             _ => unreachable!(),
         })
         .collect();
@@ -1720,7 +1724,7 @@ fn test_continuous_future_subscription_uses_quote_source_for_non_last_price_type
         );
     };
 
-    assert_eq!(child.instrument_id, pre_id);
+    assert_eq!(child.instrument_ids, vec![pre_id]);
 }
 
 #[rstest]
@@ -1863,4 +1867,93 @@ fn register_continuous_future_subscription_engine(
     data_engine.borrow_mut().register_client(adapter, None);
 
     (data_engine, test_clock, recorder)
+}
+
+#[rstest]
+fn test_bar_list_continuous_futures_share_and_release_child_source(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let pre_id = add_es_contract(&cache, "ESH24.GLBX", "ESH24");
+    let post_id = add_es_contract(&cache, "ESM24.GLBX", "ESM24");
+    let (engine, clock, recorder) = register_continuous_future_subscription_engine(cache, 0);
+    let first = BarType::from("ES.GLBX-1-TICK-LAST-INTERNAL");
+    let second = BarType::from("ES.GLBX-2-TICK-LAST-INTERNAL");
+    let params = continuous_future_transitions_params(10, pre_id, post_id);
+
+    let subscribe = SubscribeBars::new(
+        [first, second],
+        Some(client_id),
+        Some(Venue::from("GLBX")),
+        UUID4::new(),
+        UnixNanos::from(23),
+        None,
+        Some(params),
+    );
+    engine
+        .borrow_mut()
+        .execute_subscribe(SubscribeCommand::Bars(subscribe))
+        .unwrap();
+    assert_eq!(recorder.borrow().len(), 1);
+    assert_eq!(engine.borrow().subscribed_trades(), vec![pre_id]);
+    assert_eq!(engine.borrow().subscribed_bars(), vec![first, second]);
+    assert_eq!(clock.borrow().timer_count(), 2);
+
+    let release = UnsubscribeBars::new(
+        [first, second],
+        Some(client_id),
+        Some(Venue::from("GLBX")),
+        UUID4::new(),
+        UnixNanos::from(31),
+        None,
+        None,
+    );
+    engine
+        .borrow_mut()
+        .execute_unsubscribe(&UnsubscribeCommand::Bars(release))
+        .unwrap();
+    let commands = recorder.borrow();
+
+    let [
+        DataCommand::Subscribe(SubscribeCommand::Trades(acquired)),
+        DataCommand::Unsubscribe(UnsubscribeCommand::Trades(released)),
+    ] = commands.as_slice()
+    else {
+        panic!("expected one child acquisition and release, was {commands:?}");
+    };
+
+    assert_eq!(released.instrument_ids, acquired.instrument_ids);
+    assert_eq!(released.instrument_ids, vec![pre_id]);
+    assert_eq!(released.client_id, acquired.client_id);
+    assert_eq!(released.venue, acquired.venue);
+    let parent_id = acquired
+        .params
+        .as_ref()
+        .unwrap()
+        .get_str("continuous_future_parent_request_id")
+        .unwrap();
+    assert_eq!(
+        released.params,
+        Some(params_from_json(
+            json!({"continuous_future_parent_request_id": parent_id})
+        ))
+    );
+    let mut expected = IndexMap::from([(
+        "continuous_future_parent_request_id".to_string(),
+        json!(parent_id),
+    )]);
+
+    if cfg!(feature = "streaming") {
+        expected.insert("start_ns".to_string(), serde_json::Value::Null);
+    }
+
+    assert_eq!(acquired.params, Some(Params::new(expected)));
+    assert_eq!(engine.borrow().subscribed_bars(), Vec::<BarType>::new());
+    assert_eq!(
+        engine.borrow().subscribed_trades(),
+        Vec::<InstrumentId>::new()
+    );
+    assert_eq!(clock.borrow().timer_count(), 0);
 }

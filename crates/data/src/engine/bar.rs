@@ -315,10 +315,14 @@ impl DataEngine {
     }
 
     pub(super) fn subscribe_bars(&mut self, cmd: &SubscribeBars) -> anyhow::Result<()> {
-        match cmd.bar_type.aggregation_source() {
+        let bar_type = cmd
+            .single_bar_type()
+            .expect("native engine receives one bar type");
+
+        match bar_type.aggregation_source() {
             AggregationSource::Internal => self.start_bar_aggregation(cmd)?,
             AggregationSource::External => {
-                if cmd.bar_type.instrument_id().is_synthetic() {
+                if bar_type.instrument_id().is_synthetic() {
                     anyhow::bail!(
                         "Cannot subscribe for externally aggregated synthetic instrument bar data"
                     );
@@ -330,7 +334,9 @@ impl DataEngine {
     }
 
     pub(super) fn unsubscribe_bars(&mut self, cmd: &UnsubscribeBars) {
-        let bar_type = cmd.bar_type;
+        let bar_type = cmd
+            .single_bar_type()
+            .expect("native engine receives one bar type");
 
         // Don't remove aggregator if other exact-topic subscribers still exist
         let topic = switchboard::get_bars_topic(bar_type.standard());
@@ -347,7 +353,7 @@ impl DataEngine {
             || cmd.clone(),
             |subscribe| {
                 UnsubscribeBars::new(
-                    subscribe.bar_type,
+                    subscribe.bar_types,
                     subscribe.client_id,
                     subscribe.venue,
                     cmd.command_id,
@@ -374,8 +380,15 @@ impl DataEngine {
 
         // After stopping a composite, release its source through `unsubscribe_bars`, which frees
         // the client feed recorded in the source's retained command.
-        if command.bar_type.is_composite() {
-            let source_type = command.bar_type.composite();
+        if command
+            .single_bar_type()
+            .expect("retained aggregation has one bar type")
+            .is_composite()
+        {
+            let source_type = command
+                .single_bar_type()
+                .expect("retained aggregation has one bar type")
+                .composite();
 
             if self
                 .bar_aggregators
@@ -558,18 +571,21 @@ impl DataEngine {
     }
 
     fn start_bar_aggregation(&mut self, cmd: &SubscribeBars) -> anyhow::Result<()> {
+        let bar_type = cmd
+            .single_bar_type()
+            .expect("native engine receives one bar type");
         let time_zone = time_zone_from_params(cmd.params.as_ref())?;
         let skip_first_non_full_bar = cmd
             .params
             .as_ref()
             .and_then(|params| params.get_bool("skip_first_non_full_bar"));
         self.create_bar_aggregator_for_key(
-            cmd.bar_type,
+            bar_type,
             None,
             skip_first_non_full_bar,
             time_zone.clone(),
         )?;
-        let key = bar_aggregator_key(cmd.bar_type, None);
+        let key = bar_aggregator_key(bar_type, None);
 
         if self
             .bar_aggregators
@@ -579,20 +595,20 @@ impl DataEngine {
         {
             if let Some(source_command) = self
                 .subscriptions_bar_aggregation
-                .get(&cmd.bar_type.standard())
+                .get(&bar_type.standard())
                 .and_then(|subscription| subscription.source.clone())
             {
                 self.execute(DataCommand::Subscribe(source_command));
             }
 
-            log::debug!("Reusing running bar aggregator for {}", cmd.bar_type);
+            log::debug!("Reusing running bar aggregator for {bar_type}");
             return Ok(());
         }
 
-        self.start_bar_aggregator(cmd.bar_type, None, skip_first_non_full_bar, time_zone)?;
+        self.start_bar_aggregator(bar_type, None, skip_first_non_full_bar, time_zone)?;
         let source = self.subscribe_bar_aggregator(cmd);
         self.subscriptions_bar_aggregation.insert(
-            cmd.bar_type.standard(),
+            bar_type.standard(),
             BarAggregationSubscription {
                 command: cmd.clone(),
                 source,
@@ -694,17 +710,17 @@ impl DataEngine {
     }
 
     fn bar_aggregator_source_command(&self, cmd: &SubscribeBars) -> Option<SubscribeCommand> {
-        let key = bar_aggregator_key(cmd.bar_type, None);
+        let bar_type = cmd
+            .single_bar_type()
+            .expect("native engine receives one bar type");
+        let key = bar_aggregator_key(bar_type, None);
         if !self.bar_aggregators.contains_key(&key) {
-            log::error!(
-                "Cannot subscribe bar aggregator: no aggregator found for {}",
-                cmd.bar_type,
-            );
+            log::error!("Cannot subscribe bar aggregator: no aggregator found for {bar_type}");
             return None;
         }
 
-        if cmd.bar_type.is_composite() {
-            let composite_bar_type = cmd.bar_type.composite();
+        if bar_type.is_composite() {
+            let composite_bar_type = bar_type.composite();
             if composite_bar_type.is_externally_aggregated() {
                 let subscribe = SubscribeBars::new(
                     composite_bar_type,
@@ -717,9 +733,9 @@ impl DataEngine {
                 );
                 return Some(SubscribeCommand::Bars(subscribe));
             }
-        } else if cmd.bar_type.spec().price_type == PriceType::Last {
+        } else if bar_type.spec().price_type == PriceType::Last {
             let subscribe = SubscribeTrades::new(
-                cmd.bar_type.instrument_id(),
+                bar_type.instrument_id(),
                 cmd.client_id,
                 cmd.venue,
                 UUID4::new(),
@@ -730,7 +746,7 @@ impl DataEngine {
             return Some(SubscribeCommand::Trades(subscribe));
         } else {
             let subscribe = SubscribeQuotes::new(
-                cmd.bar_type.instrument_id(),
+                bar_type.instrument_id(),
                 cmd.client_id,
                 cmd.venue,
                 UUID4::new(),
@@ -796,8 +812,12 @@ impl DataEngine {
     }
 
     fn unsubscribe_bar_aggregator(&mut self, cmd: &UnsubscribeBars) {
-        if cmd.bar_type.is_composite() {
-            let composite_bar_type = cmd.bar_type.composite();
+        let bar_type = cmd
+            .single_bar_type()
+            .expect("native engine receives one bar type");
+
+        if bar_type.is_composite() {
+            let composite_bar_type = bar_type.composite();
             if composite_bar_type.is_externally_aggregated() {
                 let unsubscribe = UnsubscribeBars::new(
                     composite_bar_type,
@@ -812,9 +832,9 @@ impl DataEngine {
                     unsubscribe,
                 )));
             }
-        } else if cmd.bar_type.spec().price_type == PriceType::Last {
+        } else if bar_type.spec().price_type == PriceType::Last {
             let unsubscribe = UnsubscribeTrades::new(
-                cmd.bar_type.instrument_id(),
+                bar_type.instrument_id(),
                 cmd.client_id,
                 cmd.venue,
                 UUID4::new(),
@@ -827,7 +847,7 @@ impl DataEngine {
             )));
         } else {
             let unsubscribe = UnsubscribeQuotes::new(
-                cmd.bar_type.instrument_id(),
+                bar_type.instrument_id(),
                 cmd.client_id,
                 cmd.venue,
                 UUID4::new(),

@@ -256,27 +256,43 @@ fn test_catalog_start_ns_prefill_quotes_sets_null_without_catalog_hit(
 #[cfg(feature = "streaming")]
 #[rstest]
 fn test_catalog_start_ns_prefill_trades_from_catalog(
-    audusd_sim: CurrencyPair,
+    #[values(false, true)] batch: bool,
+    #[values(None, Some(79))] start_ns: Option<u64>,
     data_engine: Rc<RefCell<DataEngine>>,
     clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     client_id: ClientId,
     venue: Venue,
 ) {
+    let audusd_sim = audusd_sim();
     let mut data_engine = data_engine.borrow_mut();
     let recorder = register_recording_client(&mut data_engine, clock, cache, client_id, venue);
     let _catalog_dir = register_trade_catalog(&mut data_engine, audusd_sim.id, 2_000);
     let correlation_id = UUID4::new();
 
+    let ids = if batch {
+        vec![audusd_sim.id, InstrumentId::from("ETH/USD.SIM")]
+    } else {
+        vec![audusd_sim.id]
+    };
+
+    let params = start_ns
+        .map(|value| Params::new([("start_ns".to_string(), serde_json::json!(value))].into()));
+
     let sub = SubscribeTrades::new(
-        audusd_sim.id,
+        ids,
         Some(client_id),
         Some(venue),
         UUID4::new(),
         UnixNanos::default(),
         Some(correlation_id),
-        None,
+        params,
     );
+    let mut expected = serde_json::to_value(&sub).unwrap();
+    if !batch && start_ns.is_none() {
+        expected["params"] = serde_json::json!({"start_ns": 2_001});
+    }
+
     data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Trades(sub)));
 
     let SubscribeCommand::Trades(recorded) =
@@ -290,8 +306,9 @@ fn test_catalog_start_ns_prefill_trades_from_catalog(
             .params
             .as_ref()
             .and_then(|params| params.get_u64("start_ns")),
-        Some(2_001)
+        start_ns.or((!batch).then_some(2_001))
     );
+    assert_eq!(serde_json::to_value(recorded).unwrap(), expected);
 }
 
 #[cfg(feature = "streaming")]
@@ -372,7 +389,10 @@ fn test_catalog_start_ns_prefill_skips_internal_bars(
         panic!("expected source trades subscribe");
     };
 
-    assert_eq!(recorded.instrument_id, bar_type.instrument_id());
+    assert_eq!(
+        recorded.single_instrument_id().unwrap(),
+        bar_type.instrument_id()
+    );
     assert_eq!(
         recorded
             .params
@@ -3102,4 +3122,217 @@ fn recorded_request_book_depth(recorder: &Rc<RefCell<Vec<DataCommand>>>) -> Vec<
             _ => None,
         })
         .collect()
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_bar_list_prefills_each_catalog_start_independently(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+    #[values(None, Some(79))] start_ns: Option<u64>,
+    #[values(false, true)] equal: bool,
+) {
+    let mut engine = data_engine.borrow_mut();
+    let recorder = register_recording_client(&mut engine, clock, cache, client_id, venue);
+    let first = BarType::from("AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL");
+    let second = BarType::from("AUD/USD.SIM-5-MINUTE-LAST-EXTERNAL");
+    let catalog_dir = CatalogTempDir::new("bar-list-starts");
+    let catalog = ParquetDataCatalog::new(catalog_dir.path(), None, None, None, None);
+
+    for (bar_type, timestamp) in [(first, 3_000), (second, if equal { 3_000 } else { 7_000 })] {
+        let bar = make_bar(
+            bar_type, "1.0000", "1.0001", "0.9999", "1.0000", 1, timestamp,
+        );
+        catalog.write_to_parquet(&[bar], None, None, None).unwrap();
+    }
+
+    engine.register_catalog(Box::new(catalog), None);
+    let params = start_ns.map(|value| params_from_json(json!({"start_ns": value})));
+
+    let command = SubscribeBars::new(
+        [second, first],
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::from(53),
+        Some(UUID4::new()),
+        params,
+    );
+    engine
+        .execute_subscribe(SubscribeCommand::Bars(command.clone()))
+        .unwrap();
+    let grouped = equal || start_ns.is_some();
+    let mut expected = Vec::new();
+
+    for (types, timestamp) in if grouped {
+        vec![(vec![second, first], 3_001)]
+    } else {
+        vec![(vec![second], 7_001), (vec![first], 3_001)]
+    } {
+        let mut dispatch = command.with_bar_types(types);
+        dispatch.params = Some(params_from_json(
+            json!({"start_ns": start_ns.unwrap_or(timestamp)}),
+        ));
+        expected.push(serde_json::to_value(SubscribeCommand::Bars(dispatch)).unwrap());
+    }
+
+    let release =
+        SubscribeCommand::Bars(command).into_unsubscribe(UUID4::new(), UnixNanos::from(73), None);
+    engine.execute_unsubscribe(&release).unwrap();
+    expected.push(serde_json::to_value(release).unwrap());
+
+    let actual: Vec<_> = recorder
+        .borrow()
+        .iter()
+        .map(|command| match command {
+            DataCommand::Subscribe(command) => serde_json::to_value(command).unwrap(),
+            DataCommand::Unsubscribe(command) => serde_json::to_value(command).unwrap(),
+            _ => unreachable!(),
+        })
+        .collect();
+
+    assert_eq!(actual, expected);
+}
+
+#[cfg(feature = "streaming")]
+mod retained_intent {
+    use nautilus_model::data::{DataBatch, NautilusDataType, NautilusRecordType};
+    use nautilus_persistence::catalog::{
+        session::DataBatchQueryResult,
+        traits::{CatalogReader, CatalogWriter, RecordBatch},
+        types::{CatalogInstrumentQuery, CatalogQuery},
+    };
+
+    use super::*;
+
+    #[derive(Debug)]
+    struct UnavailableCatalog;
+
+    impl CatalogReader for UnavailableCatalog {
+        fn reset_session(&mut self) {}
+
+        fn instruments(
+            &mut self,
+            _: &CatalogInstrumentQuery,
+        ) -> anyhow::Result<Vec<InstrumentAny>> {
+            unreachable!()
+        }
+
+        fn query_batch(&mut self, _: &CatalogQuery) -> anyhow::Result<DataBatch> {
+            unreachable!()
+        }
+
+        fn query_batch_session(
+            &mut self,
+            _: &CatalogQuery,
+            _: Option<usize>,
+        ) -> anyhow::Result<DataBatchQueryResult> {
+            unreachable!()
+        }
+
+        fn query_last_timestamp(
+            &mut self,
+            _: NautilusDataType,
+            _: Option<&str>,
+        ) -> anyhow::Result<Option<u64>> {
+            anyhow::bail!("catalog start unavailable")
+        }
+    }
+    impl CatalogWriter for UnavailableCatalog {
+        fn write_instruments(&mut self, _: &[InstrumentAny]) -> anyhow::Result<()> {
+            unreachable!()
+        }
+
+        fn write_data(
+            &mut self,
+            _: &[Data],
+            _: Option<UnixNanos>,
+            _: Option<UnixNanos>,
+            _: Option<Params>,
+        ) -> anyhow::Result<()> {
+            unreachable!()
+        }
+
+        fn write_records(
+            &mut self,
+            _: NautilusRecordType,
+            _: &[RecordBatch],
+            _: Option<Params>,
+        ) -> anyhow::Result<()> {
+            unreachable!()
+        }
+
+        fn record_empty_coverage(
+            &mut self,
+            _: NautilusDataType,
+            _: Option<&str>,
+            _: UnixNanos,
+            _: UnixNanos,
+        ) -> anyhow::Result<()> {
+            unreachable!()
+        }
+    }
+
+    #[rstest]
+    #[case("Quotes")]
+    #[case("Trades")]
+    fn test_scalar_catalog_error_retains_intent_without_releasing_peer(
+        #[case] family: &str,
+        data_engine: Rc<RefCell<DataEngine>>,
+        clock: Rc<RefCell<VirtualClock>>,
+        cache: Rc<RefCell<Cache>>,
+        client_id: ClientId,
+        venue: Venue,
+    ) {
+        let mut engine = data_engine.borrow_mut();
+        let recorder = register_recording_client(&mut engine, clock, cache, client_id, venue);
+        let mut fields = json!({"instrument_ids": ["AUD/USD.SIM"], "client_id": client_id, "venue": venue,
+            "command_id": UUID4::new(), "ts_init": 17, "correlation_id": UUID4::new(),
+            "params": {"route": 23, "start_ns": 29}});
+        let original: SubscribeCommand = serde_json::from_value(json!({family: fields})).unwrap();
+        engine.execute_subscribe(original.clone()).unwrap();
+        engine.register_catalog(Box::new(UnavailableCatalog), None);
+        fields["command_id"] = json!(UUID4::new());
+        fields["params"] = json!({"route": 31});
+        let failed: SubscribeCommand = serde_json::from_value(json!({family: fields})).unwrap();
+        let error = engine.execute_subscribe(failed.clone()).unwrap_err();
+        assert_eq!(error.to_string(), "catalog start unavailable");
+        engine
+            .execute_unsubscribe(&failed.into_unsubscribe(UUID4::new(), UnixNanos::from(37), None))
+            .unwrap();
+        assert_eq!(recorder.borrow().len(), 1);
+
+        let active = if family == "Quotes" {
+            engine.subscribed_quotes()
+        } else {
+            engine.subscribed_trades()
+        };
+
+        assert_eq!(active, vec![InstrumentId::from("AUD/USD.SIM")]);
+        let release = original
+            .clone()
+            .into_unsubscribe(UUID4::new(), UnixNanos::from(41), None);
+        engine.execute_unsubscribe(&release).unwrap();
+
+        let actual: Vec<_> = recorder
+            .borrow()
+            .iter()
+            .map(|command| match command {
+                DataCommand::Subscribe(command) => serde_json::to_value(command).unwrap(),
+                DataCommand::Unsubscribe(command) => serde_json::to_value(command).unwrap(),
+                _ => unreachable!(),
+            })
+            .collect();
+
+        assert_eq!(
+            actual,
+            vec![
+                serde_json::to_value(original).unwrap(),
+                serde_json::to_value(release).unwrap()
+            ]
+        );
+    }
 }

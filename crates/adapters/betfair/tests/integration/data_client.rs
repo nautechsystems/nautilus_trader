@@ -27,10 +27,17 @@ use nautilus_common::{
     clients::DataClient,
     config::ConfigError,
     live::runner::{replace_system_event_sender, set_data_event_sender},
-    messages::{DataEvent, data::SubscribeBookDeltas, system::SocketState},
+    messages::{
+        DataEvent,
+        data::{
+            SubscribeBookDeltas, SubscribeQuotes, SubscribeTrades, UnsubscribeQuotes,
+            UnsubscribeTrades,
+        },
+        system::SocketState,
+    },
     testing::wait_until_async,
 };
-use nautilus_core::UUID4;
+use nautilus_core::{UUID4, UnixNanos};
 use nautilus_live::{SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
     data::Data,
@@ -234,6 +241,59 @@ fn live_runner(selection_id: u64) -> InstrumentId {
         selection_id,
         rust_decimal::Decimal::ZERO,
     )
+}
+
+#[rstest]
+#[case::single(1)]
+#[case::batch(2)]
+#[tokio::test]
+async fn test_quote_and_trade_subscriptions_are_noops(
+    #[case] count: usize,
+    #[values(false, true)] trades: bool,
+) {
+    let (mut client, mut data_rx) = create_test_data_client("127.0.0.1:1".parse().unwrap(), 1);
+    let ids = [
+        InstrumentId::from("1-180294978-6146434-0.BETFAIR"),
+        InstrumentId::from("1-180294978-6146435-0.BETFAIR"),
+    ];
+
+    let subscribe = SubscribeQuotes::new(
+        &ids[..count],
+        Some(*BETFAIR_CLIENT_ID),
+        Some(*BETFAIR_VENUE),
+        UUID4::new(),
+        UnixNanos::from(11),
+        None,
+        None,
+    );
+
+    let unsubscribe = UnsubscribeQuotes::new(
+        &ids[..count],
+        Some(*BETFAIR_CLIENT_ID),
+        Some(*BETFAIR_VENUE),
+        UUID4::new(),
+        UnixNanos::from(17),
+        None,
+        None,
+    );
+
+    if trades {
+        let subscribe: SubscribeTrades =
+            serde_json::from_value(serde_json::to_value(subscribe).unwrap()).unwrap();
+        let unsubscribe: UnsubscribeTrades =
+            serde_json::from_value(serde_json::to_value(unsubscribe).unwrap()).unwrap();
+        client.subscribe_trades(subscribe).unwrap();
+        client.unsubscribe_trades(&unsubscribe).unwrap();
+    } else {
+        client.subscribe_quotes(subscribe).unwrap();
+        client.unsubscribe_quotes(&unsubscribe).unwrap();
+    }
+
+    assert!(!client.is_connected());
+    assert!(matches!(
+        data_rx.try_recv(),
+        Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+    ));
 }
 
 #[rstest]
@@ -1717,7 +1777,9 @@ async fn test_data_client_recovers_book_after_unparsable_runner_change() {
 
 #[rstest]
 #[tokio::test]
-async fn test_data_client_subscription_writes_keep_every_subscribed_market() {
+async fn test_data_client_subscription_writes_keep_every_subscribed_market(
+    #[values(1, RESUB_DELTA_MARKET_IDS.len())] chunk_size: usize,
+) {
     let (addr, _state) = start_mock_http().await;
     let (stream_port, listener) = start_mock_stream().await;
     let (mut client, _rx) = create_test_data_client(addr, stream_port);
@@ -1740,16 +1802,21 @@ async fn test_data_client_subscription_writes_keep_every_subscribed_market() {
 
     client.connect().await.unwrap();
 
-    // Each command writes its subscription before the next, so writes arrive in command order
-    for market_id in RESUB_DELTA_MARKET_IDS {
-        let instrument_id = nautilus_betfair::common::parse::make_instrument_id(
-            market_id,
-            6_146_434,
-            rust_decimal::Decimal::ZERO,
-        );
+    let ids: Vec<_> = RESUB_DELTA_MARKET_IDS
+        .iter()
+        .map(|market_id| {
+            nautilus_betfair::common::parse::make_instrument_id(
+                market_id,
+                6_146_434,
+                rust_decimal::Decimal::ZERO,
+            )
+        })
+        .collect();
+
+    for ids in ids.chunks(chunk_size) {
         client
             .subscribe_book_deltas(SubscribeBookDeltas::new(
-                instrument_id,
+                ids,
                 BookType::L2_MBP,
                 None,
                 Some(*BETFAIR_VENUE),

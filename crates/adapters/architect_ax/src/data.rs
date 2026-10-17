@@ -30,7 +30,7 @@ use async_trait::async_trait;
 use futures_util::StreamExt;
 use jiff::{SignedDuration, Timestamp};
 use nautilus_common::{
-    clients::DataClient,
+    clients::{DataClient, execute_bar_subscriptions, execute_instrument_subscriptions},
     live::{dst::time::Instant, runner::get_data_event_sender, sender::EventSender},
     messages::{
         DataEvent, DataResponse,
@@ -615,53 +615,63 @@ impl DataClient for AxDataClient {
     }
 
     fn subscribe_book_deltas(&mut self, cmd: SubscribeBookDeltas) -> anyhow::Result<()> {
-        let symbol = cmd.instrument_id.symbol;
-        let level = Self::map_book_type_to_market_data_level(cmd.book_type);
-        if cmd.book_type == BookType::L1_MBP {
-            log::warn!(
-                "Book type L1_MBP not supported by AX for deltas, downgrading {symbol} to LEVEL_2"
-            );
-        }
-        log::debug!("Subscribing to book deltas for {symbol} at {level:?}");
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let cmd = cmd.with_instrument_ids(instrument_id);
+            let symbol = instrument_id.symbol;
+            let level = Self::map_book_type_to_market_data_level(cmd.book_type);
+            if cmd.book_type == BookType::L1_MBP {
+                log::warn!(
+                    "Book type L1_MBP not supported by AX for deltas, downgrading {symbol} to LEVEL_2"
+                );
+            }
 
-        match self.pending_tasks.spawner() {
-            Ok(tasks) => book::recovery::spawn_subscription_task(
-                cmd.instrument_id,
-                level,
-                self.subscription_order.next(),
-                self.book_sync.clone(),
-                self.ws_client.clone(),
-                self.book_snapshot_timeout(),
-                &tasks,
-            ),
-            Err(e) => log::warn!("Skipping AX subscribe book deltas after shutdown began: {e}"),
-        }
+            log::debug!("Subscribing to book deltas for {symbol} at {level:?}");
 
-        Ok(())
+            match self.pending_tasks.spawner() {
+                Ok(tasks) => book::recovery::spawn_subscription_task(
+                    instrument_id,
+                    level,
+                    self.subscription_order.next(),
+                    self.book_sync.clone(),
+                    self.ws_client.clone(),
+                    self.book_snapshot_timeout(),
+                    &tasks,
+                ),
+                Err(e) => log::warn!("Skipping AX subscribe book deltas after shutdown began: {e}"),
+            }
+
+            Ok(())
+        })
     }
 
     fn subscribe_quotes(&mut self, cmd: SubscribeQuotes) -> anyhow::Result<()> {
-        self.ws_symbol_op(
-            cmd.instrument_id,
-            |ws, s| async move { ws.subscribe_quotes(&s).await },
-            "Subscribing to quotes",
-        )
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.ws_symbol_op(
+                instrument_id,
+                |ws, s| async move { ws.subscribe_quotes(&s).await },
+                "Subscribing to quotes",
+            )
+        })
     }
 
     fn subscribe_trades(&mut self, cmd: SubscribeTrades) -> anyhow::Result<()> {
-        self.ws_symbol_op(
-            cmd.instrument_id,
-            |ws, s| async move { ws.subscribe_trades(&s).await },
-            "Subscribing to trades",
-        )
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.ws_symbol_op(
+                instrument_id,
+                |ws, s| async move { ws.subscribe_trades(&s).await },
+                "Subscribing to trades",
+            )
+        })
     }
 
     fn subscribe_mark_prices(&mut self, cmd: SubscribeMarkPrices) -> anyhow::Result<()> {
-        self.ws_symbol_op(
-            cmd.instrument_id,
-            |ws, s| async move { ws.subscribe_mark_prices(&s).await },
-            "Subscribing to mark prices",
-        )
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.ws_symbol_op(
+                instrument_id,
+                |ws, s| async move { ws.subscribe_mark_prices(&s).await },
+                "Subscribing to mark prices",
+            )
+        })
     }
 
     fn subscribe_index_prices(&mut self, _cmd: SubscribeIndexPrices) -> anyhow::Result<()> {
@@ -670,116 +680,119 @@ impl DataClient for AxDataClient {
     }
 
     fn subscribe_bars(&mut self, cmd: SubscribeBars) -> anyhow::Result<()> {
-        let bar_type = cmd.bar_type;
-        let symbol = bar_type.instrument_id().symbol.to_string();
-        let width = map_bar_spec_to_candle_width(&bar_type.spec())?;
-        log::debug!("Subscribing to bars for {bar_type} (width: {width:?})");
+        execute_bar_subscriptions(&cmd.bar_types, |bar_type| {
+            let symbol = bar_type.instrument_id().symbol.to_string();
+            let width = map_bar_spec_to_candle_width(&bar_type.spec())?;
+            log::debug!("Subscribing to bars for {bar_type} (width: {width:?})");
 
-        let ws = self.ws_client.clone();
-        self.spawn_ws(
-            async move {
-                ws.subscribe_candles(&symbol, width)
-                    .await
-                    .map_err(|e| anyhow::anyhow!(e))
-            },
-            "subscribe bars",
-        );
+            let ws = self.ws_client.clone();
+            self.spawn_ws(
+                async move {
+                    ws.subscribe_candles(&symbol, width)
+                        .await
+                        .map_err(|e| anyhow::anyhow!(e))
+                },
+                "subscribe bars",
+            );
 
-        Ok(())
+            Ok(())
+        })
     }
 
     fn subscribe_funding_rates(&mut self, cmd: SubscribeFundingRates) -> anyhow::Result<()> {
-        let poll_interval_mins = self.config.funding_rate_poll_interval_mins.max(1);
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let poll_interval_mins = self.config.funding_rate_poll_interval_mins.max(1);
 
-        // Use 7-day lookback to capture latest rate across weekends/holidays
-        let lookback = SignedDuration::from_hours(24 * (AX_FUNDING_RATE_LOOKBACK_DAYS));
+            // Use 7-day lookback to capture latest rate across weekends/holidays
+            let lookback = SignedDuration::from_hours(24 * (AX_FUNDING_RATE_LOOKBACK_DAYS));
 
-        let instrument_id = cmd.instrument_id;
+            if self.funding_rate_cancellations.contains_key(&instrument_id) {
+                log::debug!("Already subscribed to funding rates for {instrument_id}");
+                return Ok(());
+            }
 
-        if self.funding_rate_cancellations.contains_key(&instrument_id) {
-            log::debug!("Already subscribed to funding rates for {instrument_id}");
-            return Ok(());
-        }
+            log::debug!("Subscribing to funding rates for {instrument_id} (HTTP polling)");
 
-        log::debug!("Subscribing to funding rates for {instrument_id} (HTTP polling)");
+            let http = self.http_client.clone();
+            let sender = self.data_sender.clone();
+            let symbol = instrument_id.symbol.inner();
+            let cancellation = self.cancellation_token.child_token();
+            let task_cancellation = cancellation.clone();
+            let cache = Arc::clone(&self.funding_rate_cache);
+            let clock = self.clock;
 
-        let http = self.http_client.clone();
-        let sender = self.data_sender.clone();
-        let symbol = instrument_id.symbol.inner();
-        let cancellation = self.cancellation_token.child_token();
-        let task_cancellation = cancellation.clone();
-        let cache = Arc::clone(&self.funding_rate_cache);
-        let clock = self.clock;
+            self.session_tasks.spawn(async move {
+                // First tick fires immediately for initial emission
+                let mut interval = tokio::time::interval(Duration::from_mins(poll_interval_mins));
 
-        self.session_tasks.spawn(async move {
-            // First tick fires immediately for initial emission
-            let mut interval = tokio::time::interval(Duration::from_mins(poll_interval_mins));
+                loop {
+                    tokio::select! {
+                        () = task_cancellation.cancelled() => {
+                            log::debug!("Funding rate polling cancelled for {symbol}");
+                            break;
+                        }
+                        _ = interval.tick() => {
+                            let now: Timestamp = clock.get_time_ns().into();
+                            let start = now - lookback;
 
-            loop {
-                tokio::select! {
-                    () = task_cancellation.cancelled() => {
-                        log::debug!("Funding rate polling cancelled for {symbol}");
-                        break;
-                    }
-                    _ = interval.tick() => {
-                        let now: Timestamp = clock.get_time_ns().into();
-                        let start = now - lookback;
-
-                        match http.request_funding_rates(instrument_id, Some(start), Some(now)).await {
-                            Ok(funding_rates) => {
-                                if funding_rates.is_empty() {
-                                    log::warn!(
-                                        "No funding rates returned for {symbol}"
-                                    );
-                                } else if let Some(update) = funding_rates.last() {
-                                    // Only emit if rate changed
-                                    let should_emit = cache.lock()
-                                        .get(&instrument_id) != Some(update);
-
-                                    if should_emit {
-                                        log::debug!(
-                                            "Funding rate for {symbol}: {}",
-                                            update.rate,
+                            match http.request_funding_rates(instrument_id, Some(start), Some(now)).await {
+                                Ok(funding_rates) => {
+                                    if funding_rates.is_empty() {
+                                        log::warn!(
+                                            "No funding rates returned for {symbol}"
                                         );
-                                        let update = *update;
-                                        cache.lock()
-                                            .insert(instrument_id, update);
+                                    } else if let Some(update) = funding_rates.last() {
+                                        // Only emit if rate changed
+                                        let should_emit = cache.lock()
+                                            .get(&instrument_id) != Some(update);
 
-                                        if let Err(e) = sender.send(
-                                            DataEvent::FundingRate(update),
-                                        ) {
-                                            log::error!(
-                                                "Failed to send funding rate for {symbol}: {e}"
+                                        if should_emit {
+                                            log::debug!(
+                                                "Funding rate for {symbol}: {}",
+                                                update.rate,
                                             );
+                                            let update = *update;
+                                            cache.lock()
+                                                .insert(instrument_id, update);
+
+                                            if let Err(e) = sender.send(
+                                                DataEvent::FundingRate(update),
+                                            ) {
+                                                log::error!(
+                                                    "Failed to send funding rate for {symbol}: {e}"
+                                                );
+                                            }
                                         }
                                     }
                                 }
-                            }
-                            Err(e) => {
-                                log::error!(
-                                    "Failed to poll funding rates for {symbol}: {e}"
-                                );
+                                Err(e) => {
+                                    log::error!(
+                                        "Failed to poll funding rates for {symbol}: {e}"
+                                    );
+                                }
                             }
                         }
                     }
                 }
-            }
-        })?;
+            })?;
 
-        self.funding_rate_cancellations
-            .insert(instrument_id, cancellation);
-        Ok(())
+            self.funding_rate_cancellations
+                .insert(instrument_id, cancellation);
+            Ok(())
+        })
     }
 
     fn subscribe_instrument_status(
         &mut self,
         cmd: SubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
-        self.ws_symbol_op(
-            cmd.instrument_id,
-            |ws, s| async move { ws.subscribe_instrument_status(&s).await },
-            "Subscribing to instrument status",
-        )
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.ws_symbol_op(
+                instrument_id,
+                |ws, s| async move { ws.subscribe_instrument_status(&s).await },
+                "Subscribing to instrument status",
+            )
+        })
     }
 
     fn subscribe_instrument_close(&mut self, _cmd: SubscribeInstrumentClose) -> anyhow::Result<()> {
@@ -796,37 +809,45 @@ impl DataClient for AxDataClient {
     }
 
     fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
-        self.book_sync.remove(cmd.instrument_id);
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.book_sync.remove(instrument_id);
 
-        self.ws_symbol_op(
-            cmd.instrument_id,
-            |ws, s| async move { ws.unsubscribe_book_deltas(&s).await },
-            "Unsubscribing from book deltas",
-        )
+            self.ws_symbol_op(
+                instrument_id,
+                |ws, s| async move { ws.unsubscribe_book_deltas(&s).await },
+                "Unsubscribing from book deltas",
+            )
+        })
     }
 
     fn unsubscribe_quotes(&mut self, cmd: &UnsubscribeQuotes) -> anyhow::Result<()> {
-        self.ws_symbol_op(
-            cmd.instrument_id,
-            |ws, s| async move { ws.unsubscribe_quotes(&s).await },
-            "Unsubscribing from quotes",
-        )
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.ws_symbol_op(
+                instrument_id,
+                |ws, s| async move { ws.unsubscribe_quotes(&s).await },
+                "Unsubscribing from quotes",
+            )
+        })
     }
 
     fn unsubscribe_trades(&mut self, cmd: &UnsubscribeTrades) -> anyhow::Result<()> {
-        self.ws_symbol_op(
-            cmd.instrument_id,
-            |ws, s| async move { ws.unsubscribe_trades(&s).await },
-            "Unsubscribing from trades",
-        )
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.ws_symbol_op(
+                instrument_id,
+                |ws, s| async move { ws.unsubscribe_trades(&s).await },
+                "Unsubscribing from trades",
+            )
+        })
     }
 
     fn unsubscribe_mark_prices(&mut self, cmd: &UnsubscribeMarkPrices) -> anyhow::Result<()> {
-        self.ws_symbol_op(
-            cmd.instrument_id,
-            |ws, s| async move { ws.unsubscribe_mark_prices(&s).await },
-            "Unsubscribing from mark prices",
-        )
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.ws_symbol_op(
+                instrument_id,
+                |ws, s| async move { ws.unsubscribe_mark_prices(&s).await },
+                "Unsubscribing from mark prices",
+            )
+        })
     }
 
     fn unsubscribe_index_prices(&mut self, _cmd: &UnsubscribeIndexPrices) -> anyhow::Result<()> {
@@ -834,47 +855,50 @@ impl DataClient for AxDataClient {
     }
 
     fn unsubscribe_bars(&mut self, cmd: &UnsubscribeBars) -> anyhow::Result<()> {
-        let bar_type = cmd.bar_type;
-        let symbol = bar_type.instrument_id().symbol.to_string();
-        let width = map_bar_spec_to_candle_width(&bar_type.spec())?;
-        log::debug!("Unsubscribing from bars for {bar_type}");
+        execute_bar_subscriptions(&cmd.bar_types, |bar_type| {
+            let symbol = bar_type.instrument_id().symbol.to_string();
+            let width = map_bar_spec_to_candle_width(&bar_type.spec())?;
+            log::debug!("Unsubscribing from bars for {bar_type}");
 
-        let ws = self.ws_client.clone();
-        self.spawn_ws(
-            async move {
-                ws.unsubscribe_candles(&symbol, width)
-                    .await
-                    .map_err(|e| anyhow::anyhow!(e))
-            },
-            "unsubscribe bars",
-        );
+            let ws = self.ws_client.clone();
+            self.spawn_ws(
+                async move {
+                    ws.unsubscribe_candles(&symbol, width)
+                        .await
+                        .map_err(|e| anyhow::anyhow!(e))
+                },
+                "unsubscribe bars",
+            );
 
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_funding_rates(&mut self, cmd: &UnsubscribeFundingRates) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            if let Some(cancellation) = self.funding_rate_cancellations.remove(&instrument_id) {
+                log::debug!("Unsubscribing from funding rates for {instrument_id}");
+                cancellation.cancel();
+                self.funding_rate_cache.lock().remove(&instrument_id);
+            } else {
+                log::debug!("Not subscribed to funding rates for {instrument_id}");
+            }
 
-        if let Some(cancellation) = self.funding_rate_cancellations.remove(&instrument_id) {
-            log::debug!("Unsubscribing from funding rates for {instrument_id}");
-            cancellation.cancel();
-            self.funding_rate_cache.lock().remove(&instrument_id);
-        } else {
-            log::debug!("Not subscribed to funding rates for {instrument_id}");
-        }
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_instrument_status(
         &mut self,
         cmd: &UnsubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
-        self.ws_symbol_op(
-            cmd.instrument_id,
-            |ws, s| async move { ws.unsubscribe_instrument_status(&s).await },
-            "Unsubscribing from instrument status",
-        )
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.ws_symbol_op(
+                instrument_id,
+                |ws, s| async move { ws.unsubscribe_instrument_status(&s).await },
+                "Unsubscribing from instrument status",
+            )
+        })
     }
 
     fn unsubscribe_instrument_close(

@@ -65,16 +65,17 @@ impl DataEngine {
         &mut self,
         cmd: &SubscribeBookDeltas,
     ) -> anyhow::Result<bool> {
-        if cmd.instrument_id.is_synthetic() {
+        let instrument_id = cmd.single_instrument_id()?;
+        if instrument_id.is_synthetic() {
             anyhow::bail!("Cannot subscribe for synthetic instrument `OrderBookDelta` data");
         }
 
         let had_deltas =
-            self.has_book_delta_subscription_key(cmd.instrument_id, cmd.client_id, cmd.venue);
+            self.has_book_delta_subscription_key(instrument_id, cmd.client_id, cmd.venue);
 
         self.retain_book_subscription(SubscribeCommand::BookDeltas(cmd.clone()))?;
 
-        self.increment_book_delta_subscription(cmd.instrument_id, cmd.client_id, cmd.venue);
+        self.increment_book_delta_subscription(instrument_id, cmd.client_id, cmd.venue);
 
         Ok(!had_deltas)
     }
@@ -83,16 +84,17 @@ impl DataEngine {
         &mut self,
         cmd: &SubscribeBookDepth,
     ) -> anyhow::Result<bool> {
-        if cmd.instrument_id.is_synthetic() {
+        let instrument_id = cmd.single_instrument_id()?;
+        if instrument_id.is_synthetic() {
             anyhow::bail!("Cannot subscribe for synthetic instrument `OrderBookDepth` data");
         }
 
         let had_depth =
-            self.has_book_depth_subscription_key(cmd.instrument_id, cmd.client_id, cmd.venue);
+            self.has_book_depth_subscription_key(instrument_id, cmd.client_id, cmd.venue);
 
         self.retain_book_subscription(SubscribeCommand::BookDepth(cmd.clone()))?;
 
-        self.increment_book_depth_subscription(cmd.instrument_id, cmd.client_id, cmd.venue);
+        self.increment_book_depth_subscription(instrument_id, cmd.client_id, cmd.venue);
 
         Ok(!had_depth)
     }
@@ -101,13 +103,14 @@ impl DataEngine {
         &mut self,
         cmd: &SubscribeBookSnapshots,
     ) -> anyhow::Result<()> {
-        if cmd.instrument_id.is_synthetic() {
+        let instrument_id = cmd.single_instrument_id()?;
+        if instrument_id.is_synthetic() {
             anyhow::bail!("Cannot subscribe for synthetic instrument `OrderBookDelta` data");
         }
 
-        let parent = resolve_parent_components(&cmd.instrument_id, cmd.params.as_ref())?;
+        let parent = resolve_parent_components(&instrument_id, cmd.params.as_ref())?;
 
-        let had_snapshots = self.has_book_snapshot_subscriptions(&cmd.instrument_id);
+        let had_snapshots = self.has_book_snapshot_subscriptions(&instrument_id);
 
         self.retain_book_subscription(SubscribeCommand::BookSnapshots(cmd.clone()))?;
 
@@ -115,11 +118,11 @@ impl DataEngine {
 
         if !had_snapshots {
             self.book_snapshot_sources.insert(
-                cmd.instrument_id,
+                instrument_id,
                 BookSnapshotSource {
                     command: cmd.clone(),
                     client_command: SubscribeCommand::BookDeltas(SubscribeBookDeltas::new(
-                        cmd.instrument_id,
+                        instrument_id,
                         cmd.book_type,
                         cmd.client_id,
                         cmd.venue,
@@ -136,7 +139,7 @@ impl DataEngine {
 
         let source = self
             .book_snapshot_sources
-            .get(&cmd.instrument_id)
+            .get(&instrument_id)
             .cloned()
             .expect("snapshot source command must exist after increment");
         self.subscribe_book_snapshot_source(&source.command, source.client_command);
@@ -149,8 +152,12 @@ impl DataEngine {
         cmd: &SubscribeBookSnapshots,
         client_command: SubscribeCommand,
     ) {
+        let instrument_id = cmd
+            .single_instrument_id()
+            .expect("instrument command has one member at this boundary");
+
         if let Some(client_id) = cmd.client_id.as_ref()
-            && self.external_clients.contains(client_id)
+            && self.is_external_client(*client_id)
         {
             if self.config.debug {
                 log::debug!("Skipping subscribe command for external client {client_id}: {cmd:?}");
@@ -161,16 +168,13 @@ impl DataEngine {
 
         log::debug!(
             "Forwarding BookSnapshots as BookDeltas for {}, client_id={:?}, venue={:?}",
-            cmd.instrument_id,
+            instrument_id,
             cmd.client_id,
             cmd.venue,
         );
 
         if let Some(client) = self.get_command_client(cmd.client_id.as_ref(), cmd.venue.as_ref()) {
-            log::debug!(
-                "Calling client.execute_subscribe for BookDeltas: {}",
-                cmd.instrument_id
-            );
+            log::debug!("Calling client.execute_subscribe for BookDeltas: {instrument_id}");
             client.execute_subscribe(client_command);
         } else {
             log::error!(
@@ -182,7 +186,11 @@ impl DataEngine {
     }
 
     pub(super) fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> bool {
-        match self.decrement_book_delta_subscription(cmd.instrument_id, cmd.client_id, cmd.venue) {
+        let instrument_id = cmd
+            .single_instrument_id()
+            .expect("instrument command has one member at this boundary");
+
+        match self.decrement_book_delta_subscription(instrument_id, cmd.client_id, cmd.venue) {
             BookDeltasUnsubscribeResult::NotSubscribed => {
                 log::warn!("Cannot unsubscribe from `OrderBookDeltas` data: not subscribed");
                 return false;
@@ -195,7 +203,11 @@ impl DataEngine {
     }
 
     pub(super) fn unsubscribe_book_depth(&mut self, cmd: &UnsubscribeBookDepth) -> bool {
-        match self.decrement_book_depth_subscription(cmd.instrument_id, cmd.client_id, cmd.venue) {
+        let instrument_id = cmd
+            .single_instrument_id()
+            .expect("instrument command has one member at this boundary");
+
+        match self.decrement_book_depth_subscription(instrument_id, cmd.client_id, cmd.venue) {
             BookDeltasUnsubscribeResult::NotSubscribed => {
                 log::warn!("Cannot unsubscribe from `OrderBookDepth` data: not subscribed");
                 return false;
@@ -208,7 +220,11 @@ impl DataEngine {
     }
 
     pub(super) fn unsubscribe_book_snapshots(&mut self, cmd: &UnsubscribeBookSnapshots) {
-        match self.decrement_book_snapshot_subscription(cmd.instrument_id, cmd.interval_ms) {
+        let instrument_id = cmd
+            .single_instrument_id()
+            .expect("instrument command has one member at this boundary");
+
+        match self.decrement_book_snapshot_subscription(instrument_id, cmd.interval_ms) {
             BookSnapshotUnsubscribeResult::NotSubscribed => {
                 log::warn!("Cannot unsubscribe from `OrderBook` snapshots: not subscribed");
                 return;
@@ -217,20 +233,19 @@ impl DataEngine {
             BookSnapshotUnsubscribeResult::Removed => {}
         }
 
-        if self.has_book_snapshot_subscriptions(&cmd.instrument_id) {
+        if self.has_book_snapshot_subscriptions(&instrument_id) {
             return;
         }
 
-        let Some(source) = self.book_snapshot_sources.remove(&cmd.instrument_id) else {
+        let Some(source) = self.book_snapshot_sources.remove(&instrument_id) else {
             log::error!(
-                "Cannot release order book snapshot source for {}: command not retained",
-                cmd.instrument_id,
+                "Cannot release order book snapshot source for {instrument_id}: command not retained",
             );
             return;
         };
 
         if let Some(client_id) = source.command.client_id.as_ref()
-            && self.external_clients.contains(client_id)
+            && self.is_external_client(*client_id)
         {
             return;
         }
@@ -240,7 +255,10 @@ impl DataEngine {
             source.command.venue.as_ref(),
         ) {
             let deltas_cmd = UnsubscribeBookDeltas::new(
-                source.command.instrument_id,
+                source
+                    .command
+                    .single_instrument_id()
+                    .expect("book commands are projected onto one instrument"),
                 source.command.client_id,
                 source.command.venue,
                 UUID4::new(),
@@ -254,9 +272,15 @@ impl DataEngine {
 
     fn retain_book_subscription(&mut self, command: SubscribeCommand) -> anyhow::Result<()> {
         let instrument_id = match &command {
-            SubscribeCommand::BookDeltas(cmd) => cmd.instrument_id,
-            SubscribeCommand::BookDepth(cmd) => cmd.instrument_id,
-            SubscribeCommand::BookSnapshots(cmd) => cmd.instrument_id,
+            SubscribeCommand::BookDeltas(cmd) => cmd
+                .single_instrument_id()
+                .expect("book commands are projected onto one instrument"),
+            SubscribeCommand::BookDepth(cmd) => cmd
+                .single_instrument_id()
+                .expect("book commands are projected onto one instrument"),
+            SubscribeCommand::BookSnapshots(cmd) => cmd
+                .single_instrument_id()
+                .expect("book commands are projected onto one instrument"),
             _ => unreachable!("only book subscriptions are retained"),
         };
 
@@ -352,9 +376,15 @@ impl DataEngine {
         let key = SubscriptionKey::from_unsubscribe(command);
 
         let instrument_id = match command {
-            UnsubscribeCommand::BookDeltas(cmd) => cmd.instrument_id,
-            UnsubscribeCommand::BookDepth(cmd) => cmd.instrument_id,
-            UnsubscribeCommand::BookSnapshots(cmd) => cmd.instrument_id,
+            UnsubscribeCommand::BookDeltas(cmd) => cmd
+                .single_instrument_id()
+                .expect("book commands are projected onto one instrument"),
+            UnsubscribeCommand::BookDepth(cmd) => cmd
+                .single_instrument_id()
+                .expect("book commands are projected onto one instrument"),
+            UnsubscribeCommand::BookSnapshots(cmd) => cmd
+                .single_instrument_id()
+                .expect("book commands are projected onto one instrument"),
             _ => unreachable!("only book subscriptions are released"),
         };
 
@@ -514,7 +544,10 @@ impl DataEngine {
         cmd: &SubscribeBookSnapshots,
         parent: Option<(Ustr, InstrumentClass)>,
     ) -> bool {
-        let key = (cmd.instrument_id, cmd.interval_ms);
+        let instrument_id = cmd
+            .single_instrument_id()
+            .expect("instrument command has one member at this boundary");
+        let key = (instrument_id, cmd.interval_ms);
 
         if let Some(count) = self.book_snapshot_counts.get_mut(&key) {
             *count += 1;
@@ -534,19 +567,17 @@ impl DataEngine {
             snapshot_infos
         };
 
-        let topic = switchboard::get_book_snapshots_topic(cmd.instrument_id, cmd.interval_ms);
+        let topic = switchboard::get_book_snapshots_topic(instrument_id, cmd.interval_ms);
 
         let snap_info = BookSnapshotInfo {
-            instrument_id: cmd.instrument_id,
-            venue: cmd.instrument_id.venue,
+            instrument_id,
+            venue: instrument_id.venue,
             parent,
             topic,
             interval_ms: cmd.interval_ms,
         };
 
-        snapshot_infos
-            .borrow_mut()
-            .insert(cmd.instrument_id, snap_info);
+        snapshot_infos.borrow_mut().insert(instrument_id, snap_info);
 
         true
     }

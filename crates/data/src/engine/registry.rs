@@ -19,10 +19,9 @@ use super::{
 };
 
 impl DataEngine {
-    #[cfg(feature = "defi")]
     #[must_use]
     pub(crate) fn is_external_client(&self, client_id: ClientId) -> bool {
-        self.external_clients.contains(&client_id)
+        self.cache.borrow().is_external_data_client(&client_id)
     }
 
     /// Registers the `client` with the engine with an optional venue `routing`.

@@ -362,7 +362,7 @@ fn bench_command_channels(c: &mut Criterion) {
     );
 
     let data = DataCommand::Subscribe(SubscribeCommand::Quotes(SubscribeQuotes::new(
-        "EUR/USD.SIM".into(),
+        InstrumentId::from("EUR/USD.SIM"),
         Some("SIM".into()),
         None,
         UUID4::from("00000000-0000-4000-8000-000000000001"),

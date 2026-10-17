@@ -785,6 +785,7 @@ impl Drop for ClearScope {
 #[cfg(test)]
 mod tests {
     use nautilus_core::UUID4;
+    use nautilus_model::identifiers::InstrumentId;
     use proptest::prelude::*;
     use rstest::rstest;
 
@@ -2996,7 +2997,7 @@ bus.subscribe('dispatch.*', raw, priority=100)
 
     fn data_command(id: u8) -> DataCommand {
         DataCommand::Subscribe(SubscribeCommand::Quotes(SubscribeQuotes::new(
-            "AUD/USD.SIM".into(),
+            InstrumentId::from("AUD/USD.SIM"),
             Some("SIM".into()),
             None,
             nautilus_core::UUID4::from(format!("00000000-0000-4000-8000-{id:012}").as_str()),

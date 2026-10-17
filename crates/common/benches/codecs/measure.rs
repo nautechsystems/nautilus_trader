@@ -28,7 +28,7 @@ use bytes::Bytes;
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     data::{
-        Bar, CustomData, Data, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate,
+        Bar, BarType, CustomData, Data, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate,
         OptionGreekValues, OptionGreeks, OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick,
         option_chain::StrikeRange,
         stubs::{
@@ -1297,7 +1297,7 @@ fn data_requests() -> Vec<(String, RequestCommand)> {
 
 fn data_subscriptions() -> Vec<(String, SubscribeCommand)> {
     let instrument_id = InstrumentId::from("BTCUSDT.BINANCE");
-    let bar_type = "BTCUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL".parse().unwrap();
+    let bar_type: BarType = "BTCUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL".parse().unwrap();
     let series_id = "DERIBIT:BTC:BTC:1800000000000000000".parse().unwrap();
     let data_type = stub_custom_data(77, -88, None, None).data_type;
     let mut cases = Vec::new();
@@ -1319,7 +1319,7 @@ fn data_subscriptions() -> Vec<(String, SubscribeCommand)> {
 
         for value in [
             subscription!(Data, SubscribeCustomData, {data_type: data_type.clone()}),
-            subscription!(Instrument, SubscribeInstrument, {instrument_id: instrument_id}),
+            subscription!(Instrument, SubscribeInstrument, {instrument_ids: vec![instrument_id]}),
             SubscribeCommand::Instruments(SubscribeInstruments {
                 client_id: Some(ClientId::from("CLIENT-1")),
                 venue: "BINANCE".into(),
@@ -1328,24 +1328,24 @@ fn data_subscriptions() -> Vec<(String, SubscribeCommand)> {
                 correlation_id: populated.then(UUID4::new),
                 params: populated.then(params),
             }),
-            subscription!(BookDeltas, SubscribeBookDeltas, {instrument_id: instrument_id,
+            subscription!(BookDeltas, SubscribeBookDeltas, {instrument_ids: vec![instrument_id],
                 book_type: BookType::L3_MBO,
                 depth: std::num::NonZeroUsize::new(20), managed: true}),
-            subscription!(BookDepth, SubscribeBookDepth, {instrument_id: instrument_id,
+            subscription!(BookDepth, SubscribeBookDepth, {instrument_ids: vec![instrument_id],
                 book_type: BookType::L2_MBP,
                 depth: std::num::NonZeroUsize::new(10), managed: false}),
-            subscription!(BookSnapshots, SubscribeBookSnapshots, {instrument_id: instrument_id,
+            subscription!(BookSnapshots, SubscribeBookSnapshots, {instrument_ids: vec![instrument_id],
                 book_type: BookType::L2_MBP,
                 depth: std::num::NonZeroUsize::new(5), interval_ms: std::num::NonZeroUsize::new(250).unwrap()}),
-            subscription!(Quotes, SubscribeQuotes, {instrument_id: instrument_id}),
-            subscription!(Trades, SubscribeTrades, {instrument_id: instrument_id}),
-            subscription!(Bars, SubscribeBars, {bar_type: bar_type}),
-            subscription!(MarkPrices, SubscribeMarkPrices, {instrument_id: instrument_id}),
-            subscription!(IndexPrices, SubscribeIndexPrices, {instrument_id: instrument_id}),
-            subscription!(FundingRates, SubscribeFundingRates, {instrument_id: instrument_id}),
-            subscription!(InstrumentStatus, SubscribeInstrumentStatus, {instrument_id: instrument_id}),
-            subscription!(InstrumentClose, SubscribeInstrumentClose, {instrument_id: instrument_id}),
-            subscription!(OptionGreeks, SubscribeOptionGreeks, {instrument_id: instrument_id}),
+            subscription!(Quotes, SubscribeQuotes, {instrument_ids: vec![instrument_id]}),
+            subscription!(Trades, SubscribeTrades, {instrument_ids: vec![instrument_id]}),
+            subscription!(Bars, SubscribeBars, {bar_types: vec![bar_type]}),
+            subscription!(MarkPrices, SubscribeMarkPrices, {instrument_ids: vec![instrument_id]}),
+            subscription!(IndexPrices, SubscribeIndexPrices, {instrument_ids: vec![instrument_id]}),
+            subscription!(FundingRates, SubscribeFundingRates, {instrument_ids: vec![instrument_id]}),
+            subscription!(InstrumentStatus, SubscribeInstrumentStatus, {instrument_ids: vec![instrument_id]}),
+            subscription!(InstrumentClose, SubscribeInstrumentClose, {instrument_ids: vec![instrument_id]}),
+            subscription!(OptionGreeks, SubscribeOptionGreeks, {instrument_ids: vec![instrument_id]}),
         ] {
             let name = match &value {
                 SubscribeCommand::Data(_) => "data",
@@ -1368,6 +1368,13 @@ fn data_subscriptions() -> Vec<(String, SubscribeCommand)> {
 
             cases.push((format!("{name}_populated{populated}"), value));
         }
+
+        let batch = subscription!(Bars, SubscribeBars, {bar_types: vec![
+            bar_type,
+            BarType::from("BTCUSDT.BINANCE-5-MINUTE-LAST-EXTERNAL"),
+            BarType::from("ETHUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL"),
+        ]});
+        cases.push((format!("bars_batch_populated{populated}"), batch));
 
         for (name, strike_range) in [
             (

@@ -3222,7 +3222,7 @@ mod tests {
         match (decoded, subscribe) {
             (SubscribeCommand::Quotes(decoded), SubscribeCommand::Quotes(expected)) => {
                 assert_eq!(decoded.command_id, expected.command_id);
-                assert_eq!(decoded.instrument_id, expected.instrument_id);
+                assert_eq!(decoded.instrument_ids, expected.instrument_ids);
             }
             other => panic!("expected SubscribeCommand::Quotes round trip, was {other:?}"),
         }
@@ -3244,7 +3244,7 @@ mod tests {
         match (decoded, unsubscribe) {
             (UnsubscribeCommand::Quotes(decoded), UnsubscribeCommand::Quotes(expected)) => {
                 assert_eq!(decoded.command_id, expected.command_id);
-                assert_eq!(decoded.instrument_id, expected.instrument_id);
+                assert_eq!(decoded.instrument_ids, expected.instrument_ids);
             }
             other => panic!("expected UnsubscribeCommand::Quotes round trip, was {other:?}"),
         }

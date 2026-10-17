@@ -783,13 +783,13 @@ class DataActor:
     ) -> None: ...
     def subscribe_instrument(
         self,
-        instrument_id: model.InstrumentId,
+        instrument_id: model.InstrumentId | typing.Sequence[model.InstrumentId],
         client_id: model.ClientId | None = None,
         params: dict | None = None,
     ) -> None: ...
     def subscribe_book_deltas(
         self,
-        instrument_id: model.InstrumentId,
+        instrument_id: model.InstrumentId | typing.Sequence[model.InstrumentId],
         book_type: model.BookType,
         depth: int | None = None,
         client_id: model.ClientId | None = None,
@@ -798,7 +798,7 @@ class DataActor:
     ) -> None: ...
     def subscribe_book_depth(
         self,
-        instrument_id: model.InstrumentId,
+        instrument_id: model.InstrumentId | typing.Sequence[model.InstrumentId],
         book_type: model.BookType,
         depth: int | None = None,
         client_id: model.ClientId | None = None,
@@ -807,7 +807,7 @@ class DataActor:
     ) -> None: ...
     def subscribe_book_at_interval(
         self,
-        instrument_id: model.InstrumentId,
+        instrument_id: model.InstrumentId | typing.Sequence[model.InstrumentId],
         book_type: model.BookType,
         interval_ms: int,
         depth: int | None = None,
@@ -816,55 +816,55 @@ class DataActor:
     ) -> None: ...
     def subscribe_quotes(
         self,
-        instrument_id: model.InstrumentId,
+        instrument_id: model.InstrumentId | typing.Sequence[model.InstrumentId],
         client_id: model.ClientId | None = None,
         params: dict | None = None,
     ) -> None: ...
     def subscribe_trades(
         self,
-        instrument_id: model.InstrumentId,
+        instrument_id: model.InstrumentId | typing.Sequence[model.InstrumentId],
         client_id: model.ClientId | None = None,
         params: dict | None = None,
     ) -> None: ...
     def subscribe_bars(
         self,
-        bar_type: model.BarType,
+        bar_type: model.BarType | typing.Sequence[model.BarType],
         client_id: model.ClientId | None = None,
         params: dict | None = None,
     ) -> None: ...
     def subscribe_mark_prices(
         self,
-        instrument_id: model.InstrumentId,
+        instrument_id: model.InstrumentId | typing.Sequence[model.InstrumentId],
         client_id: model.ClientId | None = None,
         params: dict | None = None,
     ) -> None: ...
     def subscribe_index_prices(
         self,
-        instrument_id: model.InstrumentId,
+        instrument_id: model.InstrumentId | typing.Sequence[model.InstrumentId],
         client_id: model.ClientId | None = None,
         params: dict | None = None,
     ) -> None: ...
     def subscribe_funding_rates(
         self,
-        instrument_id: model.InstrumentId,
+        instrument_id: model.InstrumentId | typing.Sequence[model.InstrumentId],
         client_id: model.ClientId | None = None,
         params: dict | None = None,
     ) -> None: ...
     def subscribe_option_greeks(
         self,
-        instrument_id: model.InstrumentId,
+        instrument_id: model.InstrumentId | typing.Sequence[model.InstrumentId],
         client_id: model.ClientId | None = None,
         params: dict | None = None,
     ) -> None: ...
     def subscribe_instrument_status(
         self,
-        instrument_id: model.InstrumentId,
+        instrument_id: model.InstrumentId | typing.Sequence[model.InstrumentId],
         client_id: model.ClientId | None = None,
         params: dict | None = None,
     ) -> None: ...
     def subscribe_instrument_close(
         self,
-        instrument_id: model.InstrumentId,
+        instrument_id: model.InstrumentId | typing.Sequence[model.InstrumentId],
         client_id: model.ClientId | None = None,
         params: dict | None = None,
     ) -> None: ...
@@ -895,80 +895,80 @@ class DataActor:
     ) -> None: ...
     def unsubscribe_instrument(
         self,
-        instrument_id: model.InstrumentId,
+        instrument_id: model.InstrumentId | typing.Sequence[model.InstrumentId],
         client_id: model.ClientId | None = None,
         params: dict | None = None,
     ) -> None: ...
     def unsubscribe_book_deltas(
         self,
-        instrument_id: model.InstrumentId,
+        instrument_id: model.InstrumentId | typing.Sequence[model.InstrumentId],
         client_id: model.ClientId | None = None,
         params: dict | None = None,
     ) -> None: ...
     def unsubscribe_book_depth(
         self,
-        instrument_id: model.InstrumentId,
+        instrument_id: model.InstrumentId | typing.Sequence[model.InstrumentId],
         client_id: model.ClientId | None = None,
         params: dict | None = None,
     ) -> None: ...
     def unsubscribe_book_at_interval(
         self,
-        instrument_id: model.InstrumentId,
+        instrument_id: model.InstrumentId | typing.Sequence[model.InstrumentId],
         interval_ms: int,
         client_id: model.ClientId | None = None,
         params: dict | None = None,
     ) -> None: ...
     def unsubscribe_quotes(
         self,
-        instrument_id: model.InstrumentId,
+        instrument_id: model.InstrumentId | typing.Sequence[model.InstrumentId],
         client_id: model.ClientId | None = None,
         params: dict | None = None,
     ) -> None: ...
     def unsubscribe_trades(
         self,
-        instrument_id: model.InstrumentId,
+        instrument_id: model.InstrumentId | typing.Sequence[model.InstrumentId],
         client_id: model.ClientId | None = None,
         params: dict | None = None,
     ) -> None: ...
     def unsubscribe_bars(
         self,
-        bar_type: model.BarType,
+        bar_type: model.BarType | typing.Sequence[model.BarType],
         client_id: model.ClientId | None = None,
         params: dict | None = None,
     ) -> None: ...
     def unsubscribe_mark_prices(
         self,
-        instrument_id: model.InstrumentId,
+        instrument_id: model.InstrumentId | typing.Sequence[model.InstrumentId],
         client_id: model.ClientId | None = None,
         params: dict | None = None,
     ) -> None: ...
     def unsubscribe_index_prices(
         self,
-        instrument_id: model.InstrumentId,
+        instrument_id: model.InstrumentId | typing.Sequence[model.InstrumentId],
         client_id: model.ClientId | None = None,
         params: dict | None = None,
     ) -> None: ...
     def unsubscribe_funding_rates(
         self,
-        instrument_id: model.InstrumentId,
+        instrument_id: model.InstrumentId | typing.Sequence[model.InstrumentId],
         client_id: model.ClientId | None = None,
         params: dict | None = None,
     ) -> None: ...
     def unsubscribe_option_greeks(
         self,
-        instrument_id: model.InstrumentId,
+        instrument_id: model.InstrumentId | typing.Sequence[model.InstrumentId],
         client_id: model.ClientId | None = None,
         params: dict | None = None,
     ) -> None: ...
     def unsubscribe_instrument_status(
         self,
-        instrument_id: model.InstrumentId,
+        instrument_id: model.InstrumentId | typing.Sequence[model.InstrumentId],
         client_id: model.ClientId | None = None,
         params: dict | None = None,
     ) -> None: ...
     def unsubscribe_instrument_close(
         self,
-        instrument_id: model.InstrumentId,
+        instrument_id: model.InstrumentId | typing.Sequence[model.InstrumentId],
         client_id: model.ClientId | None = None,
         params: dict | None = None,
     ) -> None: ...

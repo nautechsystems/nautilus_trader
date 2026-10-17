@@ -271,8 +271,54 @@ are copied. Override the hooks for the venue's supported capabilities. Unimpleme
 | Instrument events | `instrument_status`, `instrument_close` | *Not supported*                              |
 | Options           | `option_greeks`                         | `option_chain_reference_price`               |
 
-For example, quote subscriptions call `_subscribe_quotes(command)` and `_unsubscribe_quotes(command)`. Quote
-history calls `_request_quotes(request)`.
+For example, quote subscriptions call `_subscribe_quotes(command)` and `_unsubscribe_quotes(command)`.
+Quote history calls `_request_quotes(request)`.
+
+### Subscription lists
+
+Update command readers in both subscribe and unsubscribe hooks:
+
+| Command kind     | Read list property       | Actor/Strategy keyword |
+| ---------------- | ------------------------ | ---------------------- |
+| Instrument-keyed | `command.instrument_ids` | `instrument_id`        |
+| Bars             | `command.bar_types`      | `bar_type`             |
+
+Replace scalar `command.instrument_id` and `command.bar_type` readers. The properties are read-only and
+return list copies; mutating a copy does not change the command. Bar lists contain full requested types.
+
+Actor and Strategy calls keep the scalar keyword for both scalar and collection inputs. Historical
+requests, including `RequestBars`, retain scalar inputs. Custom data and venue-wide instrument hooks
+keep their existing command fields.
+
+Compatible direct members reach each hook as one ordered list for both subscribe and unsubscribe.
+For each hook:
+
+- Validate command-wide settings and reject unsupported lists before effects.
+- Process supported lists best effort, logging individual failures and continuing with later members.
+
+Internal bars, book snapshots, and other engine services create separate source acquisitions, which
+can remain singleton commands.
+
+### Queue admission and failures
+
+The bridge accepts the whole command when the runtime admits it to the client command queue.
+
+:::warning
+Later async hook failures, including unsupported-list errors, are logged. They cannot change the
+synchronous admission result or report per-member outcomes to the engine. Unsubscribe hooks must
+therefore tolerate members whose subscription failed.
+:::
+
+Native Rust hooks report partial outcomes with `SubscriptionError::instruments` or `SubscriptionError::bars`.
+Neither native acceptance nor Python queue admission reports venue acknowledgements.
+
+### Catalog start times
+
+With `streaming`:
+
+- Direct quote/trade lists skip catalog start inference; scalar calls retain it.
+- External bars infer a start per type. Different starts produce compatible subsets.
+- Explicit `start_ns` suppresses inference. Releases use the original route and parameters.
 
 ### Historical responses
 
@@ -462,15 +508,17 @@ to the releases covered by your adapter's tests.
 
 ### Exchange wheel-owned objects
 
-Use `Bound<'_, PyAny>` for incoming commands and `Py<PyAny>` for objects returned to Python. Import
-classes while attached to Python, read typed command attributes, and construct output with those
-imported classes. This method illustrates the conversion inside a `#[pymethods]` implementation:
+Use `Bound<'_, PyAny>` for incoming commands and instrument IDs, and `Py<PyAny>` for values returned to Python.
+Read command attributes and import classes while attached to Python; construct output with those classes.
+
+The client hook below passes each `command.instrument_ids` member to this backend method in a
+`#[pymethods]` implementation:
 
 ```rust
-fn quote(&self, py: Python<'_>, command: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+fn quote(&self, py: Python<'_>, instrument_id: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
     let model = py.import("nautilus_trader.model")?;
     let values = PyDict::new(py);
-    values.set_item("instrument_id", command.getattr("instrument_id")?)?;
+    values.set_item("instrument_id", instrument_id)?;
     for (name, value) in [("bid_price", "1.12345"), ("ask_price", "1.12349")] {
         values.set_item(
             name,
@@ -504,7 +552,9 @@ from external_adapter._backend import Backend
 
 
 async def _subscribe_quotes(self, command):
-    self._handle_data(Backend().quote(command))
+    backend = Backend()
+    for instrument_id in command.instrument_ids:
+        self._handle_data(backend.quote(instrument_id))
 ```
 
 Place that hook on a `MarketDataClient` subclass:

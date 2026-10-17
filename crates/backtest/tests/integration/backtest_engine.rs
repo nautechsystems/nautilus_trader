@@ -146,7 +146,7 @@ impl Debug for FailingStartStrategy {
 
 impl DataActor for FailingStartStrategy {
     fn on_start(&mut self) -> anyhow::Result<()> {
-        self.subscribe_quotes("ETHUSDT-PERP.BINANCE".into(), None, None);
+        self.subscribe_quotes(InstrumentId::from("ETHUSDT-PERP.BINANCE"), None, None);
         anyhow::ensure!(
             !nautilus_common::runner::data_cmd_queue_is_empty(),
             "Expected startup subscription to remain queued",

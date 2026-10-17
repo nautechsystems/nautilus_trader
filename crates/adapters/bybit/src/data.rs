@@ -29,7 +29,7 @@ use anyhow::Context;
 use dashmap::DashMap;
 use futures_util::{StreamExt, pin_mut};
 use nautilus_common::{
-    clients::DataClient,
+    clients::{DataClient, execute_bar_subscriptions, execute_instrument_subscriptions},
     live::{dst::time::Instant, runner::get_data_event_sender, sender::EventSender},
     messages::{
         DataEvent,
@@ -1272,246 +1272,221 @@ impl DataClient for BybitDataClient {
     }
 
     fn subscribe_book_deltas(&mut self, cmd: SubscribeBookDeltas) -> anyhow::Result<()> {
-        if cmd.book_type != BookType::L2_MBP {
-            anyhow::bail!("Bybit only supports L2_MBP order book deltas");
-        }
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let cmd = cmd.with_instrument_ids(instrument_id);
+            if cmd.book_type != BookType::L2_MBP {
+                anyhow::bail!("Bybit only supports L2_MBP order book deltas");
+            }
 
-        let depth = cmd
-            .depth
-            .map_or(BYBIT_DEFAULT_ORDERBOOK_DEPTH, |d| d.get() as u32);
+            let depth = cmd
+                .depth
+                .map_or(BYBIT_DEFAULT_ORDERBOOK_DEPTH, |d| d.get() as u32);
 
-        validate_orderbook_depth(depth)?;
+            validate_orderbook_depth(depth)?;
 
-        let instrument_id = cmd.instrument_id;
-        let product_type = self
-            .get_product_type_for_instrument(instrument_id)
-            .unwrap_or(BybitProductType::Linear);
+            let product_type = self
+                .get_product_type_for_instrument(instrument_id)
+                .unwrap_or(BybitProductType::Linear);
 
-        let ws_client = self
-            .get_ws_client_for_product(product_type)
-            .context("no WebSocket client for product type")?
-            .clone();
+            let ws_client = self
+                .get_ws_client_for_product(product_type)
+                .context("no WebSocket client for product type")?
+                .clone();
 
-        if let Some(subscribed_depth) = self.book_depths.load().get(&instrument_id) {
-            anyhow::ensure!(
-                *subscribed_depth == depth,
-                "Already subscribed to book depth {subscribed_depth} for {instrument_id}"
-            );
-            return Ok(());
-        }
-
-        let tasks = match self.command_tasks.spawner() {
-            Ok(tasks) => tasks,
-            Err(e) => {
-                log::warn!("Skipping Bybit data command after shutdown began: {e}");
+            if let Some(subscribed_depth) = self.book_depths.load().get(&instrument_id) {
+                anyhow::ensure!(
+                    *subscribed_depth == depth,
+                    "Already subscribed to book depth {subscribed_depth} for {instrument_id}"
+                );
                 return Ok(());
             }
-        };
 
-        spawn_subscription_task(
-            instrument_id,
-            depth,
-            Arc::clone(&self.book_depths),
-            self.book_sync.clone(),
-            ws_client,
-            Duration::from_secs(self.config.book_snapshot_timeout_secs),
-            &tasks,
-        );
+            let tasks = match self.command_tasks.spawner() {
+                Ok(tasks) => tasks,
+                Err(e) => {
+                    log::warn!("Skipping Bybit data command after shutdown began: {e}");
+                    return Ok(());
+                }
+            };
 
-        Ok(())
+            spawn_subscription_task(
+                instrument_id,
+                depth,
+                Arc::clone(&self.book_depths),
+                self.book_sync.clone(),
+                ws_client,
+                Duration::from_secs(self.config.book_snapshot_timeout_secs),
+                &tasks,
+            );
+
+            Ok(())
+        })
     }
 
     fn subscribe_quotes(&mut self, cmd: SubscribeQuotes) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        let product_type = self
-            .get_product_type_for_instrument(instrument_id)
-            .unwrap_or(BybitProductType::Linear);
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.subscribe_quotes_member(instrument_id)
+        })
+    }
 
-        let ws = self
-            .get_ws_client_for_product(product_type)
-            .context("no WebSocket client for product type")?
-            .clone();
+    fn subscribe_trades(&mut self, cmd: SubscribeTrades) -> anyhow::Result<()> {
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let product_type = self
+                .get_product_type_for_instrument(instrument_id)
+                .unwrap_or(BybitProductType::Linear);
 
-        if product_type == BybitProductType::Option {
-            self.last_quotes.remove(&instrument_id);
+            self.trade_subs.insert(instrument_id);
+
+            let ws = self
+                .get_ws_client_for_product(product_type)
+                .context("no WebSocket client for product type")?
+                .clone();
+
+            self.spawn_ws(
+                async move {
+                    ws.subscribe_trades(instrument_id)
+                        .await
+                        .context("trades subscription")
+                },
+                "trade subscription",
+            );
+
+            Ok(())
+        })
+    }
+
+    fn subscribe_funding_rates(&mut self, cmd: SubscribeFundingRates) -> anyhow::Result<()> {
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let product_type = self
+                .get_product_type_for_instrument(instrument_id)
+                .unwrap_or(BybitProductType::Linear);
+
+            if product_type == BybitProductType::Spot || product_type == BybitProductType::Option {
+                anyhow::bail!("Funding rates not available for {product_type:?} instruments");
+            }
+
+            let guard = self.instruments.load();
+            if let Some(instrument) = guard.get(&instrument_id)
+                && !matches!(
+                    instrument,
+                    InstrumentAny::CryptoPerpetual(_) | InstrumentAny::PerpetualContract(_)
+                )
+            {
+                anyhow::bail!("Funding rates only available for perpetuals, not {instrument_id}");
+            }
+
             let mut should_subscribe = false;
             self.ticker_subs.rcu(|m| {
                 let entry = m.entry(instrument_id).or_default();
                 should_subscribe = entry.is_empty();
-                entry.insert("quotes");
+                entry.insert("funding");
             });
 
             if should_subscribe {
+                let ws = self
+                    .get_ws_client_for_product(product_type)
+                    .context("no WebSocket client for product type")?
+                    .clone();
+
                 self.spawn_ws(
                     async move {
                         ws.subscribe_ticker(instrument_id)
                             .await
-                            .context("ticker subscription")
+                            .context("ticker subscription for funding rates")
                     },
-                    "quote subscription",
+                    "funding rate subscription",
                 );
             }
-        } else {
-            if self.quote_subs.contains(&instrument_id) {
-                return Ok(());
-            }
 
-            self.quote_subs.insert(instrument_id);
-            let quote_subs = Arc::clone(&self.quote_subs);
-
-            self.spawn_ws(
-                async move {
-                    if let Err(e) = ws
-                        .subscribe_orderbook(instrument_id, BYBIT_QUOTE_DEPTH)
-                        .await
-                    {
-                        // A stale entry, or a leftover reference that a retry would ride, lets a
-                        // later unsubscribe drop the depth-1 book's topic, and an unsubscribe that
-                        // removed the entry first already released the reference.
-                        let mut removed = false;
-                        quote_subs.rcu(|subs| removed = subs.remove(&instrument_id));
-
-                        if removed
-                            && let Err(e) = ws
-                                .unsubscribe_orderbook(instrument_id, BYBIT_QUOTE_DEPTH)
-                                .await
-                        {
-                            log::warn!("Failed to unsubscribe after quote subscription error: {e}");
-                        }
-
-                        return Err(e).context("orderbook subscription for quotes");
-                    }
-
-                    Ok(())
-                },
-                "quote subscription (orderbook)",
-            );
-        }
-        Ok(())
-    }
-
-    fn subscribe_trades(&mut self, cmd: SubscribeTrades) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        let product_type = self
-            .get_product_type_for_instrument(instrument_id)
-            .unwrap_or(BybitProductType::Linear);
-
-        self.trade_subs.insert(instrument_id);
-
-        let ws = self
-            .get_ws_client_for_product(product_type)
-            .context("no WebSocket client for product type")?
-            .clone();
-
-        self.spawn_ws(
-            async move {
-                ws.subscribe_trades(instrument_id)
-                    .await
-                    .context("trades subscription")
-            },
-            "trade subscription",
-        );
-        Ok(())
-    }
-
-    fn subscribe_funding_rates(&mut self, cmd: SubscribeFundingRates) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        let product_type = self
-            .get_product_type_for_instrument(instrument_id)
-            .unwrap_or(BybitProductType::Linear);
-
-        if product_type == BybitProductType::Spot || product_type == BybitProductType::Option {
-            anyhow::bail!("Funding rates not available for {product_type:?} instruments");
-        }
-
-        let guard = self.instruments.load();
-        if let Some(instrument) = guard.get(&instrument_id)
-            && !matches!(
-                instrument,
-                InstrumentAny::CryptoPerpetual(_) | InstrumentAny::PerpetualContract(_)
-            )
-        {
-            anyhow::bail!("Funding rates only available for perpetuals, not {instrument_id}");
-        }
-
-        let mut should_subscribe = false;
-        self.ticker_subs.rcu(|m| {
-            let entry = m.entry(instrument_id).or_default();
-            should_subscribe = entry.is_empty();
-            entry.insert("funding");
-        });
-
-        if should_subscribe {
-            let ws = self
-                .get_ws_client_for_product(product_type)
-                .context("no WebSocket client for product type")?
-                .clone();
-
-            self.spawn_ws(
-                async move {
-                    ws.subscribe_ticker(instrument_id)
-                        .await
-                        .context("ticker subscription for funding rates")
-                },
-                "funding rate subscription",
-            );
-        }
-        Ok(())
+            Ok(())
+        })
     }
 
     fn subscribe_mark_prices(&mut self, cmd: SubscribeMarkPrices) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        let product_type = self
-            .get_product_type_for_instrument(instrument_id)
-            .unwrap_or(BybitProductType::Linear);
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let product_type = self
+                .get_product_type_for_instrument(instrument_id)
+                .unwrap_or(BybitProductType::Linear);
 
-        if product_type == BybitProductType::Spot {
-            anyhow::bail!("Mark prices not available for Spot instruments");
-        }
+            if product_type == BybitProductType::Spot {
+                anyhow::bail!("Mark prices not available for Spot instruments");
+            }
 
-        let mut should_subscribe = false;
-        self.ticker_subs.rcu(|m| {
-            let entry = m.entry(instrument_id).or_default();
-            should_subscribe = entry.is_empty();
-            entry.insert("mark_prices");
-        });
+            let mut should_subscribe = false;
+            self.ticker_subs.rcu(|m| {
+                let entry = m.entry(instrument_id).or_default();
+                should_subscribe = entry.is_empty();
+                entry.insert("mark_prices");
+            });
 
-        if should_subscribe {
-            let ws = self
-                .get_ws_client_for_product(product_type)
-                .context("no WebSocket client for product type")?
-                .clone();
+            if should_subscribe {
+                let ws = self
+                    .get_ws_client_for_product(product_type)
+                    .context("no WebSocket client for product type")?
+                    .clone();
 
-            self.spawn_ws(
-                async move {
-                    ws.subscribe_ticker(instrument_id)
-                        .await
-                        .context("ticker subscription for mark prices")
-                },
-                "mark price subscription",
-            );
-        }
-        Ok(())
+                self.spawn_ws(
+                    async move {
+                        ws.subscribe_ticker(instrument_id)
+                            .await
+                            .context("ticker subscription for mark prices")
+                    },
+                    "mark price subscription",
+                );
+            }
+
+            Ok(())
+        })
     }
 
     fn subscribe_index_prices(&mut self, cmd: SubscribeIndexPrices) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        let product_type = self
-            .get_product_type_for_instrument(instrument_id)
-            .unwrap_or(BybitProductType::Linear);
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let product_type = self
+                .get_product_type_for_instrument(instrument_id)
+                .unwrap_or(BybitProductType::Linear);
 
-        if product_type == BybitProductType::Spot {
-            anyhow::bail!("Index prices not available for Spot instruments");
-        }
+            if product_type == BybitProductType::Spot {
+                anyhow::bail!("Index prices not available for Spot instruments");
+            }
 
-        let mut should_subscribe = false;
-        self.ticker_subs.rcu(|m| {
-            let entry = m.entry(instrument_id).or_default();
-            should_subscribe = entry.is_empty();
-            entry.insert("index_prices");
-        });
+            let mut should_subscribe = false;
+            self.ticker_subs.rcu(|m| {
+                let entry = m.entry(instrument_id).or_default();
+                should_subscribe = entry.is_empty();
+                entry.insert("index_prices");
+            });
 
-        if should_subscribe {
+            if should_subscribe {
+                let ws = self
+                    .get_ws_client_for_product(product_type)
+                    .context("no WebSocket client for product type")?
+                    .clone();
+
+                self.spawn_ws(
+                    async move {
+                        ws.subscribe_ticker(instrument_id)
+                            .await
+                            .context("ticker subscription for index prices")
+                    },
+                    "index price subscription",
+                );
+            }
+
+            Ok(())
+        })
+    }
+
+    fn subscribe_bars(&mut self, cmd: SubscribeBars) -> anyhow::Result<()> {
+        execute_bar_subscriptions(&cmd.bar_types, |bar_type| {
+            let instrument_id = bar_type.instrument_id();
+            let product_type = self
+                .get_product_type_for_instrument(instrument_id)
+                .unwrap_or(BybitProductType::Linear);
+
+            if product_type == BybitProductType::Option {
+                anyhow::bail!("Bybit does not support kline/bar data for options");
+            }
+
             let ws = self
                 .get_ws_client_for_product(product_type)
                 .context("no WebSocket client for product type")?
@@ -1519,41 +1494,15 @@ impl DataClient for BybitDataClient {
 
             self.spawn_ws(
                 async move {
-                    ws.subscribe_ticker(instrument_id)
+                    ws.subscribe_bars(bar_type)
                         .await
-                        .context("ticker subscription for index prices")
+                        .context("bars subscription")
                 },
-                "index price subscription",
+                "bar subscription",
             );
-        }
-        Ok(())
-    }
 
-    fn subscribe_bars(&mut self, cmd: SubscribeBars) -> anyhow::Result<()> {
-        let bar_type = cmd.bar_type;
-        let instrument_id = bar_type.instrument_id();
-        let product_type = self
-            .get_product_type_for_instrument(instrument_id)
-            .unwrap_or(BybitProductType::Linear);
-
-        if product_type == BybitProductType::Option {
-            anyhow::bail!("Bybit does not support kline/bar data for options");
-        }
-
-        let ws = self
-            .get_ws_client_for_product(product_type)
-            .context("no WebSocket client for product type")?
-            .clone();
-
-        self.spawn_ws(
-            async move {
-                ws.subscribe_bars(bar_type)
-                    .await
-                    .context("bars subscription")
-            },
-            "bar subscription",
-        );
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe(&mut self, cmd: &UnsubscribeCustomData) -> anyhow::Result<()> {
@@ -1598,51 +1547,78 @@ impl DataClient for BybitDataClient {
     }
 
     fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        let Some(depth) = self.book_depths.load().get(&instrument_id).copied() else {
-            return Ok(());
-        };
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let Some(depth) = self.book_depths.load().get(&instrument_id).copied() else {
+                return Ok(());
+            };
 
-        self.book_depths.remove(&instrument_id);
-        self.book_sync.remove(instrument_id);
+            self.book_depths.remove(&instrument_id);
+            self.book_sync.remove(instrument_id);
 
-        let product_type = self
-            .get_product_type_for_instrument(instrument_id)
-            .unwrap_or(BybitProductType::Linear);
+            let product_type = self
+                .get_product_type_for_instrument(instrument_id)
+                .unwrap_or(BybitProductType::Linear);
 
-        let ws = self
-            .get_ws_client_for_product(product_type)
-            .context("no WebSocket client for product type")?
-            .clone();
+            let ws = self
+                .get_ws_client_for_product(product_type)
+                .context("no WebSocket client for product type")?
+                .clone();
 
-        self.spawn_ws(
-            async move {
-                ws.unsubscribe_orderbook(instrument_id, depth)
-                    .await
-                    .context("orderbook unsubscribe")
-            },
-            "order book unsubscribe",
-        );
-        Ok(())
+            self.spawn_ws(
+                async move {
+                    ws.unsubscribe_orderbook(instrument_id, depth)
+                        .await
+                        .context("orderbook unsubscribe")
+                },
+                "order book unsubscribe",
+            );
+
+            Ok(())
+        })
     }
 
     fn unsubscribe_quotes(&mut self, cmd: &UnsubscribeQuotes) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        let product_type = self
-            .get_product_type_for_instrument(instrument_id)
-            .unwrap_or(BybitProductType::Linear);
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.unsubscribe_quotes_member(instrument_id)
+        })
+    }
 
-        let ws = self
-            .get_ws_client_for_product(product_type)
-            .context("no WebSocket client for product type")?
-            .clone();
+    fn unsubscribe_trades(&mut self, cmd: &UnsubscribeTrades) -> anyhow::Result<()> {
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let product_type = self
+                .get_product_type_for_instrument(instrument_id)
+                .unwrap_or(BybitProductType::Linear);
 
-        if product_type == BybitProductType::Option {
-            self.last_quotes.remove(&instrument_id);
+            self.trade_subs.remove(&instrument_id);
+
+            let ws = self
+                .get_ws_client_for_product(product_type)
+                .context("no WebSocket client for product type")?
+                .clone();
+
+            self.spawn_ws(
+                async move {
+                    ws.unsubscribe_trades(instrument_id)
+                        .await
+                        .context("trades unsubscribe")
+                },
+                "trade unsubscribe",
+            );
+
+            Ok(())
+        })
+    }
+
+    fn unsubscribe_funding_rates(&mut self, cmd: &UnsubscribeFundingRates) -> anyhow::Result<()> {
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let product_type = self
+                .get_product_type_for_instrument(instrument_id)
+                .unwrap_or(BybitProductType::Linear);
+
             let mut should_unsubscribe = false;
             self.ticker_subs.rcu(|m| {
                 if let Some(entry) = m.get_mut(&instrument_id) {
-                    entry.remove("quotes");
+                    entry.remove("funding");
                     if entry.is_empty() {
                         m.remove(&instrument_id);
                         should_unsubscribe = true;
@@ -1655,270 +1631,208 @@ impl DataClient for BybitDataClient {
             });
 
             if should_unsubscribe {
+                let ws = self
+                    .get_ws_client_for_product(product_type)
+                    .context("no WebSocket client for product type")?
+                    .clone();
+
                 self.spawn_ws(
                     async move {
                         ws.unsubscribe_ticker(instrument_id)
                             .await
-                            .context("ticker unsubscribe")
+                            .context("ticker unsubscribe for funding rates")
                     },
-                    "quote unsubscribe",
+                    "funding rate unsubscribe",
                 );
             }
-        } else {
-            if !self.quote_subs.contains(&instrument_id) {
-                return Ok(());
-            }
 
-            self.quote_subs.remove(&instrument_id);
-
-            self.spawn_ws(
-                async move {
-                    ws.unsubscribe_orderbook(instrument_id, BYBIT_QUOTE_DEPTH)
-                        .await
-                        .context("orderbook unsubscribe for quotes")
-                },
-                "quote unsubscribe (orderbook)",
-            );
-        }
-        Ok(())
-    }
-
-    fn unsubscribe_trades(&mut self, cmd: &UnsubscribeTrades) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        let product_type = self
-            .get_product_type_for_instrument(instrument_id)
-            .unwrap_or(BybitProductType::Linear);
-
-        self.trade_subs.remove(&instrument_id);
-
-        let ws = self
-            .get_ws_client_for_product(product_type)
-            .context("no WebSocket client for product type")?
-            .clone();
-
-        self.spawn_ws(
-            async move {
-                ws.unsubscribe_trades(instrument_id)
-                    .await
-                    .context("trades unsubscribe")
-            },
-            "trade unsubscribe",
-        );
-        Ok(())
-    }
-
-    fn unsubscribe_funding_rates(&mut self, cmd: &UnsubscribeFundingRates) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        let product_type = self
-            .get_product_type_for_instrument(instrument_id)
-            .unwrap_or(BybitProductType::Linear);
-
-        let mut should_unsubscribe = false;
-        self.ticker_subs.rcu(|m| {
-            if let Some(entry) = m.get_mut(&instrument_id) {
-                entry.remove("funding");
-                if entry.is_empty() {
-                    m.remove(&instrument_id);
-                    should_unsubscribe = true;
-                } else {
-                    should_unsubscribe = false;
-                }
-            } else {
-                should_unsubscribe = false;
-            }
-        });
-
-        if should_unsubscribe {
-            let ws = self
-                .get_ws_client_for_product(product_type)
-                .context("no WebSocket client for product type")?
-                .clone();
-
-            self.spawn_ws(
-                async move {
-                    ws.unsubscribe_ticker(instrument_id)
-                        .await
-                        .context("ticker unsubscribe for funding rates")
-                },
-                "funding rate unsubscribe",
-            );
-        }
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_mark_prices(&mut self, cmd: &UnsubscribeMarkPrices) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        let product_type = self
-            .get_product_type_for_instrument(instrument_id)
-            .unwrap_or(BybitProductType::Linear);
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let product_type = self
+                .get_product_type_for_instrument(instrument_id)
+                .unwrap_or(BybitProductType::Linear);
 
-        let mut should_unsubscribe = false;
-        self.ticker_subs.rcu(|m| {
-            if let Some(entry) = m.get_mut(&instrument_id) {
-                entry.remove("mark_prices");
-                if entry.is_empty() {
-                    m.remove(&instrument_id);
-                    should_unsubscribe = true;
+            let mut should_unsubscribe = false;
+            self.ticker_subs.rcu(|m| {
+                if let Some(entry) = m.get_mut(&instrument_id) {
+                    entry.remove("mark_prices");
+                    if entry.is_empty() {
+                        m.remove(&instrument_id);
+                        should_unsubscribe = true;
+                    } else {
+                        should_unsubscribe = false;
+                    }
                 } else {
                     should_unsubscribe = false;
                 }
-            } else {
-                should_unsubscribe = false;
+            });
+
+            if should_unsubscribe {
+                let ws = self
+                    .get_ws_client_for_product(product_type)
+                    .context("no WebSocket client for product type")?
+                    .clone();
+
+                self.spawn_ws(
+                    async move {
+                        ws.unsubscribe_ticker(instrument_id)
+                            .await
+                            .context("ticker unsubscribe for mark prices")
+                    },
+                    "mark price unsubscribe",
+                );
             }
-        });
 
-        if should_unsubscribe {
-            let ws = self
-                .get_ws_client_for_product(product_type)
-                .context("no WebSocket client for product type")?
-                .clone();
-
-            self.spawn_ws(
-                async move {
-                    ws.unsubscribe_ticker(instrument_id)
-                        .await
-                        .context("ticker unsubscribe for mark prices")
-                },
-                "mark price unsubscribe",
-            );
-        }
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_index_prices(&mut self, cmd: &UnsubscribeIndexPrices) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        let product_type = self
-            .get_product_type_for_instrument(instrument_id)
-            .unwrap_or(BybitProductType::Linear);
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let product_type = self
+                .get_product_type_for_instrument(instrument_id)
+                .unwrap_or(BybitProductType::Linear);
 
-        let mut should_unsubscribe = false;
-        self.ticker_subs.rcu(|m| {
-            if let Some(entry) = m.get_mut(&instrument_id) {
-                entry.remove("index_prices");
-                if entry.is_empty() {
-                    m.remove(&instrument_id);
-                    should_unsubscribe = true;
+            let mut should_unsubscribe = false;
+            self.ticker_subs.rcu(|m| {
+                if let Some(entry) = m.get_mut(&instrument_id) {
+                    entry.remove("index_prices");
+                    if entry.is_empty() {
+                        m.remove(&instrument_id);
+                        should_unsubscribe = true;
+                    } else {
+                        should_unsubscribe = false;
+                    }
                 } else {
                     should_unsubscribe = false;
                 }
-            } else {
-                should_unsubscribe = false;
+            });
+
+            if should_unsubscribe {
+                let ws = self
+                    .get_ws_client_for_product(product_type)
+                    .context("no WebSocket client for product type")?
+                    .clone();
+
+                self.spawn_ws(
+                    async move {
+                        ws.unsubscribe_ticker(instrument_id)
+                            .await
+                            .context("ticker unsubscribe for index prices")
+                    },
+                    "index price unsubscribe",
+                );
             }
-        });
 
-        if should_unsubscribe {
-            let ws = self
-                .get_ws_client_for_product(product_type)
-                .context("no WebSocket client for product type")?
-                .clone();
-
-            self.spawn_ws(
-                async move {
-                    ws.unsubscribe_ticker(instrument_id)
-                        .await
-                        .context("ticker unsubscribe for index prices")
-                },
-                "index price unsubscribe",
-            );
-        }
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_bars(&mut self, cmd: &UnsubscribeBars) -> anyhow::Result<()> {
-        let bar_type = cmd.bar_type;
-        let instrument_id = bar_type.instrument_id();
-        let product_type = self
-            .get_product_type_for_instrument(instrument_id)
-            .unwrap_or(BybitProductType::Linear);
+        execute_bar_subscriptions(&cmd.bar_types, |bar_type| {
+            let instrument_id = bar_type.instrument_id();
+            let product_type = self
+                .get_product_type_for_instrument(instrument_id)
+                .unwrap_or(BybitProductType::Linear);
 
-        let ws = self
-            .get_ws_client_for_product(product_type)
-            .context("no WebSocket client for product type")?
-            .clone();
+            let ws = self
+                .get_ws_client_for_product(product_type)
+                .context("no WebSocket client for product type")?
+                .clone();
 
-        self.spawn_ws(
-            async move {
-                ws.unsubscribe_bars(bar_type)
-                    .await
-                    .context("bars unsubscribe")
-            },
-            "bar unsubscribe",
-        );
-        Ok(())
+            self.spawn_ws(
+                async move {
+                    ws.unsubscribe_bars(bar_type)
+                        .await
+                        .context("bars unsubscribe")
+                },
+                "bar unsubscribe",
+            );
+
+            Ok(())
+        })
     }
 
     fn subscribe_option_greeks(&mut self, cmd: SubscribeOptionGreeks) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        self.option_greeks_subs.insert(instrument_id);
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.option_greeks_subs.insert(instrument_id);
 
-        let mut should_subscribe = false;
-        self.ticker_subs.rcu(|m| {
-            let entry = m.entry(instrument_id).or_default();
-            should_subscribe = entry.is_empty();
-            entry.insert("option_greeks");
-        });
+            let mut should_subscribe = false;
+            self.ticker_subs.rcu(|m| {
+                let entry = m.entry(instrument_id).or_default();
+                should_subscribe = entry.is_empty();
+                entry.insert("option_greeks");
+            });
 
-        if should_subscribe {
-            let product_type = self
-                .get_product_type_for_instrument(instrument_id)
-                .unwrap_or(BybitProductType::Option);
+            if should_subscribe {
+                let product_type = self
+                    .get_product_type_for_instrument(instrument_id)
+                    .unwrap_or(BybitProductType::Option);
 
-            let ws = self
-                .get_ws_client_for_product(product_type)
-                .context("no WebSocket client for product type")?
-                .clone();
+                let ws = self
+                    .get_ws_client_for_product(product_type)
+                    .context("no WebSocket client for product type")?
+                    .clone();
 
-            self.spawn_ws(
-                async move {
-                    ws.subscribe_ticker(instrument_id)
-                        .await
-                        .context("ticker subscription for option greeks")
-                },
-                "option greeks subscription",
-            );
-        }
-        Ok(())
+                self.spawn_ws(
+                    async move {
+                        ws.subscribe_ticker(instrument_id)
+                            .await
+                            .context("ticker subscription for option greeks")
+                    },
+                    "option greeks subscription",
+                );
+            }
+
+            Ok(())
+        })
     }
 
     fn unsubscribe_option_greeks(&mut self, cmd: &UnsubscribeOptionGreeks) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        self.option_greeks_subs.remove(&instrument_id);
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.option_greeks_subs.remove(&instrument_id);
 
-        let mut should_unsubscribe = false;
-        self.ticker_subs.rcu(|m| {
-            if let Some(entry) = m.get_mut(&instrument_id) {
-                entry.remove("option_greeks");
-                if entry.is_empty() {
-                    m.remove(&instrument_id);
-                    should_unsubscribe = true;
+            let mut should_unsubscribe = false;
+            self.ticker_subs.rcu(|m| {
+                if let Some(entry) = m.get_mut(&instrument_id) {
+                    entry.remove("option_greeks");
+                    if entry.is_empty() {
+                        m.remove(&instrument_id);
+                        should_unsubscribe = true;
+                    } else {
+                        should_unsubscribe = false;
+                    }
                 } else {
                     should_unsubscribe = false;
                 }
-            } else {
-                should_unsubscribe = false;
+            });
+
+            if should_unsubscribe {
+                let product_type = self
+                    .get_product_type_for_instrument(instrument_id)
+                    .unwrap_or(BybitProductType::Option);
+
+                let ws = self
+                    .get_ws_client_for_product(product_type)
+                    .context("no WebSocket client for product type")?
+                    .clone();
+
+                self.spawn_ws(
+                    async move {
+                        ws.unsubscribe_ticker(instrument_id)
+                            .await
+                            .context("ticker unsubscribe for option greeks")
+                    },
+                    "option greeks unsubscribe",
+                );
             }
-        });
 
-        if should_unsubscribe {
-            let product_type = self
-                .get_product_type_for_instrument(instrument_id)
-                .unwrap_or(BybitProductType::Option);
-
-            let ws = self
-                .get_ws_client_for_product(product_type)
-                .context("no WebSocket client for product type")?
-                .clone();
-
-            self.spawn_ws(
-                async move {
-                    ws.unsubscribe_ticker(instrument_id)
-                        .await
-                        .context("ticker unsubscribe for option greeks")
-                },
-                "option greeks unsubscribe",
-            );
-        }
-        Ok(())
+            Ok(())
+        })
     }
 
     fn subscribe_instruments(&mut self, cmd: SubscribeInstruments) -> anyhow::Result<()> {
@@ -1932,12 +1846,13 @@ impl DataClient for BybitDataClient {
     }
 
     fn subscribe_instrument(&mut self, cmd: SubscribeInstrument) -> anyhow::Result<()> {
-        log::debug!(
-            "subscribe_instrument: {id} (definition updates detected via periodic instrument info polling)",
-            id = cmd.instrument_id,
-        );
-        self.instrument_subs.insert(cmd.instrument_id);
-        Ok(())
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            log::debug!(
+                "subscribe_instrument: {instrument_id} (definition updates detected via periodic instrument info polling)",
+            );
+            self.instrument_subs.insert(instrument_id);
+            Ok(())
+        })
     }
 
     fn unsubscribe_instruments(&mut self, cmd: &UnsubscribeInstruments) -> anyhow::Result<()> {
@@ -1948,39 +1863,41 @@ impl DataClient for BybitDataClient {
     }
 
     fn unsubscribe_instrument(&mut self, cmd: &UnsubscribeInstrument) -> anyhow::Result<()> {
-        log::debug!("unsubscribe_instrument: {id}", id = cmd.instrument_id);
-        self.instrument_subs.remove(&cmd.instrument_id);
-        Ok(())
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            log::debug!("unsubscribe_instrument: {instrument_id}");
+            self.instrument_subs.remove(&instrument_id);
+            Ok(())
+        })
     }
 
     fn subscribe_instrument_status(
         &mut self,
         cmd: SubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
-        log::debug!(
-            "subscribe_instrument_status: {id} (status changes detected via periodic instrument info polling)",
-            id = cmd.instrument_id,
-        );
-        self.instrument_status_subs.insert(cmd.instrument_id);
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            log::debug!(
+                "subscribe_instrument_status: {instrument_id} (status changes detected via periodic instrument info polling)",
+            );
+            self.instrument_status_subs.insert(instrument_id);
 
-        if let Some(action) = self.status_cache.load().get(&cmd.instrument_id).copied() {
-            let ts = self.clock.get_time_ns();
-            emit_status(&self.data_sender, cmd.instrument_id, action, ts, ts);
-        }
+            if let Some(action) = self.status_cache.load().get(&instrument_id).copied() {
+                let ts = self.clock.get_time_ns();
+                emit_status(&self.data_sender, instrument_id, action, ts, ts);
+            }
 
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_instrument_status(
         &mut self,
         cmd: &UnsubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
-        log::debug!(
-            "unsubscribe_instrument_status: {id}",
-            id = cmd.instrument_id,
-        );
-        self.instrument_status_subs.remove(&cmd.instrument_id);
-        Ok(())
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            log::debug!("unsubscribe_instrument_status: {instrument_id}",);
+            self.instrument_status_subs.remove(&instrument_id);
+            Ok(())
+        })
     }
 
     fn request_instruments(&self, request: RequestInstruments) -> anyhow::Result<()> {
@@ -2359,6 +2276,133 @@ impl DataClient for BybitDataClient {
     }
 }
 
+impl BybitDataClient {
+    fn subscribe_quotes_member(&self, instrument_id: InstrumentId) -> anyhow::Result<()> {
+        let product_type = self
+            .get_product_type_for_instrument(instrument_id)
+            .unwrap_or(BybitProductType::Linear);
+
+        let ws = self
+            .get_ws_client_for_product(product_type)
+            .context("no WebSocket client for product type")?
+            .clone();
+
+        if product_type == BybitProductType::Option {
+            self.last_quotes.remove(&instrument_id);
+            let mut should_subscribe = false;
+            self.ticker_subs.rcu(|m| {
+                let entry = m.entry(instrument_id).or_default();
+                should_subscribe = entry.is_empty();
+                entry.insert("quotes");
+            });
+
+            if should_subscribe {
+                self.spawn_ws(
+                    async move {
+                        ws.subscribe_ticker(instrument_id)
+                            .await
+                            .context("ticker subscription")
+                    },
+                    "quote subscription",
+                );
+            }
+        } else {
+            if self.quote_subs.contains(&instrument_id) {
+                return Ok(());
+            }
+
+            self.quote_subs.insert(instrument_id);
+            let quote_subs = Arc::clone(&self.quote_subs);
+
+            self.spawn_ws(
+                async move {
+                    if let Err(e) = ws
+                        .subscribe_orderbook(instrument_id, BYBIT_QUOTE_DEPTH)
+                        .await
+                    {
+                        // A stale entry, or a leftover reference that a retry would ride, lets a
+                        // later unsubscribe drop the depth-1 book's topic, and an unsubscribe that
+                        // removed the entry first already released the reference.
+                        let mut removed = false;
+                        quote_subs.rcu(|subs| removed = subs.remove(&instrument_id));
+
+                        if removed
+                            && let Err(e) = ws
+                                .unsubscribe_orderbook(instrument_id, BYBIT_QUOTE_DEPTH)
+                                .await
+                        {
+                            log::warn!("Failed to unsubscribe after quote subscription error: {e}");
+                        }
+
+                        return Err(e).context("orderbook subscription for quotes");
+                    }
+
+                    Ok(())
+                },
+                "quote subscription (orderbook)",
+            );
+        }
+
+        Ok(())
+    }
+
+    fn unsubscribe_quotes_member(&self, instrument_id: InstrumentId) -> anyhow::Result<()> {
+        let product_type = self
+            .get_product_type_for_instrument(instrument_id)
+            .unwrap_or(BybitProductType::Linear);
+
+        let ws = self
+            .get_ws_client_for_product(product_type)
+            .context("no WebSocket client for product type")?
+            .clone();
+
+        if product_type == BybitProductType::Option {
+            self.last_quotes.remove(&instrument_id);
+            let mut should_unsubscribe = false;
+            self.ticker_subs.rcu(|m| {
+                if let Some(entry) = m.get_mut(&instrument_id) {
+                    entry.remove("quotes");
+                    if entry.is_empty() {
+                        m.remove(&instrument_id);
+                        should_unsubscribe = true;
+                    } else {
+                        should_unsubscribe = false;
+                    }
+                } else {
+                    should_unsubscribe = false;
+                }
+            });
+
+            if should_unsubscribe {
+                self.spawn_ws(
+                    async move {
+                        ws.unsubscribe_ticker(instrument_id)
+                            .await
+                            .context("ticker unsubscribe")
+                    },
+                    "quote unsubscribe",
+                );
+            }
+        } else {
+            if !self.quote_subs.contains(&instrument_id) {
+                return Ok(());
+            }
+
+            self.quote_subs.remove(&instrument_id);
+            self.spawn_ws(
+                async move {
+                    ws.unsubscribe_orderbook(instrument_id, BYBIT_QUOTE_DEPTH)
+                        .await
+                        .context("orderbook unsubscribe for quotes")
+                },
+                "quote unsubscribe (orderbook)",
+            );
+        }
+
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 #[path = "../benches"]
 pub(crate) mod tests {
@@ -2378,7 +2422,8 @@ pub(crate) mod tests {
             DataEvent,
             data::{
                 SubscribeBookDeltas, SubscribeCustomData, SubscribeFundingRates, SubscribeQuotes,
-                UnsubscribeBookDeltas, UnsubscribeCustomData, UnsubscribeQuotes,
+                SubscriptionError, UnsubscribeBookDeltas, UnsubscribeCustomData,
+                UnsubscribeFundingRates, UnsubscribeQuotes,
             },
         },
         testing::wait_until_async,
@@ -3635,6 +3680,65 @@ pub(crate) mod tests {
 
         let subs = client.ticker_subs.get_cloned(&instrument_id).unwrap();
         assert!(subs.contains("funding"));
+    }
+
+    #[tokio::test]
+    async fn test_funding_rate_list_continues_after_invalid_instrument() {
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        set_data_event_sender(tx);
+
+        let mut client = BybitDataClient::new(
+            *BYBIT_CLIENT_ID,
+            BybitDataClientConfig {
+                product_types: vec![BybitProductType::Linear, BybitProductType::Option],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let invalid = option_instrument();
+        let first = linear_instruments().pop().unwrap();
+        let last = tradfi_linear_instrument();
+        let ids = [invalid.id(), first.id(), last.id()];
+        for instrument in [invalid, first, last] {
+            client.instruments.insert(instrument.id(), instrument);
+        }
+
+        let command = SubscribeFundingRates::new(
+            ids,
+            Some(*BYBIT_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::from(17),
+            Some(UUID4::new()),
+            None,
+        );
+        let error = client.subscribe_funding_rates(command).unwrap_err();
+        let partial = error.downcast_ref::<SubscriptionError>().unwrap();
+        assert_eq!(partial.instrument_ids_accepted, vec![ids[1], ids[2]]);
+        assert_eq!(partial.bar_types_accepted, Vec::<BarType>::new());
+        assert!(!client.ticker_subs.contains_key(&ids[0]));
+
+        for id in &ids[1..] {
+            assert_eq!(
+                client.ticker_subs.get_cloned(id).unwrap(),
+                AHashSet::from_iter(["funding"])
+            );
+        }
+
+        client
+            .unsubscribe_funding_rates(&UnsubscribeFundingRates::new(
+                [ids[1], ids[2]],
+                Some(*BYBIT_CLIENT_ID),
+                None,
+                UUID4::new(),
+                UnixNanos::from(23),
+                None,
+                None,
+            ))
+            .unwrap();
+        assert!(client.ticker_subs.is_empty());
+        client.disconnect().await.unwrap();
     }
 
     #[rstest]
