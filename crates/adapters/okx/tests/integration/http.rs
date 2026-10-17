@@ -1511,6 +1511,175 @@ async fn test_http_request_spread_instrument_by_id() {
 }
 
 #[rstest]
+#[case("BTC-USD_UM_XPERP-310404")]
+#[case("BTC-USD_UM-261030")]
+#[tokio::test]
+async fn test_usd_margined_futures_use_regular_http_endpoints(#[case] symbol: &str) {
+    let mut instruments = load_test_data("http_get_instruments_futures.json");
+    instruments["data"].as_array_mut().unwrap().truncate(1);
+    instruments["data"][0]["instId"] = json!(symbol);
+    let requests = Arc::new(tokio::sync::Mutex::new(Vec::new()));
+    let captured = requests.clone();
+    let router = Router::new().fallback(
+        move |uri: Uri, Query(params): Query<HashMap<String, String>>, body: Bytes| {
+            let requests = captured.clone();
+            let instruments = instruments.clone();
+            async move {
+                let body = if body.is_empty() {
+                    Value::Null
+                } else {
+                    serde_json::from_slice(&body).unwrap()
+                };
+
+                requests
+                    .lock()
+                    .await
+                    .push((uri.path().to_string(), params, body));
+
+                let response = match uri.path() {
+                    "/api/v5/public/instruments" => instruments,
+                    "/api/v5/trade/order" | "/api/v5/trade/cancel-batch-orders" => {
+                        json!({"code": "0", "msg": "", "data": [load_test_data("http_place_order_response.json")]})
+                    }
+                    "/api/v5/trade/orders-pending"
+                    | "/api/v5/trade/orders-history"
+                    | "/api/v5/trade/fills" => json!({"code": "0", "msg": "", "data": []}),
+                    path => panic!("unexpected endpoint: {path}"),
+                };
+
+                Json(response)
+            }
+        },
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    let client = OKXHttpClient::with_credentials(
+        Some("test_key".into()),
+        Some("test_secret".into()),
+        Some("test_passphrase".into()),
+        Some(format!("http://{addr}")),
+        2,
+        0,
+        1,
+        1,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+    let instrument_id = InstrumentId::from(format!("{symbol}.OKX").as_str());
+    let instrument = client.request_instrument(instrument_id).await.unwrap();
+    let placed = client
+        .place_order_with_domain_types(
+            instrument_id,
+            OKXTradeMode::Cross,
+            ClientOrderId::from("OFUTUREHTTP"),
+            OrderSide::Buy,
+            OrderType::Limit,
+            Quantity::from("3"),
+            Some(TimeInForce::Gtc),
+            Some(Price::from("65000.1")),
+            None,
+            Some(true),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+    let canceled = client
+        .cancel_order(
+            instrument_id,
+            Some(ClientOrderId::from("OFUTUREHTTP")),
+            None,
+        )
+        .await
+        .unwrap();
+    let canceled_all = client.cancel_all_orders(instrument_id).await.unwrap();
+    let reports = client
+        .request_order_status_reports(
+            AccountId::from("OKX-001"),
+            None,
+            Some(instrument_id),
+            None,
+            None,
+            false,
+            None,
+        )
+        .await
+        .unwrap();
+    let fills = client
+        .request_fill_reports(
+            AccountId::from("OKX-001"),
+            None,
+            Some(instrument_id),
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+    let requests = requests.lock().await;
+    server.abort();
+    let mut paths = requests
+        .iter()
+        .map(|(path, _, _)| path.as_str())
+        .collect::<Vec<_>>();
+    paths.sort_unstable();
+
+    assert!(matches!(instrument, InstrumentAny::CryptoFuture(_)));
+    assert_eq!(placed.ord_id, Some(Ustr::from("12345678901234567890")));
+    assert_eq!(canceled.ord_id, "12345678901234567890");
+    assert_eq!(canceled_all.len(), 0);
+    assert_eq!(reports.len(), 0);
+    assert_eq!(fills.len(), 0);
+    assert_eq!(
+        paths,
+        vec![
+            "/api/v5/public/instruments",
+            "/api/v5/trade/cancel-batch-orders",
+            "/api/v5/trade/fills",
+            "/api/v5/trade/order",
+            "/api/v5/trade/orders-history",
+            "/api/v5/trade/orders-pending",
+            "/api/v5/trade/orders-pending",
+        ]
+    );
+    assert_eq!(
+        requests[0].1,
+        HashMap::from([
+            ("instType".to_string(), "FUTURES".to_string()),
+            ("instId".to_string(), symbol.to_string())
+        ])
+    );
+    assert_eq!(
+        requests[1].2,
+        json!({
+            "instId": symbol, "tdMode": "cross", "clOrdId": "OFUTUREHTTP",
+            "tag": OKX_NAUTILUS_BROKER_ID, "side": "buy", "ordType": "limit",
+            "sz": "3", "px": "65000.1", "reduceOnly": true, "posSide": "net",
+        })
+    );
+    assert_eq!(
+        requests[2].2,
+        json!([{"instId": symbol, "clOrdId": "OFUTUREHTTP"}])
+    );
+
+    for (_, params, _) in &requests[3..] {
+        assert_eq!(params.get("instType").map(String::as_str), Some("FUTURES"));
+        assert_eq!(params.get("instId").map(String::as_str), Some(symbol));
+    }
+}
+
+#[rstest]
 #[tokio::test]
 async fn test_http_place_order_with_domain_types_routes_spread_request() {
     let state = Arc::new(TestServerState::default());

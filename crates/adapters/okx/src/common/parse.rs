@@ -235,7 +235,14 @@ pub fn okx_instrument_type(instrument: &InstrumentAny) -> anyhow::Result<OKXInst
 /// Returns whether the OKX symbol uses the spread ID format.
 #[must_use]
 pub fn is_okx_spread_symbol(symbol: &str) -> bool {
-    symbol.contains('_')
+    let Some((base, _)) = symbol.split_once('-') else {
+        return false;
+    };
+
+    symbol.split('_').skip(1).any(|leg| {
+        leg.split_once('-')
+            .is_some_and(|(leg_base, _)| leg_base == base)
+    })
 }
 
 /// Parses `OKXInstrumentType` from an instrument symbol.
@@ -6304,9 +6311,28 @@ mod tests {
     }
 
     #[rstest]
+    #[case("BTC-USDT", false)]
+    #[case("BTC-USDT-SWAP", false)]
+    #[case("BTC-USD_UM-SWAP", false)]
+    #[case("BTC-USD_UM-261030", false)]
+    #[case("BTC-USD_UM_XPERP-310404", false)]
+    #[case("BTC-USD-250328-50000-C", false)]
+    #[case("BTC-USDT_BTC-USDT-SWAP", true)]
+    #[case("ETH-USD-SWAP_ETH-USD-231229", true)]
+    #[case("BTC-USD_UM-261030_BTC-USD_UM-261225", true)]
+    #[case("BTC-USD_UM_XPERP-310404_BTC-USD_UM-261030", true)]
+    #[case("BTC-USD-250328-50000-C_BTC-USD-250328-60000-C", true)]
+    fn test_is_okx_spread_symbol(#[case] symbol: &str, #[case] expected: bool) {
+        assert_eq!(is_okx_spread_symbol(symbol), expected);
+    }
+
+    #[rstest]
     #[case("BTC-USDT", OKXInstrumentType::Spot)]
     #[case("BTC-USDT-SWAP", OKXInstrumentType::Swap)]
     #[case("BTC-USDT-250328", OKXInstrumentType::Futures)]
+    #[case("BTC-USD_UM-SWAP", OKXInstrumentType::Swap)]
+    #[case("BTC-USD_UM-261030", OKXInstrumentType::Futures)]
+    #[case("BTC-USD_UM_XPERP-310404", OKXInstrumentType::Futures)]
     #[case("BTC-USD-250328-50000-C", OKXInstrumentType::Option)]
     #[case("BTC-ABOVE-DAILY-260224-1600-65000", OKXInstrumentType::Events)]
     fn test_okx_instrument_type_from_symbol(

@@ -81,7 +81,7 @@ use crate::{
         },
         failure::{classify_okx_http_failure, classify_okx_venue_code, classify_okx_ws_failure},
         parse::{
-            is_okx_spread_symbol, is_order_status_report_more_advanced, nanos_to_datetime,
+            is_order_status_report_more_advanced, nanos_to_datetime,
             okx_instrument_type_from_symbol, venue_position_id,
         },
         task::{spawn_task, terminate_tasks},
@@ -368,7 +368,7 @@ impl OKXExecutionClient {
         order_type: OrderType,
     ) -> anyhow::Result<OrderCommandRoute> {
         if self.is_conditional_order(order_type) {
-            if is_spread_instrument(instrument_id) {
+            if self.http_client.is_spread(instrument_id) {
                 anyhow::bail!(
                     "Trigger/conditional orders ({order_type:?}) are not supported for OKX spreads"
                 );
@@ -384,7 +384,7 @@ impl OKXExecutionClient {
             return Ok(OrderCommandRoute::AlgoHttp);
         }
 
-        if is_spread_instrument(instrument_id) {
+        if self.http_client.is_spread(instrument_id) {
             Ok(OrderCommandRoute::SpreadHttp)
         } else {
             Ok(OrderCommandRoute::RegularWs)
@@ -397,7 +397,7 @@ impl OKXExecutionClient {
         order_state: Option<(OrderType, Option<bool>)>,
         has_bound_child: bool,
     ) -> OrderCommandRoute {
-        if is_spread_instrument(instrument_id) {
+        if self.http_client.is_spread(instrument_id) {
             return OrderCommandRoute::SpreadHttp;
         }
 
@@ -421,7 +421,7 @@ impl OKXExecutionClient {
     ) -> CancelAllOrdersRoute {
         if order_side.is_some() {
             CancelAllOrdersRoute::Batch
-        } else if is_spread_instrument(instrument_id) {
+        } else if self.http_client.is_spread(instrument_id) {
             CancelAllOrdersRoute::SpreadHttp
         } else if self.config.use_mm_mass_cancel {
             CancelAllOrdersRoute::MassCancelHttp
@@ -931,7 +931,7 @@ impl OKXExecutionClient {
     }
 
     fn mass_cancel_instrument(&self, instrument_id: InstrumentId) {
-        if is_spread_instrument(instrument_id) {
+        if self.http_client.is_spread(instrument_id) {
             let http_client = self.http_client.clone();
             self.spawn_task("mass_cancel_orders_http", async move {
                 if let Err(e) = http_client.cancel_all_orders(instrument_id).await {
@@ -1688,6 +1688,7 @@ impl ExecutionClient for OKXExecutionClient {
             instrument_id,
             order_state.map(|state| state.order_type),
             regular_venue_order_id.is_some(),
+            self.http_client.is_spread(instrument_id),
         );
         self.spawn_task("query_order", async move {
             let mut reports = Vec::with_capacity(1);
@@ -2100,7 +2101,13 @@ impl ExecutionClient for OKXExecutionClient {
             }
 
             let trade_mode = self.trade_mode_for_order(cmd.instrument_id, cmd.params.as_ref());
-            if let Err(reason) = validate_order(&*order, trade_mode, OrderSubmission::Single) {
+
+            if let Err(reason) = validate_order(
+                &*order,
+                trade_mode,
+                OrderSubmission::Single,
+                self.http_client.is_spread(order.instrument_id()),
+            ) {
                 self.emitter.emit_order_denied(&order, &reason.to_string());
                 return Ok(());
             }
@@ -2133,7 +2140,7 @@ impl ExecutionClient for OKXExecutionClient {
     }
 
     fn submit_order_list(&self, cmd: SubmitOrderList) -> anyhow::Result<()> {
-        if is_spread_instrument(cmd.instrument_id) {
+        if self.http_client.is_spread(cmd.instrument_id) {
             let cache = self.core.cache();
             let denied = OrderDeniedReason::UnsupportedOrderList {
                 detail: "spread instruments are not supported in order lists".to_string(),
@@ -2158,23 +2165,28 @@ impl ExecutionClient for OKXExecutionClient {
         let invalid: Vec<(ClientOrderId, OrderDeniedReason)> = orders
             .iter()
             .filter_map(|order| {
-                validate_order(order, trade_mode, OrderSubmission::List)
-                    .and_then(|()| {
-                        self.validate_trade_mode(
-                            cmd.instrument_id,
-                            self.order_position_side(order, cmd.params.as_ref()),
-                            trade_mode,
-                        )
-                    })
-                    .and_then(|()| {
-                        validate_submit_position_id(
-                            cmd.instrument_id,
-                            self.order_position_side(order, cmd.params.as_ref()),
-                            cmd.position_id,
-                        )
-                    })
-                    .err()
-                    .map(|reason| (order.client_order_id(), reason))
+                validate_order(
+                    order,
+                    trade_mode,
+                    OrderSubmission::List,
+                    self.http_client.is_spread(order.instrument_id()),
+                )
+                .and_then(|()| {
+                    self.validate_trade_mode(
+                        cmd.instrument_id,
+                        self.order_position_side(order, cmd.params.as_ref()),
+                        trade_mode,
+                    )
+                })
+                .and_then(|()| {
+                    validate_submit_position_id(
+                        cmd.instrument_id,
+                        self.order_position_side(order, cmd.params.as_ref()),
+                        cmd.position_id,
+                    )
+                })
+                .err()
+                .map(|reason| (order.client_order_id(), reason))
             })
             .collect();
 
@@ -2278,7 +2290,7 @@ impl ExecutionClient for OKXExecutionClient {
     }
 
     fn modify_order(&self, cmd: ModifyOrder) -> anyhow::Result<()> {
-        if is_spread_instrument(cmd.instrument_id) {
+        if self.http_client.is_spread(cmd.instrument_id) {
             self.emitter.emit_order_modify_rejected_event(
                 cmd.strategy_id,
                 cmd.instrument_id,
@@ -2723,7 +2735,7 @@ impl OKXExecutionClient {
         }
 
         instrument_ids.retain(|instrument_id| {
-            if is_spread_instrument(*instrument_id)
+            if self.http_client.is_spread(*instrument_id)
                 || hedging_instrument_ids.contains(instrument_id)
                 || position_reports
                     .iter()
@@ -2817,6 +2829,7 @@ impl OKXReportClient {
             instrument_id,
             order_state.map(|state| state.order_type),
             regular_venue_order_id.is_some(),
+            self.http_client.is_spread(instrument_id),
         );
 
         let mut reports = Vec::with_capacity(1);
@@ -2992,7 +3005,7 @@ impl OKXReportClient {
             reports.extend(sweep.reports);
             complete &= sweep.complete;
 
-            if !is_spread_instrument(instrument_id)
+            if !self.http_client.is_spread(instrument_id)
                 && supports_algo_orders(okx_instrument_type_from_symbol(
                     instrument_id.symbol.as_str(),
                 ))
@@ -3240,7 +3253,7 @@ impl OKXReportClient {
         let mut complete = true;
 
         if let Some(instrument_id) = cmd.instrument_id {
-            if is_spread_instrument(instrument_id) {
+            if self.http_client.is_spread(instrument_id) {
                 return Ok((reports, complete));
             }
 
@@ -3485,12 +3498,13 @@ fn validate_order(
     order: &impl Order,
     trade_mode: OKXTradeMode,
     submission: OrderSubmission,
+    is_spread: bool,
 ) -> Result<(), OrderDeniedReason> {
     if let Err(detail) = validate_okx_client_order_id(order.client_order_id().as_str()) {
         return Err(OrderDeniedReason::InvalidClientOrderId { detail });
     }
 
-    if is_spread_instrument(order.instrument_id()) && order.is_reduce_only() {
+    if is_spread && order.is_reduce_only() {
         return Err(OrderDeniedReason::UnsupportedReduceOnly);
     }
 
@@ -3808,8 +3822,9 @@ fn query_order_route(
     instrument_id: InstrumentId,
     order_type: Option<OrderType>,
     has_cached_venue_order_id: bool,
+    is_spread: bool,
 ) -> QueryOrderRoute {
-    if is_spread_instrument(instrument_id) {
+    if is_spread {
         return QueryOrderRoute::Spread;
     }
 
@@ -3831,10 +3846,6 @@ fn query_order_route(
         None if supports_algo => QueryOrderRoute::RegularThenAlgo,
         _ => QueryOrderRoute::Regular,
     }
-}
-
-fn is_spread_instrument(instrument_id: InstrumentId) -> bool {
-    is_okx_spread_symbol(instrument_id.symbol.as_str())
 }
 
 fn is_instrument_cache_miss(error: &anyhow::Error) -> bool {
@@ -3941,7 +3952,7 @@ mod tests {
         enums::{LiquiditySide, OrderSide, OrderStatus, TriggerType},
         events::{OrderEventAny, OrderInitialized},
         identifiers::{OrderListId, TradeId, TraderId},
-        instruments::Instrument,
+        instruments::{CryptoFuture, Instrument, stubs::crypto_future_btcusdt},
         orders::{OrderList, OrderTestBuilder, stubs::TestOrderEventStubs},
         position::Position,
         types::{Money, Price, Quantity},
@@ -3982,7 +3993,12 @@ mod tests {
         #[case] expected: QueryOrderRoute,
     ) {
         assert_eq!(
-            query_order_route(InstrumentId::from("BTC-USDT.OKX"), Some(order_type), false,),
+            query_order_route(
+                InstrumentId::from("BTC-USDT.OKX"),
+                Some(order_type),
+                false,
+                false
+            ),
             expected
         );
     }
@@ -3994,6 +4010,7 @@ mod tests {
                 InstrumentId::from("BTC-USDT.OKX"),
                 Some(OrderType::StopMarket),
                 true,
+                false,
             ),
             QueryOrderRoute::RegularAndAlgo,
         );
@@ -4002,7 +4019,7 @@ mod tests {
     #[rstest]
     fn test_query_order_route_for_unknown_order_type() {
         assert_eq!(
-            query_order_route(InstrumentId::from("BTC-USDT.OKX"), None, false),
+            query_order_route(InstrumentId::from("BTC-USDT.OKX"), None, false, false),
             QueryOrderRoute::RegularThenAlgo,
         );
     }
@@ -4014,8 +4031,74 @@ mod tests {
                 InstrumentId::from("ETH-USD-SWAP_ETH-USD-231229.OKX"),
                 None,
                 false,
+                true,
             ),
             QueryOrderRoute::Spread,
+        );
+    }
+
+    #[rstest]
+    #[case("BTC-USD_UM_XPERP-310404.OKX")]
+    #[case("BTC-USD_UM-261030.OKX")]
+    fn test_usd_margined_futures_use_regular_routes(
+        mut crypto_future_btcusdt: CryptoFuture,
+        #[case] instrument_id: &str,
+        #[values(false, true)] cached: bool,
+        #[values(OrderSide::Buy, OrderSide::Sell)] side: OrderSide,
+    ) {
+        let client = build_test_exec_client();
+        let instrument_id = InstrumentId::from(instrument_id);
+        crypto_future_btcusdt.id = instrument_id;
+        crypto_future_btcusdt.raw_symbol = instrument_id.symbol;
+
+        if cached {
+            client
+                .http_client
+                .cache_instrument(InstrumentAny::CryptoFuture(crypto_future_btcusdt));
+        }
+
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_id)
+            .client_order_id(ClientOrderId::from("OREDUCEFUTURE"))
+            .side(side)
+            .price(Price::from("65000.1"))
+            .quantity(Quantity::from("3"))
+            .reduce_only(true)
+            .build();
+        let is_spread = client.http_client.is_spread(instrument_id);
+
+        assert_eq!(
+            client
+                .submit_order_route(instrument_id, OrderType::Limit)
+                .unwrap(),
+            OrderCommandRoute::RegularWs
+        );
+        assert_eq!(
+            client
+                .submit_order_route(instrument_id, OrderType::StopMarket)
+                .unwrap(),
+            OrderCommandRoute::AlgoHttp
+        );
+        assert_eq!(
+            client.order_command_route(instrument_id, Some((OrderType::Limit, None)), false),
+            OrderCommandRoute::RegularWs
+        );
+        assert_eq!(
+            client.cancel_all_orders_route(instrument_id, None),
+            CancelAllOrdersRoute::Batch
+        );
+        assert_eq!(
+            query_order_route(instrument_id, Some(OrderType::Limit), false, is_spread),
+            QueryOrderRoute::Regular
+        );
+        assert_eq!(
+            validate_order(
+                &order,
+                OKXTradeMode::Cross,
+                OrderSubmission::Single,
+                is_spread
+            ),
+            Ok(())
         );
     }
 
@@ -4030,7 +4113,7 @@ mod tests {
             .build();
 
         assert_eq!(
-            validate_order(&order, OKXTradeMode::Cross, OrderSubmission::Single),
+            validate_order(&order, OKXTradeMode::Cross, OrderSubmission::Single, false),
             Ok(())
         );
     }
@@ -4046,7 +4129,7 @@ mod tests {
             .build();
 
         assert_eq!(
-            validate_order(&order, OKXTradeMode::Cross, OrderSubmission::List),
+            validate_order(&order, OKXTradeMode::Cross, OrderSubmission::List, false),
             Err(OrderDeniedReason::UnsupportedOrderList {
                 detail: "conditional order OCONDITIONALLIST is not supported".to_string(),
             })
@@ -4065,7 +4148,7 @@ mod tests {
             .build();
 
         assert_eq!(
-            validate_order(&order, OKXTradeMode::Cross, OrderSubmission::List),
+            validate_order(&order, OKXTradeMode::Cross, OrderSubmission::List, false),
             Err(OrderDeniedReason::UnsupportedOrderList {
                 detail: "order OIOCLIST has unsupported time in force IOC".to_string(),
             })
@@ -4090,7 +4173,7 @@ mod tests {
             .build();
 
         assert_eq!(
-            validate_order(&order, trade_mode, OrderSubmission::Single),
+            validate_order(&order, trade_mode, OrderSubmission::Single, false),
             Err(OrderDeniedReason::UnsupportedReduceOnly)
         );
     }

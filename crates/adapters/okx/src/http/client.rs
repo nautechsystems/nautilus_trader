@@ -304,17 +304,56 @@ mod tests {
     use std::time::Duration;
 
     use anyhow::Context;
+    use nautilus_model::{
+        identifiers::{InstrumentId, Symbol},
+        instruments::{
+            CryptoFuture, CryptoFuturesSpread, InstrumentAny,
+            stubs::{crypto_future_btcusdt, crypto_futures_spread_btc_deribit},
+        },
+    };
     use nautilus_testkit::http::assert_http_redirect_rejected;
     use rstest::rstest;
     use rust_decimal::Decimal;
     use serde::{Serialize, Serializer, ser::Error as _};
 
     use super::{
-        Method, OKXEnvironment, OKXHttpError, OKXInstrumentDefinitionError, OKXRawHttpClient,
-        Timestamp, deserialize_okx_response, parse_retry_after, resolve_okx_error_code,
-        resolve_okx_error_message,
+        Method, OKXEnvironment, OKXHttpClient, OKXHttpError, OKXInstrumentDefinitionError,
+        OKXRawHttpClient, Timestamp, deserialize_okx_response, parse_retry_after,
+        resolve_okx_error_code, resolve_okx_error_message,
     };
     use crate::http::models::OKXFeeRate;
+
+    #[rstest]
+    fn test_is_spread_prefers_cached_future(mut crypto_future_btcusdt: CryptoFuture) {
+        let client = OKXHttpClient::default();
+        let instrument_id = InstrumentId::from("BTC-USDT_BTC-USDT-SWAP.OKX");
+        crypto_future_btcusdt.id = instrument_id;
+        crypto_future_btcusdt.raw_symbol = instrument_id.symbol;
+        let uncached = client.is_spread(instrument_id);
+
+        client.cache_instrument(InstrumentAny::CryptoFuture(crypto_future_btcusdt));
+
+        assert!(uncached);
+        assert!(!client.is_spread(instrument_id));
+    }
+
+    #[rstest]
+    fn test_is_spread_prefers_cached_spread(
+        mut crypto_futures_spread_btc_deribit: CryptoFuturesSpread,
+    ) {
+        let client = OKXHttpClient::default();
+        let instrument_id = InstrumentId::from("BTC-USD_UM_XPERP-310404.OKX");
+        crypto_futures_spread_btc_deribit.id = instrument_id;
+        crypto_futures_spread_btc_deribit.raw_symbol = Symbol::from("BTC-USD_UM_XPERP-310404");
+        let uncached = client.is_spread(instrument_id);
+
+        client.cache_instrument(InstrumentAny::CryptoFuturesSpread(
+            crypto_futures_spread_btc_deribit,
+        ));
+
+        assert!(!uncached);
+        assert!(client.is_spread(instrument_id));
+    }
 
     struct UnserializableParams;
 
@@ -2434,6 +2473,16 @@ impl OKXHttpClient {
         self.instruments_cache.get_cloned(symbol)
     }
 
+    pub(crate) fn is_spread(&self, instrument_id: InstrumentId) -> bool {
+        self.instruments_cache
+            .load()
+            .get(&instrument_id.symbol.inner())
+            .map_or_else(
+                || is_okx_spread_symbol(instrument_id.symbol.as_str()),
+                InstrumentAny::is_spread,
+            )
+    }
+
     /// Sets the optional SPOT `tradeQuoteCcy` override for subsequent order placement.
     pub fn set_spot_trade_quote_ccy(&self, ccy: Option<String>) {
         *self
@@ -2772,8 +2821,7 @@ impl OKXHttpClient {
         instrument_id: InstrumentId,
     ) -> anyhow::Result<InstrumentAny> {
         let symbol = instrument_id.symbol.as_str();
-
-        if is_okx_spread_symbol(symbol) {
+        if self.is_spread(instrument_id) {
             let instrument = self.request_spread_instrument(symbol).await?;
             self.cache_instrument(instrument.clone());
             return Ok(instrument);
@@ -4236,9 +4284,7 @@ impl OKXHttpClient {
         limit: Option<u32>,
         scope: Option<ReportInstrumentScope<'_>>,
     ) -> anyhow::Result<ReportSweep<OrderStatusReport>> {
-        if instrument_id
-            .as_ref()
-            .is_some_and(|id| is_okx_spread_symbol(id.symbol.as_str()))
+        if instrument_id.as_ref().is_some_and(|id| self.is_spread(*id))
             || (instrument_id.is_none() && instrument_type.is_none())
         {
             return self
@@ -5077,9 +5123,7 @@ impl OKXHttpClient {
         history: FillHistory,
         scope: Option<ReportInstrumentScope<'_>>,
     ) -> anyhow::Result<ReportSweep<FillReport>> {
-        if instrument_id
-            .as_ref()
-            .is_some_and(|id| is_okx_spread_symbol(id.symbol.as_str()))
+        if instrument_id.as_ref().is_some_and(|id| self.is_spread(*id))
             || (instrument_id.is_none() && instrument_type.is_none())
         {
             return self
@@ -5797,7 +5841,7 @@ impl OKXHttpClient {
             None
         };
 
-        if is_okx_spread_symbol(instrument_id.symbol.as_str()) {
+        if self.is_spread(instrument_id) {
             return self
                 .cancel_spread_order(OKXCancelSpreadOrderRequest { ord_id, cl_ord_id })
                 .await;
@@ -5831,7 +5875,7 @@ impl OKXHttpClient {
         &self,
         instrument_id: InstrumentId,
     ) -> Result<Vec<OKXCancelOrderResponse>, OKXHttpError> {
-        if is_okx_spread_symbol(instrument_id.symbol.as_str()) {
+        if self.is_spread(instrument_id) {
             return self.cancel_all_spread_orders(instrument_id).await;
         }
 
@@ -6207,7 +6251,7 @@ impl OKXHttpClient {
     ) -> Result<OKXPlaceOrderResponse, OKXHttpError> {
         let rpi = rpi.unwrap_or(false);
 
-        if is_okx_spread_symbol(instrument_id.symbol.as_str()) {
+        if self.is_spread(instrument_id) {
             if reduce_only.unwrap_or(false)
                 || quote_quantity.unwrap_or(false)
                 || attach_algo_ords
@@ -6432,7 +6476,7 @@ impl OKXHttpClient {
         price: Option<Price>,
         post_only: Option<bool>,
     ) -> Result<OKXPlaceOrderResponse, OKXHttpError> {
-        if !is_okx_spread_symbol(instrument_id.symbol.as_str()) {
+        if !self.is_spread(instrument_id) {
             return Err(OKXHttpError::ValidationError(format!(
                 "Instrument is not an OKX spread: {instrument_id}",
             )));

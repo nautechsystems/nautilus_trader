@@ -34,6 +34,7 @@ Released on TBD (UTC).
 - Fixed Lighter funding rates 100x too high and missing the live interval (#5338), thanks @dxwil
 - Fixed Lighter order lookups using the wrong client order ID after a collision and restart
 - Fixed empty and incomplete OKX historical bar responses (#5339), thanks for reporting @AlphaTraderK
+- Fixed OKX USD-margined futures and swaps routed as spreads (#5337), thanks for reporting @michalismeng
 - Fixed Polymarket cancels lost while submit responses register venue order IDs
 - Fixed Polymarket `price_change` quotes carrying sizes from different price levels
 - Fixed Polymarket stale book levels after resubscribing with effective deltas enabled
