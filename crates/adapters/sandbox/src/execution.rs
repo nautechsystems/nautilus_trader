@@ -593,6 +593,11 @@ impl ExecutionClient for SandboxExecutionClient {
         self.config.oms_type
     }
 
+    // Position reports are always empty, so an absent report is not evidence of a flat position
+    fn provides_bulk_position_coverage(&self, _instrument_id: InstrumentId) -> bool {
+        false
+    }
+
     fn settles_contract_expirations(&self) -> bool {
         true
     }

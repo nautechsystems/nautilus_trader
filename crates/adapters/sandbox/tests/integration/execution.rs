@@ -52,6 +52,7 @@ use nautilus_execution::{
         latency::{LatencyModelAny, StaticLatencyModel},
     },
 };
+use nautilus_live::manager::{ExecutionManager, ExecutionManagerConfig};
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
     data::{Bar, BarType, Data, InstrumentClose, InstrumentStatus, QuoteTick, TradeTick},
@@ -2048,6 +2049,9 @@ fn test_client_initial_state(execution_client: SandboxExecutionClient, venue: Ve
     assert!(!execution_client.is_connected());
     assert_eq!(execution_client.venue(), venue);
     assert_eq!(execution_client.oms_type(), OmsType::Netting);
+    assert!(
+        !execution_client.provides_bulk_position_coverage(InstrumentId::from("ETHUSDT-PERP.SIM"))
+    );
     assert!(execution_client.settles_contract_expirations());
     assert_eq!(execution_client.matching_engine_count(), 0);
 }
@@ -4324,6 +4328,69 @@ async fn test_generate_mass_status_returns_empty_report(
     assert!(mass_status.order_reports().is_empty());
     assert!(mass_status.fill_reports().is_empty());
     assert!(mass_status.position_reports().is_empty());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_position_check_keeps_open_sandbox_position(
+    trader_id: TraderId,
+    account_id: AccountId,
+    venue: Venue,
+    instrument: InstrumentAny,
+) {
+    let (mut context, mut rx) =
+        setup_channel_context(trader_id, account_id, venue, &instrument, None);
+    context
+        .client
+        .process_quote_tick(&create_quote_tick(instrument.id(), 1000.0, 1001.0))
+        .unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .client_order_id("O-POSITION-CHECK-1".into())
+        .build();
+    submit_to_client(&context, trader_id, &order);
+    let mut fill = apply_order_events_from_channel(&context.cache, &mut rx)
+        .into_iter()
+        .find_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill),
+            _ => None,
+        })
+        .expect("market order should fill against the quote");
+    fill.position_id = Some(PositionId::new("P-POSITION-CHECK-1"));
+    let position = Position::new(&instrument, fill);
+    context
+        .cache
+        .borrow_mut()
+        .add_position(&position, OmsType::Netting)
+        .unwrap();
+
+    let mut manager = ExecutionManager::new(
+        context.test_clock.clone(),
+        context.cache.clone(),
+        ExecutionManagerConfig {
+            position_check_threshold_ns: DurationNanos::ZERO,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    let events = manager
+        .check_positions_consistency(&[&context.client])
+        .await;
+
+    assert!(events.is_empty());
+    assert!(
+        context
+            .cache
+            .borrow()
+            .position(&position.id)
+            .is_some_and(|position| position.is_open())
+    );
+
+    context.client.stop().unwrap();
 }
 
 #[rstest]
