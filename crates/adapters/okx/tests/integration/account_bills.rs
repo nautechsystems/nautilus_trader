@@ -218,18 +218,27 @@ async fn test_account_bills_transfer_response(#[values(false, true)] archive: bo
         .await
         .unwrap();
 
-    assert_eq!(bills.len(), 1);
-    let bill = &bills[0];
-    assert_eq!(bill.bill_type, "1");
-    assert_eq!(bill.sub_type, "11");
-    assert_eq!(bill.bal_chg, "1.0000000000000000");
-    assert_eq!(bill.from.as_deref(), Some("6"));
-    assert_eq!(bill.to.as_deref(), Some("18"));
-    assert_eq!(bill.inst_type.as_deref(), Some(""));
-    assert_eq!(bill.ord_id.as_deref(), Some(""));
-    assert_eq!(bill.pos_bal.as_deref(), Some(""));
-    assert_eq!(bill.trade_id.as_deref(), Some("0"));
-    assert!(bill.earn_amt.is_none());
+    assert_eq!(bills.len(), 3);
+    for (bill, (ccy, amount)) in bills
+        .iter()
+        .zip([("USDC", "5000"), ("ETH", "1"), ("BTC", "1")])
+    {
+        assert_eq!(bill.ccy, ccy);
+        assert_eq!(bill.bal, amount);
+        assert_eq!(bill.bal_chg, amount);
+        assert_eq!(bill.sz.as_deref(), Some(amount));
+        assert_eq!(bill.bill_type, "1");
+        assert_eq!(bill.sub_type, "11");
+        assert_eq!(bill.from.as_deref(), Some("18"));
+        assert_eq!(bill.to.as_deref(), Some("18"));
+        assert_eq!(bill.inst_type.as_deref(), Some(""));
+        assert_eq!(bill.ord_id.as_deref(), Some(""));
+        assert_eq!(bill.pos_bal.as_deref(), Some(""));
+        assert_eq!(bill.trade_id.as_deref(), Some("0"));
+        assert_eq!(bill.earn_amt.as_deref(), Some(""));
+        assert_eq!(bill.earn_apr.as_deref(), Some(""));
+        assert_eq!(bill.notes.as_deref(), Some("From Unified account"));
+    }
     assert_eq!(serde_json::to_value(bills).unwrap(), response["data"]);
     assert_eq!(state.requests.lock().await.len(), 1);
 }
