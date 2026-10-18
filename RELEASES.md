@@ -24,6 +24,7 @@ Released on TBD (UTC).
 
 - Fixed HTTP `Referer` headers exposing URL paths and query parameters on cross-origin redirects
 - Fixed Feather run recovery modifying files outside the catalog through path traversal or symlinks
+- Fixed unbounded memory growth in `SubscriptionState` from unknown WebSocket subscription acknowledgments
 - Fixed Binance spot account balances panicking or skipping an unrepresentable amount
 - Fixed Binance Spot SBE stream panics and negative quantities parsed as large sizes
 - Fixed Hyperliquid private WebSocket parse errors exposing account data in logs
