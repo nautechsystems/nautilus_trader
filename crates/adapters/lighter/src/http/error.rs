@@ -15,6 +15,8 @@
 
 //! HTTP error taxonomy for Lighter REST responses.
 
+use std::time::Duration;
+
 use nautilus_network::http::HttpClientError;
 use thiserror::Error;
 
@@ -27,12 +29,19 @@ pub enum LighterHttpError {
     /// Network-level failure (transport, DNS, TLS).
     #[error("network error: {0}")]
     Network(String),
-    /// HTTP-level failure with status code and body.
+    /// HTTP-level failure with status code, body, and optional minimum retry delay.
     #[error("HTTP {status}: {body}")]
-    Http { status: u16, body: String },
-    /// Rate limit exceeded.
-    #[error("rate limit exceeded: {0}")]
-    RateLimit(String),
+    Http {
+        status: u16,
+        body: String,
+        retry_after: Option<Duration>,
+    },
+    /// Rate limit exceeded, with an optional minimum retry delay.
+    #[error("rate limit exceeded: {message}")]
+    RateLimit {
+        message: String,
+        retry_after: Option<Duration>,
+    },
     /// Venue returned a structured error code.
     #[error("venue error {code}: {message}")]
     Venue { code: i64, message: String },
@@ -45,6 +54,15 @@ pub enum LighterHttpError {
     /// Failed to parse a venue response.
     #[error("parse error: {0}")]
     Parse(String),
+}
+
+impl LighterHttpError {
+    pub(super) const fn retry_after(&self) -> Option<Duration> {
+        match self {
+            Self::Http { retry_after, .. } | Self::RateLimit { retry_after, .. } => *retry_after,
+            _ => None,
+        }
+    }
 }
 
 impl From<HttpClientError> for LighterHttpError {
@@ -72,7 +90,7 @@ impl From<anyhow::Error> for LighterHttpError {
 #[must_use]
 pub fn should_retry_lighter_http_error(error: &LighterHttpError) -> bool {
     match error {
-        LighterHttpError::Network(_) | LighterHttpError::RateLimit(_) => true,
+        LighterHttpError::Network(_) | LighterHttpError::RateLimit { .. } => true,
         LighterHttpError::Http { status, .. } => *status >= 500,
         LighterHttpError::Venue { .. }
         | LighterHttpError::HistoryIncomplete { .. }
@@ -94,11 +112,11 @@ mod tests {
 
     #[rstest]
     #[case::network_retries(LighterHttpError::Network("dns failure".into()), true)]
-    #[case::rate_limit_retries(LighterHttpError::RateLimit("429".into()), true)]
-    #[case::server_5xx_retries(LighterHttpError::Http { status: 503, body: "busy".into() }, true)]
-    #[case::server_500_retries(LighterHttpError::Http { status: 500, body: "boom".into() }, true)]
-    #[case::client_400_does_not_retry(LighterHttpError::Http { status: 400, body: "bad".into() }, false)]
-    #[case::client_404_does_not_retry(LighterHttpError::Http { status: 404, body: "missing".into() }, false)]
+    #[case::rate_limit_retries(LighterHttpError::RateLimit { message: "429".into(), retry_after: None }, true)]
+    #[case::server_5xx_retries(LighterHttpError::Http { status: 503, body: "busy".into(), retry_after: None }, true)]
+    #[case::server_500_retries(LighterHttpError::Http { status: 500, body: "boom".into(), retry_after: None }, true)]
+    #[case::client_400_does_not_retry(LighterHttpError::Http { status: 400, body: "bad".into(), retry_after: None }, false)]
+    #[case::client_404_does_not_retry(LighterHttpError::Http { status: 404, body: "missing".into(), retry_after: None }, false)]
     #[case::venue_does_not_retry(LighterHttpError::Venue { code: 20001, message: "invalid".into() }, false)]
     #[case::incomplete_history_does_not_retry(
         LighterHttpError::HistoryIncomplete {

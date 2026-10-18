@@ -11,6 +11,7 @@ Released on TBD (UTC).
 - Changed order-list validation to deny unsent siblings; retry with new IDs (#5336), thanks @imbolc
 - Changed Binance spot `BinanceAccountInfo::to_account_state` and `parse_spot_account_position` to return `Result`
 - Changed Hyperliquid `UpdateIsolatedMargin`: replace `delta` with `is_buy` and `ntli` (signed millionths)
+- Changed Lighter `LighterHttpError`: `Http` adds `retry_after`; `RateLimit` uses named `message` and `retry_after`
 
 ### Security
 
@@ -23,6 +24,7 @@ Released on TBD (UTC).
 
 - Fixed startup reconciliation leaving orders partially filled after venue quantity reductions
 - Fixed risk denials for released orders and cleanup of their contingent orders
+- Fixed Python isolation checks failing with inherited `PYTHONHOME`
 - Fixed Architect AX closed-order reports preceding their fills during reconciliation
 - Fixed Binance Futures HTTP order reports using update time as acceptance time
 - Fixed Binance spot SBE exponent overflow aborting user-data decode (#5320), thanks @zifulifufu
@@ -37,6 +39,10 @@ Released on TBD (UTC).
 - Fixed Kraken Futures client order IDs shortened to 18 characters (#5312), thanks @zhaow-de
 - Fixed Lighter funding rates 100x too high and missing the live interval (#5338), thanks @dxwil
 - Fixed Lighter order lookups using the wrong client order ID after a collision and restart
+- Fixed Lighter deferred order reports being treated as proof of absence
+- Fixed Lighter execution sender setup and reinstallation on repeated starts
+- Fixed Lighter fill parse errors consuming acceptance and replay state
+- Fixed Lighter read retries ignoring `Retry-After` response headers
 - Fixed empty and incomplete OKX historical bar responses (#5339), thanks for reporting @AlphaTraderK
 - Fixed OKX USD-margined futures and swaps routed as spreads (#5337), thanks for reporting @michalismeng
 - Fixed Polymarket cancels lost while submit responses register venue order IDs

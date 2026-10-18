@@ -2,6 +2,7 @@
 set -euo pipefail
 
 unset PYTHONPATH
+unset PYTHONHOME
 unset VIRTUAL_ENV
 unset UV_PROJECT_ENVIRONMENT
 
@@ -25,7 +26,7 @@ cat > "$case_root/bin/uv" << 'MOCK'
 #!/usr/bin/env bash
 set -euo pipefail
 [[ "$1 $2 $3" == 'run --no-sync python' ]] || exit 90
-[[ -z "${UV_PROJECT_ENVIRONMENT:-}" && -z "${PYTHONPATH:-}" && -z "${VIRTUAL_ENV:-}" ]] || exit 91
+[[ -z "${UV_PROJECT_ENVIRONMENT:-}" && -z "${PYTHONPATH:-}" && -z "${PYTHONHOME:-}" && -z "${VIRTUAL_ENV:-}" ]] || exit 91
 shift 3
 if [ -x .venv/bin/python ]; then
   exec .venv/bin/python "$@"
@@ -83,13 +84,14 @@ assert dependency_example.VALUE == 83
 assert importlib.metadata.version("nautilus-trader") == "1.0"
 assert Path(nautilus_trader.__file__).is_relative_to(sys.prefix)
 assert importlib.util.find_spec("tests") is None
-result = subprocess.run([sys.executable, "-c", "import tests"], capture_output=True, text=True)
+result = subprocess.run([sys.executable, "-I", "-c", "import tests"], capture_output=True, text=True)
 assert result.returncode == 1
 assert "ModuleNotFoundError: No module named 'tests'" in result.stderr
 PY
 CHECK
 
-PATH="$case_root/bin:$PATH" RUNNER_TEMP="$case_root/temp" \
+python_home=$(python3 -c 'import sys; print(sys.base_prefix)')
+PATH="$case_root/bin:$PATH" RUNNER_TEMP="$case_root/temp" PYTHONHOME="$python_home" \
   PYTHONPATH=contaminated VIRTUAL_ENV=contaminated UV_PROJECT_ENVIRONMENT=contaminated \
   bash "$case_root/source/scripts/test-python-isolation.bash"
 [[ -z "$(ls -A "$case_root/temp")" ]] || {
