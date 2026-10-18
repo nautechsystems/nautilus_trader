@@ -9,6 +9,7 @@ Released on TBD (UTC).
 ### Breaking Changes
 
 - Removed Cap'n Proto codecs and `capnp` features; use JSON or MessagePack for native messages
+- Removed Hyperliquid `Secrets::from_file` and `from_json`; use `from_private_key` or `from_env`
 - Removed Polymarket `FeeRateResponse::to_rate` and Gamma `set_clob_client` and `clob_client` methods
 - Changed `BusPayloadType`: add `RequestCommand` and `DataResponse` arms to exhaustive matches
 - Changed SBE depth encoding for padded or variable levels and nonzero order IDs; update readers for the new layout
@@ -28,6 +29,7 @@ Released on TBD (UTC).
 - Fixed unbounded memory growth in `SubscriptionState` from unknown WebSocket subscription acknowledgments
 - Fixed Binance spot account balances panicking or skipping an unrepresentable amount
 - Fixed Binance Spot SBE stream panics and negative quantities parsed as large sizes
+- Fixed Hyperliquid builder-fee commands treating invalid `HYPERLIQUID_TESTNET` values as mainnet
 - Fixed Hyperliquid private WebSocket parse errors exposing account data in logs
 
 ### Fixes

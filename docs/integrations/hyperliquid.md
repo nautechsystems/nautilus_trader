@@ -104,6 +104,10 @@ from nautilus_trader.adapters.hyperliquid import builder_fee_revoke
 builder_fee_revoke()
 ```
 
+The approval and revocation scripts and Python functions accept `HYPERLIQUID_TESTNET=true` or `1`
+for testnet, or `false` or `0` for mainnet (the default when unset). Boolean words are case-insensitive.
+They reject other values, including empty strings, before signing a request.
+
 The Rust scripts print an action summary. They wait for an Enter keypress before signing. If anything in the
 summary looks wrong, abort with `Ctrl+C`. To skip the prompt, append `-- --yes` to the `cargo run` command.
 The Python bindings do not prompt, so make sure to review the active environment variables before calling.
