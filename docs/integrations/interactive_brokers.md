@@ -492,6 +492,10 @@ Mass status requests query three independent IB sources:
 - Executions paired with commission reports produce fill reports.
 - Account positions produce position status reports.
 
+An execution that arrives without a commission report is omitted from the fill reports. The adapter
+warns and marks that instrument's fills incomplete, or every instrument when the contract cannot be
+resolved. Mass status still returns, so one missing commission report does not abort startup.
+
 Position updates do not create synthetic order status reports. If IB returns a position without
 matching order or fill history, the execution engine can adopt the position from the position report
 alone by creating its internal reconciliation fill. This preserves the report boundary: the adapter

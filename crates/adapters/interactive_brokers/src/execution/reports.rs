@@ -663,19 +663,42 @@ impl<'a> FillReportCollector<'a> {
     /// The combo leg executions move from the fill reports to the evidence's combo leg reports:
     /// they share the combo's order IDs, so they would fill the spread order at leg prices.
     ///
+    /// An execution with no commission report is left out of the fill reports. Its instrument is
+    /// marked incomplete, or every instrument is when the contract cannot be resolved. Mass status
+    /// still returns the remaining evidence.
+    ///
     /// # Errors
     ///
-    /// Returns an error if an execution has no commission report.
+    /// This method does not fail when commission reports are missing. The evidence records that gap.
     pub(super) fn finish(mut self) -> anyhow::Result<(FillEvidence, Vec<ExecutionData>)> {
-        anyhow::ensure!(
-            self.pending_exec_data.is_empty(),
-            "IB did not provide commission reports for execution IDs: {}",
-            self.pending_exec_data
-                .keys()
-                .map(String::as_str)
-                .collect::<Vec<_>>()
-                .join(", ")
-        );
+        if !self.pending_exec_data.is_empty() {
+            let mut pending: Vec<_> = std::mem::take(&mut self.pending_exec_data)
+                .into_iter()
+                .collect();
+            pending.sort_by(|left, right| left.0.cmp(&right.0));
+
+            let mut described = Vec::with_capacity(pending.len());
+            for (execution_id, exec_data) in pending {
+                match self
+                    .context
+                    .resolve_historical_execution_instrument_id(&exec_data)
+                {
+                    Ok(instrument_id) => {
+                        self.evidence.missing_instruments.insert(instrument_id);
+                        described.push(format!("{execution_id} ({instrument_id})"));
+                    }
+                    Err(error) => {
+                        self.evidence.missing_all = true;
+                        described.push(format!("{execution_id} (unresolved instrument: {error})"));
+                    }
+                }
+            }
+
+            tracing::warn!(
+                "IB did not provide commission reports for execution IDs: {}; marking fill evidence incomplete",
+                described.join(", ")
+            );
+        }
 
         // A commission report without its execution means an execution never arrived
         if !self.pending_commissions.is_empty() {

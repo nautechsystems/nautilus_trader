@@ -5948,7 +5948,7 @@ fn test_fill_report_collector_marks_instrument_missing_when_not_cached() {
 }
 
 #[rstest]
-fn test_fill_report_collector_fails_on_execution_without_commission() {
+fn test_fill_report_collector_marks_instrument_missing_without_commission() {
     let (client, _, _) = create_test_execution_client();
     client.instrument_provider.insert_test_instrument(
         InstrumentAny::from(create_test_mes_instrument()),
@@ -5963,9 +5963,53 @@ fn test_fill_report_collector_fails_on_execution_without_commission() {
         create_test_mes_execution_data(0),
     )));
 
+    let (evidence, combo_executions) = collector.finish().unwrap();
+
+    assert!(evidence.reports.is_empty());
+    assert!(combo_executions.is_empty());
+    assert!(!evidence.missing_all);
     assert_eq!(
-        collector.finish().unwrap_err().to_string(),
-        "IB did not provide commission reports for execution IDs: 0000e1a7.6acc4ab7.01.01"
+        evidence.missing_instruments,
+        AHashSet::from([InstrumentId::from("MESZ6.CME")])
+    );
+}
+
+#[rstest]
+fn test_fill_report_collector_keeps_other_fills_when_one_execution_lacks_commission() {
+    let (client, _, _) = create_test_execution_client();
+    let equity = equity_aapl();
+    let equity_id = equity.id();
+    client
+        .instrument_provider
+        .insert_test_instrument(InstrumentAny::from(equity), 265598, 1);
+    client.instrument_provider.insert_test_instrument(
+        InstrumentAny::from(create_test_mes_instrument()),
+        MES_CONTRACT_ID,
+        1,
+    );
+    let context = report_context(&client);
+    let cmd = create_test_fills_cmd();
+    let mut collector = FillReportCollector::new(&context, &cmd, UnixNanos::default());
+
+    collector.push(Ok(Executions::ExecutionData(
+        create_test_stock_execution_data(0, 123, "exec-aapl-001"),
+    )));
+    collector.push(Ok(Executions::CommissionReport(
+        create_test_commission_report("exec-aapl-001", 1.25),
+    )));
+    collector.push(Ok(Executions::ExecutionData(
+        create_test_mes_execution_data(0),
+    )));
+
+    let (evidence, _) = collector.finish().unwrap();
+
+    assert_eq!(evidence.reports.len(), 1);
+    assert_eq!(evidence.reports[0].instrument_id, equity_id);
+    assert_eq!(evidence.reports[0].trade_id, TradeId::from("exec-aapl-001"));
+    assert!(!evidence.missing_all);
+    assert_eq!(
+        evidence.missing_instruments,
+        AHashSet::from([InstrumentId::from("MESZ6.CME")])
     );
 }
 
