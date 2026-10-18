@@ -9,6 +9,8 @@ Released on TBD (UTC).
 - Removed Polymarket `FeeRateResponse::to_rate` and Gamma `set_clob_client` and `clob_client` methods
 - Changed emulated releases to undergo risk checks; use `REDUCING` for eligible exits, as `HALTED` denies stops
 - Changed order-list validation to deny unsent siblings; retry with new IDs (#5336), thanks @imbolc
+- Changed Binance Spot SBE `parse_trades_event` and `parse_bbo_event` to return `Result`; handle parse errors
+- Changed Binance Spot SBE `parse_depth_snapshot` and `parse_depth_diff` to return `Result`; handle parse errors
 - Changed Binance spot `BinanceAccountInfo::to_account_state` and `parse_spot_account_position` to return `Result`
 - Changed Hyperliquid `UpdateIsolatedMargin`: replace `delta` with `is_buy` and `ntli` (signed millionths)
 - Changed Lighter `LighterHttpError`: `Http` adds `retry_after`; `RateLimit` uses named `message` and `retry_after`
@@ -18,6 +20,7 @@ Released on TBD (UTC).
 - Fixed HTTP `Referer` headers exposing URL paths and query parameters on cross-origin redirects
 - Fixed Feather run recovery modifying files outside the catalog through path traversal or symlinks
 - Fixed Binance spot account balances panicking or skipping an unrepresentable amount
+- Fixed Binance Spot SBE stream panics and negative quantities parsed as large sizes
 - Fixed Hyperliquid private WebSocket parse errors exposing account data in logs
 
 ### Fixes
