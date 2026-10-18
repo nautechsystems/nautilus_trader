@@ -234,7 +234,11 @@ impl<'a> SbeCursor<'a> {
     /// # Errors
     ///
     /// Returns an error if fewer than `n` bytes remain.
-    #[inline]
+    #[expect(
+        clippy::inline_always,
+        reason = "preserves checked slice lengths for fixed-width SBE decoding"
+    )]
+    #[inline(always)]
     pub fn read_bytes(&mut self, n: usize) -> Result<&'a [u8], SbeDecodeError> {
         self.require(n)?;
         let slice = &self.buf[self.pos..self.pos + n];
@@ -409,12 +413,15 @@ impl<'a> SbeCursor<'a> {
 
     /// Iterates over a group, calling `decode_item` for each element.
     ///
-    /// The decoder function receives a cursor positioned at the start of each item
-    /// and should decode the item without advancing past `block_length` bytes.
+    /// The decoder receives a cursor at the item start with absolute offsets, and a buffer
+    /// that ends `block_length` bytes after it. Unread trailing bytes are skipped before the
+    /// next item. If `decode_item` fails, this cursor is left at the decoder's position.
     ///
     /// # Errors
     ///
-    /// Returns an error if the buffer does not contain all group entries or `decode_item` fails.
+    /// Returns an error if:
+    /// - The buffer does not contain all group entries.
+    /// - `decode_item` fails.
     pub fn read_group<T, F>(
         &mut self,
         block_length: u16,
@@ -433,11 +440,21 @@ impl<'a> SbeCursor<'a> {
         let mut items = Vec::with_capacity(count);
         for _ in 0..count {
             let item_start = self.pos;
-            let item = decode_item(self)?;
-            items.push(item);
+            let item_end = item_start + block_len;
 
-            // Advance to next item boundary (respects block_length even if decoder read less).
-            self.pos = item_start + block_len;
+            let buf = self
+                .buf
+                .get(..item_end)
+                .ok_or(SbeDecodeError::BufferTooShort {
+                    expected: item_end,
+                    actual: self.buf.len(),
+                })?;
+
+            let mut entry = Self::new_at(buf, item_start);
+            let item = decode_item(&mut entry);
+            self.pos = entry.pos;
+            items.push(item?);
+            self.pos = item_end;
         }
 
         Ok(items)
@@ -638,6 +655,69 @@ mod tests {
 
         assert_eq!(items, vec![100, 200]);
         assert_eq!(cursor.pos(), 16); // 2 * 8
+    }
+
+    #[rstest]
+    #[case(0)]
+    #[case(3)]
+    fn test_read_group_rejects_entry_overread(#[case] block_length: u16) {
+        let buf = [9, 8, 7, 6, 5, 4, 3, 2, 1];
+        let mut cursor = SbeCursor::new_at(&buf, 1);
+        let mut calls = 0;
+        let item_end = 1 + usize::from(block_length);
+
+        let result = cursor.read_group(block_length, 2, |entry| {
+            calls += 1;
+            assert_eq!(entry.pos(), 1);
+            assert_eq!(entry.buffer(), &buf[..item_end]);
+            assert_eq!(entry.remaining(), usize::from(block_length));
+            assert_eq!(entry.peek(), &buf[1..item_end]);
+            entry.read_u32_le()
+        });
+
+        assert_eq!(
+            result,
+            Err(SbeDecodeError::BufferTooShort {
+                expected: 5,
+                actual: item_end,
+            })
+        );
+        assert_eq!(cursor.pos(), 1);
+        assert_eq!(calls, 1);
+    }
+
+    #[rstest]
+    fn test_read_group_rejects_position_past_buffer() {
+        let mut cursor = SbeCursor::new_at(&[1, 2], 3);
+        let result = cursor.read_group(0, 1, SbeCursor::read_u8);
+
+        assert_eq!(
+            result,
+            Err(SbeDecodeError::BufferTooShort {
+                expected: 3,
+                actual: 2
+            })
+        );
+        assert_eq!(cursor.pos(), 3);
+    }
+
+    #[rstest]
+    fn test_read_group_preserves_position_after_partial_overread() {
+        let mut cursor = SbeCursor::new_at(&[9, 8, 7, 6, 5, 4, 3, 2], 1);
+
+        let result = cursor.read_group(3, 2, |entry| {
+            entry.read_u8()?;
+            entry.read_u32_le()
+        });
+
+        assert_eq!(
+            result,
+            Err(SbeDecodeError::BufferTooShort {
+                expected: 6,
+                actual: 4
+            })
+        );
+        assert_eq!(cursor.pos(), 2);
     }
 
     #[rstest]

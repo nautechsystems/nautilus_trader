@@ -111,7 +111,22 @@ impl TradesStreamEvent {
         let qty_exponent = cursor.read_i8()?;
 
         let (block_length, num_in_group) = cursor.read_group_header()?;
-        let trades = cursor.read_group(block_length, num_in_group, Trade::decode)?;
+        if usize::from(block_length) < Trade::ENCODED_LENGTH {
+            return Err(StreamDecodeError::InvalidBlockLength {
+                expected: Trade::ENCODED_LENGTH as u16,
+                actual: block_length,
+            });
+        }
+
+        let block_length = usize::from(block_length);
+        let count = num_in_group as usize;
+        let entries = cursor.read_bytes(count * block_length)?;
+        let mut trades = Vec::with_capacity(count);
+
+        for entry in entries.chunks_exact(block_length) {
+            let mut entry = SbeCursor::new(entry);
+            trades.push(Trade::decode(&mut entry)?);
+        }
 
         let symbol = Ustr::from(cursor.read_var_string8_ref()?);
 
@@ -208,6 +223,80 @@ mod tests {
         for (i, trade) in event.trades.iter().enumerate() {
             assert_eq!(trade.id, i as i64 + 1);
         }
+    }
+
+    #[rstest]
+    #[case::current(Trade::ENCODED_LENGTH as u16)]
+    #[case::extended(Trade::ENCODED_LENGTH as u16 + 3)]
+    fn test_decode_valid_empty_trades(#[case] block_length: u16) {
+        let mut buf = make_valid_buffer(0);
+        buf[26..28].copy_from_slice(&block_length.to_le_bytes());
+        let event = TradesStreamEvent::decode(&buf).unwrap();
+
+        assert_eq!(event.event_time_us, 1_000_000);
+        assert_eq!(event.transact_time_us, 1_000_001);
+        assert_eq!(event.price_exponent, -2);
+        assert_eq!(event.qty_exponent, -8);
+        assert!(event.trades.is_empty());
+        assert_eq!(event.symbol, "BTCUSDT");
+    }
+
+    #[rstest]
+    #[case::empty(0)]
+    #[case::single(1)]
+    #[case::maximum(10_000)]
+    fn test_decode_rejects_undersized_trade_blocks(#[case] count: u32) {
+        for block_length in 0..Trade::ENCODED_LENGTH as u16 {
+            let mut buf = make_valid_buffer(1);
+            buf[26..28].copy_from_slice(&block_length.to_le_bytes());
+            buf[28..32].copy_from_slice(&u32::to_le_bytes(count));
+
+            let expected = StreamDecodeError::InvalidBlockLength {
+                expected: Trade::ENCODED_LENGTH as u16,
+                actual: block_length,
+            };
+
+            assert_eq!(TradesStreamEvent::decode(&buf).unwrap_err(), expected);
+            assert_eq!(
+                TradesStreamEvent::decode_validated(&buf).unwrap_err(),
+                expected
+            );
+        }
+    }
+
+    #[rstest]
+    fn test_decode_trade_extensions_and_symbol() {
+        let mut buf = make_valid_buffer(2);
+        let width = Trade::ENCODED_LENGTH;
+        for index in (0..2).rev() {
+            let end = 32 + (index + 1) * width;
+            buf.splice(end..end, [0xFF; 3]);
+        }
+
+        buf[26..28].copy_from_slice(&((width + 3) as u16).to_le_bytes());
+        let event = TradesStreamEvent::decode(&buf).unwrap();
+
+        assert_eq!(event.event_time_us, 1_000_000);
+        assert_eq!(event.transact_time_us, 1_000_001);
+        assert_eq!(event.price_exponent, -2);
+        assert_eq!(event.qty_exponent, -8);
+        assert_eq!(
+            event
+                .trades
+                .iter()
+                .map(|trade| (
+                    trade.id,
+                    trade.price_mantissa,
+                    trade.qty_mantissa,
+                    trade.is_buyer_maker
+                ))
+                .collect::<Vec<_>>(),
+            vec![
+                (1, 4_200_000, 100_000_000, true),
+                (2, 4_200_000, 100_000_000, false),
+            ]
+        );
+        assert_eq!(event.symbol, "BTCUSDT");
     }
 
     #[rstest]
