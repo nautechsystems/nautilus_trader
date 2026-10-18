@@ -213,6 +213,7 @@ impl PolymarketDataClient {
                                 now_ns,
                                 &subscriptions,
                                 Some(&cancellation),
+                                clock,
                             ) => result,
                             () = cancellation.cancelled() => break,
                         };
