@@ -209,7 +209,7 @@ struct TestServerState {
     tx_responses: Arc<tokio::sync::Mutex<VecDeque<Value>>>,
     tx_responses_by_nonce: Arc<tokio::sync::Mutex<std::collections::HashMap<i64, Value>>>,
     tx_response_blocked: Arc<AtomicBool>,
-    tx_response_waiters: Arc<AtomicUsize>,
+    tx_response_started: tokio::sync::broadcast::Sender<i64>,
     tx_response_release: Arc<tokio::sync::Notify>,
     inactive_orders_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     inactive_orders_unscoped_response: Arc<tokio::sync::Mutex<Option<Value>>>,
@@ -218,6 +218,8 @@ struct TestServerState {
     next_rest_send_tx_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     next_send_tx_ack: Arc<tokio::sync::Mutex<Option<Value>>>,
     next_nonce: Arc<AtomicI64>,
+    next_nonce_requested: tokio::sync::broadcast::Sender<i64>,
+    send_tx_completed: tokio::sync::broadcast::Sender<()>,
     inbox_tx: tokio::sync::broadcast::Sender<String>,
     close_after_next_frame: Arc<AtomicBool>,
     subscribe_ack_delay_ms: Arc<AtomicU64>,
@@ -232,6 +234,10 @@ struct TestServerState {
 impl Default for TestServerState {
     fn default() -> Self {
         let (inbox_tx, _) = tokio::sync::broadcast::channel(64);
+        let (next_nonce_requested, _) = tokio::sync::broadcast::channel(16);
+        let (send_tx_completed, _) = tokio::sync::broadcast::channel(64);
+        let (tx_response_started, _) = tokio::sync::broadcast::channel(16);
+
         Self {
             chain_id: Arc::new(AtomicU32::new(LIGHTER_TESTNET_CHAIN_ID)),
             connection_count: Arc::new(tokio::sync::Mutex::new(0)),
@@ -262,7 +268,7 @@ impl Default for TestServerState {
                 std::collections::HashMap::new(),
             )),
             tx_response_blocked: Arc::new(AtomicBool::new(false)),
-            tx_response_waiters: Arc::new(AtomicUsize::new(0)),
+            tx_response_started,
             tx_response_release: Arc::new(tokio::sync::Notify::new()),
             inactive_orders_response: Arc::new(tokio::sync::Mutex::new(None)),
             inactive_orders_unscoped_response: Arc::new(tokio::sync::Mutex::new(None)),
@@ -271,6 +277,8 @@ impl Default for TestServerState {
             next_rest_send_tx_response: Arc::new(tokio::sync::Mutex::new(None)),
             next_send_tx_ack: Arc::new(tokio::sync::Mutex::new(None)),
             next_nonce: Arc::new(AtomicI64::new(TEST_NEXT_NONCE)),
+            next_nonce_requested,
+            send_tx_completed,
             inbox_tx,
             close_after_next_frame: Arc::new(AtomicBool::new(false)),
             subscribe_ack_delay_ms: Arc::new(AtomicU64::new(0)),
@@ -324,11 +332,13 @@ async fn account(State(state): State<Arc<TestServerState>>) -> Response {
 
 async fn next_nonce(State(state): State<Arc<TestServerState>>) -> Response {
     // Tests can advance the venue baseline independently of acknowledgements
+    let nonce = state.next_nonce.load(Ordering::Acquire);
+    let _ = state.next_nonce_requested.send(nonce);
     (
         StatusCode::OK,
         json!({
             "code": 200,
-            "nonce": state.next_nonce.load(Ordering::Acquire),
+            "nonce": nonce,
         })
         .to_string(),
     )
@@ -438,14 +448,14 @@ async fn account_active_orders(
             .unwrap_or_else(|| json!({"code":200,"orders":[]}))
     };
 
-    if state.active_orders_response_blocked.load(Ordering::Acquire) {
-        let release = state.active_orders_response_release.notified();
-        tokio::pin!(release);
-        release.as_mut().enable();
-        state.active_orders_calls.fetch_add(1, Ordering::Release);
+    let release = state.active_orders_response_release.notified();
+    tokio::pin!(release);
+    release.as_mut().enable();
+    let blocked = state.active_orders_response_blocked.load(Ordering::Acquire);
+    state.active_orders_calls.fetch_add(1, Ordering::Release);
+
+    if blocked {
         release.await;
-    } else {
-        state.active_orders_calls.fetch_add(1, Ordering::Release);
     }
 
     (StatusCode::OK, body.to_string()).into_response()
@@ -531,11 +541,12 @@ async fn tx(
         .entry("nonce")
         .or_insert_with(|| info["Nonce"].clone());
 
+    let release = state.tx_response_release.notified();
+    tokio::pin!(release);
+    release.as_mut().enable();
+
     if state.tx_response_blocked.load(Ordering::Acquire) {
-        let release = state.tx_response_release.notified();
-        tokio::pin!(release);
-        release.as_mut().enable();
-        state.tx_response_waiters.fetch_add(1, Ordering::Release);
+        let _ = state.tx_response_started.send(nonce);
         release.await;
     }
 
@@ -740,10 +751,14 @@ async fn handle_socket(socket: WebSocket, state: Arc<TestServerState>) {
                         let types: Vec<u8> = serde_json::from_str(value["data"]["tx_types"].as_str().unwrap()).unwrap();
                         let hashes: Vec<_> = types.into_iter().zip(&infos).map(|(kind, info)| order_tx_hash(kind, info, state.chain_id.load(Ordering::Relaxed))).collect();
                         let mut ack = state.next_send_tx_ack.lock().await.take().unwrap_or_else(|| json!({"code": 200, "tx_hash": hashes}));
-                        if ack.is_null() { continue; }
+                        if ack.is_null() {
+                            let _ = state.send_tx_completed.send(());
+                            continue;
+                        }
                         ack["type"] = json!("jsonapi/sendtxbatch");
                         ack["id"] = value["data"]["id"].clone();
                         if sink.send(Message::Text(ack.to_string().into())).await.is_err() { break; }
+                        let _ = state.send_tx_completed.send(());
                     }
                     "jsonapi/sendtx" => {
                         state.send_txs.lock().await.push(value);
@@ -1146,6 +1161,18 @@ async fn await_send_tx_count(state: &TestServerState, target: usize) {
         Duration::from_secs(5),
     )
     .await;
+}
+
+async fn await_send_tx_completions(
+    receiver: &mut tokio::sync::broadcast::Receiver<()>,
+    count: usize,
+) {
+    for _ in 0..count {
+        tokio::time::timeout(Duration::from_secs(5), receiver.recv())
+            .await
+            .expect("mock transaction handling completed")
+            .expect("transaction completion notification");
+    }
 }
 
 async fn await_tx_calls(state: &TestServerState, target: usize) {
@@ -3111,10 +3138,11 @@ async fn test_acknowledged_create_allows_delayed_active_order() {
     assert_eq!(state.active_orders_calls.load(Ordering::Relaxed), 2);
     assert_eq!(state.tx_calls.load(Ordering::Relaxed), 1);
     assert!(
-        !matches!(
-            next_order_event(&mut rx, Duration::from_millis(500)).await,
-            Some(OrderEventAny::Rejected(_)),
-        ),
+        next_event_matching(&mut rx, Duration::from_millis(500), |event| {
+            matches!(event, ExecutionEvent::Order(OrderEventAny::Rejected(_)))
+        })
+        .await
+        .is_none(),
         "delayed valid create must not be rejected",
     );
 
@@ -3172,10 +3200,11 @@ async fn test_account_order_event_wins_create_probe_race() {
     ));
     state.tx_response_release.notify_one();
     assert!(
-        !matches!(
-            next_order_event(&mut rx, Duration::from_millis(2500)).await,
-            Some(OrderEventAny::Rejected(_)),
-        ),
+        next_event_matching(&mut rx, Duration::from_millis(2500), |event| {
+            matches!(event, ExecutionEvent::Order(OrderEventAny::Rejected(_)))
+        })
+        .await
+        .is_none(),
         "account order event must prevent a probe rejection",
     );
     assert_eq!(state.active_orders_calls.load(Ordering::Relaxed), 1);
@@ -3248,10 +3277,11 @@ async fn test_reconnect_during_create_probe_preserves_identity() {
     state.tx_response_release.notify_one();
 
     assert!(
-        !matches!(
-            next_order_event(&mut rx, Duration::from_millis(500)).await,
-            Some(OrderEventAny::Rejected(_)),
-        ),
+        next_event_matching(&mut rx, Duration::from_millis(500), |event| {
+            matches!(event, ExecutionEvent::Order(OrderEventAny::Rejected(_)))
+        })
+        .await
+        .is_none(),
         "a stale-epoch transaction response must not reject the create",
     );
     state.push_frame(&json!({
@@ -3310,10 +3340,11 @@ async fn test_acknowledged_create_pending_final_remains_reconcilable() {
     await_tx_calls(&state, 3).await;
     assert_eq!(state.active_orders_calls.load(Ordering::Relaxed), 3);
     assert!(
-        !matches!(
-            next_order_event(&mut rx, Duration::from_millis(200)).await,
-            Some(OrderEventAny::Rejected(_)),
-        ),
+        next_event_matching(&mut rx, Duration::from_millis(200), |event| {
+            matches!(event, ExecutionEvent::Order(OrderEventAny::Rejected(_)))
+        })
+        .await
+        .is_none(),
         "pending-final transaction status must remain unresolved",
     );
 
@@ -4582,6 +4613,7 @@ async fn test_batch_cancel_rejections_preserve_nonce_consumption(#[case] admitte
             Some(json!({"error":{"code":21104,"message":"invalid nonce"}}));
     }
 
+    let mut nonce_requests = state.next_nonce_requested.subscribe();
     let mut cancels = Vec::new();
 
     for i in 0..2 {
@@ -4663,7 +4695,20 @@ async fn test_batch_cancel_rejections_preserve_nonce_consumption(#[case] admitte
             .map(|cancel| cancel.client_order_id)
             .collect::<Vec<_>>()
     );
-    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    if !admitted {
+        let nonce = tokio::time::timeout(Duration::from_secs(5), nonce_requests.recv())
+            .await
+            .expect("nonce refresh request")
+            .expect("nonce request channel");
+        assert_eq!(nonce, TEST_NEXT_NONCE);
+        wait_until_async(
+            || async { client.pending_tasks_all_finished() },
+            Duration::from_secs(5),
+        )
+        .await;
+    }
+
     let order = make_limit_order(
         "O-AFTER-BATCH-FAILURE",
         OrderSide::Buy,
@@ -4718,6 +4763,7 @@ async fn test_cancel_all_orders_batch_boundaries(
     }
 
     let baseline = state.send_txs().await.len();
+    let mut completions = state.send_tx_completed.subscribe();
     client
         .cancel_all_orders(CancelAllOrders::new(
             trader_id(),
@@ -4732,7 +4778,7 @@ async fn test_cancel_all_orders_batch_boundaries(
         ))
         .unwrap();
     await_send_tx_count(&state, baseline + expected_sizes.len()).await;
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    await_send_tx_completions(&mut completions, expected_sizes.len()).await;
     let frames = state.send_txs().await;
     let batches: Vec<_> = frames[baseline..].iter().map(batch_cancel_infos).collect();
     assert_eq!(
@@ -4790,6 +4836,7 @@ async fn test_cancel_all_orders_retain_unsigned_after_ack_gap(#[case] lost_acks:
     }
 
     let baseline = state.send_txs().await.len();
+    let mut completions = state.send_tx_completed.subscribe();
     *state.next_send_tx_ack.lock().await = Some(Value::Null);
     client
         .cancel_all_orders(CancelAllOrders::new(
@@ -4805,7 +4852,13 @@ async fn test_cancel_all_orders_retain_unsigned_after_ack_gap(#[case] lost_acks:
         ))
         .unwrap();
     await_send_tx_count(&state, baseline + 1).await;
-    tokio::time::sleep(Duration::from_millis(250)).await;
+    await_send_tx_completions(&mut completions, 1).await;
+    assert!(
+        tokio::time::timeout(Duration::from_millis(250), completions.recv())
+            .await
+            .is_err(),
+        "unsigned cancellations must wait for the missing acknowledgement"
+    );
     let frames = state.send_txs().await;
     assert_eq!(frames.len(), baseline + 1);
     let first = &frames[baseline];
@@ -4907,6 +4960,7 @@ async fn test_cancel_all_orders_retain_unsigned_concurrent_sides(#[case] disconn
     }
 
     let baseline = state.send_txs().await.len();
+    let mut completions = state.send_tx_completed.subscribe();
     *state.next_send_tx_ack.lock().await = Some(Value::Null);
 
     for side in [OrderSide::Buy, OrderSide::Sell] {
@@ -4926,20 +4980,21 @@ async fn test_cancel_all_orders_retain_unsigned_concurrent_sides(#[case] disconn
     }
 
     await_send_tx_count(&state, baseline + 2).await;
-    tokio::time::sleep(Duration::from_millis(250)).await;
-    let frames = state.send_txs().await;
+    await_send_tx_completions(&mut completions, 2).await;
+
     if disconnect {
+        client.disconnect().await.unwrap();
+        await_connection_count(&state, 0).await;
+        let frames = state.send_txs().await;
         let sent = frames[baseline..]
             .iter()
             .map(|frame| batch_cancel_infos(frame).len())
             .sum::<usize>();
         assert!(sent < 30, "disconnect must exercise queued cancellations");
-        client.disconnect().await.unwrap();
-        tokio::time::sleep(Duration::from_millis(250)).await;
-        assert_eq!(state.send_txs().await, frames);
         return;
     }
 
+    let frames = state.send_txs().await;
     let first = &frames[baseline];
     state.push_frame(&json!({"type":"jsonapi/sendtxbatch", "id":first["data"]["id"],
         "code":200, "tx_hash":batch_cancel_infos(first).iter().map(|info| cancel_tx_hash(info, state.chain_id.load(Ordering::Relaxed))).collect::<Vec<_>>()}));
@@ -9674,6 +9729,7 @@ async fn test_acknowledged_modify_partial_batch_reconnect_retains_old_outcomes()
             json!({"status":0,"event_info":json!({"ae":"current failure"}).to_string()}),
         ),
     ]);
+    let mut probes = state.tx_response_started.subscribe();
     state.tx_response_blocked.store(true, Ordering::Release);
     *state.next_send_tx_ack.lock().await = Some(Value::Null);
     client
@@ -9697,18 +9753,21 @@ async fn test_acknowledged_modify_partial_batch_reconnect_retains_old_outcomes()
         .map(|info| order_tx_hash(17, info, state.chain_id.load(Ordering::Relaxed)))
         .collect();
     state.push_frame(&json!({"type":"jsonapi/sendtxbatch", "id":first_batch["data"]["id"],"code":200,"tx_hash":hashes}));
-    wait_until_async(
-        || {
-            let state = state.clone();
-            async move { state.tx_response_waiters.load(Ordering::Acquire) == 2 }
-        },
-        Duration::from_secs(8),
-    )
-    .await;
+    let mut blocked_nonces = Vec::new();
+    for _ in 0..2 {
+        blocked_nonces.push(
+            tokio::time::timeout(Duration::from_secs(8), probes.recv())
+                .await
+                .expect("acknowledged modify probe started")
+                .expect("probe notification"),
+        );
+    }
+
+    blocked_nonces.sort_unstable();
+    assert_eq!(blocked_nonces, vec![first_nonce, first_nonce + 1]);
 
     assert_eq!(state.send_txs().await.len(), 17);
     state.next_nonce.store(first_nonce + 15, Ordering::Release);
-    let subs = state.subscribes().await.len();
     let handle = registry
         .handle(client_id(), Ustr::from("lighter-user-streams"))
         .unwrap();
@@ -9716,10 +9775,9 @@ async fn test_acknowledged_modify_partial_batch_reconnect_retains_old_outcomes()
         handle.request_reconnect(),
         SocketReconnectRequestOutcome::Accepted
     );
-    await_subscribe_count(&state, subs + 4).await;
+    await_send_tx_count(&state, 18).await;
     state.tx_response_blocked.store(false, Ordering::Release);
     state.tx_response_release.notify_waiters();
-    await_send_tx_count(&state, 18).await;
     let mut outcomes = Vec::new();
 
     for _ in 0..3 {

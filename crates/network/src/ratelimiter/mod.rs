@@ -141,6 +141,7 @@ impl<K: Hash + Eq + Clone> StateStore for DashMapStateStore<K> {
             // fast path: measure existing entry
             return v.measure_and_replace_one(f);
         }
+
         // make an entry and measure that:
         let entry = self.entry(key.clone()).or_default();
         (*entry).measure_and_replace_one(f)
@@ -207,6 +208,7 @@ where
             .into_iter()
             .map(|(k, q)| (k, Gcra::new(q)))
             .collect();
+
         Self {
             default_gcra: base_quota.map(Gcra::new),
             state: DashMapStateStore::new(),
@@ -312,6 +314,7 @@ where
                 .get(key)
                 .copied()
                 .or_else(|| self.state.get(key).and_then(|state| state.load()));
+
             let decision = match self.gcra.get(key) {
                 Some(quota) => Some(quota.test(self.start, tat, now)),
                 None => self
@@ -385,6 +388,7 @@ where
                         limiter.commit_keys(planned);
                     }
                 }
+
                 wait
             };
 
@@ -427,6 +431,7 @@ mod tests {
         let start = clock.now();
         let gcra = DashMap::new();
         let base_quota = Quota::per_second(NonZeroU32::new(2).unwrap()).unwrap();
+
         RateLimiter {
             default_gcra: Some(Gcra::new(base_quota)),
             state: DashMapStateStore::new(),
@@ -531,7 +536,6 @@ mod tests {
         let clock = FakeRelativeClock::default();
         let limiter = RateLimiter::new_with_clock(Some(quota), vec![], clock.clone());
         let keys = ["first", "second"];
-
         for _ in 0..burst {
             limiter.await_keys_ready(Some(&keys)).await;
         }
@@ -687,6 +691,7 @@ mod tests {
     async fn test_await_keys_ready_reserves_keys_together() {
         let fast = "fast".to_string();
         let slow = "slow".to_string();
+
         let limiter = Arc::new(RateLimiter::new_with_quota(
             None,
             vec![
@@ -711,6 +716,7 @@ mod tests {
                 .await_keys_ready(Some(&[waiting_fast, waiting_slow]))
                 .await;
         });
+
         test_task::yield_now().await;
 
         limiter.check_key(&fast).unwrap();
@@ -866,6 +872,7 @@ mod tests {
         let rate = 10u32;
         let clock = FakeRelativeClock::default();
         let start = clock.now();
+
         let limiter = RateLimiter {
             default_gcra: Some(Gcra::new(
                 Quota::per_second(NonZeroU32::new(rate).unwrap()).unwrap(),

@@ -1139,6 +1139,13 @@ fn handle_fok_rest_status(
                 .emit_order_expired(ctx.order, Some(venue_order_id), ts_now);
         }
         OrderStatus::Filled => {
+            if ctx.order.order_type() != OrderType::Limit || ctx.order.is_quote_quantity() {
+                log::debug!(
+                    "FOK order {order_id} matched via REST; awaiting trade confirmation for non-base-limit order"
+                );
+                return;
+            }
+
             let (Ok(quantity), Ok(filled_qty), Ok(price)) = (
                 Quantity::from_decimal_dp(venue_order.original_size, ctx.size_precision),
                 Quantity::from_decimal_dp(venue_order.size_matched, ctx.size_precision),
@@ -1189,7 +1196,7 @@ fn handle_fok_rest_status(
 
 #[cfg(test)]
 mod tests {
-    use nautilus_common::messages::ExecutionEvent;
+    use nautilus_common::messages::{ExecutionEvent, ExecutionReport};
     use nautilus_core::{UnixNanos, collections::AtomicMap};
     use nautilus_model::{
         enums::{AccountType, LiquiditySide, OrderSide},
@@ -2122,6 +2129,132 @@ mod tests {
     }
 
     #[rstest]
+    #[case::market_buy_fok(OrderType::Market, OrderSide::Buy, false, TimeInForce::Fok)]
+    #[case::market_buy_fak(OrderType::Market, OrderSide::Buy, false, TimeInForce::Ioc)]
+    #[case::quote_market_buy(OrderType::Market, OrderSide::Buy, true, TimeInForce::Fok)]
+    #[case::market_sell(OrderType::Market, OrderSide::Sell, false, TimeInForce::Fok)]
+    #[case::quote_limit_buy(OrderType::Limit, OrderSide::Buy, true, TimeInForce::Fok)]
+    fn test_handle_fok_rest_status_skips_unsafe_filled_report(
+        #[case] order_type: OrderType,
+        #[case] side: OrderSide,
+        #[case] quote_quantity: bool,
+        #[case] time_in_force: TimeInForce,
+    ) {
+        let instrument = test_instrument();
+        let quantity = Quantity::from("23.45");
+        let mut order = OrderTestBuilder::new(order_type)
+            .instrument_id(instrument.id())
+            .side(side)
+            .quantity(quantity)
+            .price(Price::from("0.40"))
+            .quote_quantity(quote_quantity)
+            .time_in_force(time_in_force)
+            .build();
+        order
+            .apply(TestOrderEventStubs::submitted(
+                &order,
+                AccountId::from("POLY-001"),
+            ))
+            .unwrap();
+        let mut venue_order: PolymarketOpenOrder = load("http_open_order.json");
+        venue_order.status = PolymarketOrderStatus::Matched;
+        venue_order.original_size = Decimal::new(2_346, 2);
+        venue_order.size_matched = venue_order.original_size;
+        let venue_order_id = VenueOrderId::from(venue_order.id.as_str());
+        let fill_tracker = OrderFillTrackerMap::new();
+        let order_contexts = OrderContextRegistry::default();
+        let ws_dispatch_state = Mutex::new(WsDispatchState::default());
+        let (emitter, mut receiver) = test_emitter();
+
+        let ctx = FokRestStatusContext {
+            order: &order,
+            fill_tracker: &fill_tracker,
+            order_contexts: &order_contexts,
+            ws_dispatch_state: &ws_dispatch_state,
+            emitter: &emitter,
+            account_id: AccountId::from("POLY-001"),
+            size_precision: instrument.size_precision(),
+            price_precision: instrument.price_precision(),
+            clock: nautilus_core::time::get_atomic_clock_realtime(),
+        };
+
+        handle_fok_rest_status(&venue_order, venue_order_id, &ctx);
+
+        let ExecutionEvent::Order(OrderEventAny::Accepted(accepted)) = receiver.try_recv().unwrap()
+        else {
+            panic!("expected accepted event");
+        };
+
+        order.apply(OrderEventAny::Accepted(accepted)).unwrap();
+
+        assert!(receiver.try_recv().is_err());
+        assert_eq!(order.status(), OrderStatus::Accepted);
+        assert_eq!(order.quantity(), quantity);
+        assert_eq!(
+            order.price(),
+            (order_type == OrderType::Limit).then(|| Price::from("0.40"))
+        );
+        assert_eq!(order.venue_order_id(), Some(venue_order_id));
+        assert_eq!(order.is_quote_quantity(), quote_quantity);
+    }
+
+    #[rstest]
+    fn test_handle_fok_rest_status_sends_base_limit_filled_report() {
+        let instrument = test_instrument();
+        let order = test_fractional_fok_limit_order(instrument.id());
+        let mut venue_order: PolymarketOpenOrder = load("http_open_order.json");
+        venue_order.status = PolymarketOrderStatus::Matched;
+        venue_order.original_size = order.quantity().as_decimal();
+        venue_order.size_matched = venue_order.original_size;
+        venue_order.price = Decimal::new(40, 2);
+        let venue_order_id = VenueOrderId::from(venue_order.id.as_str());
+        let fill_tracker = OrderFillTrackerMap::new();
+        let order_contexts = OrderContextRegistry::default();
+        let ws_dispatch_state = Mutex::new(WsDispatchState::default());
+        let (emitter, mut receiver) = test_emitter();
+
+        let ctx = FokRestStatusContext {
+            order: &order,
+            fill_tracker: &fill_tracker,
+            order_contexts: &order_contexts,
+            ws_dispatch_state: &ws_dispatch_state,
+            emitter: &emitter,
+            account_id: AccountId::from("POLY-001"),
+            size_precision: instrument.size_precision(),
+            price_precision: instrument.price_precision(),
+            clock: nautilus_core::time::get_atomic_clock_realtime(),
+        };
+
+        handle_fok_rest_status(&venue_order, venue_order_id, &ctx);
+
+        assert!(matches!(
+            receiver.try_recv().unwrap(),
+            ExecutionEvent::Order(OrderEventAny::Accepted(_))
+        ));
+
+        let ExecutionEvent::Report(ExecutionReport::Order(report)) = receiver.try_recv().unwrap()
+        else {
+            panic!("expected order status report");
+        };
+
+        assert_eq!(report.account_id, ctx.account_id);
+        assert_eq!(report.instrument_id, order.instrument_id());
+        assert_eq!(report.client_order_id, Some(order.client_order_id()));
+        assert_eq!(report.venue_order_id, venue_order_id);
+        assert_eq!(report.order_side, Some(OrderSide::Buy));
+        assert_eq!(report.order_type, OrderType::Limit);
+        assert_eq!(report.time_in_force, TimeInForce::Fok);
+        assert_eq!(report.order_status, OrderStatus::Filled);
+        assert_eq!(report.quantity, Quantity::from("23.45"));
+        assert_eq!(
+            report.filled_qty,
+            Quantity::zero(instrument.size_precision())
+        );
+        assert_eq!(report.price, Some(Price::from("0.40")));
+        assert!(receiver.try_recv().is_err());
+    }
+
+    #[rstest]
     #[case::rejected(PolymarketOrderStatus::Invalid, OrderStatus::Rejected, 1)]
     #[case::canceled(PolymarketOrderStatus::Canceled, OrderStatus::Canceled, 2)]
     #[case::expired(PolymarketOrderStatus::CanceledMarketResolved, OrderStatus::Expired, 2)]
@@ -2130,9 +2263,15 @@ mod tests {
         #[case] status: PolymarketOrderStatus,
         #[case] expected_status: OrderStatus,
         #[case] expected_event_count: usize,
+        #[values(OrderType::Limit, OrderType::Market)] order_type: OrderType,
     ) {
         let instrument = test_instrument();
-        let mut order = test_fractional_fok_limit_order(instrument.id());
+        let mut order = OrderTestBuilder::new(order_type)
+            .instrument_id(instrument.id())
+            .quantity(Quantity::from("23.45"))
+            .price(Price::from("0.40"))
+            .time_in_force(TimeInForce::Fok)
+            .build();
         order
             .apply(TestOrderEventStubs::submitted(
                 &order,

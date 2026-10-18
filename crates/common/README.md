@@ -25,7 +25,6 @@ event-driven architecture, providing research-to-live semantic parity.
 This crate provides feature flags to control source code inclusion during compilation:
 
 - `build-info-event-store`: Includes the event-store backend version in build information logs.
-- `capnp`: Enables [Cap'n Proto](https://capnproto.org) serialization support.
 - `defi`: Enables DeFi (Decentralized Finance) support.
 - `extension-module`: Builds as a Python extension module.
 - `high-precision`: Enables

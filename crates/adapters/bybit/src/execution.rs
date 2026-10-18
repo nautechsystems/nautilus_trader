@@ -48,8 +48,8 @@ use nautilus_live::{
 };
 use nautilus_model::{
     accounts::AccountAny,
-    enums::{OmsType, OrderType, TimeInForce},
-    events::OrderDeniedReason,
+    enums::{OmsType, OrderStatus, OrderType, TimeInForce},
+    events::{OrderCanceled, OrderDeniedReason, OrderEventAny},
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
@@ -2106,22 +2106,104 @@ impl ExecutionClient for BybitExecutionClient {
         let product_type = self.get_product_type_for_instrument(instrument_id);
         let account_id = self.core.account_id;
         let http_client = self.http_client.clone();
+        let emitter = self.emitter.clone();
+
+        let mut orders: Vec<_> = self
+            .core
+            .cache()
+            .orders_open(None, Some(&instrument_id), None, Some(&account_id), None)
+            .into_iter()
+            .map(|order| {
+                (
+                    order.client_order_id(),
+                    order.venue_order_id(),
+                    order.strategy_id(),
+                )
+            })
+            .collect();
+
+        let timeout = Duration::from_secs(self.config.http_timeout_secs);
+        let interval = Duration::from_millis(self.config.retry_delay_initial_ms.max(1));
 
         self.spawn_task("cancel_all_orders", async move {
-            match http_client
-                .cancel_all_orders(account_id, product_type, instrument_id)
-                .await
-            {
-                Ok(reports) => {
-                    for report in reports {
-                        log::debug!("Cancelled order: {report}");
+            // Status reports can infer fills before the execution stream delivers them
+            let emit_canceled = |client_order_id, strategy_id, report: &OrderStatusReport| {
+                if report.order_status == OrderStatus::Canceled {
+                    let canceled = OrderCanceled::new(
+                        emitter.trader_id(),
+                        strategy_id,
+                        instrument_id,
+                        client_order_id,
+                        UUID4::new(),
+                        report.ts_last,
+                        report.ts_init,
+                        false,
+                        Some(report.venue_order_id),
+                        Some(account_id),
+                        None,
+                    );
+                    emitter.send_order_event(OrderEventAny::Canceled(canceled));
+                }
+            };
+
+            let confirmation = async {
+                let reports = http_client
+                    .cancel_all_orders(account_id, product_type, instrument_id)
+                    .await
+                    .with_context(|| {
+                        format!("failed to cancel Bybit orders for {instrument_id}")
+                    })?;
+
+                for report in reports {
+                    if !report.order_status.is_closed() {
+                        continue;
+                    }
+
+                    if let Some(index) =
+                        orders
+                            .iter()
+                            .position(|(client_order_id, venue_order_id, _)| {
+                                venue_order_id.map_or(
+                                    report.client_order_id == Some(*client_order_id),
+                                    |id| id == report.venue_order_id,
+                                )
+                            })
+                    {
+                        let (client_order_id, _, strategy_id) = orders.swap_remove(index);
+                        emit_canceled(client_order_id, strategy_id, &report);
                     }
                 }
-                Err(e) => {
-                    log::error!("Failed to cancel all orders for {instrument_id}: {e}");
+
+                while !orders.is_empty() {
+                    for index in (0..orders.len()).rev() {
+                        let (client_order_id, venue_order_id, strategy_id) = orders[index];
+                        if let Some(report) = http_client
+                            .query_order(
+                                account_id,
+                                product_type,
+                                instrument_id,
+                                Some(client_order_id),
+                                venue_order_id,
+                            )
+                            .await?
+                            && report.order_status.is_closed()
+                        {
+                            orders.swap_remove(index);
+                            emit_canceled(client_order_id, strategy_id, &report);
+                        }
+                    }
+
+                    if !orders.is_empty() {
+                        tokio::time::sleep(interval).await;
+                    }
                 }
-            }
-            Ok(())
+
+                Ok(())
+            };
+
+            tokio::time::timeout(timeout, confirmation)
+                .await
+                .context("timed out confirming Bybit cancel-all orders")?
         });
 
         Ok(())
@@ -2345,8 +2427,17 @@ impl BybitExecutionClient {
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, rc::Rc, time::Duration};
+    use std::{
+        cell::RefCell,
+        rc::Rc,
+        sync::atomic::{AtomicBool, Ordering},
+        time::Duration,
+    };
 
+    use axum::{
+        Json, Router,
+        routing::{get, post},
+    };
     use nautilus_common::{
         cache::Cache,
         clients::ExecutionClient,
@@ -2357,6 +2448,7 @@ mod tests {
                 SubmitOrderList,
             },
         },
+        testing::wait_until_async,
     };
     use nautilus_core::{Params, UUID4};
     use nautilus_live::ExecutionClientCore;
@@ -2364,6 +2456,7 @@ mod tests {
         enums::{AccountType, OrderSide, OrderStatus},
         events::OrderEventAny,
         identifiers::{ClientOrderId, OrderListId, PositionId, StrategyId, TraderId, VenueOrderId},
+        instruments::stubs::crypto_perpetual_ethusdt,
         orders::{OrderList, builder::OrderTestBuilder, stubs::TestOrderEventStubs},
         types::Quantity,
     };
@@ -3229,6 +3322,117 @@ mod tests {
 
         assert!(rx.try_recv().is_err());
         assert!(client.dispatch_state.pending_requests.is_empty());
+    }
+
+    #[rstest]
+    #[case::working("New", "0")]
+    #[case::filled("Filled", "0.010")]
+    #[tokio::test]
+    async fn test_cancel_all_orders_leaves_unconfirmed_cancellation_open(
+        #[case] status: &str,
+        #[case] filled_qty: &str,
+    ) {
+        let json = crate::common::testing::load_test_json("http_get_orders_realtime.json");
+        let mut orders: serde_json::Value = serde_json::from_str(&json).unwrap();
+        orders["result"]["list"][0]["orderStatus"] = serde_json::json!(status);
+        orders["result"]["list"][0]["cumExecQty"] = serde_json::json!(filled_qty);
+        orders["result"]["list"][0]["avgPrice"] = serde_json::json!("3930.41");
+        let mut empty = orders.clone();
+        empty["result"]["list"] = serde_json::json!([]);
+        let history = empty.clone();
+        let queried = Arc::new(AtomicBool::new(false));
+        let query_observed = Arc::clone(&queried);
+
+        let router = Router::new()
+            .route(
+                "/v5/order/cancel-all",
+                post(move || std::future::ready(Json(empty.clone()))),
+            )
+            .route(
+                "/v5/order/history",
+                get(move || std::future::ready(Json(history.clone()))),
+            )
+            .route(
+                "/v5/order/realtime",
+                get(move || {
+                    query_observed.store(true, Ordering::Relaxed);
+                    std::future::ready(Json(orders.clone()))
+                }),
+            );
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+
+        let (mut client, cache) = test_execution_client();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        client.emitter.set_sender(tx);
+        client.config.http_timeout_secs = 1;
+        client.config.retry_delay_initial_ms = 10;
+        client.http_client = BybitHttpClient::with_credentials(
+            "test_key".to_string(),
+            "test_secret".to_string(),
+            Some(format!("http://{addr}")),
+            1,
+            0,
+            10,
+            10,
+            5_000,
+            None,
+        )
+        .unwrap();
+        let instrument_id = InstrumentId::from("ETHUSDT-LINEAR.BYBIT");
+        let mut instrument = crypto_perpetual_ethusdt();
+        instrument.id = instrument_id;
+        client.http_client.cache_instrument(instrument.into());
+        let mut builder = OrderTestBuilder::new(OrderType::Limit);
+        let order = builder
+            .instrument_id(instrument_id)
+            .client_order_id(ClientOrderId::from("client-open-1"))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("0.01"))
+            .price(Price::from("3930.41"))
+            .build();
+        let accepted = TestOrderEventStubs::accepted(
+            &order,
+            client.core.account_id,
+            VenueOrderId::from("open-order-1"),
+        );
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, Some(*BYBIT_CLIENT_ID), false)
+            .unwrap();
+        cache.borrow_mut().update_order(&accepted).unwrap();
+        client
+            .cancel_all_orders(CancelAllOrders::new(
+                TraderId::from("TESTER-001"),
+                Some(*BYBIT_CLIENT_ID),
+                order.strategy_id(),
+                instrument_id,
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .unwrap();
+        wait_until_async(
+            || async { client.pending_tasks.all_finished() },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        assert!(queried.load(Ordering::Relaxed));
+        assert_eq!(
+            cache
+                .borrow()
+                .order(&order.client_order_id())
+                .unwrap()
+                .status(),
+            OrderStatus::Accepted
+        );
+        assert!(rx.try_recv().is_err());
+        server.abort();
     }
 
     #[rstest]

@@ -103,7 +103,11 @@ pub(crate) struct TestServerState {
     pub order_status_queries: Arc<tokio::sync::Mutex<Vec<GetOrderStatusParams>>>,
     pub open_orders_queries: Arc<tokio::sync::Mutex<Vec<GetOpenOrdersParams>>>,
     pub open_orders_payload: Arc<tokio::sync::Mutex<Option<serde_json::Value>>>,
+    pub order_report_response_delay: Arc<AtomicBool>,
+    pub order_report_response_entered: Arc<tokio::sync::Notify>,
+    pub order_report_response_release: Arc<tokio::sync::Notify>,
     pub orders_queries: Arc<tokio::sync::Mutex<Vec<CapturedOrdersQuery>>>,
+    pub fills_queries: Arc<tokio::sync::Mutex<Vec<GetFillsParams>>>,
     pub orders_payload: Arc<tokio::sync::Mutex<Option<serde_json::Value>>>,
     pub orders_page_size: Arc<tokio::sync::Mutex<Option<usize>>>,
     pub orders_repeated_cursor: Arc<tokio::sync::Mutex<Option<String>>>,
@@ -150,7 +154,11 @@ impl Default for TestServerState {
             order_status_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             open_orders_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             open_orders_payload: Arc::new(tokio::sync::Mutex::new(None)),
+            order_report_response_delay: Arc::new(AtomicBool::new(false)),
+            order_report_response_entered: Arc::new(tokio::sync::Notify::new()),
+            order_report_response_release: Arc::new(tokio::sync::Notify::new()),
             orders_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            fills_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             orders_payload: Arc::new(tokio::sync::Mutex::new(None)),
             orders_page_size: Arc::new(tokio::sync::Mutex::new(None)),
             orders_repeated_cursor: Arc::new(tokio::sync::Mutex::new(None)),
@@ -181,6 +189,7 @@ impl TestServerState {
         self.instrument_queries.lock().await.clear();
         self.open_orders_queries.lock().await.clear();
         self.orders_queries.lock().await.clear();
+        self.fills_queries.lock().await.clear();
         *self.orders_page_size.lock().await = None;
         *self.orders_repeated_cursor.lock().await = None;
     }
@@ -816,6 +825,11 @@ async fn handle_open_orders(
     Query(params): Query<GetOpenOrdersParams>,
 ) -> Json<serde_json::Value> {
     state.open_orders_queries.lock().await.push(params.clone());
+    if state.order_report_response_delay.load(Ordering::Relaxed) {
+        state.order_report_response_entered.notify_one();
+        state.order_report_response_release.notified().await;
+    }
+
     let guard = state.open_orders_payload.lock().await;
     let payload = guard
         .as_ref()
@@ -848,6 +862,11 @@ async fn handle_orders(
     Query(params): Query<CapturedOrdersQuery>,
 ) -> Json<serde_json::Value> {
     state.orders_queries.lock().await.push(params.clone());
+    if state.order_report_response_delay.load(Ordering::Relaxed) {
+        state.order_report_response_entered.notify_one();
+        state.order_report_response_release.notified().await;
+    }
+
     let guard = state.orders_payload.lock().await;
     let payload = guard
         .as_ref()
@@ -888,6 +907,7 @@ async fn handle_fills(
     State(state): State<TestServerState>,
     Query(params): Query<GetFillsParams>,
 ) -> Json<serde_json::Value> {
+    state.fills_queries.lock().await.push(params.clone());
     let guard = state.fills_payload.lock().await;
     let payload = guard
         .as_ref()

@@ -137,16 +137,18 @@ impl Error {
     }
 
     /// Map HTTP client errors to appropriate error types
-    #[expect(clippy::needless_pass_by_value)]
     pub fn from_http_client(error: HttpClientError) -> Self {
-        Self::transport(format!("HTTP client error: {error}"))
+        match error {
+            HttpClientError::TimeoutError(_) => Self::Timeout,
+            e => Self::transport(format!("HTTP client error: {e}")),
+        }
     }
 
     /// Check if error is retryable
     pub fn is_retryable(&self) -> bool {
         match self {
             Self::Transport(_) | Self::Timeout | Self::RateLimit { .. } => true,
-            Self::Http { status, .. } => *status >= 500,
+            Self::Http { status, .. } => *status == 408 || (500..=599).contains(status),
             _ => false,
         }
     }

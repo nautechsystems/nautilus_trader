@@ -159,6 +159,13 @@ pub fn quantity_from_decimal(value: Decimal, precision: u8) -> anyhow::Result<Qu
         .map_err(|e| anyhow::anyhow!("invalid quantity `{value}` at precision {precision}: {e}"))
 }
 
+/// Converts a Lighter funding rate quoted in percent (e.g. `0.0012` = 0.0012%)
+/// into a fractional rate.
+#[must_use]
+pub fn funding_rate_from_percent(percent: Decimal) -> Decimal {
+    percent / Decimal::ONE_HUNDRED
+}
+
 /// Converts a Unix millisecond timestamp into [`UnixNanos`].
 ///
 /// # Errors

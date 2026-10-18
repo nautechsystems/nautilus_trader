@@ -146,6 +146,53 @@ release immutability applies the published release tag cannot be changed. If `v<
 different commit, do not move or re-push the existing tag. Investigate the mismatch. `Verify release tag`
 fails in that case by design.
 
+## Recovering a partial release
+
+Use the `recover-release` workflow when packages already exist on PyPI and crates.io but release integrity
+verification or final GitHub publication fails. It verifies existing packages without rebuilding or
+republishing them. It also verifies a release that a maintainer has already published manually.
+
+The source must be a completed `build` workflow run from a push to `master` in this repository, with a
+successful `tag-release` job. The release tag must resolve to that run's commit, and the tag version must
+match `python/pyproject.toml` at that commit. Recovery checks out that source and requires the release's
+complete package inventory to match the current stable wheel matrix, including the matching sdist. Historical
+releases with a different matrix fail verification.
+
+1. Wait for the original build and any other recovery attempt to finish. Do not rerun the source build
+   during recovery. Jobs that write the tag or GitHub release share a lock by release tag. GitHub permits
+   one pending job per lock; a newer pending job replaces the earlier pending job.
+1. Open **Actions > recover-release > Run workflow** and select `master`.
+1. Enter the existing release tag and the original build run ID, then choose a mode:
+   - `verify`: require an already-published release and check it without changing its assets, notes, or
+     publication state.
+   - `recover`: resume a draft release. If it is already published, run verification without changing it.
+1. Review the recovery artifact even when the workflow fails. After correcting the cause, rerun with
+   the same tag and source run ID.
+
+Recovery verifies package attestations and their sibling bundles against the original build workflow and
+source commit, checks each envelope against its verified bundle, then verifies registry contents. It compares
+existing GitHub assets by content, uploads only missing assets, and stops on a mismatch. Existing
+`dist-manifest.json` and `crates-manifest.json` assets keep their bytes when their JSON content matches apart
+from `generated_at`. Recovery updates checksum notes only when needed, verifies the complete draft asset
+set, checks Rekor readiness, publishes the draft, and verifies GitHub's release attestation.
+
+Recovery restores missing packages or provenance only from unexpired artifacts belonging to the selected
+source run. If required evidence is unavailable, recovery stops. A fully populated published release does
+not require retained source-run artifacts. After a failure that follows publication, rerun either mode to
+check the release again without republishing it.
+
+If an asset upload fails, recovery stops after that attempt. Rerun recovery to verify the assets that
+arrived and upload only the remaining files. An interrupted upload can leave an incomplete asset or a
+file whose content does not match. Recovery names the affected asset and stops. Confirm that the release
+is still a draft and that the named asset came from the interrupted upload. Delete only that confirmed
+bad asset from the draft, then rerun recovery. Do not delete or replace assets on a published release.
+
+The runner's GitHub CLI must support `gh attestation verify --source-digest` and `gh release verify`.
+Recovery checks both capabilities before changing the release. The workflow retains source metadata,
+tool versions, the last step checkpoint, per-step and retry logs, exit status, registry responses,
+downloaded verification inputs, and the isolated verifier cache for 30 days. The normal build's integrity and final publication
+jobs also retain diagnostic artifacts on failure. A later successful rerun preserves those artifacts.
+
 ## Versioning
 
 The project maintains two version numbers:
@@ -226,6 +273,8 @@ Wrong trusted-publishing repositories and checksum or sparse-index mismatches al
   - GitHub release published after all release assets and integrity assets are attached
   - If the run fails with the release tag missing, follow
     [Recovering a missing release tag](#recovering-a-missing-release-tag) and re-run the failed jobs
+  - If packages exist but integrity verification or GitHub publication fails, follow
+    [Recovering a partial release](#recovering-a-partial-release)
 - [ ] Verify the `docker` workflow completes (images built and pushed)
 - [ ] Verify the `build-docs` workflow completes (docs rebuild triggered)
 

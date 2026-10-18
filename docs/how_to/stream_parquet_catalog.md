@@ -119,7 +119,7 @@ run's `environment`, such as `Environment.LIVE`, to convert a run outside the de
 folder.
 
 A writer holds an exclusive lock on each `.feather.partial` file until it seals the file, so a
-crashed process leaves its open files unlocked. Recovery seals each unlocked partial file: it keeps
+crashed process leaves its open files unlocked. Recovery seals each unlocked regular partial file: it keeps
 the complete record batches, drops any bytes after them with a warning, and renames the file to
 `.feather`. It removes a partial file that has no complete record batch and leaves an empty one in
 place. A read error other than a write cut short leaves the file for a later recovery pass.

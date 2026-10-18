@@ -218,20 +218,20 @@ it compiles.
 
 #### Testing with optional features
 
-Use `EXTRA_FEATURES` to include optional features like `capnp` or `hypersync`:
+Use `EXTRA_FEATURES` to include optional features like `sbe` or `hypersync`:
 
 ```bash
-# Test with capnp feature
-make cargo-test EXTRA_FEATURES="capnp"
+# Test with SBE support
+make cargo-test EXTRA_FEATURES="nautilus-common/sbe"
 
 # Test with multiple features
-make cargo-test EXTRA_FEATURES="capnp hypersync"
+make cargo-test EXTRA_FEATURES="nautilus-common/sbe hypersync"
 
 # Legacy shorthand for hypersync
 make cargo-test HYPERSYNC=true
 
 # Test specific crate with features
-make cargo-test-crate-nautilus-serialization FEATURES="capnp"
+make cargo-test-crate-nautilus-serialization FEATURES="sbe"
 ```
 
 ### IDE integration

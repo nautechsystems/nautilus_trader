@@ -598,9 +598,7 @@ impl DeribitWebSocketClient {
             .connect()
             .await?;
 
-        // Store connection mode
-        self.connection_mode
-            .store(ws_client.connection_mode_atomic());
+        let connection_mode = ws_client.connection_mode_atomic();
         let reconnect_handle = ws_client.reconnect_handle();
 
         // Create message channels
@@ -653,6 +651,7 @@ impl DeribitWebSocketClient {
             }
 
             *command_sender = cmd_tx.clone();
+            self.connection_mode.store(connection_mode);
         }
 
         // Spawn handler task
@@ -1811,9 +1810,60 @@ impl DeribitWebSocketClient {
 
 #[cfg(test)]
 mod tests {
+    use futures_util::StreamExt;
     use rstest::rstest;
 
     use super::*;
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn active_state_waits_for_sender_publication() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let mut socket = tokio_tungstenite::accept_async(socket).await.unwrap();
+
+            while matches!(socket.next().await, Some(Ok(_))) {}
+        });
+
+        let mut ws_client = DeribitWebSocketClient::new_unauthenticated(
+            Some(format!("ws://{addr}")),
+            30,
+            DeribitEnvironment::Testnet,
+        )
+        .unwrap();
+        let observer = ws_client.clone();
+        let sender = Arc::clone(&ws_client.cmd_tx);
+        let (held_tx, held_rx) = tokio::sync::oneshot::channel();
+
+        let publication = tokio::task::spawn_blocking(move || {
+            let guard = sender.read();
+            held_tx.send(()).unwrap();
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+
+            while sender.try_read().is_some() {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "connect must queue its writer"
+                );
+                std::thread::yield_now();
+            }
+
+            let active = observer.is_active();
+            drop(guard);
+            active
+        });
+
+        held_rx.await.unwrap();
+        ws_client.connect().await.unwrap();
+        let active_before_publication = publication.await.unwrap();
+        let active_after_publication = ws_client.is_active();
+        ws_client.close().await.unwrap();
+        server.abort();
+
+        assert!(!active_before_publication);
+        assert!(active_after_publication);
+    }
 
     struct DropSignal(Arc<AtomicBool>);
 

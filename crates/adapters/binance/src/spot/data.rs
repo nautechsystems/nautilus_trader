@@ -429,9 +429,13 @@ impl BinanceSpotDataClient {
                 let symbol = event.symbol;
                 let cache = ws_instruments.load();
                 if let Some(instrument) = cache.get(&symbol) {
-                    let trades = parse_trades_event(event, instrument, ts_init);
-                    for data in trades {
-                        Self::send_data(data_sender, data);
+                    match parse_trades_event(event, instrument, ts_init) {
+                        Ok(trades) => {
+                            for data in trades {
+                                Self::send_data(data_sender, data);
+                            }
+                        }
+                        Err(e) => log::warn!("Failed to parse Spot SBE trades: {e}"),
                     }
                 }
             }
@@ -439,44 +443,55 @@ impl BinanceSpotDataClient {
                 let symbol = event.symbol;
                 let cache = ws_instruments.load();
                 if let Some(instrument) = cache.get(&symbol) {
-                    let quote = parse_bbo_event(event, instrument, ts_init);
-                    Self::send_top_of_book(
-                        data_sender,
-                        l1_book_subscriptions,
-                        quote,
-                        event.book_update_id as u64,
-                    );
+                    match parse_bbo_event(event, instrument, ts_init) {
+                        Ok(quote) => Self::send_top_of_book(
+                            data_sender,
+                            l1_book_subscriptions,
+                            quote,
+                            event.book_update_id as u64,
+                        ),
+                        Err(e) => log::warn!("Failed to parse Spot SBE best bid/ask: {e}"),
+                    }
                 }
             }
             BinanceSpotWsMessage::DepthSnapshot(ref event) => {
                 let symbol = event.symbol;
                 let cache = ws_instruments.load();
                 if let Some(instrument) = cache.get(&symbol) {
-                    let deltas = parse_depth_snapshot(event, instrument, ts_init);
-                    Self::send_data(data_sender, Data::BookDeltas(Box::new(deltas)));
+                    match parse_depth_snapshot(event, instrument, ts_init) {
+                        Ok(deltas) => {
+                            Self::send_data(data_sender, Data::BookDeltas(Box::new(deltas)));
+                        }
+                        Err(e) => log::warn!("Failed to parse Spot SBE depth snapshot: {e}"),
+                    }
                 }
             }
             BinanceSpotWsMessage::DepthDiff(ref event) => {
                 let symbol = event.symbol;
                 let cache = ws_instruments.load();
                 if let Some(instrument) = cache.get(&symbol) {
-                    let update = DepthUpdate {
-                        first_update_id: event.first_book_update_id as u64,
-                        final_update_id: event.last_book_update_id as u64,
-                        prev_final_update_id: None,
-                        deltas: parse_depth_diff(event, instrument, ts_init),
-                    };
+                    match parse_depth_diff(event, instrument, ts_init) {
+                        Ok(deltas) => {
+                            let update = DepthUpdate {
+                                first_update_id: event.first_book_update_id as u64,
+                                final_update_id: event.last_book_update_id as u64,
+                                prev_final_update_id: None,
+                                deltas,
+                            };
 
-                    Self::route_depth_diff(
-                        instrument.id(),
-                        update,
-                        book_sync,
-                        instruments,
-                        http_client,
-                        snapshot_timeout,
-                        clock,
-                        command_spawner,
-                    );
+                            Self::route_depth_diff(
+                                instrument.id(),
+                                update,
+                                book_sync,
+                                instruments,
+                                http_client,
+                                snapshot_timeout,
+                                clock,
+                                command_spawner,
+                            );
+                        }
+                        Err(e) => log::warn!("Failed to parse Spot SBE depth update: {e}"),
+                    }
                 }
             }
             BinanceSpotWsMessage::ServerShutdown(ref msg) => {
@@ -2026,13 +2041,20 @@ mod tests {
         config::BinanceDataClientConfig,
         spot::{
             http::{BinancePriceLevel, BinanceSpotHttpClient},
-            sbe::stream::BestBidAskStreamEvent,
+            sbe::stream::{
+                BestBidAskStreamEvent, DepthDiffStreamEvent, DepthSnapshotStreamEvent, PriceLevel,
+                Trade, TradesStreamEvent,
+            },
             websocket::streams::messages::BinanceSpotWsMessage,
         },
     };
 
     #[rstest]
-    fn handle_ws_message_uses_clock_timestamp_for_sbe_bbo_ts_init() {
+    #[case::trades("trades")]
+    #[case::bbo("bbo")]
+    #[case::snapshot("snapshot")]
+    #[case::diff("diff")]
+    fn handle_ws_message_rejects_invalid_sbe_then_processes_valid_bbo(#[case] kind: &str) {
         let ts_init = UnixNanos::from(1_800_000_000_000_000_000u64);
         let clock = Box::leak(Box::new(AtomicTime::new(false, ts_init)));
         let instrument = InstrumentAny::CurrencyPair(currency_pair_btcusdt());
@@ -2072,6 +2094,83 @@ mod tests {
         let command_tasks = TaskGroup::new();
         let command_spawner = command_tasks.spawner().unwrap();
 
+        let invalid_level = PriceLevel {
+            price_mantissa: i64::MAX,
+            qty_mantissa: 1,
+        };
+
+        let invalid = match kind {
+            "trades" => BinanceSpotWsMessage::Trades(TradesStreamEvent {
+                event_time_us,
+                transact_time_us: event_time_us,
+                price_exponent: 0,
+                qty_exponent: 0,
+                trades: vec![
+                    Trade {
+                        id: 1,
+                        price_mantissa: 1,
+                        qty_mantissa: 1,
+                        is_buyer_maker: false,
+                    },
+                    Trade {
+                        id: 2,
+                        price_mantissa: i64::MAX,
+                        qty_mantissa: 1,
+                        is_buyer_maker: true,
+                    },
+                ],
+                symbol: Ustr::from("BTCUSDT"),
+            }),
+            "bbo" => BinanceSpotWsMessage::BestBidAsk(BestBidAskStreamEvent {
+                event_time_us,
+                book_update_id: 122,
+                price_exponent: 0,
+                qty_exponent: 0,
+                bid_price_mantissa: i64::MAX,
+                bid_qty_mantissa: 1,
+                ask_price_mantissa: 1,
+                ask_qty_mantissa: 1,
+                symbol: Ustr::from("BTCUSDT"),
+            }),
+            "snapshot" => BinanceSpotWsMessage::DepthSnapshot(DepthSnapshotStreamEvent {
+                event_time_us,
+                book_update_id: 122,
+                price_exponent: 0,
+                qty_exponent: 0,
+                bids: vec![invalid_level],
+                asks: vec![],
+                symbol: Ustr::from("BTCUSDT"),
+            }),
+            "diff" => BinanceSpotWsMessage::DepthDiff(DepthDiffStreamEvent {
+                event_time_us,
+                first_book_update_id: 121,
+                last_book_update_id: 122,
+                price_exponent: 0,
+                qty_exponent: 0,
+                bids: vec![invalid_level],
+                asks: vec![],
+                symbol: Ustr::from("BTCUSDT"),
+            }),
+            _ => unreachable!(),
+        };
+
+        BinanceSpotDataClient::handle_ws_message(
+            invalid,
+            &sender,
+            &instruments,
+            &ws_instruments,
+            &book_sync,
+            &l1_book_subscriptions,
+            &http_client,
+            Duration::from_secs(10),
+            clock,
+            &command_spawner,
+        );
+        assert!(matches!(
+            receiver.try_recv(),
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+        ));
+
         BinanceSpotDataClient::handle_ws_message(
             message,
             &sender,
@@ -2088,6 +2187,12 @@ mod tests {
         let DataEvent::Data(Data::Quote(quote)) = receiver.try_recv().unwrap() else {
             panic!("expected quote data event");
         };
+
+        assert_eq!(quote.instrument_id, InstrumentId::from("BTCUSDT.BINANCE"));
+        assert_eq!(quote.bid_price.as_decimal(), dec!(123.45));
+        assert_eq!(quote.ask_price.as_decimal(), dec!(123.50));
+        assert_eq!(quote.bid_size.as_decimal(), dec!(2.5));
+        assert_eq!(quote.ask_size.as_decimal(), dec!(3.0));
         assert_eq!(quote.ts_event, UnixNanos::from_micros(event_time_us as u64));
         assert_eq!(quote.ts_init, ts_init);
     }

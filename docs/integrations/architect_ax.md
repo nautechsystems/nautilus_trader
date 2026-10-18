@@ -476,16 +476,45 @@ Historical order reports carry the venue reject reason (`r`, falling back to `tx
 `OrderCanceled` events can also carry the venue reason where a live cancel carries none. Reports retain the
 venue's post-only flag and subsecond timestamp.
 
+AX `/orders` payloads expose creation time without a terminal timestamp. When history contains a
+closed order with fills, the adapter also requests `/fills` in the same window (at most seven days).
+Historical reports keep `ts_accepted` at creation and raise a closed order's `ts_last` to its latest
+matching fill. With no matching fill, `ts_last` stays at creation. The fill time is a lower bound for
+cancellation or expiry.
+
 Replaced historical order IDs are terminal. Day-complete orders expire, and expired IOC orders cancel,
 matching the WebSocket event path. An unknown order state fails the reconciliation request instead of omitting
 an order from the snapshot. A fill with an unknown sibling order state still reaches execution.
 
 Startup mass-status reconciliation bounds its `/orders` and `/fills` requests by
 `reconciliation_lookback_mins`, and positions are always reported as a current snapshot. A lookback longer
-than seven days still yields only seven days of fills, and the declared window is floored at that cap. With a
-bounded window, fills for instruments that reconcile flat apply to their orders without materializing
-positions. Thus, round trips completed inside the window do not open phantom positions on restart. Without a
-bound, every historical order on the account is fetched and reconciled at startup.
+than seven days still yields only seven days of fills. The adapter sets the mass status's `lookback_start`
+to the applied fill-window start, including the seven-day boundary when no lookback is configured.
+Without a configured lookback, the adapter still fetches every historical order. An explicit zero-minute
+lookback uses a one-nanosecond fill window because AX rejects zero-width queries.
+
+After a successful complete positions snapshot, the adapter emits explicit flat reports for instruments
+absent from AX's response but present in this account's cached open positions. It preserves explicit flat
+and non-flat venue rows. These cached flat reports let reconciliation close retained positions whose cached
+resting orders fill while the node is offline, without leaving offsetting external positions. Fills for
+instruments without a position report update orders without opening positions, so incomplete history for an
+uncached flat instrument does not require a position correction. An invalid position row fails mass-status
+collection instead of implying that its instrument is flat.
+:::
+
+:::warning[Position ownership during recovery]
+Closing fills linked to cached orders retain their strategy ownership. If closing order evidence is
+unavailable, a flat snapshot alone cannot identify which strategy owns a correction. Verify retained
+strategy positions against AX before resuming trading in that case.
+
+Special fills use external order identities. A settlement that closes strategy exposure can therefore
+leave offsetting strategy and external positions. Configure the strategy's `external_order_instrument_ids`
+when it should own those external orders. See
+[External order creation](../concepts/execution/reconciliation.md#external-order-creation).
+
+Explicit flat reports enable position reconciliation. If history starts mid-lifecycle, reconciliation may
+need a synthetic correction. With `generate_missing_orders=False`, an unresolved discrepancy prevents
+startup.
 :::
 
 :::warning
@@ -636,16 +665,17 @@ credentials are valid and have trading permissions.
   Reconciliation does not replace an applied commission, so a streamed estimate remains even when the
   venue-reported `/fills` fee differs. That endpoint supplies the fee for a fill that was not already applied
   from the stream. The adapter converts it with `Money::from_decimal` into USD, so a sub-cent fee such as
-  `0.012188` is stored as `0.01`. An unrepresentable REST fee fails the fill-report request and mass status.
-  During startup, that error prevents the node from starting.
+  `0.012188` is stored as `0.01`. An unrepresentable REST fee fails fill-report requests, historical
+  order-status requests that need fills, and mass status. During startup, that error prevents the node
+  from starting.
 - **Fill reconciliation window**: The `/fills` endpoint requires a bounded time range and caps the span at
-  seven days. Reconciliation requests the most recent seven days of fills. Fills older than that are not
-  reconciled.
+  seven days. Reconciliation uses seven days by default, or the shorter configured lookback. Fills older
+  than the applied window are not reconciled.
 - **Fill order identity**: AX can omit `order_id` for block trades and final settlement fills. The
   adapter derives a deterministic reconciliation order ID from `trade_id` for those classified
-  records. Classification fields are optional for regular fills with a valid `order_id`. The adapter
-  rejects rows with neither an order ID nor explicit special-fill classification, and rejects
-  inconsistent classification.
+  records and includes a matching `FILLED` market order report in startup mass status. Classification
+  fields are optional for regular fills with a valid `order_id`. The adapter rejects rows with neither
+  an order ID nor explicit special-fill classification, and rejects inconsistent classification.
 - **Unfilled IOC/FOK**: AX reports an unfilled immediate order as an expiry. The adapter maps it to
   `OrderCanceled` to match NautilusTrader semantics.
 - **One-tick quotes**: Example testers place post-only limits one tick from top of book.

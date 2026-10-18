@@ -1344,6 +1344,12 @@ criteria = "safe-to-deploy"
 delta = "1.18.0 -> 1.18.1"
 notes = "Reviewed the published Rust wrapper delta. It fails closed for malformed custom AEAD buffers, missing or mismatched cipher IVs, HKDF algorithm mismatches, fallible ECDH derives, and RSA digest mismatches; legacy ECDSA P-256 SHA-1 verification is additive and verification-only. Build changes only refine existing local compiler handling and metadata. No new network destination, credential disclosure, or data-exfiltration behavior."
 
+[[audits.aws-lc-rs]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.18.1 -> 1.18.2"
+notes = "Reviewed the published Rust wrapper and integration-script delta. Library changes add Eq and PartialEq to EdDSA and RSA parameter types and document that a failed AEAD open may overwrite the input buffer. The integration script only clones upstream rustls repositories for developer tests and is not part of the build. Depends on aws-lc-sys 0.46.0, audited separately. No new runtime network, process, filesystem, or credential behavior."
+
 [[audits.aws-lc-sys]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -1367,6 +1373,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.44.0 -> 0.45.0"
 notes = "Reviewed the build scripts, generated bindings, packaged sources, Windows prebuilt NASM objects, and bundled AWS-LC 5.5.0 to 5.7.0 delta. Upstream changes add cryptographic algorithms and platform support and fix GCM IV validation, AArch64 modular inversion, and EVP_DecryptUpdate output bounds. Build changes refine existing compiler flags, system-library metadata, and jitterentropy flag filtering. Prebuilt objects remain behind the existing Windows x86_64 fallback. No network fetch, credential, or new process behavior beyond local compiler probes."
+
+[[audits.aws-lc-sys]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.45.0 -> 0.46.0"
+notes = "Reviewed the build scripts, generated bindings, packaged sources, Windows prebuilt NASM objects, and bundled AWS-LC 5.7.0 to 5.11.0 delta. Build changes drop the cranelift and no-u1 binding variants, strip link prefixes from generated bindings, and export crate compiler selection as target CC and CXX before cc lookup. The builder diff adds no download, curl, or network fetch. Prebuilt NASM objects remain behind the existing Windows x86_64 fallback. No new credential or process behavior beyond local compiler probes."
 
 [[audits.base32]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -1505,58 +1517,6 @@ who = "Chris Sellers <chris@cjdsellers.io>"
 criteria = "safe-to-deploy"
 delta = "2.1.6 -> 2.1.7"
 
-[[audits.capnp]]
-who = "Chris Sellers <chris@cjdsellers.io>"
-criteria = "safe-to-deploy"
-delta = "0.23.2 -> 0.24.1"
-
-[[audits.capnp]]
-who = "Nautech Systems <info@nautechsystems.io>"
-criteria = "safe-to-deploy"
-delta = "0.25.2 -> 0.25.3"
-notes = "Iterator size_hint() fix, Into-to-From cleanup. No new unsafe."
-
-[[audits.capnp]]
-who = "Nautech Systems <info@nautechsystems.io>"
-criteria = "safe-to-deploy"
-delta = "0.25.4 -> 0.25.5"
-notes = "Adds FromTypelessPipeline for FromClientHook and refactors pointer arithmetic to add/sub and offset_in_words helpers. Reviewed unsafe pointer changes as equivalent bounds-checked address calculations; no new dependencies, build script, filesystem, or network behavior."
-
-[[audits.capnp]]
-who = "Nautech Systems <info@nautechsystems.io>"
-criteria = "safe-to-deploy"
-delta = "0.26.2 -> 0.27.0"
-notes = "Adds precise TypeId-based schema equality and bool-list bounds checks, replaces nullable capability-table pointers with NonNull, and narrows internal API visibility. Reviewed changed unsafe pointer access as equivalent or safer. No new build script or ambient capabilities."
-
-[[audits.capnp]]
-who = "Nautech Systems <info@nautechsystems.io>"
-criteria = "safe-to-deploy"
-delta = "0.27.0 -> 0.27.2"
-notes = "Fixes an integer overflow in StructReader::get_data_field (reachable only via capnp::private) with checked arithmetic, fixes a ScratchSpaceHeapAllocator off-by-one, and adds a regression test. No new unsafe, network, or build behavior."
-
-[[audits.capnpc]]
-who = "Chris Sellers <chris@cjdsellers.io>"
-criteria = "safe-to-deploy"
-delta = "0.23.3 -> 0.24.1"
-
-[[audits.capnpc]]
-who = "Nautech Systems <info@nautechsystems.io>"
-criteria = "safe-to-deploy"
-delta = "0.25.0 -> 0.25.2"
-notes = "4-space indents in codegen, version comment in generated files, TryFrom preference. No new unsafe."
-
-[[audits.capnpc]]
-who = "Nautech Systems <info@nautechsystems.io>"
-criteria = "safe-to-deploy"
-delta = "0.25.2 -> 0.25.3"
-notes = "pub -> pub(crate) visibility narrowing in generated code and codegen internals. No logic changes, no new unsafe."
-
-[[audits.capnpc]]
-who = "Nautech Systems <info@nautechsystems.io>"
-criteria = "safe-to-deploy"
-delta = "0.26.0 -> 0.27.0"
-notes = "Updates generated code for capnp 0.27 APIs, including schema TypeId and NonNull capability-table constructors. Reviewed regenerated workspace output; no new unsafe, build-time network, filesystem destination, or process behavior."
-
 [[audits.cc]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -1610,6 +1570,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "1.5.1 -> 1.6.0"
 notes = "Reviewed published build-tool delta, particularly inherited environment snapshots, compiler probes, command construction, archive path validation, and logger changes. Compiler execution remains the existing capability; snapshot debug output redacts values. No new network destination or credential transmission."
+
+[[audits.cc]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.6.0 -> 1.8.0"
+notes = "Reviewed the published build-tool delta: compiler probing and environment-sensitive caches, MSVC/LLVM selection, and parallel child polling. Compiler invocations use structured arguments and captured environments; probes use exclusive private temporary files. Owned descriptors remain alive until reactor deregistration."
 
 [[audits.cfg-if]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -2660,6 +2626,12 @@ criteria = "safe-to-deploy"
 delta = "0.70.0 -> 0.71.0"
 notes = "Published delta only changes the package version; no generated-code implementation change."
 
+[[audits.deranged]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.5.8 -> 0.5.9"
+notes = "Adds overflowing_add and overflowing_sub that return the wrapped value and a flag, constructing the ranged value only when it is in range. Existing unchecked constructors remain unsafe and range-checked. No new dependencies, build script, filesystem, network, or process behavior."
+
 [[audits.displaydoc]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -2719,6 +2691,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "4.4.1 -> 4.4.2"
 notes = "Updates proc-macro dependencies to syn 3 without changing macro source. No generated behavior or ambient capabilities changed."
+
+[[audits.equivalent]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.0.2 -> 1.0.3"
+notes = "Documentation-only contract clarifications for Equivalent hashing and Comparable agreement. No code, unsafe, dependency, build script, filesystem, network, or process change."
 
 [[audits.event-listener]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -2975,7 +2953,7 @@ notes = "Adds a serde alias for Arbitrum Nitro's miscased L1BlockNumber receipt 
 who = "Faysal Aberkane <faysal.aberkane@gmail.com>"
 criteria = "safe-to-deploy"
 version = "5.0.0"
-notes = "Recorded at the PR author's direction, who states they vetted this release. Temporary acceptance so CI can run inside the 3 day cooldown; remove the cooldown allow entry once 5.0.0 is 3 days old."
+notes = "Recorded at the PR author's direction, who states they vetted this release."
 
 [[audits.icu_collections]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -3048,6 +3026,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.14.1 -> 2.14.2"
 notes = "Reviewed the published crate delta. Map/set construction macros handle empty inputs separately and use inline const capacity expressions for nonempty inputs. Hashing, storage, and unsafe code are unchanged."
+
+[[audits.inventory]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.3.24 -> 0.3.25"
+notes = "Reviewed the published delta: Redox constructor-section support and upstream CI updates; constructor registration and its pointer invariants are unchanged."
 
 [[audits.ipnet]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -3399,6 +3383,12 @@ criteria = "safe-to-deploy"
 version = "3.0.1"
 notes = "Reviewed the full packaged source and manifest. Compile-time token parsing and diagnostic emission only; no unsafe code, build script, filesystem, network, process, environment, credential, or data-exfiltration behavior."
 
+[[audits.proptest]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.11.0 -> 1.12.0"
+notes = "Reviewed the published rand 0.10 and ChaCha RNG migration, state cloning, bounded float/duration fixes, and panic-hook synchronization. Hardware RNG now checks CPU support and success in release builds. Forked persisted failures terminate replay before propagation."
+
 [[audits.pyo3]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -3495,6 +3485,13 @@ criteria = "safe-to-deploy"
 delta = "0.29.2 -> 0.29.3"
 notes = "Reviewed published generated guarded-clone extraction, iterator type hints, and associated macro changes. Cloning uses checked PyClassGuard extraction; no new unsafe or ambient capability."
 
+[[audits.quanta]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+version = "0.13.0"
+importable = false
+notes = "Scoped to Sockudo's Instant clock with default features disabled. Reviewed lazy OnceLock calibration, bounded calibration loop, saturating duration arithmetic, CPUID-gated counter selection, and platform monotonic clock calls. Unsafe is confined to CPU/OS clock interfaces with initialized outputs; no build script, network, filesystem, process, credential, or automatic upkeep-thread behavior in this use."
+
 [[audits.quinn]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -3537,11 +3534,24 @@ criteria = "safe-to-deploy"
 delta = "0.10.2 -> 0.10.3"
 notes = "Returns Error::Overflow from WeightedIndex instead of panicking on infinite float weight sums, fixes spurious NonFinite errors on large finite float ranges and panics from deserialized Uniform<char> samplers, and reports exact iterator lengths. Sampling algorithms are unchanged; no new unsafe, I/O, or OS interfaces."
 
+[[audits.rand_xorshift]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.4.0 -> 0.5.0"
+notes = "Reviewed the published rand_core 0.10 trait migration. Infallible RNG methods, little-endian seed loading, and zero-seed rejection preserve the generator algorithm; unsafe code remains forbidden."
+
 [[audits.rapidhash]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "4.4.1 -> 4.4.2"
 notes = "Mostly README/docs and cfg-gated test corrections, including clearer HashDoS caveats. Production code changes are comment/doc fixes; no new unsafe, dependencies, build script, filesystem, network, or process behavior."
+
+[[audits.raw-cpuid]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+version = "11.6.0"
+importable = false
+notes = "Scoped to quanta's CPU capability queries with display and serialization disabled. Reviewed native CPUID architecture guards, supported-leaf checks, vendor classification, invariant-TSC and RDTSCP flags, and repr(C) bounded byte views. No build script or filesystem, network, process, or credential behavior in the enabled library."
 
 [[audits.rcgen]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -3566,6 +3576,13 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "4.2.0 -> 4.3.0"
 notes = "Reviewed published 4.2.0 -> 4.3.0. Adds optional Key separators, StorageBackend locking, and experimental-multiprocess (not enabled here; default-features remain false). Recovery, iterator, savepoint, and Windows write-zero bug fixes. New libc dependency is gated to unix file locking behind that feature path. No new build-script network or credential behavior."
+
+[[audits.redb]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "4.3.0 -> 4.4.0"
+importable = false
+notes = "Reviewed the changelog and default-feature path. Adds NonZero key and value implementations, optional Value::NICHE (an encoding change only when a type declares one; a mismatch fails closed), and stable cursor bound methods. Fixes integrity repair after aborted growth, create and repair interaction, page-cache growth, Durability::None after a caught panic, and compact free-region and in-progress-transaction behavior. experimental-api-5, multiprocess, and niches stay off unless enabled; this workspace disables default features and does not enable them. No new network or process behavior."
 
 [[audits.redis]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -3729,6 +3746,12 @@ criteria = "safe-to-deploy"
 delta = "0.8.3 -> 0.8.4"
 notes = "Narrows published crate contents, fixes docs.rs cfg, ignores empty SSL_CERT_DIR path components, and updates tests/docs. No new dependencies, build script, unsafe code, or network behavior in library code."
 
+[[audits.rustls-native-certs]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.8.4 -> 0.8.5"
+notes = "Unix certificate directory loads skip a file already read, identified by device and inode, so openssl rehash symlinks and a link to the bundle are not parsed twice. Distinct files with the same bytes are still loaded. No new network destination or credential behavior. The serial_test bump is test-only."
+
 [[audits.rustls-pki-types]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -3777,11 +3800,23 @@ criteria = "safe-to-deploy"
 delta = "1.2.1 -> 1.2.2"
 notes = "Refactors nullable schema handling without changing behavior and updates dependencies. The crate forbids unsafe code and adds no build script, filesystem, network, process, or credential behavior."
 
+[[audits.schemars]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.2.2 -> 1.2.3"
+notes = "Reviewed the published schema changes: safe map reordering for internal enum tags, graceful validation errors for arbitrary-precision numbers, and import/lint cleanup. No new unsafe code or ambient capabilities."
+
 [[audits.schemars_derive]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "1.2.1 -> 1.2.2"
 notes = "Updates proc-macro handling for syn 3 and serde_derive_internals 0.30 while preserving source spans. The crate forbids unsafe code and adds no build script, filesystem, network, process, or credential behavior."
+
+[[audits.schemars_derive]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.2.2 -> 1.2.3"
+notes = "Reviewed the published delta: type qualification cleanup and generated lint annotations only. The crate forbids unsafe code and adds no ambient capabilities."
 
 [[audits.semver]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -3795,11 +3830,23 @@ criteria = "safe-to-deploy"
 delta = "0.29.1 -> 0.30.0"
 notes = "Updates the proc-macro support API for syn 3 and current Serde private-module naming, including span-preserving field names. No unsafe, build script, filesystem, network, process, or credential behavior."
 
+[[audits.serde_json]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.0.151 -> 1.0.154"
+notes = "Reviewed the published parser, raw-value, numeric, and ordered-map changes. Invalid UTF-8 errors retain checked indexing, negative zero is preserved, and std builds retain the standard randomized map hasher. No new filesystem or process access."
+
 [[audits.serde_spanned]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "1.1.0 -> 1.1.1"
 notes = "Version bump only: serde_core dep 1.0.225 -> 1.0.228"
+
+[[audits.serde_spanned]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.1.1 -> 1.1.2"
+notes = "Reviewed the published delta: package include patterns, license wording, and lint metadata only; no runtime source changes."
 
 [[audits.serde_with]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -3849,6 +3896,12 @@ criteria = "safe-to-deploy"
 delta = "3.23.0 -> 3.24.0"
 notes = "Reviewed the published crate delta. Version, changelog, and documentation links only; procedural macro implementation and generated code remain unchanged."
 
+[[audits.sha2]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.11.0 -> 0.11.1"
+notes = "Reviewed the published backend refactor. SIMD loads/stores remain bounded by fixed-size blocks and states, round-key loads check slice bounds, and RISC-V block loads now use safe byte conversion. CPU feature guards remain in dispatch; state serialization layout is preserved."
+
 [[audits.sha3-asm]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -3885,6 +3938,12 @@ criteria = "safe-to-deploy"
 delta = "1.16.1 -> 1.16.2"
 notes = "Rewrites retain with a panic guard so a panicking predicate cannot drop or leak unprocessed items. New unsafe is length-bounded and matches the standard Vec retain pattern. No ambient capability."
 
+[[audits.smallvec]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.16.2 -> 1.16.3"
+notes = "Reviewed the published crate delta. Growth below the current length now returns without reallocating; allocation and pointer invariants are preserved. Remaining changes are tests and package metadata."
+
 [[audits.snap]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -3903,6 +3962,20 @@ criteria = "safe-to-deploy"
 delta = "2.0.1 -> 2.1.0"
 notes = "Reviewed the header-aware handshake builder with token/reserved/control-byte validation, rustls provider deselection (ring moved to dev-dependencies), deflate context-takeover fix, incremental UTF-8 validation, streaming frame unmask, lazy heartbeat timer, atomic activity clock, and handshake leftover replay. No new unsafe, dependencies, build script, filesystem, process, or network capability."
 
+[[audits.sockudo-ws]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.1.0 -> 3.0.0"
+importable = false
+notes = "Scoped to Tokio HTTP/1, SIMD, fastrand, rustls-webpki-roots, and test-util for simulation. Reviewed native split ownership, bounded control queue, retained partial writes, atomic terminal causes, hard deadlines, initialized ReadBuf receive bounds, complete-message and short-frame size checks, UTF-8 access, portable masking, and checked handshake grammar. New quanta clock dependencies are audited separately; no build script, hidden network destination, filesystem, process, or credential capability was added in this graph. Compression, Compio, HTTP/2, HTTP/3, io_uring, and PubSub are outside this certification."
+
+[[audits.sockudo-ws]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "3.0.0 -> 3.1.0"
+importable = false
+notes = "Scoped to Tokio HTTP/1, SIMD, fastrand, rustls-webpki-roots, and test-util. Reviewed the published delta: shared readiness and timer wakeups, continued reads under write backpressure, bounded Pong coalescing, close deadlines, cancellation-safe split control handoff, URL validation, and registered close codes. Removes manual unsafe Send implementations; adds no unsafe code, build script, runtime dependency, hidden network destination, filesystem, process, or credential capability in this graph. Compression, Compio, HTTP/2, HTTP/3, io_uring, Axum, and PubSub are outside this certification."
+
 [[audits.syn]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -3920,6 +3993,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "3.0.5 -> 3.0.6"
 notes = "Fixes early-boundary parsing of interpolated lifetimes at statement start with a speculative fork and updates tests for current rustc ASTs. No unsafe, dependency, or build-script change."
+
+[[audits.syn]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "3.0.6 -> 3.0.9"
+notes = "Reviewed the published parser fixes and Punctuated::retain implementation. Changes use checked token parsing and safe collection operations; no added unsafe code or ambient capabilities."
 
 [[audits.syn-solidity]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -4065,6 +4144,12 @@ criteria = "safe-to-deploy"
 delta = "1.53.1 -> 1.53.2"
 notes = "Reviewed published runtime shutdown, semaphore panic cleanup, channel wraparound, filesystem seek bounds, io_uring length limits, Windows child-handle drop order, and tracing changes. No new network destination, credential handling, or process-launch behavior."
 
+[[audits.tokio]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.53.2 -> 1.53.3"
+notes = "Reviewed the published changelog and runtime, I/O, and sync delta. Adds AsyncFd::register and deprecates the old constructors. Fixes DuplexStream and semaphore wakes outside the lock, join and try_join unreachable_code for Infallible, paused-time auto-advance on current_thread, and keeps a failed io_uring submission alive. No new network destination, credential, or filesystem capability."
+
 [[audits.tokio-macros]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -4203,6 +4288,12 @@ criteria = "safe-to-deploy"
 delta = "1.0.24 -> 1.0.26"
 notes = "Regenerated Unicode identifier tables with a rehashed trie index and refreshed documentation benchmarks. Data-table update only; no API, dependency, or build-script change."
 
+[[audits.unicode-ident]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.0.26 -> 1.0.27"
+notes = "Reviewed the published trie-offset and table-layout changes. Exhaustively checked both identifier properties for all 1,111,936 non-ASCII Unicode scalar values: classifications match 1.0.26 and every unchecked leaf lookup remains within the published table. ASCII masks and Unicode version are unchanged."
+
 [[audits.unicode-segmentation]]
 who = "Chris Sellers <chris@cjdsellers.io>"
 criteria = "safe-to-deploy"
@@ -4268,6 +4359,12 @@ criteria = "safe-to-deploy"
 delta = "1.26.1 -> 1.27.0"
 notes = "Reviewed published bounded case-insensitive URN parsing and v7 timestamp monotonicity changes. No added unsafe, process, filesystem, or network capability."
 
+[[audits.uuid]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.27.0 -> 1.28.0"
+notes = "Reviewed the published optional compact/text serde adapters and their tests. Adapters preserve fixed-size byte validation and existing UUID generation; no new unsafe code or ambient capabilities."
+
 [[audits.value-bag]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -4285,6 +4382,13 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.3.1 -> 0.3.2"
 notes = "Reviewed checksum-verified published crates. Adds unwant using SeqCst compare_exchange from Want to Idle, preserving canceled state. Includes a state regression test. No new unsafe, dependencies, build, or ambient capabilities."
+
+[[audits.wasip1]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+version = "1.0.0"
+importable = false
+notes = "Scoped to quanta's wasm32-wasi preview1 monotonic clock import; absent from native runtime paths. Reviewed generated clock_time_get ABI, Timestamp output storage, success-only initialized reads, and fixed wasi_snapshot_preview1 import. Other WASI capability bindings are outside the caller scope. No build script or dependencies."
 
 [[audits.wasm-bindgen]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -4466,6 +4570,12 @@ criteria = "safe-to-deploy"
 delta = "0.8.57 -> 0.8.59"
 notes = "Renames the Valid invariant to Safe and generalizes HasTag, HasField, and ProjectField with a Client parameter. Unsafe impl bodies keep the same soundness claims. No filesystem, network, or process use."
 
+[[audits.zerocopy]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.8.59 -> 0.8.63"
+notes = "Reviewed the src pointer, layout, ref, split_at, and error delta from 0.8.59 to 0.8.63. The bulk of the published crate diff is benchmarks and CI. Unsafe remains in the existing pointer and transmute paths. No new network, filesystem, process, or credential capability."
+
 [[audits.zerocopy-derive]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -4489,6 +4599,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.8.57 -> 0.8.59"
 notes = "Derive output follows the Safe rename and Client parameter. Expected-output fixtures are generated. The derive still emits the existing unsafe trait impls and does not add ambient capabilities."
+
+[[audits.zerocopy-derive]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.8.59 -> 0.8.63"
+notes = "Reviewed the derive, repr, and invariant delta. Generated trait implementations and UI tests change; the diff adds no unsafe blocks. No runtime dependency, build script, filesystem, network, or process capability."
 
 [[audits.zerofrom-derive]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -4556,6 +4672,12 @@ criteria = "safe-to-deploy"
 delta = "0.13.3 -> 0.14.0"
 notes = "Bumps zstd-safe 8 / zstd-sys 2.1 and adds stream-reader timeout/no-progress handling plus tests. Compression API otherwise unchanged; no new process or network behavior."
 
+[[audits.zstd]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.14.0 -> 0.14.2"
+notes = "Reviewed the published decompression, streaming, dictionary, and file API delta. Frame sizes use checked accumulation and bounded slices; caller capacity limits remain enforced. Streaming preallocation is capped at 32 MiB, initialized output is truncated after errors, and new file APIs use caller-provided paths. No new unsafe code."
+
 [[audits.zstd-safe]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -4568,11 +4690,23 @@ criteria = "safe-to-deploy"
 delta = "7.3.0 -> 8.0.0"
 notes = "Poisons CCtx/DCtx after streaming errors until reset, matching zstd undefined-state rules. Existing unsafe FFI wrappers unchanged in contract. No new destinations."
 
+[[audits.zstd-safe]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "8.0.0 -> 8.1.0"
+notes = "Reviewed the published FFI, dictionary, and allocator changes. Optional Rust allocation checks size overflow, retains 16-byte alignment and layout metadata, handles null, and frees through matching callbacks. Dictionary references remain lifetime-bound; context copies reject poisoned state. Remaining changes clarify safety contracts and tests."
+
 [[audits.zstd-sys]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.0.16+zstd.1.5.7 -> 2.1.0+zstd.1.5.7"
 notes = "Reviewed the published crate delta. Bundled Zstd C implementation remains 1.5.7. Reviews target-aware assembly selection, optional CMake/vendored configuration, and unsafe annotations on raw WASM shims. CMake is not enabled in this workspace. License changes to BSD-3-Clause, permitted by repository policy."
+
+[[audits.zstd-sys]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.1.0+zstd.1.5.7 -> 2.1.1+zstd.1.5.7"
+notes = "Reviewed the published build and binding delta. The bundled Zstandard C sources remain at 1.5.7. Symbol visibility changes require an explicit environment variable; regenerated binding changes preserve ABI and opaque-handle traits."
 
 [[trusted.anstream]]
 criteria = "safe-to-deploy"

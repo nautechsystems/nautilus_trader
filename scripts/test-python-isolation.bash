@@ -7,6 +7,7 @@ source "$pkg_dir/../scripts/native-path.bash"
 neutral_dir="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/nautilus-python-isolation.XXXXXX")"
 trap 'rm -rf "$neutral_dir"' EXIT
 unset PYTHONPATH
+unset PYTHONHOME
 unset VIRTUAL_ENV
 unset UV_PROJECT_ENVIRONMENT
 cd "$pkg_dir"

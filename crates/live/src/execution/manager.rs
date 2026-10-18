@@ -4550,8 +4550,9 @@ impl ExecutionManager {
         let requires_snapshot_projection = !sorted_fills.is_empty()
             || is_snapshot
                 && (report.order_status == OrderStatus::Voided
-                    || report.filled_qty < working.filled_qty());
-
+                    || report.filled_qty < working.filled_qty()
+                    || report.order_status == OrderStatus::Filled
+                        && report.quantity < working.quantity());
         if !requires_snapshot_projection {
             match self.reconcile_order_report(&working, report, instrument, commission_client) {
                 Ok(order_events) => events.extend(order_events),

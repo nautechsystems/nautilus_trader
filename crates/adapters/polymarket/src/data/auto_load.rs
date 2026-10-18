@@ -519,6 +519,7 @@ impl PolymarketDataClient {
                                 &instrument_update_state,
                                 &instruments,
                                 &data_sender,
+                                resolve_ctx.clock,
                             );
 
                             subscriptions

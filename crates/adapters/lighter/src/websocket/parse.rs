@@ -45,7 +45,10 @@ use crate::{
             LighterCandleResolution, LighterOrderKind, LighterOrderSide, LighterOrderStatus,
             LighterOrderTimeInForce, LighterTriggerStatus, order_side_from_is_ask,
         },
-        parse::{parse_millis_to_nanos, price_from_decimal, quantity_from_decimal},
+        parse::{
+            funding_rate_from_percent, parse_millis_to_nanos, price_from_decimal,
+            quantity_from_decimal,
+        },
     },
     http::{
         models::{LighterOrder, LighterPriceLevel, LighterTrade},
@@ -364,12 +367,12 @@ pub fn parse_ws_funding_rate_update(
     timestamp_ms: u64,
     ts_init: UnixNanos,
 ) -> anyhow::Result<FundingRateUpdate> {
-    let rate = stats.current_funding_rate;
+    let rate = funding_rate_from_percent(stats.current_funding_rate);
     let ts_event = parse_millis_to_nanos(timestamp_ms)?;
     Ok(FundingRateUpdate::new(
         instrument.id(),
         rate,
-        None,
+        Some(60),
         None,
         ts_event,
         ts_init,
@@ -1682,8 +1685,8 @@ mod tests {
 
         assert_eq!(stats.funding_timestamp, 1_774_879_200_000);
         assert_eq!(update.instrument_id, instrument.id());
-        assert_eq!(update.rate, Decimal::from_str("0.000001").unwrap());
-        assert_eq!(update.interval, None);
+        assert_eq!(update.rate, Decimal::from_str("0.00000001").unwrap());
+        assert_eq!(update.interval, Some(60));
         assert_eq!(update.next_funding_ns, None);
         assert_eq!(update.ts_event, UnixNanos::from(1_774_883_844_933_000_000));
         assert_eq!(update.ts_init, ts_init);
@@ -1751,7 +1754,28 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(update.rate, sentinel);
+        assert_eq!(update.rate, Decimal::from_str("0.000000123").unwrap());
+    }
+
+    #[rstest]
+    fn test_parse_ws_funding_rate_update_converts_percent_to_fraction() {
+        let instrument = create_test_instrument();
+        let mut stats = stub_market_stats();
+        stats.current_funding_rate = Decimal::from_str("0.00125").unwrap();
+
+        let update = parse_ws_funding_rate_update(
+            &stats,
+            &instrument,
+            1_774_883_844_933,
+            UnixNanos::from(1),
+        )
+        .unwrap();
+
+        assert_eq!(update.rate, Decimal::from_str("0.0000125").unwrap());
+        assert_eq!(update.interval, Some(60));
+        let annualized =
+            update.rate * Decimal::from(525_600) / Decimal::from(update.interval.unwrap());
+        assert_eq!(annualized, Decimal::from_str("0.1095").unwrap());
     }
 
     #[rstest]

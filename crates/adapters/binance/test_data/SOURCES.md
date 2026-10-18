@@ -63,3 +63,9 @@ for cases where a docs example is missing or stale.
 - The fixture `futures/http_json/position_risk_hedge.json` is a narrow derived
   position-risk response used to cover simultaneous long and short hedge-mode
   rows for one symbol.
+- The fixtures `futures/http_json/order_partially_filled.json` and
+  `futures/http_json/order_partial_fills.json` are synthetic variants of
+  `futures/http_json/order_response.json` and `futures/http_json/user_trade.json`
+  with matching order IDs and fills between creation and update times.
+- The fixture `futures/http_json/algo_order_response.json` uses distinct creation
+  and update times to test acceptance timestamps.

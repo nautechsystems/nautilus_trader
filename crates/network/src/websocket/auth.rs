@@ -179,6 +179,7 @@ impl AuthTracker {
         } else {
             log::debug!("Starting new authentication request");
         }
+
         *guard = Some(sender);
 
         receiver
@@ -589,6 +590,7 @@ mod tests {
 
                 (i, result)
             });
+
             handles.push(handle);
         }
 
@@ -954,7 +956,6 @@ mod tests {
     #[tokio::test]
     async fn test_no_sender_leaks() {
         let tracker = AuthTracker::new();
-
         for _ in 0..100 {
             let rx = tracker.begin();
             let _result: Result<(), TestError> =
@@ -1052,7 +1053,6 @@ mod tests {
     async fn test_invalidate_preserves_terminal_failure(#[case] invalidate_first: bool) {
         let tracker = AuthTracker::new();
         let receiver = tracker.begin();
-
         if invalidate_first {
             tracker.invalidate();
             tracker.fail("terminal");
@@ -1434,6 +1434,7 @@ mod proptest_tests {
                             actual
                         ),
                     }
+
                     clear_receiver = true;
                 }
                 Some(ExpectedAuthResult::Failed(expected)) => {
@@ -1453,6 +1454,7 @@ mod proptest_tests {
                             actual
                         ),
                     }
+
                     clear_receiver = true;
                 }
                 None => {
@@ -1684,6 +1686,7 @@ mod simulation_tests {
             madsim::time::sleep(Duration::from_millis(1)).await;
             pending.succeed();
         });
+
         assert!(tracker.wait_for_authenticated(Duration::from_secs(1)).await);
     }
 }

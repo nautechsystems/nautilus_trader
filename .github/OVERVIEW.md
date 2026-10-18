@@ -46,6 +46,8 @@ integration, scheduled checks, and publication.
 - [`performance.yml`](workflows/performance.yml): runs Rust tests and registered benchmarks on
   `nightly`, plus selected CodSpeed benchmarks on `develop`, `test-performance`, and pull requests
   targeting `develop`.
+- [`recover-release.yml`](workflows/recover-release.yml): manually resumes draft publication or
+  verifies a published release using its tag and original `master` build run.
 - [`security-audit.yml`](workflows/security-audit.yml): provides the change-aware supply-chain audit
   used by `build.yml`, plus non-`develop` pull request, scheduled, manual, and `test-security` runs.
 - [`test.yml`](workflows/test.yml): runs pre-commit, Python tests, and Rust tests on Linux x86 with
@@ -83,8 +85,11 @@ artifact integrity records, and verification flow. This section records CI-speci
   Untrusted pull request jobs remain read-only and do not receive Actions secrets.
 - `test.yml` accepts only pushes to `test`, which the `test` ruleset restricts to
   trusted repository maintainers before the workflow reaches the self-hosted build pool.
-- `build.yml` cancels superseded pull request runs. Push runs use commit-specific concurrency groups,
-  so a later push cannot replace an earlier candidate's result.
+- `build.yml` cancels superseded pull request runs. Push runs use commit-specific workflow
+  concurrency groups, so a later commit does not cancel an earlier candidate through that group.
+- Jobs that write the stable release tag or GitHub release, including recovery, share a job-level
+  concurrency group per tag. New jobs do not cancel a running job. Each group permits one pending
+  job; a newer pending job cancels and replaces the earlier one.
 - Jobs that publish wheels to R2, merge `nightly`, or dispatch documentation builds declare a GitHub
   Environment with a deployment branch policy: `r2-develop` (`develop`), `r2-nightly` (`nightly`),
   `release` (`master`), `nightly-merge` (`develop`), and `build-docs` (`master` and `nightly`).
@@ -96,11 +101,19 @@ artifact integrity records, and verification flow. This section records CI-speci
 - Stable releases remain drafts until package indexes have been published and verified against the
   release assets. The workflow then attaches checksums, manifests, and provenance records before
   publishing the GitHub release.
+- Recovery runs from `master` in the protected `release` environment. It validates the original
+  source run, tag, package provenance, and registry contents before changing a draft. It uploads
+  only missing assets, preserves matching assets and manifests, and stops on a mismatch.
+  Manifest comparisons ignore only `generated_at`. Verification of a published release leaves
+  its assets, notes, and publication state unchanged.
+- Release integrity and publication jobs retain diagnostic artifacts for 30 days on failure or
+  cancellation. Recovery retains diagnostics for every run. Successful reruns preserve earlier
+  diagnostic artifacts.
 - Container images receive keyless cosign signatures and SPDX SBOM attestations. The Docker
   workflow verifies both against the published image digest.
 
-See [Releases](../docs/developer_guide/releases.md) for the stable release ordering constraints and
-[Security Policy](../SECURITY.md) for artifact verification commands.
+See [Releases](../docs/developer_guide/releases.md) for stable release ordering and partial-release
+recovery, and [Security Policy](../SECURITY.md) for artifact verification commands.
 
 ### Network egress
 
@@ -112,7 +125,7 @@ inline.
   while expanding an allow list.
 - `COMMON_ALLOWED_ENDPOINTS`: provides endpoints shared across workflows.
 - `CI_ALLOWED_ENDPOINTS`: adds endpoints used by build, documentation, container, and scheduled
-  test workflows.
+  test workflows, plus release recovery.
 - `SECURITY_AUDIT_ALLOWED_ENDPOINTS`: adds endpoints used by security audit jobs and the nightly
   publication gate.
 

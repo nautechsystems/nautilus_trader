@@ -100,6 +100,7 @@ flowchart TB
     Initialized -->|"System denied"| Denied
     Emulated -->|"Triggered locally"| Released
     Released --> Submitted
+    Released -->|"Risk denied"| Denied
 
     Submitted -->|"Venue ACK"| Accepted
     Submitted --> Rejected

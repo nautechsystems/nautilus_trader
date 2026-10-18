@@ -80,8 +80,8 @@ The sandbox adapter supplies simulated execution for a `sandbox` environment.
 
 The platform integrates into larger distributed systems:
 
-- The [external message bus](message_bus.md#encoding) supports JSON and MessagePack payloads, plus Cap'n Proto
-  and Simple Binary Encoding (SBE) for schema-covered market data.
+- The [external message bus](message_bus.md#encoding) supports JSON and MessagePack for native
+  messages, plus Simple Binary Encoding (SBE) for schema-covered market data.
 - Apache Arrow and Parquet provide columnar interchange and persistence through the [data
   catalog](data/catalog.md).
 

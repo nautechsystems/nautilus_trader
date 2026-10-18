@@ -3173,7 +3173,8 @@ impl BinanceSpotHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the request fails or SBE decoding fails.
+    /// Returns an error if the request fails, SBE decoding fails, or a balance cannot be converted
+    /// to a decimal or money amount.
     pub async fn request_account_state(
         &self,
         account_id: AccountId,
@@ -3181,7 +3182,7 @@ impl BinanceSpotHttpClient {
         let ts_init = self.clock.get_time_ns();
         let params = AccountInfoParams::default();
         let account_info = self.inner.account(&params).await?;
-        Ok(account_info.to_account_state(account_id, ts_init))
+        account_info.to_account_state(account_id, ts_init)
     }
 
     /// Requests the status of a specific order.

@@ -50,8 +50,10 @@ async fn recv_text(rx: &mut tokio::sync::mpsc::UnboundedReceiver<Message>, expec
                 return true;
             }
         }
+
         tokio::time::sleep(POLL_STEP).await;
     }
+
     false
 }
 
@@ -66,8 +68,10 @@ async fn recv_application_text(
                 return Some(text.to_string());
             }
         }
+
         tokio::time::sleep(POLL_STEP).await;
     }
+
     None
 }
 
@@ -79,8 +83,10 @@ where
         if condition() {
             return true;
         }
+
         tokio::time::sleep(POLL_STEP).await;
     }
+
     false
 }
 
@@ -109,10 +115,8 @@ fn websocket_config() -> WebSocketConfig {
 
 async fn ws_echo_server() -> Result<(), Box<dyn std::error::Error>> {
     let listener = net::TcpListener::bind("0.0.0.0:8080").await?;
-
     loop {
         let (stream, _) = listener.accept().await?;
-
         tokio::spawn(async move {
             if let Ok(mut ws_stream) = accept_async(stream).await {
                 while let Some(msg) = ws_stream.next().await {
@@ -122,6 +126,7 @@ async fn ws_echo_server() -> Result<(), Box<dyn std::error::Error>> {
                                 let _ = ws_stream.close(None).await;
                                 break;
                             }
+
                             let _ = ws_stream.send(Message::Text(text)).await;
                         }
                         Ok(Message::Binary(data)) => {
@@ -145,10 +150,8 @@ async fn ws_echo_server() -> Result<(), Box<dyn std::error::Error>> {
 
 async fn ws_echo_once_then_drop_server() -> Result<(), Box<dyn std::error::Error>> {
     let listener = net::TcpListener::bind("0.0.0.0:8080").await?;
-
     loop {
         let (stream, _) = listener.accept().await?;
-
         tokio::spawn(async move {
             if let Ok(mut ws_stream) = accept_async(stream).await
                 && let Some(Ok(msg)) = ws_stream.next().await

@@ -37,7 +37,7 @@ use nautilus_core::{
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
-    data::{Bar, BarType},
+    data::{Bar, BarType, FundingRateUpdate},
     enums::{
         AccountType, BarAggregation, CurrencyType, OrderSide, OrderStatus, OrderType, TimeInForce,
         TriggerType,
@@ -52,7 +52,7 @@ use nautilus_model::{
 use nautilus_network::{
     http::{
         HttpClient, HttpClientError, HttpRedirectPolicy, HttpResponse, Method,
-        create_standard_nautilus_headers,
+        create_standard_nautilus_headers, parse_retry_after,
     },
     ratelimiter::quota::Quota,
 };
@@ -82,7 +82,7 @@ use crate::{
             round_to_sig_figs, time_in_force_to_hyperliquid_tif,
         },
     },
-    data::candle_to_bar,
+    data::{candle_to_bar, funding_entry_to_update},
     data_types::HyperliquidPublicTrade,
     http::{
         error::{Error, Result},
@@ -231,6 +231,11 @@ const RATE_LIMIT_INFO_RETRIES_MAX: u32 = 3;
 const RETRY_AFTER_HEADER: &str = "retry-after";
 const VAULT_TOKEN_PREFIX: &str = "vntls:";
 
+/// Maximum rows returned per `fundingHistory` call (the venue per-response cap).
+pub const HYPERLIQUID_FUNDING_HISTORY_MAX_LIMIT: usize = 500;
+/// Seven days of hourly funding, used when a request gives no start or limit.
+const DEFAULT_FUNDING_RATES_LIMIT: usize = 7 * 24;
+
 /// Provides a raw HTTP client for low-level Hyperliquid REST API operations.
 ///
 /// This client handles HTTP infrastructure, request signing, and raw API calls
@@ -251,6 +256,9 @@ pub struct HyperliquidRawHttpClient {
     proxy_url: Option<SecretString>,
     info_limiter: Arc<WeightedLimiter>,
     exchange_limiter: Arc<WeightedLimiter>,
+    info_max_retries: u32,
+    info_retry_delay_initial: Duration,
+    info_retry_delay_max: Duration,
 }
 
 impl HyperliquidRawHttpClient {
@@ -281,6 +289,9 @@ impl HyperliquidRawHttpClient {
             proxy_url: proxy_url.map(SecretString::from),
             info_limiter,
             exchange_limiter,
+            info_max_retries: RATE_LIMIT_INFO_RETRIES_MAX,
+            info_retry_delay_initial: RATE_LIMIT_BACKOFF_BASE,
+            info_retry_delay_max: RATE_LIMIT_BACKOFF_CAP,
         })
     }
 
@@ -316,6 +327,9 @@ impl HyperliquidRawHttpClient {
             proxy_url: proxy_url.map(SecretString::from),
             info_limiter,
             exchange_limiter,
+            info_max_retries: RATE_LIMIT_INFO_RETRIES_MAX,
+            info_retry_delay_initial: RATE_LIMIT_BACKOFF_BASE,
+            info_retry_delay_max: RATE_LIMIT_BACKOFF_CAP,
         })
     }
 
@@ -450,10 +464,8 @@ impl HyperliquidRawHttpClient {
 
     fn retry_after_ms(headers: &HashMap<String, String>) -> Option<u64> {
         let retry_after = headers.get(RETRY_AFTER_HEADER)?;
-        retry_after
-            .parse::<u64>()
-            .ok()
-            .map(|seconds| seconds.saturating_mul(1_000))
+        parse_retry_after(retry_after, jiff::Timestamp::now())
+            .map(|delay| delay.as_millis().min(u128::from(u64::MAX)) as u64)
     }
 
     /// Get metadata about available markets.
@@ -650,68 +662,56 @@ impl HyperliquidRawHttpClient {
 
         loop {
             self.info_limiter.acquire(base_w).await;
-            let response = self.http_roundtrip_info(request).await?;
 
-            if response.status.is_success() {
-                // decode once to count items, then materialize T
-                let val: Value = serde_json::from_slice(&response.body).map_err(Error::Serde)?;
-                let extra = info_extra_weight(request, &val);
-                if extra > 0 {
-                    self.info_limiter.debit_extra(extra).await;
-                    log::debug!(
-                        "Info debited extra weight: endpoint={request:?}, base_w={base_w}, extra={extra}"
-                    );
+            let (e, retry_after_ms) = match self.http_roundtrip_info(request).await {
+                Ok(response) if response.status.is_success() => {
+                    let val: Value =
+                        serde_json::from_slice(&response.body).map_err(Error::Serde)?;
+                    let extra = info_extra_weight(request, &val);
+                    if extra > 0 {
+                        self.info_limiter.debit_extra(extra).await;
+                        log::debug!(
+                            "Info debited extra weight: endpoint={request:?}, base_w={base_w}, extra={extra}"
+                        );
+                    }
+
+                    return Ok(val);
                 }
-                return Ok(val);
-            }
+                Ok(response) => {
+                    let retry_after_ms = Self::retry_after_ms(&response.headers);
+                    let error = if response.status.as_u16() == 429 {
+                        Error::rate_limit("info", base_w, retry_after_ms)
+                    } else {
+                        let body = String::from_utf8_lossy(&response.body);
+                        Error::http(response.status.as_u16(), body.to_string())
+                    };
 
-            // Retry Info requests after 429 responses, honoring Retry-After when present
-            if response.status.as_u16() == 429 {
-                if attempt >= RATE_LIMIT_INFO_RETRIES_MAX {
-                    let ra = Self::retry_after_ms(&response.headers);
-                    return Err(Error::rate_limit("info", base_w, ra));
+                    (error, retry_after_ms)
                 }
-                let delay = Self::retry_after_ms(&response.headers).map_or_else(
-                    || {
-                        backoff_full_jitter(
-                            attempt,
-                            RATE_LIMIT_BACKOFF_BASE,
-                            RATE_LIMIT_BACKOFF_CAP,
-                        )
-                    },
-                    Duration::from_millis,
-                );
-                log::warn!(
-                    "429 Too Many Requests; backing off: endpoint={request:?}, attempt={attempt}, wait_ms={:?}",
-                    delay.as_millis()
-                );
-                attempt += 1;
-                tokio::time::sleep(delay).await;
-                continue;
+                Err(e) => (e, None),
+            };
+
+            if !e.is_retryable() || attempt >= self.info_max_retries {
+                return Err(e);
             }
 
-            // transient 5xx: treat like retryable Info (bounded)
-            if (response.status.is_server_error() || response.status.as_u16() == 408)
-                && attempt < RATE_LIMIT_INFO_RETRIES_MAX
-            {
-                let delay =
-                    backoff_full_jitter(attempt, RATE_LIMIT_BACKOFF_BASE, RATE_LIMIT_BACKOFF_CAP);
-                log::debug!(
-                    "Transient error; retrying: endpoint={request:?}, attempt={attempt}, status={:?}, wait_ms={:?}",
-                    response.status.as_u16(),
-                    delay.as_millis()
-                );
-                attempt += 1;
-                tokio::time::sleep(delay).await;
-                continue;
-            }
+            let delay = retry_after_ms.map_or_else(
+                || {
+                    backoff_full_jitter(
+                        attempt,
+                        self.info_retry_delay_initial,
+                        self.info_retry_delay_max,
+                    )
+                },
+                Duration::from_millis,
+            );
 
-            // non-retryable or exhausted
-            let error_body = String::from_utf8_lossy(&response.body);
-            return Err(Error::http(
-                response.status.as_u16(),
-                error_body.to_string(),
-            ));
+            log::debug!(
+                "Info request failed; retrying: endpoint={request:?}, attempt={attempt}, wait_ms={}",
+                delay.as_millis()
+            );
+            attempt += 1;
+            tokio::time::sleep(delay).await;
         }
     }
 
@@ -1118,6 +1118,18 @@ impl HyperliquidHttpClient {
         Arc::get_mut(&mut self.inner)
             .expect("cannot override URL: Arc has multiple references")
             .set_base_exchange_url(url);
+    }
+
+    pub(crate) fn set_info_retry_config(
+        &mut self,
+        max_retries: u32,
+        delay_initial: Duration,
+        delay_max: Duration,
+    ) {
+        let inner = Arc::make_mut(&mut self.inner);
+        inner.info_max_retries = max_retries;
+        inner.info_retry_delay_initial = delay_initial;
+        inner.info_retry_delay_max = delay_max;
     }
 
     /// Creates an authenticated client from environment variables for the specified network.
@@ -3353,6 +3365,117 @@ impl HyperliquidHttpClient {
         ))
     }
 
+    /// Requests funding rate history for a perpetual, paging past the venue's
+    /// per-response cap.
+    ///
+    /// With `start`, returns up to `limit` rows from `start` onward. Without it,
+    /// returns the most recent `limit` rows (default seven days).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the instrument is not a perpetual, `start` is not
+    /// before `end`, or a request fails.
+    pub async fn request_funding_rates(
+        &self,
+        instrument: &InstrumentAny,
+        start: Option<jiff::Timestamp>,
+        end: Option<jiff::Timestamp>,
+        limit: Option<usize>,
+    ) -> Result<Vec<FundingRateUpdate>> {
+        let instrument_id = instrument.id();
+
+        if !matches!(instrument, InstrumentAny::CryptoPerpetual(_)) {
+            return Err(Error::bad_request(format!(
+                "funding rates are only available for perpetual instruments: {instrument_id}",
+            )));
+        }
+
+        let coin = instrument.raw_symbol().inner();
+
+        if let (Some(start), Some(end)) = (start, end)
+            && start >= end
+        {
+            return Err(Error::bad_request(format!(
+                "invalid funding request range: start={start}, end={end}",
+            )));
+        }
+
+        let now = jiff::Timestamp::now();
+        let end = end.unwrap_or(now).min(now);
+
+        if let Some(start) = start
+            && start >= end
+        {
+            return Ok(Vec::new());
+        }
+
+        let requested_limit = limit.filter(|n| *n > 0);
+        let target_limit = requested_limit.unwrap_or(DEFAULT_FUNDING_RATES_LIMIT);
+        let start_was_unspecified = start.is_none();
+        let end_ms = end.as_millisecond().max(0) as u64;
+
+        let start_ms = start.map_or_else(
+            || {
+                let lookback_rows = target_limit.saturating_add(1) as u64;
+                // Hyperliquid funding interval is 1h
+                end_ms.saturating_sub((60 * 60 * 1_000_u64).saturating_mul(lookback_rows))
+            },
+            |dt| dt.as_millisecond().max(0) as u64,
+        );
+
+        let mut funding_rates = Vec::new();
+        let mut cursor_ms = start_ms;
+
+        'pages: while cursor_ms <= end_ms {
+            let entries = self
+                .info_funding_history(coin.as_str(), cursor_ms, Some(end_ms))
+                .await?;
+            let Some(last_time_ms) = entries.iter().map(|entry| entry.time).max() else {
+                break;
+            };
+
+            let mut page: Vec<FundingRateUpdate> = entries
+                .iter()
+                .filter(|entry| (cursor_ms..=end_ms).contains(&entry.time))
+                .map(|entry| funding_entry_to_update(entry, instrument_id))
+                .collect();
+            page.sort_by_key(|rate| rate.ts_event);
+
+            for update in page {
+                if funding_rates
+                    .last()
+                    .is_some_and(|last: &FundingRateUpdate| last.ts_event == update.ts_event)
+                {
+                    continue;
+                }
+                funding_rates.push(update);
+
+                if !start_was_unspecified
+                    && requested_limit.is_some_and(|limit| funding_rates.len() >= limit)
+                {
+                    break 'pages;
+                }
+            }
+
+            if entries.len() < HYPERLIQUID_FUNDING_HISTORY_MAX_LIMIT {
+                break;
+            }
+
+            // `startTime` is inclusive, so step past the last row
+            let next_cursor_ms = last_time_ms.saturating_add(1);
+            if next_cursor_ms <= cursor_ms {
+                break;
+            }
+            cursor_ms = next_cursor_ms;
+        }
+
+        if start_was_unspecified && funding_rates.len() > target_limit {
+            funding_rates = funding_rates.split_off(funding_rates.len() - target_limit);
+        }
+
+        Ok(funding_rates)
+    }
+
     /// Submits an order to the exchange.
     ///
     /// # Errors
@@ -4039,7 +4162,15 @@ fn perp_dex_asset_index_base(dex_index: usize) -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, net::SocketAddr, sync::Arc};
+    use std::{
+        collections::HashMap,
+        net::SocketAddr,
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        },
+        time::Duration,
+    };
 
     use axum::{
         Router,
@@ -4048,7 +4179,7 @@ mod tests {
         response::{IntoResponse, Json, Response},
         routing::post,
     };
-    use nautilus_core::{Params, UUID4, UnixNanos, time::get_atomic_clock_realtime};
+    use nautilus_core::{Params, UUID4, UnixNanos, hex, time::get_atomic_clock_realtime};
     use nautilus_model::{
         currencies::CURRENCY_MAP,
         enums::{CurrencyType, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType},
@@ -4073,19 +4204,75 @@ mod tests {
     use crate::{
         common::{
             consts::{ASSET_INDEX_INFO_KEY, HYPERLIQUID_VENUE, NAUTILUS_BUILDER_ADDRESS},
+            credential::EvmPrivateKey,
             enums::{HyperliquidEnvironment, HyperliquidProductType},
         },
         http::{
+            error::Error,
             models::{
-                Cloid, HyperliquidExchangeResponse, HyperliquidOrderStatusEntry, PerpAsset,
-                PerpDex, PerpMeta,
+                Cloid, HyperliquidExchangeAction, HyperliquidExchangeResponse,
+                HyperliquidOrderStatusEntry, PerpAsset, PerpDex, PerpMeta,
             },
             query::InfoRequest,
         },
+        signing::{HyperliquidActionType, HyperliquidEip712Signer, SignRequest, nonce::TimeNonce},
     };
 
     const TEST_PRIVATE_KEY: &str =
         "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
+
+    #[rstest]
+    #[case(0)]
+    #[case(1)]
+    #[case(2)]
+    #[case(3)]
+    fn test_leverage_margin_signed_request(
+        #[case] case_index: usize,
+        #[values(HyperliquidEnvironment::Mainnet, HyperliquidEnvironment::Testnet)]
+        environment: HyperliquidEnvironment,
+    ) {
+        let fixture: Value =
+            serde_json::from_str(include_str!("../../test_data/leverage_margin_actions.json"))
+                .unwrap();
+        let case = &fixture["cases"][case_index];
+        let action: HyperliquidExchangeAction =
+            serde_json::from_str(case["json"].as_str().unwrap()).unwrap();
+        let client =
+            HyperliquidHttpClient::from_credentials(TEST_PRIVATE_KEY, None, environment, 60, None)
+                .unwrap();
+        let expires_after = Some(1_900_000_000_000);
+        let request = client
+            .sign_action_exec_request(&action, expires_after)
+            .unwrap();
+        let key = EvmPrivateKey::new(TEST_PRIVATE_KEY).unwrap();
+        let signer = HyperliquidEip712Signer::new(&key).unwrap();
+        let expected_bytes = hex::decode(case["msgpack"].as_str().unwrap()).unwrap();
+
+        let expected_signature = signer
+            .sign(&SignRequest {
+                action: None,
+                action_bytes: Some(expected_bytes),
+                time_nonce: TimeNonce::from_millis(i128::from(request.nonce)),
+                action_type: HyperliquidActionType::L1,
+                is_testnet: environment == HyperliquidEnvironment::Testnet,
+                vault_address: None,
+                expires_after,
+            })
+            .unwrap()
+            .signature;
+
+        let expected_action: Value = serde_json::from_str(case["json"].as_str().unwrap()).unwrap();
+
+        assert_eq!(
+            serde_json::to_value(&request).unwrap(),
+            json!({
+                "action": expected_action,
+                "nonce": request.nonce,
+                "signature": expected_signature,
+                "expiresAfter": expires_after,
+            })
+        );
+    }
 
     #[tokio::test]
     async fn test_authenticated_client_rejects_redirects() {
@@ -4114,13 +4301,271 @@ mod tests {
     }
 
     #[rstest]
-    fn retry_after_ms_parses_integer_seconds() {
-        let headers = HashMap::from([(RETRY_AFTER_HEADER.to_string(), "3".to_string())]);
+    #[case::seconds("3", Some(3_000))]
+    #[case::zero("0", Some(0))]
+    #[case::past_date("Sun, 06 Nov 1994 08:49:36 GMT", Some(0))]
+    #[case::overflow("18446744073709551615", Some(u64::MAX))]
+    #[case::invalid("soon", None)]
+    #[case::negative("-1", None)]
+    fn retry_after_ms_parses_header(#[case] value: &str, #[case] expected: Option<u64>) {
+        let headers = HashMap::from([(RETRY_AFTER_HEADER.to_string(), value.to_string())]);
 
-        assert_eq!(
-            HyperliquidRawHttpClient::retry_after_ms(&headers),
-            Some(3_000)
-        );
+        assert_eq!(HyperliquidRawHttpClient::retry_after_ms(&headers), expected);
+    }
+
+    #[rstest]
+    #[case::transport(RetryFailure::Transport)]
+    #[case::timeout(RetryFailure::Timeout)]
+    #[case::request_timeout(RetryFailure::Response(408))]
+    #[case::rate_limit(RetryFailure::Response(429))]
+    #[case::server_error(RetryFailure::Response(500))]
+    #[case::unavailable(RetryFailure::Response(503))]
+    #[tokio::test]
+    async fn info_retry_recovers(#[case] failure: RetryFailure) {
+        let (addr, count, server) = start_retry_server(failure, 1, None).await;
+        let mut client =
+            HyperliquidRawHttpClient::new(HyperliquidEnvironment::Testnet, 1, None).unwrap();
+        client.set_base_info_url(format!("http://{addr}/info"));
+
+        let result = client
+            .send_info_request_raw(&InfoRequest::meta())
+            .await
+            .unwrap();
+        let expected: Value =
+            serde_json::from_str(include_str!("../../test_data/http_meta_perp_sample.json"))
+                .unwrap();
+
+        server.abort();
+        assert_eq!(result, expected);
+        assert_eq!(count.load(Ordering::Relaxed), 2);
+    }
+
+    #[rstest]
+    #[case::transport(RetryFailure::Transport)]
+    #[case::timeout(RetryFailure::Timeout)]
+    #[case::request_timeout(RetryFailure::Response(408))]
+    #[case::rate_limit(RetryFailure::Response(429))]
+    #[case::server_error(RetryFailure::Response(503))]
+    #[tokio::test]
+    async fn info_retry_exhausts_budget(#[case] failure: RetryFailure) {
+        let (addr, count, server) = start_retry_server(failure, usize::MAX, Some("0")).await;
+        let mut client =
+            HyperliquidRawHttpClient::new(HyperliquidEnvironment::Testnet, 1, None).unwrap();
+        client.set_base_info_url(format!("http://{addr}/info"));
+
+        let error = client.info_meta().await.unwrap_err();
+
+        server.abort();
+        assert_retry_failure(error, failure, ("info", 20, Some(0)));
+        assert_eq!(count.load(Ordering::Relaxed), 4);
+    }
+
+    #[rstest]
+    #[case::bad_request(RetryFailure::Response(400))]
+    #[case::unauthorized(RetryFailure::Response(401))]
+    #[case::forbidden(RetryFailure::Response(403))]
+    #[case::unprocessable(RetryFailure::Response(422))]
+    #[case::invalid_json(RetryFailure::InvalidJson)]
+    #[tokio::test]
+    async fn info_retry_rejects_permanent_failures(#[case] failure: RetryFailure) {
+        let (addr, count, server) = start_retry_server(failure, usize::MAX, Some("0")).await;
+        let mut client =
+            HyperliquidRawHttpClient::new(HyperliquidEnvironment::Testnet, 1, None).unwrap();
+        client.set_base_info_url(format!("http://{addr}/info"));
+
+        let error = client.info_meta().await.unwrap_err();
+
+        server.abort();
+        assert_retry_failure(error, failure, ("info", 20, Some(0)));
+        assert_eq!(count.load(Ordering::Relaxed), 1);
+    }
+
+    #[rstest]
+    #[case(0)]
+    #[case(1)]
+    #[case(2)]
+    #[tokio::test]
+    async fn info_retry_uses_configured_budget(#[case] max_retries: u32) {
+        let failure = RetryFailure::Response(503);
+        let (addr, count, server) = start_retry_server(failure, usize::MAX, Some("invalid")).await;
+        let mut client =
+            HyperliquidHttpClient::new(HyperliquidEnvironment::Testnet, 1, None).unwrap();
+        client.set_base_info_url(format!("http://{addr}/info"));
+        client.set_info_retry_config(max_retries, Duration::ZERO, Duration::ZERO);
+
+        let error = client.info_meta().await.unwrap_err();
+
+        server.abort();
+        assert_retry_failure(error, failure, ("info", 20, None));
+        assert_eq!(count.load(Ordering::Relaxed), max_retries as usize + 1);
+    }
+
+    #[rstest]
+    #[case::rate_limit(429)]
+    #[case::unavailable(503)]
+    #[tokio::test]
+    async fn info_retry_honors_retry_after_above_backoff_cap(#[case] status: u16) {
+        let (addr, count, server) =
+            start_retry_server(RetryFailure::Response(status), 1, Some("1")).await;
+        let mut client =
+            HyperliquidHttpClient::new(HyperliquidEnvironment::Testnet, 2, None).unwrap();
+        client.set_base_info_url(format!("http://{addr}/info"));
+        client.set_info_retry_config(1, Duration::ZERO, Duration::ZERO);
+        let started = tokio::time::Instant::now();
+
+        let result = client.info_meta().await;
+        let elapsed = started.elapsed();
+
+        server.abort();
+        assert!(result.is_ok(), "{result:?}");
+        assert_eq!(count.load(Ordering::Relaxed), 2);
+        assert!(elapsed >= Duration::from_secs(1), "{elapsed:?}");
+    }
+
+    #[rstest]
+    #[case::transport(RetryFailure::Transport)]
+    #[case::timeout(RetryFailure::Timeout)]
+    #[case::rate_limit(RetryFailure::Response(429))]
+    #[case::server_error(RetryFailure::Response(503))]
+    #[tokio::test]
+    async fn exchange_does_not_retry_unknown_outcome(
+        #[case] failure: RetryFailure,
+        #[values("submit", "modify", "cancel")] operation: &str,
+    ) {
+        let (addr, count, server) = start_retry_server(failure, usize::MAX, Some("0")).await;
+        let mut client = HyperliquidHttpClient::from_credentials(
+            TEST_PRIVATE_KEY,
+            None,
+            HyperliquidEnvironment::Testnet,
+            1,
+            None,
+        )
+        .unwrap();
+        client.set_base_exchange_url(format!("http://{addr}/exchange"));
+        client.set_info_retry_config(9, Duration::ZERO, Duration::ZERO);
+        let signing: Value =
+            serde_json::from_str(include_str!("../../test_data/order_decimal_signing.json"))
+                .unwrap();
+
+        let action = match operation {
+            "submit" => serde_json::from_value(signing["cases"][0]["action"].clone()).unwrap(),
+            "modify" => HyperliquidExchangeAction::Modify {
+                modify: serde_json::from_value(
+                    signing["cases"][2]["action"]["modifies"][0].clone(),
+                )
+                .unwrap(),
+            },
+            "cancel" => {
+                let cancels: Value =
+                    serde_json::from_str(include_str!("../../test_data/cancel_actions.json"))
+                        .unwrap();
+                serde_json::from_value(cancels["cancel"]["normal"]["json"].clone()).unwrap()
+            }
+            _ => unreachable!(),
+        };
+
+        let error = client.post_action_exec(&action).await.unwrap_err();
+
+        server.abort();
+
+        assert_retry_failure(error, failure, ("exchange", 1, Some(0)));
+        assert_eq!(count.load(Ordering::Relaxed), 1);
+    }
+
+    #[derive(Debug, Clone, Copy)]
+    enum RetryFailure {
+        Transport,
+        Timeout,
+        Response(u16),
+        InvalidJson,
+    }
+
+    async fn start_retry_server(
+        failure: RetryFailure,
+        failures: usize,
+        retry_after: Option<&'static str>,
+    ) -> (SocketAddr, Arc<AtomicUsize>, tokio::task::JoinHandle<()>) {
+        let count = Arc::new(AtomicUsize::new(0));
+        let requests = count.clone();
+        let handler = post(move |_body: axum::body::Bytes| {
+            let count = requests.clone();
+            async move {
+                if count.fetch_add(1, Ordering::Relaxed) >= failures {
+                    return include_str!("../../test_data/http_meta_perp_sample.json")
+                        .into_response();
+                }
+
+                let mut response = match failure {
+                    RetryFailure::Transport => {
+                        let stream = futures_util::stream::once(async {
+                            Err::<axum::body::Bytes, _>(std::io::Error::other("connection dropped"))
+                        });
+
+                        Response::new(axum::body::Body::from_stream(stream))
+                    }
+                    RetryFailure::Timeout => {
+                        tokio::time::sleep(Duration::from_secs(2)).await;
+                        "delayed response".into_response()
+                    }
+                    RetryFailure::Response(status) => {
+                        (StatusCode::from_u16(status).unwrap(), "retry failure").into_response()
+                    }
+                    RetryFailure::InvalidJson => "invalid json".into_response(),
+                };
+
+                if let Some(value) = retry_after {
+                    response
+                        .headers_mut()
+                        .insert(RETRY_AFTER_HEADER, value.parse().unwrap());
+                }
+
+                response
+            }
+        });
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let router = Router::new()
+            .route("/info", handler.clone())
+            .route("/exchange", handler);
+
+        let server = tokio::spawn(async move {
+            axum::serve(listener, router).await.unwrap();
+        });
+
+        (addr, count, server)
+    }
+
+    fn assert_retry_failure(
+        error: Error,
+        failure: RetryFailure,
+        rate_limit: (&str, u32, Option<u64>),
+    ) {
+        match (failure, error) {
+            (RetryFailure::Transport, Error::Transport(_))
+            | (RetryFailure::Timeout, Error::Timeout)
+            | (RetryFailure::InvalidJson, Error::Serde(_)) => {}
+            (
+                RetryFailure::Response(429),
+                Error::RateLimit {
+                    scope,
+                    weight,
+                    retry_after_ms,
+                },
+            ) => {
+                assert_eq!((scope, weight, retry_after_ms), rate_limit);
+            }
+            (
+                RetryFailure::Response(status),
+                Error::Http {
+                    status: actual,
+                    message,
+                },
+            ) => {
+                assert_eq!((actual, message.as_str()), (status, "retry failure"));
+            }
+            (_, e) => panic!("unexpected info failure: {e:?}"),
+        }
     }
 
     fn perp_meta_with_assets(names: &[&str]) -> PerpMeta {

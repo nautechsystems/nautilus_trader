@@ -173,6 +173,7 @@ pub(super) struct TestServerState {
     pub(super) batch_cancel_response_headers: Arc<tokio::sync::Mutex<VecDeque<HeaderMap>>>,
     pub(super) batch_cancel_bodies: Arc<tokio::sync::Mutex<Vec<Value>>>,
     pub(super) batch_cancel_echo_rejections: Arc<AtomicBool>,
+    pub(super) batch_cancel_echo_cancellations: Arc<AtomicBool>,
     pub(super) batch_cancel_delete_count: Arc<tokio::sync::Mutex<usize>>,
     pub(super) batch_cancel_request_gate: Arc<RequestGate>,
     pub(super) market_cancel_response: Arc<tokio::sync::Mutex<Option<Value>>>,
@@ -254,6 +255,7 @@ impl Default for TestServerState {
             batch_cancel_response_headers: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
             batch_cancel_bodies: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             batch_cancel_echo_rejections: Arc::new(AtomicBool::new(false)),
+            batch_cancel_echo_cancellations: Arc::new(AtomicBool::new(false)),
             batch_cancel_delete_count: Arc::new(tokio::sync::Mutex::new(0)),
             batch_cancel_request_gate: Arc::new(RequestGate::default()),
             market_cancel_response: Arc::new(tokio::sync::Mutex::new(None)),
@@ -638,6 +640,11 @@ async fn handle_delete_orders(
             .map(|order_id| (order_id.to_string(), json!("order not found")))
             .collect::<serde_json::Map<_, _>>();
         json!({"canceled": [], "not_canceled": not_canceled})
+    } else if state
+        .batch_cancel_echo_cancellations
+        .load(Ordering::Acquire)
+    {
+        json!({"canceled": request, "not_canceled": {}})
     } else {
         state
             .batch_cancel_response
@@ -763,6 +770,16 @@ async fn handle_gamma_markets(State(state): State<TestServerState>) -> Response 
         Some(v) => Json(v.clone()).into_response(),
         None => Json(json!([])).into_response(),
     }
+}
+
+async fn handle_gamma_markets_keyset(State(state): State<TestServerState>) -> Response {
+    let markets = state
+        .gamma_response
+        .lock()
+        .await
+        .clone()
+        .unwrap_or_else(|| json!([]));
+    Json(json!({"markets": markets, "next_cursor": null})).into_response()
 }
 
 async fn handle_get_book(State(state): State<TestServerState>, uri: Uri) -> Response {
@@ -893,6 +910,7 @@ fn create_test_router(state: TestServerState) -> Router {
         .route("/cancel-all", delete(handle_cancel_all))
         .route("/cancel-market-orders", delete(handle_cancel_market_orders))
         .route("/markets", get(handle_gamma_markets))
+        .route("/markets/keyset", get(handle_gamma_markets_keyset))
         .route("/book", get(handle_get_book))
         .route("/fee-rate", get(handle_get_fee_rate))
         .route("/v1/heartbeats", post(handle_heartbeat))

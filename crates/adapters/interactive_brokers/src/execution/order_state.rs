@@ -14,7 +14,75 @@ use nautilus_common::live::sender::EventSender;
 use super::{core::*, incarnations::duplicate_client_order_id};
 use crate::common::spreads::parse_spread_instrument_id_to_legs;
 
+impl TrackedOrder {
+    pub(super) fn new(
+        client_order_id: ClientOrderId,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        order_side: OrderSide,
+        order_type: OrderType,
+    ) -> Self {
+        Self {
+            client_order_id,
+            trader_id,
+            strategy_id,
+            instrument_id,
+            order_side,
+            order_type,
+            accepted: false,
+            avg_px: None,
+            pending_cancel: false,
+            pending_modify: None,
+            perm_id: 0,
+            spread_fill_ids: ahash::AHashSet::new(),
+            spread_fills_held: HeldSpreadFills::default(),
+            last_update: None,
+        }
+    }
+}
+
 impl OrderTrackerState {
+    pub(super) fn track_order(&mut self, ib_order_id: i32, order: TrackedOrder) {
+        self.order_id_map.insert(order.client_order_id, ib_order_id);
+        self.venue_order_id_map
+            .insert(ib_order_id, order.client_order_id);
+        self.terminal_orders.remove(&ib_order_id);
+        self.active_orders.insert(ib_order_id, order);
+    }
+
+    /// Takes an order awaiting submission, which stops its submission before IB.
+    pub(super) fn take_awaiting_submission(
+        &mut self,
+        client_order_id: ClientOrderId,
+    ) -> Option<AwaitingSubmission> {
+        self.awaiting_submission.remove(&client_order_id)
+    }
+
+    /// Takes the orders awaiting submission for an instrument, on one side when given.
+    pub(super) fn take_awaiting_submissions(
+        &mut self,
+        instrument_id: InstrumentId,
+        order_side: Option<OrderSide>,
+    ) -> Vec<(ClientOrderId, AwaitingSubmission)> {
+        let mut taken: Vec<_> = self
+            .awaiting_submission
+            .iter()
+            .filter(|(_, submission)| {
+                submission.instrument_id == instrument_id
+                    && order_side.is_none_or(|side| side == submission.order_side)
+            })
+            .map(|(client_order_id, submission)| (*client_order_id, *submission))
+            .collect();
+        taken.sort_by_key(|(client_order_id, _)| client_order_id.to_string());
+
+        for (client_order_id, _) in &taken {
+            self.awaiting_submission.remove(client_order_id);
+        }
+
+        taken
+    }
+
     // Holds `fill` for `target` and returns whether the caller starts the resolution
     pub(super) fn hold_fill(&mut self, target: IbOrderSelector, fill: Option<FillReport>) -> bool {
         let starts = !self.fills_held.contains_key(&target);
@@ -415,44 +483,93 @@ impl InteractiveBrokersExecutionClient {
         Ok(contract)
     }
 
-    #[allow(clippy::too_many_arguments)] // The fields form one tracked order record.
-    pub(super) fn cache_order_tracking(
-        ib_order_id: i32,
+    /// Records an order whose submission is under way, so a cancel that arrives before the
+    /// order is tracked stops its submission.
+    pub(super) fn register_awaiting_submission(
         client_order_id: ClientOrderId,
-        instrument_id: InstrumentId,
-        trader_id: TraderId,
-        strategy_id: StrategyId,
-        order_side: OrderSide,
-        order_type: OrderType,
+        submission: AwaitingSubmission,
         orders: &OrderTracker,
     ) -> anyhow::Result<()> {
-        let mut state = orders.lock()?;
-        state.order_id_map.insert(client_order_id, ib_order_id);
-        state
-            .venue_order_id_map
-            .insert(ib_order_id, client_order_id);
-        state.terminal_orders.remove(&ib_order_id);
-        state.active_orders.insert(
-            ib_order_id,
-            TrackedOrder {
-                client_order_id,
-                trader_id,
-                strategy_id,
-                instrument_id,
-                order_side,
-                order_type,
-                accepted: false,
-                avg_px: None,
-                pending_cancel: false,
-                pending_modify: None,
-                perm_id: 0,
-                spread_fill_ids: ahash::AHashSet::new(),
-                spread_fills_held: HeldSpreadFills::default(),
-                last_update: None,
-            },
-        );
+        orders
+            .lock()?
+            .awaiting_submission
+            .insert(client_order_id, submission);
 
         Ok(())
+    }
+
+    /// Moves an order from awaiting submission into tracking, in one step so a cancel finds it
+    /// in one or the other. Returns `false`, tracking nothing, when a cancel already took it.
+    pub(super) fn track_awaiting_submission(
+        ib_order_id: i32,
+        order: TrackedOrder,
+        orders: &OrderTracker,
+    ) -> anyhow::Result<bool> {
+        let mut state = orders.lock()?;
+        if state
+            .take_awaiting_submission(order.client_order_id)
+            .is_none()
+        {
+            return Ok(false);
+        }
+
+        state.track_order(ib_order_id, order);
+        Ok(true)
+    }
+
+    /// Moves every order of a list from awaiting submission into tracking, in one step, or none
+    /// of them when a cancel already took any. Returns the orders a cancel took; when there are
+    /// any, the others leave awaiting submission too, for the caller to deny.
+    pub(super) fn track_awaiting_order_list(
+        tracked: Vec<(i32, TrackedOrder)>,
+        orders: &OrderTracker,
+    ) -> anyhow::Result<Vec<ClientOrderId>> {
+        let mut state = orders.lock()?;
+        let canceled: Vec<_> = tracked
+            .iter()
+            .map(|(_, order)| order.client_order_id)
+            .filter(|client_order_id| !state.awaiting_submission.contains_key(client_order_id))
+            .collect();
+
+        for (_, order) in &tracked {
+            state.take_awaiting_submission(order.client_order_id);
+        }
+
+        if canceled.is_empty() {
+            for (ib_order_id, order) in tracked {
+                state.track_order(ib_order_id, order);
+            }
+        }
+
+        Ok(canceled)
+    }
+
+    /// Sends `OrderCanceled` for an order a cancel took while it awaited submission, so it
+    /// never reached IB.
+    pub(super) fn send_awaiting_order_canceled(
+        client_order_id: ClientOrderId,
+        submission: AwaitingSubmission,
+        account_id: AccountId,
+        exec_sender: &EventSender<ExecutionEvent>,
+        ts_event: UnixNanos,
+    ) -> anyhow::Result<()> {
+        let event = OrderCanceled::new(
+            submission.trader_id,
+            submission.strategy_id,
+            submission.instrument_id,
+            client_order_id,
+            UUID4::new(),
+            ts_event,
+            ts_event,
+            false,
+            None,
+            Some(account_id),
+            None,
+        );
+
+        exec_sender
+            .send(ExecutionEvent::Order(OrderEventAny::Canceled(event)))
+            .map_err(|e| anyhow::anyhow!("Failed to send order canceled event: {e}"))
     }
 
     pub(super) fn cache_recovered_order_tracking(

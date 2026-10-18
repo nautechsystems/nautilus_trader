@@ -305,10 +305,6 @@ pub(crate) fn is_condition_closed(
     closed_condition_ids.lock().contains(condition_id)
 }
 
-pub(crate) fn is_instrument_expired(instrument: &InstrumentAny, now_ns: UnixNanos) -> bool {
-    crate::filters::is_expired(instrument, now_ns)
-}
-
 pub(crate) fn is_instrument_expired_and_not_reported_open(
     instrument: &InstrumentAny,
     now_ns: UnixNanos,

@@ -2487,10 +2487,10 @@ impl OrderReportLookup {
                 )
             })?;
 
-        // A caller cloid identifies the order only when the raw client index matches
+        // A caller cloid needs its registered index; a derived index can identify a collision partner
         let supplied_cloid = self
             .supplied_cloid
-            .filter(|_| self.target_client_index == Some(order.client_order_index));
+            .filter(|cloid| dispatch.client_order_index(cloid) == Some(order.client_order_index));
         Ok((report, supplied_cloid))
     }
 
@@ -2891,7 +2891,7 @@ pub(crate) fn derive_market_order_price_ticks(
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
+    use std::{future::Future, str::FromStr};
 
     use nautilus_core::UUID4;
     use nautilus_model::{
@@ -3491,6 +3491,83 @@ mod tests {
             !state.claim_accepted_emission(&early),
             "the still-active early order must not emit a second OrderAccepted",
         );
+    }
+
+    #[rstest]
+    fn active_context_survives_terminal_and_trade_replay_eviction() {
+        let mut state = WsDispatchState::new();
+        state.retired_orders = Arc::new(RetiredOrderCache::new(2));
+        state.seen_trade_ids = Arc::new(TradeDedupCache::new(2));
+        let active = cloid("ACTIVE-CONTEXT");
+        let instrument_id = InstrumentId::from("ETH-PERP.LIGHTER");
+        let strategy_id = StrategyId::from("REPLAY-001");
+        let venue_order_id = VenueOrderId::from("501");
+
+        let identity = OrderIdentity::new(
+            instrument_id,
+            strategy_id,
+            OrderSide::Sell,
+            OrderType::StopLimit,
+            1,
+        );
+
+        let shape = OrderShapeSnapshot {
+            quantity: Quantity::from("0.0420"),
+            price: Some(Price::from("2345.67")),
+            trigger_price: Some(Price::from("2350.12")),
+        };
+
+        state.register_cloid(1, active).unwrap();
+        state.register_order_identity(active, identity.clone());
+        state.mark_order_submission(&active, 41);
+        state.store_snapshot(active, shape.clone());
+        assert_eq!(
+            state.resolve_live_order_cloid("1", venue_order_id),
+            Some(active)
+        );
+        assert!(state.claim_accepted_emission(&active));
+        assert!(state.mark_triggered_emitted(active));
+
+        for index in 2..=4 {
+            let retired = ClientOrderId::new(format!("RETIRED-{index}"));
+            state.register_cloid(index, retired).unwrap();
+            state.register_order_identity(
+                retired,
+                OrderIdentity::new(
+                    instrument_id,
+                    strategy_id,
+                    OrderSide::Buy,
+                    OrderType::Limit,
+                    index,
+                ),
+            );
+            state.retire_order_identity(&retired);
+            assert!(state.mark_trade_seen(TradeId::new(index.to_string())));
+        }
+
+        assert!(
+            state
+                .retired_orders
+                .identity_for_cloid(&cloid("RETIRED-2"))
+                .is_none()
+        );
+        assert!(!state.seen_trade_ids.contains(&TradeId::from("2")));
+        let retained = state.order_identities.get(&active).unwrap();
+        assert!(retained.shares_submission(&identity));
+        assert_eq!(retained.instrument_id, instrument_id);
+        assert_eq!(retained.strategy_id, strategy_id);
+        assert_eq!(retained.order_side, OrderSide::Sell);
+        assert_eq!(retained.order_type, OrderType::StopLimit);
+        assert_eq!(retained.client_order_index, 1);
+        assert_eq!(retained.venue_order_id(), Some(venue_order_id));
+        assert_eq!(state.snapshot_for(&active), Some(shape));
+        assert_eq!(
+            state.resolve_client_order_index_for_venue(1, venue_order_id),
+            Some(active)
+        );
+        assert!(state.accepted_was_emitted(&active));
+        assert!(state.triggered_was_emitted(&active));
+        assert!(!state.claim_accepted_emission(&active));
     }
 
     #[rstest]
@@ -4627,13 +4704,15 @@ mod tests {
 
     #[tokio::test]
     async fn account_streams_ready_await_all_wakes_when_streams_arrive() {
-        // Pins the Notify wiring: marks landing after await_all has parked
-        // must wake the waiter rather than wait for the next 5s tick.
         let ready = std::sync::Arc::new(AccountStreamsReady::new());
         let producer = std::sync::Arc::clone(&ready);
+        let (pending_tx, pending_rx) = tokio::sync::oneshot::channel();
+        let mut pending_tx = Some(pending_tx);
+        let wait = ready.await_all(Duration::from_secs(30));
+        tokio::pin!(wait);
 
-        let waker = tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(20)).await;
+        let producer = tokio::spawn(async move {
+            pending_rx.await.expect("readiness waiter parked");
             producer.mark_orders();
             producer.mark_trades();
             producer.mark_positions();
@@ -4641,11 +4720,26 @@ mod tests {
             producer.mark_user_stats();
         });
 
-        ready
-            .await_all(Duration::from_secs(2))
-            .await
-            .expect("await_all should observe the marks");
-        waker.await.unwrap();
+        // Await the waiter before the producer so its completion cannot supply the wakeup
+        tokio::time::timeout(
+            Duration::from_secs(2),
+            std::future::poll_fn(|cx| {
+                let result = wait.as_mut().poll(cx);
+                if result.is_pending()
+                    && let Some(tx) = pending_tx.take()
+                {
+                    tx.send(()).expect("readiness producer alive");
+                }
+
+                result
+            }),
+        )
+        .await
+        .expect("marks must wake the waiter before its deadline")
+        .expect("await_all should observe the marks");
+
+        assert!(pending_tx.is_none(), "waiter must initially be pending");
+        producer.await.unwrap();
     }
 
     #[tokio::test]

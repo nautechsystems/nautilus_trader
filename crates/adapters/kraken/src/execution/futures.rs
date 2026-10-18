@@ -47,6 +47,7 @@ use nautilus_live::{
 use nautilus_model::{
     accounts::AccountAny,
     enums::{AccountType, OmsType, OrderSide, OrderStatus, OrderType},
+    events::OrderDeniedReason,
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TradeId, Venue, VenueOrderId,
     },
@@ -66,7 +67,7 @@ use super::{
 };
 use crate::{
     common::{
-        consts::KRAKEN_VENUE,
+        consts::{KRAKEN_FUTURES_MAX_CLIENT_ORDER_ID_LEN, KRAKEN_VENUE},
         credential::KrakenCredential,
         enums::{KrakenApiResult, KrakenProductType, KrakenSendStatus, product_type_from_symbol},
         parse::truncate_cl_ord_id,
@@ -75,7 +76,7 @@ use crate::{
     http::{
         KrakenFuturesHttpClient, KrakenHttpError,
         futures::{
-            client::{KRAKEN_FUTURES_DEFAULT_RATE_LIMIT_PER_SECOND, supersedes},
+            client::{KRAKEN_FUTURES_DEFAULT_RATE_LIMIT_PER_SECOND, order_identifier, supersedes},
             models::FuturesBatchCancelStatus,
             query::KrakenFuturesBatchCancelItem,
         },
@@ -282,6 +283,11 @@ impl KrakenFuturesExecutionClient {
             return;
         }
 
+        if let Err(reason) = validate_order(order) {
+            self.emitter.emit_order_denied(order, &reason.to_string());
+            return;
+        }
+
         let account_id = self.core.account_id;
         let client_order_id = order.client_order_id();
         let strategy_id = order.strategy_id();
@@ -299,13 +305,6 @@ impl KrakenFuturesExecutionClient {
         log::debug!("OrderSubmitted: client_order_id={client_order_id}");
         self.register_order_identity(order);
         self.emitter.emit_order_submitted(order);
-
-        let kraken_cl_ord_id = truncate_cl_ord_id(&client_order_id);
-
-        if kraken_cl_ord_id != client_order_id.as_str() {
-            self.truncated_id_map
-                .insert(kraken_cl_ord_id, client_order_id);
-        }
 
         let http = self.http.clone();
         let emitter = self.emitter.clone();
@@ -771,31 +770,25 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
         );
 
         let account_id = self.core.account_id;
+        let cached = cached_order_for_status_command(&self.core.cache(), cmd);
+        let queried = QueriedOrder::new(cmd, cached.as_ref());
+
         // Scoped to the command's instrument, so an unresolvable open order on another contract
         // is out of scope for this lookup rather than failing it.
-        let (reports, coverage) = self
+        let (mut reports, coverage) = self
             .http
             .request_order_status_reports_checked(account_id, cmd.instrument_id, None, None, false)
             .await?;
+        name_reports_by_cached_order(&self.core.cache(), &mut reports);
 
-        // Match by venue_order_id or client_order_id (comparing truncated form
-        // since Kraken stores the truncated cl_ord_id for long IDs)
-        let matched = reports.into_iter().find(|r| {
-            cmd.venue_order_id
-                .is_some_and(|id| r.venue_order_id.as_str() == id.as_str())
-                || cmd.client_order_id.is_some_and(|id| {
-                    r.client_order_id
-                        .as_ref()
-                        .is_some_and(|r_id| r_id.as_str() == truncate_cl_ord_id(&id))
-                })
-        });
+        let matched = queried.find_report(&self.core.cache(), &reports)?;
+        let mut stray_rows = queried.has_stray_report(&self.core.cache(), &reports);
 
         if let Some(mut report) = matched {
             // A terminal history match is priced from its fills; short of them the query fails so
             // the engine defers, as the orders-status window does below. A failed fills read counts
             // as an empty page, so a cached order holding every execution still prices it.
             if is_unpriced_terminal_report(&report) {
-                let cached = cached_order_for_status_command(&self.core.cache(), cmd);
                 let fills = self
                     .http
                     .request_fill_reports(account_id, Some(report.instrument_id), None, None)
@@ -818,7 +811,14 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
 
         // Absence answers that the venue has no such order, so it needs a read that rules the
         // order out; otherwise reconciliation defers.
-        let Some(order) = cached_order_for_status_command(&self.core.cache(), cmd) else {
+        let Some(order) = cached else {
+            if stray_rows {
+                anyhow::bail!(
+                    "No report names order {:?}, but a venue row of another venue order carries \
+                     its client order ID; deferring rather than reporting it missing",
+                    queried.client_order_id,
+                );
+            }
             return absent_unless_unread(
                 &coverage,
                 cmd.venue_order_id,
@@ -828,36 +828,21 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
         };
 
         // Held orders never appear on /openorders; query the 5-second window
-        let order_ids: Vec<String> = cmd
+        let order_ids: Vec<String> = queried
             .venue_order_id
-            .or(order.venue_order_id())
             .map(|id| id.to_string())
             .into_iter()
             .collect();
-        let cli_ord_ids: Vec<String> = cmd
-            .client_order_id
-            .map(|id| truncate_cl_ord_id(&id))
-            .into_iter()
-            .collect();
+        let cli_ord_ids: Vec<String> = venue_client_order_ids(&order.client_order_id()).collect();
 
-        let recent_reports = self
+        let mut recent_reports = self
             .http
             .request_orders_status_reports(account_id, &order_ids, &cli_ord_ids)
             .await?;
+        name_reports_by_cached_order(&self.core.cache(), &mut recent_reports);
 
-        let matched_recent = recent_reports
-            .iter()
-            .find(|report| {
-                cmd.venue_order_id
-                    .is_some_and(|id| report.venue_order_id == id)
-                    || cmd.client_order_id.is_some_and(|id| {
-                        report
-                            .client_order_id
-                            .as_ref()
-                            .is_some_and(|report_id| report_id.as_str() == truncate_cl_ord_id(&id))
-                    })
-            })
-            .cloned();
+        let matched_recent = queried.find_report(&self.core.cache(), &recent_reports)?;
+        stray_rows |= queried.has_stray_report(&self.core.cache(), &recent_reports);
 
         // Window filled reports have no avg_px; price them from fills below
         if matched_recent
@@ -869,7 +854,7 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
 
         let now = Timestamp::now();
         let start = now - Duration::from_secs(5 * 60);
-        let fills = self
+        let mut fills = self
             .http
             .request_fill_reports(
                 account_id,
@@ -878,11 +863,12 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
                 Some(now),
             )
             .await?;
+        name_fills_by_cached_order(&self.core.cache(), &mut fills);
 
-        match (
-            synthesize_filled_order_status_report(cmd, &order, &fills),
-            matched_recent,
-        ) {
+        let synthesized =
+            synthesize_filled_order_status_report(&self.core.cache(), &queried, &order, &fills);
+
+        match (synthesized, matched_recent) {
             (Some(report), _) => Ok(Some(report)),
             // Unpriced filled reports would close at the order price
             (None, Some(_)) => anyhow::bail!(
@@ -890,6 +876,13 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
                  fills; deferring until the fills feed prices it",
                 order.client_order_id(),
             ),
+            (None, None) if stray_rows || queried.has_stray_fill(&self.core.cache(), &fills) => {
+                anyhow::bail!(
+                    "No report names order {}, yet a venue row or fill that may be its own carries \
+                     its client order ID; deferring rather than reporting it missing",
+                    order.client_order_id(),
+                )
+            }
             (None, None) => absent_unless_unread(
                 &coverage,
                 cmd.venue_order_id.or(order.venue_order_id()),
@@ -963,10 +956,26 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
                 .reports_for_open_orders_absent_from_venue(account_id, cmd.instrument_id, &reports)
                 .await?;
 
+            let (window_only, window_stated) = fold_window_into_venue_read(&mut reports, extension);
+
             // The window carries no fill price, so a filled report would be inferred at the
             // order price. A canceled one with executions passes, since reconciliation waits for
             // its fills rather than infer them.
-            for report in extension {
+            reports.retain(|report| {
+                let withhold = window_stated.contains(&report.venue_order_id)
+                    && report.order_status == OrderStatus::Filled;
+
+                if withhold {
+                    log::warn!(
+                        "Withholding fully executed order {} from the bulk response: the \
+                         orders-status window carries no fill price",
+                        report.venue_order_id,
+                    );
+                }
+                !withhold
+            });
+
+            for report in window_only {
                 if report.order_status == OrderStatus::Filled {
                     log::warn!(
                         "Withholding fully executed order {} from the bulk response: the \
@@ -980,6 +989,7 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
             }
         }
 
+        name_reports_by_cached_order(&self.core.cache(), &mut reports);
         Ok(reports)
     }
 
@@ -1004,6 +1014,7 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
             reports.retain(|report| report.venue_order_id == venue_order_id);
         }
 
+        name_fills_by_cached_order(&self.core.cache(), &mut reports);
         Ok(reports)
     }
 
@@ -1064,7 +1075,7 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
         };
         // Captured before the orders-status extension is merged in, so the safeguard below applies
         // to the venue read alone and leaves the extension to its own rule.
-        let from_venue_read: HashSet<VenueOrderId> = order_reports
+        let mut from_venue_read: HashSet<VenueOrderId> = order_reports
             .iter()
             .map(|report| report.venue_order_id)
             .collect();
@@ -1073,10 +1084,33 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
             .reports_for_open_orders_absent_from_venue(account_id, None, &order_reports)
             .await?;
 
+        let (window_only, window_stated) =
+            fold_window_into_venue_read(&mut order_reports, extension);
+
         // The window carries no fill price, so a filled report would be inferred at the order
         // price. A canceled one with executions passes, since reconciliation waits for its fills
-        // rather than infer them. A withheld window report leaves the set incomplete.
-        for report in extension {
+        // rather than infer them. A withheld window report leaves the set incomplete. A venue-read
+        // report that took a window state answers to these rules, not the venue read's.
+        order_reports.retain(|report| {
+            let withhold = window_stated.contains(&report.venue_order_id)
+                && report.order_status == OrderStatus::Filled;
+
+            if withhold {
+                log::warn!(
+                    "Withholding fully executed order {} from mass status: the orders-status \
+                     window carries no fill price",
+                    report.venue_order_id,
+                );
+                extension_withheld = true;
+            }
+            !withhold
+        });
+
+        for venue_order_id in &window_stated {
+            from_venue_read.remove(venue_order_id);
+        }
+
+        for report in window_only {
             if report.order_status == OrderStatus::Filled {
                 log::warn!(
                     "Withholding fully executed order {} from mass status: the orders-status \
@@ -1246,6 +1280,11 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
             ts_init,
             None,
         );
+        {
+            let cache = self.core.cache();
+            name_reports_by_cached_order(&cache, &mut order_reports);
+            name_fills_by_cached_order(&cache, &mut fill_reports);
+        }
         mass_status.add_order_reports(order_reports);
         mass_status.add_fill_reports(fill_reports);
         mass_status.add_position_reports(position_reports);
@@ -1283,6 +1322,8 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
         let venue_order_id = cmd
             .venue_order_id
             .context("venue_order_id required for query_order")?;
+        // The cached order the venue order ID indexes names the report, as on every other path
+        let cached_client_order_id = self.core.cache().client_order_id(&venue_order_id).copied();
         let account_id = self.core.account_id;
         let instrument_id = cmd.instrument_id;
         let http = self.http.clone();
@@ -1300,7 +1341,12 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
                 .into_iter()
                 .find(|r| r.venue_order_id == venue_order_id)
             {
-                Some(report) => emitter.send_order_status_report(report),
+                Some(mut report) => {
+                    if let Some(client_order_id) = cached_client_order_id {
+                        report.client_order_id = Some(client_order_id);
+                    }
+                    emitter.send_order_status_report(report);
+                }
                 None => log::warn!(
                     "No open order {venue_order_id} found for {instrument_id}; no report emitted"
                 ),
@@ -1326,6 +1372,18 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
             orders.len()
         );
 
+        // A list's open members go out together or not at all, so no leg is stranded
+        if let Some(reason) = orders
+            .iter()
+            .filter(|order| !order.is_closed())
+            .find_map(|order| validate_order(order).err())
+        {
+            for order in orders.iter().filter(|order| !order.is_closed()) {
+                self.emitter.emit_order_denied(order, &reason.to_string());
+            }
+            return Ok(());
+        }
+
         let mut order_tuples = Vec::with_capacity(orders.len());
         let mut order_meta = Vec::with_capacity(orders.len());
 
@@ -1346,13 +1404,6 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
             }
 
             let client_order_id = order.client_order_id();
-            let kraken_cl_ord_id = truncate_cl_ord_id(&client_order_id);
-
-            if kraken_cl_ord_id != client_order_id.as_str() {
-                self.truncated_id_map
-                    .insert(kraken_cl_ord_id, client_order_id);
-            }
-
             self.register_order_identity(order);
             self.emitter.emit_order_submitted(order);
 
@@ -1556,7 +1607,9 @@ struct CancelRequestContext {
     strategy_id: StrategyId,
     instrument_id: InstrumentId,
     client_order_id: ClientOrderId,
-    truncated_client_order_id: String,
+    /// The client order ID an item without a venue order ID sends, which the venue echoes on its
+    /// rejection.
+    cli_ord_id: String,
     venue_order_id: Option<VenueOrderId>,
 }
 
@@ -1572,8 +1625,8 @@ async fn cancel_order_for_futures(
             CommandFailure::not_sent(InstrumentLookupError::not_found(instrument_id).to_string())
         })?;
 
-    let order_id = venue_order_id.as_ref().map(ToString::to_string);
-    let cli_ord_id = client_order_id.as_ref().map(truncate_cl_ord_id);
+    let (order_id, cli_ord_id) =
+        order_identifier(client_order_id.as_ref(), venue_order_id.as_ref());
 
     if order_id.is_none() && cli_ord_id.is_none() {
         return Err(CommandFailure::not_sent(
@@ -1712,11 +1765,11 @@ fn batch_cancel_item_for_futures(
             )
         })?;
 
-    let truncated_client_order_id = truncate_cl_ord_id(&cancel.client_order_id);
+    let cli_ord_id = cancel.client_order_id.to_string();
     let item = if let Some(venue_order_id) = cancel.venue_order_id {
         KrakenFuturesBatchCancelItem::from_order_id(venue_order_id.to_string())
     } else {
-        KrakenFuturesBatchCancelItem::from_client_order_id(truncated_client_order_id.clone())
+        KrakenFuturesBatchCancelItem::from_client_order_id(cli_ord_id.clone())
     };
 
     Ok((
@@ -1724,7 +1777,7 @@ fn batch_cancel_item_for_futures(
             strategy_id: cancel.strategy_id,
             instrument_id: cancel.instrument_id,
             client_order_id: cancel.client_order_id,
-            truncated_client_order_id,
+            cli_ord_id,
             venue_order_id: cancel.venue_order_id,
         },
         item,
@@ -1757,7 +1810,7 @@ fn batch_cancel_context<'a>(
     if let Some(cli_ord_id) = status.cli_ord_id.as_deref()
         && let Some(context) = contexts
             .iter()
-            .find(|context| context.truncated_client_order_id == cli_ord_id)
+            .find(|context| context.cli_ord_id == cli_ord_id)
     {
         return Some(context);
     }
@@ -1808,9 +1861,10 @@ impl KrakenFuturesExecutionClient {
     /// an open-orders snapshot while the venue still knows the order within
     /// its 5-second `/orders/status` window. Orders without a venue order ID
     /// yet (their submit acknowledgement is still inside the hold window) are
-    /// queried by their truncated client order ID, the only venue handle that
-    /// exists during the window. Each report is named by the cached order it
-    /// describes, as `attribute_orders_status_reports` resolves it.
+    /// queried by their client order ID, in both forms `venue_client_order_ids`
+    /// gives, the only venue handle that exists during the window. Each report
+    /// is named by the cached order it describes, as
+    /// `attribute_orders_status_reports` resolves it.
     ///
     /// # Errors
     ///
@@ -1868,7 +1922,7 @@ impl KrakenFuturesExecutionClient {
 
         let cli_ord_ids: Vec<String> = queried_by_cli_ord_id
             .iter()
-            .map(|order| truncate_cl_ord_id(&order.client_order_id))
+            .flat_map(|order| venue_client_order_ids(&order.client_order_id))
             .collect();
 
         log::debug!(
@@ -1894,12 +1948,36 @@ impl KrakenFuturesExecutionClient {
             );
         }
 
-        Ok(attribute_orders_status_reports(
+        let (mut attributed, withheld) = attribute_orders_status_reports(
             &self.core.cache(),
             &queried_by_cli_ord_id,
             latest_report_per_order(reports),
-        ))
+        );
+
+        // A client order ID request returns every order holding the ID, so a run scoped to one
+        // instrument keeps only that instrument's reports.
+        if let Some(instrument_id) = instrument_id {
+            attributed.retain(|report| report.instrument_id == instrument_id);
+        }
+
+        Ok((attributed, withheld))
     }
+}
+
+/// Checks an order against the venue's documented limits before it is submitted.
+fn validate_order(order: &OrderAny) -> Result<(), OrderDeniedReason> {
+    let len = order.client_order_id().as_str().len();
+
+    if len > KRAKEN_FUTURES_MAX_CLIENT_ORDER_ID_LEN {
+        return Err(OrderDeniedReason::InvalidClientOrderId {
+            detail: format!(
+                "Kraken Futures accepts a client order ID of at most \
+                 {KRAKEN_FUTURES_MAX_CLIENT_ORDER_ID_LEN} characters, was {len}"
+            ),
+        });
+    }
+
+    Ok(())
 }
 
 /// The cached order a report describes, found by its venue order ID.
@@ -1908,13 +1986,295 @@ fn cached_order_for_report(cache: &Cache, report: &OrderStatusReport) -> Option<
     cache.order(client_order_id).map(|order| order.clone())
 }
 
-/// An open order the orders-status window is asked about by its shortened client order ID.
+/// The order a single-order query asks about, and how a venue row is tied to it.
+///
+/// With its venue order ID known, the row carrying that ID is the order. Otherwise a row is the
+/// order's when it echoes the order's client order ID in either form `venue_client_order_ids`
+/// gives, on the order's instrument and side, placed no more than `ORDERS_STATUS_CLOCK_SKEW`
+/// before the order's creation: an older row is another order whose ID shortens alike or that
+/// reused the ID. A fill carries no placement time, so its fill time stands in, which rules out
+/// only a fill executed before the order's creation. Without a cached order to check against, the
+/// echo alone ties a row to it. A row of a venue order the cache indexes for another order is that
+/// order's whatever it echoes, since another order's full ID can be this order's shortened one.
+/// A row echoing the full ID of another cached order sent but carrying no venue order ID, on that
+/// order's instrument and side and placed no more than `ORDERS_STATUS_CLOCK_SKEW` before its
+/// creation, can be either order's while the cache indexes its venue order for neither, and leaves
+/// the answer open.
+struct QueriedOrder {
+    venue_order_id: Option<VenueOrderId>,
+    client_order_id: Option<ClientOrderId>,
+    cached: Option<(InstrumentId, OrderSide, UnixNanos)>,
+}
+
+impl QueriedOrder {
+    fn new(cmd: &GenerateOrderStatusReport, cached: Option<&OrderAny>) -> Self {
+        Self {
+            venue_order_id: cmd
+                .venue_order_id
+                .or_else(|| cached.and_then(Order::venue_order_id)),
+            client_order_id: cmd
+                .client_order_id
+                .or_else(|| cached.map(Order::client_order_id)),
+            cached: cached
+                .map(|order| (order.instrument_id(), order.order_side(), order.ts_init())),
+        }
+    }
+
+    /// Whether a row echoing `echoed` on `instrument_id` and `side`, placed at `placed`, can be
+    /// this order by its client order ID.
+    fn echoes(
+        &self,
+        echoed: Option<ClientOrderId>,
+        instrument_id: InstrumentId,
+        side: OrderSide,
+        placed: UnixNanos,
+    ) -> bool {
+        let echoes_id = echoed
+            .zip(self.client_order_id)
+            .is_some_and(|(echoed, queried)| {
+                venue_client_order_ids(&queried).any(|id| id == echoed.as_str())
+            });
+
+        echoes_id
+            && self
+                .cached
+                .is_none_or(|(order_instrument, order_side, created)| {
+                    instrument_id == order_instrument
+                        && side == order_side
+                        && placed.saturating_add(ORDERS_STATUS_CLOCK_SKEW) >= created
+                })
+    }
+
+    /// Whether the cache indexes `venue_order_id` for an order other than this one.
+    fn indexed_for_another(&self, cache: &Cache, venue_order_id: &VenueOrderId) -> bool {
+        cache
+            .client_order_id(venue_order_id)
+            .is_some_and(|owner| Some(*owner) != self.client_order_id)
+    }
+
+    fn echoes_report(&self, cache: &Cache, report: &OrderStatusReport) -> bool {
+        !self.indexed_for_another(cache, &report.venue_order_id)
+            && report.order_side.is_some_and(|side| {
+                self.echoes(
+                    report.client_order_id,
+                    report.instrument_id,
+                    side,
+                    report.ts_accepted,
+                )
+            })
+    }
+
+    fn echoes_fill(&self, cache: &Cache, fill: &FillReport) -> bool {
+        !self.indexed_for_another(cache, &fill.venue_order_id)
+            && self.echoes(
+                fill.client_order_id,
+                fill.instrument_id,
+                fill.order_side,
+                fill.ts_event,
+            )
+    }
+
+    /// Whether another cached order, sent but without a venue order ID, holds `echoed` as its full
+    /// client order ID and a row on `instrument_id` and `side`, placed at `placed`, can be that
+    /// order's.
+    fn echo_is_another_order(
+        &self,
+        cache: &Cache,
+        echoed: Option<ClientOrderId>,
+        instrument_id: InstrumentId,
+        side: OrderSide,
+        placed: UnixNanos,
+    ) -> bool {
+        echoed
+            .filter(|echoed| Some(*echoed) != self.client_order_id)
+            .and_then(|echoed| cache.order(&echoed))
+            .is_some_and(|other| {
+                other.ts_submitted().is_some()
+                    && other.venue_order_id().is_none()
+                    && other.instrument_id() == instrument_id
+                    && other.order_side() == side
+                    && placed.saturating_add(ORDERS_STATUS_CLOCK_SKEW) >= other.ts_init()
+            })
+    }
+
+    fn report_may_be_another_order(&self, cache: &Cache, report: &OrderStatusReport) -> bool {
+        report.order_side.is_some_and(|side| {
+            self.echo_is_another_order(
+                cache,
+                report.client_order_id,
+                report.instrument_id,
+                side,
+                report.ts_accepted,
+            )
+        })
+    }
+
+    fn fill_may_be_another_order(&self, cache: &Cache, fill: &FillReport) -> bool {
+        self.echo_is_another_order(
+            cache,
+            fill.client_order_id,
+            fill.instrument_id,
+            fill.order_side,
+            fill.ts_event,
+        )
+    }
+
+    /// The report of this order, named by its client order ID when matched by it.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if reports of several venue orders can be this order, or a report that can
+    /// be this order can also be another cached order's by its full client order ID, so the query
+    /// defers rather than take one of them.
+    fn find_report(
+        &self,
+        cache: &Cache,
+        reports: &[OrderStatusReport],
+    ) -> anyhow::Result<Option<OrderStatusReport>> {
+        if let Some(venue_order_id) = self.venue_order_id {
+            return Ok(reports
+                .iter()
+                .find(|report| report.venue_order_id == venue_order_id)
+                .cloned());
+        }
+
+        let mut candidates = reports
+            .iter()
+            .filter(|report| self.echoes_report(cache, report));
+        let Some(first) = candidates.next() else {
+            return Ok(None);
+        };
+
+        if candidates.any(|report| report.venue_order_id != first.venue_order_id) {
+            anyhow::bail!(
+                "Reports of several venue orders carry the client order ID of order {:?}; \
+                 deferring rather than taking one of them",
+                self.client_order_id,
+            );
+        }
+
+        if let Some(shared) = reports.iter().find(|report| {
+            self.echoes_report(cache, report) && self.report_may_be_another_order(cache, report)
+        }) {
+            anyhow::bail!(
+                "Report of venue order {} carries {:?}, the full ID of another cached order and a \
+                 form of order {:?}; deferring until the cache ties the venue order to one of them",
+                shared.venue_order_id,
+                shared.client_order_id,
+                self.client_order_id,
+            );
+        }
+
+        let mut report = first.clone();
+        report.client_order_id = self.client_order_id;
+        Ok(Some(report))
+    }
+
+    /// Whether a report of another venue order can be this order, which leaves absence open:
+    /// the venue may hold the order under that report.
+    fn has_stray_report(&self, cache: &Cache, reports: &[OrderStatusReport]) -> bool {
+        self.venue_order_id.is_some_and(|venue_order_id| {
+            reports.iter().any(|report| {
+                report.venue_order_id != venue_order_id && self.echoes_report(cache, report)
+            })
+        })
+    }
+
+    /// Whether a fill other than one of this order's known venue order can be this order's, which
+    /// leaves absence open. With the venue order ID unknown, any fill echoing the order counts: it
+    /// may be this order's, short of its quantity or beside another venue order's.
+    fn has_stray_fill(&self, cache: &Cache, fills: &[FillReport]) -> bool {
+        fills.iter().any(|fill| {
+            Some(fill.venue_order_id) != self.venue_order_id && self.echoes_fill(cache, fill)
+        })
+    }
+}
+
+/// The client order IDs the venue can hold `client_order_id` under: the full ID the adapter sends
+/// and, when it differs, the form `truncate_cl_ord_id` gives, which an adapter that shortened
+/// futures IDs past 18 characters sent and which another order's ID can share.
+fn venue_client_order_ids(client_order_id: &ClientOrderId) -> impl Iterator<Item = String> {
+    let full = client_order_id.to_string();
+    let shortened = truncate_cl_ord_id(client_order_id);
+    let shortened = (shortened != full).then_some(shortened);
+    std::iter::once(full).chain(shortened)
+}
+
+/// An open order the orders-status window is asked about by its client order ID.
 #[derive(Clone, Copy, Debug)]
 struct HeldOrder {
     client_order_id: ClientOrderId,
     instrument_id: InstrumentId,
     side: OrderSide,
     ts_init: UnixNanos,
+}
+
+/// Names each report by the cached order indexing its venue order ID. The venue echoes the client
+/// order ID an order was sent with, which for an order sent with a shortened ID is not the cached
+/// one, and reconciliation matches a report carrying a client order ID by that ID alone.
+fn name_reports_by_cached_order(cache: &Cache, reports: &mut [OrderStatusReport]) {
+    for report in reports {
+        if let Some(client_order_id) = cache.client_order_id(&report.venue_order_id) {
+            report.client_order_id = Some(*client_order_id);
+        }
+    }
+}
+
+/// Names each fill by the cached order indexing its venue order ID, as
+/// [`name_reports_by_cached_order`] names order reports.
+fn name_fills_by_cached_order(cache: &Cache, fills: &mut [FillReport]) {
+    for fill in fills {
+        if let Some(client_order_id) = cache.client_order_id(&fill.venue_order_id) {
+            fill.client_order_id = Some(*client_order_id);
+        }
+    }
+}
+
+/// Folds window reports into the venue read by venue order ID, returning the reports of the orders
+/// the venue read did not return and the venue order IDs of the reports that took a window state.
+///
+/// A window copy of an order the venue read returned names that report by the cached order the
+/// window attributed it to, then is dropped, so the order reaches reconciliation once with the
+/// venue read's fields, such as time in force, post-only and trigger fields, which the window
+/// lacks. When the report is open and the copy describes a later state, by `supersedes`, the
+/// report takes the copy's status, quantities, price, average price, cancel reason and last
+/// update, and answers to the window's rules; a closed report keeps its own state and the pricing
+/// path it has.
+fn fold_window_into_venue_read(
+    venue_read: &mut [OrderStatusReport],
+    window: Vec<OrderStatusReport>,
+) -> (Vec<OrderStatusReport>, HashSet<VenueOrderId>) {
+    let positions: HashMap<VenueOrderId, usize> = venue_read
+        .iter()
+        .enumerate()
+        .map(|(position, report)| (report.venue_order_id, position))
+        .collect();
+    let mut window_stated = HashSet::new();
+
+    let window_only = window
+        .into_iter()
+        .filter_map(|copy| {
+            let Some(&position) = positions.get(&copy.venue_order_id) else {
+                return Some(copy);
+            };
+            let report = &mut venue_read[position];
+            report.client_order_id = copy.client_order_id;
+
+            if !report.order_status.is_closed() && supersedes(&copy, report) {
+                report.order_status = copy.order_status;
+                report.quantity = copy.quantity;
+                report.filled_qty = copy.filled_qty;
+                report.price = copy.price;
+                report.avg_px = copy.avg_px;
+                report.cancel_reason = copy.cancel_reason;
+                report.ts_last = copy.ts_last;
+                window_stated.insert(copy.venue_order_id);
+            }
+            None
+        })
+        .collect();
+
+    (window_only, window_stated)
 }
 
 /// Keeps one report per venue order ID, the one describing the order's latest state.
@@ -1943,27 +2303,31 @@ fn latest_report_per_order(reports: Vec<OrderStatusReport>) -> Vec<OrderStatusRe
 /// returning the reports it attributes and whether it withheld any. `reports` holds one report per
 /// venue order ID.
 ///
-/// The venue echoes the client order ID the adapter submitted, which `truncate_cl_ord_id` shortens
-/// past 18 characters, and reconciliation matches a report carrying a client order ID by that ID
-/// alone. A report takes the ID of the cached order indexing its venue order ID. Otherwise its
-/// shortened ID names an order queried by client order ID only when exactly one such order holds
-/// it, exactly one report without an indexed venue order ID carries it, the report's instrument
-/// and side are the order's, and the venue placed it no more than `ORDERS_STATUS_CLOCK_SKEW` before
-/// the order's creation, which keeps out an older order whose ID shortens alike. Any other report
-/// is withheld with a warning naming the reason, since it cannot be tied to exactly one cached
-/// order: reconciliation would take it for an external order or for the wrong one.
+/// The venue echoes the client order ID an order was sent with, in either form
+/// `venue_client_order_ids` gives, and reconciliation matches a report carrying a client order ID
+/// by that ID alone. A report takes the ID of the cached order indexing its venue order ID.
+/// Otherwise its echoed ID names an order queried by client order ID only when exactly one such
+/// order holds it, exactly one report without an indexed venue order ID carries it, the report's
+/// instrument and side are the order's, and the venue placed it no more than
+/// `ORDERS_STATUS_CLOCK_SKEW` before the order's creation, which keeps out an older order whose ID
+/// shortens alike or that reused the ID. Two reports that would name one order, one echoing each
+/// form, name neither. Any other report is withheld with a warning naming the reason, since it
+/// cannot be tied to exactly one cached order: reconciliation would take it for an external order
+/// or for the wrong one.
 fn attribute_orders_status_reports(
     cache: &Cache,
     queried_by_cli_ord_id: &[HeldOrder],
     reports: Vec<OrderStatusReport>,
 ) -> (Vec<OrderStatusReport>, bool) {
-    // None marks a shortened ID that several queried orders share
+    // None marks an echoed ID that several queried orders share
     let mut held: HashMap<String, Option<HeldOrder>> = HashMap::new();
 
     for order in queried_by_cli_ord_id {
-        held.entry(truncate_cl_ord_id(&order.client_order_id))
-            .and_modify(|named| *named = None)
-            .or_insert(Some(*order));
+        for echoed in venue_client_order_ids(&order.client_order_id) {
+            held.entry(echoed)
+                .and_modify(|named| *named = None)
+                .or_insert(Some(*order));
+        }
     }
 
     let indexed =
@@ -1982,7 +2346,7 @@ fn attribute_orders_status_reports(
         }
     }
 
-    let by_shortened_id = |report: &OrderStatusReport| -> Result<ClientOrderId, &'static str> {
+    let by_echoed_id = |report: &OrderStatusReport| -> Result<ClientOrderId, &'static str> {
         let echoed = report
             .client_order_id
             .ok_or("it carries no client order ID")?;
@@ -2011,13 +2375,37 @@ fn attribute_orders_status_reports(
         Ok(order.client_order_id)
     };
 
-    let mut attributed = Vec::with_capacity(reports.len());
+    let named: Vec<(OrderStatusReport, Result<ClientOrderId, &'static str>, bool)> = reports
+        .into_iter()
+        .map(|report| match indexed(&report) {
+            Some(client_order_id) => (report, Ok(client_order_id), false),
+            None => {
+                let named = by_echoed_id(&report);
+                (report, named, true)
+            }
+        })
+        .collect();
+
+    // A queried order echoed in full on one report and shortened on another is named by both
+    let mut named_by_echo: HashMap<ClientOrderId, usize> = HashMap::new();
+
+    for (_, named, by_echo) in &named {
+        if *by_echo && let Ok(client_order_id) = named {
+            *named_by_echo.entry(*client_order_id).or_default() += 1;
+        }
+    }
+
+    let mut attributed = Vec::with_capacity(named.len());
     let mut withheld = false;
 
-    for mut report in reports {
-        let named = match indexed(&report) {
-            Some(client_order_id) => Ok(client_order_id),
-            None => by_shortened_id(&report),
+    for (mut report, named, by_echo) in named {
+        let named = match named {
+            Ok(client_order_id)
+                if by_echo && named_by_echo.get(&client_order_id).is_some_and(|n| *n > 1) =>
+            {
+                Err("several reports name the queried order it would be")
+            }
+            named => named,
         };
 
         match named {
@@ -2130,36 +2518,37 @@ fn price_from_fills(
 }
 
 fn synthesize_filled_order_status_report(
-    cmd: &GenerateOrderStatusReport,
+    cache: &Cache,
+    queried: &QueriedOrder,
     order: &OrderAny,
     fills: &[FillReport],
 ) -> Option<OrderStatusReport> {
-    let venue_order_id = cmd.venue_order_id.or(order.venue_order_id());
-    let truncated_client_order_id = truncate_cl_ord_id(&order.client_order_id());
+    let venue_order_id = queried.venue_order_id;
 
-    let mut matched: Vec<&FillReport> = if let Some(venue_order_id) = venue_order_id {
-        fills
+    // A fill of another venue order can carry the same client order ID, so with the venue order
+    // ID known only its fills count, and without it the fills must belong to one venue order that
+    // no other cached order can hold by its full client order ID.
+    let mut matched: Vec<&FillReport> = match venue_order_id {
+        Some(venue_order_id) => fills
             .iter()
             .filter(|fill| fill.venue_order_id == venue_order_id)
-            .collect()
-    } else {
-        Vec::new()
-    };
+            .collect(),
+        None => {
+            let matched: Vec<&FillReport> = fills
+                .iter()
+                .filter(|fill| queried.echoes_fill(cache, fill))
+                .collect();
+            let first_venue_order_id = matched.first()?.venue_order_id;
 
-    if matched.is_empty() {
-        matched = fills
-            .iter()
-            .filter(|fill| {
-                fill.client_order_id == Some(order.client_order_id())
-                    || fill
-                        .client_order_id
-                        .as_ref()
-                        .is_some_and(|fill_client_order_id| {
-                            fill_client_order_id.as_str() == truncated_client_order_id
-                        })
-            })
-            .collect();
-    }
+            if matched.iter().any(|fill| {
+                fill.venue_order_id != first_venue_order_id
+                    || queried.fill_may_be_another_order(cache, fill)
+            }) {
+                return None;
+            }
+            matched
+        }
+    };
 
     if matched.is_empty() {
         return None;
@@ -2354,8 +2743,13 @@ mod tests {
             make_fill("KRAKEN-OTHER", Some("O-123456"), "999", "1.0", 3),
         ];
 
-        let report = synthesize_filled_order_status_report(&cmd, &order, &fills)
-            .expect("expected a filled report");
+        let report = synthesize_filled_order_status_report(
+            &Cache::default(),
+            &QueriedOrder::new(&cmd, Some(&order)),
+            &order,
+            &fills,
+        )
+        .expect("expected a filled report");
 
         assert_eq!(report.venue_order_id, VenueOrderId::from("KRAKEN-789"));
         assert_eq!(
@@ -2385,30 +2779,81 @@ mod tests {
             1,
         )];
 
-        assert!(synthesize_filled_order_status_report(&cmd, &order, &fills).is_none());
+        assert!(
+            synthesize_filled_order_status_report(
+                &Cache::default(),
+                &QueriedOrder::new(&cmd, Some(&order)),
+                &order,
+                &fills
+            )
+            .is_none()
+        );
     }
 
+    /// Without a venue order ID the fills must carry the order's client order ID, in full or in the
+    /// shortened form the venue holds an order sent with one under, be executed no earlier than the
+    /// clock skew allowance before the order's creation, and belong to one venue order. Fills of
+    /// two venue orders sharing the ID, or executed earlier than that, prove nothing about this
+    /// one.
     #[rstest]
-    fn test_synthesize_filled_order_status_report_matches_truncated_client_order_id() {
-        let long_client_order_id = "O202602270023210040011";
-        let order = make_order(long_client_order_id);
+    #[case::full_id_on_one_venue_order(&[("KRAKEN-791", false)], 0, Some("KRAKEN-791"))]
+    #[case::shortened_id_on_one_venue_order(&[("KRAKEN-791", true)], 0, Some("KRAKEN-791"))]
+    #[case::full_id_on_two_venue_orders(&[("KRAKEN-791", false), ("KRAKEN-792", false)], 0, None)]
+    #[case::executed_before_the_order(&[("KRAKEN-791", true)], 10_000_000_000, None)]
+    fn test_synthesize_filled_order_status_report_without_a_venue_order_id(
+        #[case] fills: &[(&str, bool)],
+        #[case] created_ns: u64,
+        #[case] expected_venue_order_id: Option<&str>,
+    ) {
+        let long_client_order_id = "O-20260227-002321-004-001-1";
+        let shortened = truncate_cl_ord_id(&ClientOrderId::from(long_client_order_id));
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(InstrumentId::from(TEST_INSTRUMENT_ID))
+            .client_order_id(ClientOrderId::from(long_client_order_id))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("100"))
+            .time_in_force(TimeInForce::Ioc)
+            .ts_init(UnixNanos::from(created_ns))
+            .build();
         let cmd = make_cmd(Some(long_client_order_id), None);
-        let fills = vec![make_fill(
-            "KRAKEN-791",
-            Some(truncate_cl_ord_id(&ClientOrderId::from(long_client_order_id)).as_str()),
-            "100",
-            "50000.0",
-            1,
-        )];
+        let quantity = format!("{}", 100 / fills.len());
+        let fills: Vec<FillReport> = fills
+            .iter()
+            .enumerate()
+            .map(|(i, (venue_order_id, shortened_echo))| {
+                let echoed = if *shortened_echo {
+                    shortened.as_str()
+                } else {
+                    long_client_order_id
+                };
+                make_fill(
+                    venue_order_id,
+                    Some(echoed),
+                    &quantity,
+                    "50000.0",
+                    i as u64 + 1,
+                )
+            })
+            .collect();
 
-        let report = synthesize_filled_order_status_report(&cmd, &order, &fills)
-            .expect("expected a filled report");
+        let report = synthesize_filled_order_status_report(
+            &Cache::default(),
+            &QueriedOrder::new(&cmd, Some(&order)),
+            &order,
+            &fills,
+        );
 
         assert_eq!(
-            report.client_order_id,
-            Some(ClientOrderId::from(long_client_order_id))
+            report.as_ref().map(|report| report.venue_order_id),
+            expected_venue_order_id.map(VenueOrderId::from)
         );
-        assert_eq!(report.venue_order_id, VenueOrderId::from("KRAKEN-791"));
-        assert_eq!(report.order_status, OrderStatus::Filled);
+
+        if let Some(report) = report {
+            assert_eq!(
+                report.client_order_id,
+                Some(ClientOrderId::from(long_client_order_id))
+            );
+            assert_eq!(report.order_status, OrderStatus::Filled);
+        }
     }
 }

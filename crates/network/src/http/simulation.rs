@@ -39,6 +39,7 @@ impl Client {
                 "HTTP proxies are unsupported under simulation".into(),
             ));
         }
+
         Ok(Self { redirects })
     }
 
@@ -52,6 +53,7 @@ impl Client {
                 "HTTP simulation supports plaintext http:// endpoints only".into(),
             ));
         }
+
         let host = url
             .host_str()
             .ok_or_else(|| HttpClientError::Error("missing HTTP hostname".into()))?;
@@ -67,6 +69,7 @@ impl Client {
                     .map_err(|_| HttpClientError::Error("invalid HTTP authority".into()))?,
             );
         }
+
         let mut headers: Vec<_> = request
             .headers()
             .iter()
@@ -74,19 +77,21 @@ impl Client {
             .collect();
         headers.sort_by(|(a, _), (b, _)| a.as_str().cmp(b.as_str()));
         request.headers_mut().clear();
-
         for (name, value) in headers {
             request.headers_mut().append(name, value);
         }
+
         let mut wire = request;
         *wire.uri_mut() = url[Position::BeforePath..Position::AfterQuery]
             .parse()
             .map_err(|_| HttpClientError::Error("invalid HTTP request target".into()))?;
+
         let stream = crate::dst::net::TcpStream::connect((host, port))
             .await
             .map_err(|_| {
                 HttpClientError::TransportError("simulated HTTP connection failed".into())
             })?;
+
         let (mut sender, connection) = hyper::client::conn::http1::handshake(TokioIo::new(stream))
             .await
             .map_err(|_| {
@@ -96,6 +101,7 @@ impl Client {
         let connection = Connection(madsim::task::spawn(async move {
             let _ = connection.await;
         }));
+
         let response = sender.send_request(wire).await.map_err(|_| {
             HttpClientError::TransportError("simulated HTTP exchange failed".into())
         })?;
@@ -108,6 +114,7 @@ impl Client {
                 "HTTP redirect following is unsupported under simulation".into(),
             ));
         }
+
         Ok((response, connection))
     }
 }
@@ -135,6 +142,7 @@ mod tests {
         let listener = crate::dst::net::TcpListener::bind("127.0.0.1:18080")
             .await
             .unwrap();
+
         let peer = madsim::task::spawn(async move {
             let (mut stream, _) = listener.accept().await.unwrap();
             read_headers(&mut stream).await;
@@ -159,6 +167,7 @@ mod tests {
         while let Some(chunk) = response.chunk().await.unwrap() {
             body.extend_from_slice(&chunk);
         }
+
         peer.await.unwrap();
         assert_eq!(status, http::StatusCode::OK);
         assert_eq!(body, b"abcdefgh");
@@ -169,6 +178,7 @@ mod tests {
         let listener = crate::dst::net::TcpListener::bind("127.0.0.1:18080")
             .await
             .unwrap();
+
         let peer = madsim::task::spawn(async move {
             let (mut stream, _) = listener.accept().await.unwrap();
             let bytes = read_headers(&mut stream).await;
@@ -181,6 +191,7 @@ mod tests {
             stream.flush().await.unwrap();
             bytes
         });
+
         let client = HttpClient::builder()
             .headers(HashMap::from([("X-Input".into(), "declared".into())]))
             .header_keys(vec!["x-test".into()])
@@ -212,6 +223,7 @@ mod tests {
         let listener = crate::dst::net::TcpListener::bind("127.0.0.1:18080")
             .await
             .unwrap();
+
         let peer = madsim::task::spawn(async move {
             let (mut stream, _) = listener.accept().await.unwrap();
             let mut request = read_headers(&mut stream).await;
@@ -225,6 +237,7 @@ mod tests {
             stream.flush().await.unwrap();
             request
         });
+
         let client = HttpClient::builder()
             .headers(HashMap::from([("X-Input".into(), "default".into())]))
             .timeout_secs(2)
@@ -270,6 +283,7 @@ mod tests {
                 let mut byte = [0];
                 assert_eq!(stream.read(&mut byte).await.unwrap(), 0);
             });
+
             let client = HttpClient::builder().timeout_secs(20).build().unwrap();
             let request = madsim::task::spawn(async move {
                 client
@@ -282,6 +296,7 @@ mod tests {
                     )
                     .await
             });
+
             ready_rx.await.unwrap();
 
             if cancel {
@@ -293,6 +308,7 @@ mod tests {
                     if message == "simulated request deadline elapsed")
                 );
             }
+
             peer.await.unwrap();
         })
         .await
@@ -313,12 +329,14 @@ mod tests {
         let listener = crate::dst::net::TcpListener::bind("127.0.0.1:18080")
             .await
             .unwrap();
+
         let peer = madsim::task::spawn(async move {
             let (mut stream, _) = listener.accept().await.unwrap();
             read_headers(&mut stream).await;
             stream.write_all(response).await.unwrap();
             stream.flush().await.unwrap();
         });
+
         let mut client = HttpClient::builder().timeout_secs(2).build().unwrap();
         client.client.max_response_bytes = 4;
         let error = client
@@ -343,12 +361,14 @@ mod tests {
         let listener = crate::dst::net::TcpListener::bind("127.0.0.1:18080")
             .await
             .unwrap();
+
         let peer = madsim::task::spawn(async move {
             let (mut stream, _) = listener.accept().await.unwrap();
             read_headers(&mut stream).await;
             stream.write_all(b"HTTP/1.1 302 Found\r\nContent-Length: 0\r\nLocation: https://example.com/\r\n\r\n").await.unwrap();
             stream.flush().await.unwrap();
         });
+
         let client = HttpClient::builder()
             .redirect_policy(policy)
             .timeout_secs(2)
@@ -364,6 +384,7 @@ mod tests {
             )
             .await;
         peer.await.unwrap();
+
         match policy {
             HttpRedirectPolicy::Reject => assert_eq!(response.unwrap().status.as_u16(), 302),
             HttpRedirectPolicy::Follow => {
@@ -401,6 +422,7 @@ mod tests {
         while !bytes.ends_with(b"\r\n\r\n") {
             bytes.push(stream.read_u8().await.unwrap());
         }
+
         bytes
     }
 }

@@ -146,7 +146,6 @@ pub(crate) fn create_tls_config_from_certs_dir(
             let test_config = rustls::ClientConfig::builder()
                 .with_root_certificates(rustls::RootCertStore::empty())
                 .with_client_auth_cert(all_certs[i].1.clone(), key.clone_key());
-
             if test_config.is_ok() {
                 let (path, cert) = all_certs.remove(i);
                 log::debug!("Matched client certificate from {}", path.display());
@@ -161,6 +160,7 @@ pub(crate) fn create_tls_config_from_certs_dir(
                 certs_dir.display()
             );
         }
+
         matched
     } else {
         None
@@ -180,7 +180,6 @@ pub(crate) fn create_tls_config_from_certs_dir(
     }
 
     let builder = rustls::ClientConfig::builder().with_root_certificates(root_store);
-
     if let (Some(cert), Some(key)) = (client_cert, client_key) {
         return Ok(builder.with_client_auth_cert(cert, key)?);
     }
@@ -342,6 +341,7 @@ zhxL/14wqaVBwUW6/RNRr9hz6MkFFC8Uced5obScy8kOI0bMbeIC4ftNGG9pUdms
             .unwrap()
             .self_signed(&key_pair)
             .unwrap();
+
         TestIdentity {
             key_pem: key_pair.serialize_pem(),
             cert_pem: cert.pem(),
@@ -428,6 +428,7 @@ zhxL/14wqaVBwUW6/RNRr9hz6MkFFC8Uced5obScy8kOI0bMbeIC4ftNGG9pUdms
             )
             .unwrap();
         }
+
         std::fs::write(
             temp_dir.path().join("server.pem"),
             &server_identity.cert_pem,

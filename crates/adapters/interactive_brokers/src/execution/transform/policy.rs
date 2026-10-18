@@ -22,7 +22,9 @@ use nautilus_model::{
     orders::{Order as NautilusOrder, any::OrderAny},
 };
 
-use super::{convert_price, format_ib_datetime, trigger_type_to_ib_trigger_method};
+use super::{
+    convert_decimal, convert_price, format_ib_datetime, trigger_type_to_ib_trigger_method,
+};
 use crate::{
     common::enums::IbOrderType, providers::instruments::InteractiveBrokersInstrumentProvider,
 };
@@ -85,7 +87,7 @@ pub(super) fn apply_quantity_policy(
 pub(super) fn apply_trailing_order_policy(
     ib_order: &mut IBOrder,
     order: &OrderAny,
-    price_magnifier: f64,
+    price_magnifier: i32,
 ) -> anyhow::Result<()> {
     if !matches!(
         order.order_type(),
@@ -95,16 +97,13 @@ pub(super) fn apply_trailing_order_policy(
     }
 
     if let Some(trailing_offset) = order.trailing_offset() {
-        let trailing_offset_f64 = trailing_offset.to_string().parse::<f64>().map_err(|e| {
-            anyhow::anyhow!("Failed to convert trailing offset {trailing_offset} to f64: {e}")
-        })?;
-
         match order.trailing_offset_type() {
             Some(TrailingOffsetType::BasisPoints) => {
+                let trailing_offset_f64 = convert_decimal(trailing_offset, 1)?;
                 ib_order.trailing_percent = Some(trailing_offset_f64 / 100.0);
             }
             Some(TrailingOffsetType::Price) | None => {
-                ib_order.aux_price = Some(trailing_offset_f64);
+                ib_order.aux_price = Some(convert_decimal(trailing_offset, price_magnifier)?);
             }
             Some(other) => anyhow::bail!("`TrailingOffsetType` {other:?} is not supported"),
         }

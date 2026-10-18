@@ -339,8 +339,19 @@ Set `batch_quotes=False` to prefer tick-by-tick bid/ask subscriptions. The clien
 The quote cache assembles bid and ask updates into complete quote ticks. IB no-quote sentinels
 (price `-1` without a size, or a zero price with zero size) are filtered before ticks are built
 and clear the affected book side, so a one-sided market emits nothing rather than stale values.
+For a contract with a price magnifier, IB sends the `-1` multiplied by it (`-100` for a ZC
+option), and the adapter filters that the same way.
 Genuine zero and negative prices, including a `-1` price with a size, which calendar spreads
 produce routinely, flow through.
+
+IB reports IDEALPRO prices in steps finer than a pair's `minTick`, which is the pair's price
+increment. The adapter rounds a pair's bid prices down and its ask prices up to the increment, so
+a published bid is never above IB's bid, a published ask is never below IB's ask, and a quote IB
+sends unlocked never locks or crosses. This applies to quotes, historical bid and ask ticks, and
+the prices of bid and ask bars. Every other price (trades, midpoint, last and index prices, and the
+bars built from them) rounds to the nearest increment, with ties going to the even multiple. Order
+book levels are not rounded, because two IB levels could round to one price. Other instruments are
+not rounded.
 
 For historical data, `HistoricalInteractiveBrokersClient` accepts an instrument provider and data
 client config. Constructing this Python client connects immediately, so keep it behind the same
@@ -466,6 +477,12 @@ signals the download end. Every raw tag and key from both snapshots lands in `Ac
 under its IB name, so values IB publishes only on `updateAccountValue` (for example
 `PostExpirationExcess` and `PostExpirationMargin`) are readable from Python alongside the summary
 tags such as `TotalCashValue`. A key reported once per currency keeps the last value IB sends.
+
+The account has no base currency by default and keeps one balance per currency. Set `base_currency`
+to the account's base currency, the currency IB reports the summary tags in, for a single-currency
+account. The portfolio then converts P&L in other currencies with exchange rates from the cache, as
+for any account with a base currency. The client logs an error if IB reports a balance in another
+currency.
 
 ## Reconciliation
 
@@ -654,6 +671,56 @@ combo order, so startup reconciliation restores those orders even when the node 
 itself. Startup fill reports hold each combo order's combo-level fills. Its leg executions are left out, and
 the leg positions reconcile from IB's position reports.
 
+### Price magnifier
+
+IB prices some contracts in a sub-unit of their currency, such as CBOT grains in cents and LSE
+stocks in pence, and reports a `priceMagnifier` for them (100 for both). The adapter divides every
+price IB reports for such a contract by the magnifier (market data, historical data, fills, and
+order reports), and multiplies the prices of orders it sends by it. Nautilus prices are therefore
+in the contract's currency, so a ZC bar IB reports at 486.25 is 4.8625, and `price * multiplier`
+is the contract value. IB's `minTick` is already in the contract's currency, so the instrument's
+price increment is the `minTick` as reported. A magnified option's strike is divided by the
+magnifier too. Prices given in `IBOrderTags` (for example `starting_price`, `stock_ref_price`,
+`discretionary_amt`, and `delta_neutral_aux_price`) and in order conditions are passed to IB as
+given, in IB's units, so a magnified contract's tag or condition price is the price IB reports for
+it, not the Nautilus price.
+
+Position average cost is a price in the contract's currency times the multiplier, so the adapter
+divides it by the multiplier only. IB reports a magnified option's computation (the underlying price
+and the greeks) in the contract's currency already, so the adapter publishes it unchanged.
+
+The execution client needs an instrument's magnifier before it submits or modifies an order for it.
+When its provider has not loaded the instrument, for example one a data client loaded after the
+execution client was created, the client takes the contract and magnifier from the instrument in
+the cache, or else requests the contract details from IB and waits up to `request_timeout` for
+them. It denies the order, or rejects the modify, when neither supplies the magnifier in time.
+An order canceled while it waits, singly or by a cancel-all, is canceled in the client and never
+reaches IB. Canceling one order of a waiting order list stops the whole list, and the client
+denies the list's other orders.
+
+#### Upgrading with magnified contracts
+
+Earlier versions converted a magnified contract's prices differently on each path. Before
+upgrading a node that trades or records contracts with a magnifier above 1:
+
+- **Flatten positions and cancel working orders in those contracts.** Earlier versions reported
+  fills and order prices at the magnifier squared times the price this version reports, reported
+  position average prices divided by the magnifier, and divided the prices of orders they sent by
+  it. A position opened before the upgrade and closed after it, or an order placed before it and
+  modified after it, mixes the two scales.
+- **Rebuild cached magnified options.** A magnified option's strike is now divided by the magnifier,
+  but an option instrument cached by an earlier version loads unchanged and keeps its strike in
+  IB's units beside prices in the contract's currency. Delete the provider's instrument cache file
+  (`cache_path`), and remove those instruments from any cache database the node loads instruments
+  from, so the adapter loads them again from IB. Other instruments are unchanged: their price
+  increment is IB's `minTick` in both versions.
+- **Convert recorded live data, not history.** Data from history requests (`request_bars`,
+  `request_quotes`, `request_trades`, and `HistoricalInteractiveBrokersClient`) and index prices
+  were already divided by the magnifier, so they match this version. Data recorded from
+  subscriptions was not: divide tick-by-tick quotes by the magnifier squared, and other quotes,
+  trades, bars, and order book data by the magnifier. Recorded fills, orders, and positions follow
+  the scales in the first item.
+
 ## Configuration reference
 
 ### Data client
@@ -696,6 +763,7 @@ not restart a subscription.
 | `port`                                       | `4002`                  | TWS or IB Gateway socket port.                       |
 | `client_id`                                  | `1`                     | IB API client ID.                                    |
 | `account_id`                                 | `None`                  | Raw IB account code such as `DU123456`.              |
+| `base_currency`                              | `None`                  | Account base currency; `None` is multi-currency.     |
 | `connection_timeout`                         | `300` seconds           | Set the socket connection timeout.                   |
 | `request_timeout`                            | `60` seconds            | Set the IB request timeout.                          |
 | `fetch_all_open_orders`                      | `False`                 | Request all open orders visible to the session.      |

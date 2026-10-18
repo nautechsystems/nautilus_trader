@@ -878,10 +878,19 @@ endpoint. The adapter sends sequential chunks and chooses each new chunk from th
 endpoint's 1,000-ID limit and the signer's current cancellation burst. A signer starts with the
 Standard 120-token burst, and a tier reported by one response applies to the next new chunk.
 
-Each chunk retries independently with the same order IDs unless a lower reported tier requires smaller chunks
-before the retry. The adapter merges the completed responses and processes each requested order once after
-every chunk succeeds. If a later chunk exhausts its retries, earlier chunks may already have changed venue
-state. The adapter emits no partial per-order results. Reconciliation resolves the unknown overall outcome.
+Each chunk retries independently with the same order IDs unless a lower reported tier requires smaller chunks.
+Confirmed cancellations override conflicting rejection reasons for the same ID.
+
+If a chunk fails, results from earlier completed chunks still apply. For the remaining orders:
+
+- **Failed chunk**: Definitive failures emit `OrderCancelRejected`; ambiguous failures leave cancels in flight.
+- **Beyond the failed chunk**: Cancels stay in flight if an earlier, larger attempt included those orders.
+- **Never attempted**: Orders receive `OrderCancelRejected` with a local not-sent reason.
+
+In-flight cancels await reconciliation. See [Retry classification](#retry-classification).
+
+Orders with adapter order context close from user-channel events. Orders without it, such as external orders,
+receive `OrderCanceled` from the HTTP response.
 
 `CancelAllOrders` selects its cancellation scope as follows:
 
@@ -1357,6 +1366,11 @@ domain-type range fail HTTP decoding or report construction. WebSocket and PolyB
 skip invalid updates. Report construction does not substitute zero for an invalid price or quantity.
 
 ## Fees
+
+The instrument provider and historical data loader use Gamma's `feeSchedule.rate` as the taker rate.
+During provider or historical loading, a fee-enabled market with a missing or zero rate uses zero and logs a warning.
+Runtime automatic instrument loading also uses zero for a missing or zero rate, but does not log this warning.
+The CLOB `/fee-rate` response's `base_fee` is a legacy base fee and does not supply the effective taker rate.
 
 The adapter reads each instrument's `fee_schedule` and applies its `rate` and `exponent` as:
 
@@ -1998,11 +2012,11 @@ snapshot-derived, price-change-derived, and `best_bid_ask` quotes. Quote, book d
 for the same instrument share one asset-scoped `market` WebSocket subscription. A book delta subscription
 alone does not emit quote ticks. Quote output remains gated by an active quote subscription.
 
-| Venue message  | Trigger                                      | Price source                      | Size source                                                 |
-| -------------- | -------------------------------------------- | --------------------------------- | ----------------------------------------------------------- |
-| `book`         | Book snapshot                                | Snapshot best bid and ask         | Snapshot best-level sizes                                   |
-| `price_change` | Subscribed level update                      | Message `best_bid` and `best_ask` | Changed best-level size; previous quote or zero otherwise   |
-| `best_bid_ask` | Top move with `subscribe_new_markets = true` | Direct message best bid and ask   | Maintained-book top or prior quote, depending on book state |
+| Venue message  | Trigger                                      | Price source                      | Size source                                                           |
+| -------------- | -------------------------------------------- | --------------------------------- | --------------------------------------------------------------------- |
+| `book`         | Book snapshot                                | Snapshot best bid and ask         | Snapshot best-level sizes                                             |
+| `price_change` | Subscribed level update                      | Message `best_bid` and `best_ask` | Changed best-level size; prior size only at matching price, else zero |
+| `best_bid_ask` | Top move with `subscribe_new_markets = true` | Direct message best bid and ask   | Maintained-book top or prior quote, depending on book state           |
 
 ```mermaid
 flowchart LR
@@ -2130,8 +2144,9 @@ snapshot batches (see [Data client options](#data-client-options)):
 - A full book snapshot with prior local state emits only net level changes: `ADD` for new levels,
   `UPDATE` for resized levels, and `DELETE` with the last known size for removed levels. No-op
   snapshots emit nothing, and the final record carries `F_LAST`.
-- Without prior state, such as after a [tick size change](#tick-size-change-handling), the snapshot
-  passes through unchanged to seed the new book epoch.
+- Without prior state, including on initial subscription, after unsubscribing and subscribing again,
+  or after a [tick size change](#tick-size-change-handling), the snapshot passes through unchanged
+  with `CLEAR` and `F_SNAPSHOT` to seed the new book epoch and remove stale consumer levels.
 - Incremental `price_change` batches follow [price change bursts](#price-change-bursts) handling
   and update the local comparison state.
 - When book deltas are subscribed, the maintained comparison book can supply matching sizes to

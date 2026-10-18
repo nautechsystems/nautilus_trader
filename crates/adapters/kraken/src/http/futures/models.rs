@@ -260,8 +260,23 @@ pub struct FuturesOpenOrder {
     pub last_update_time: String,
     #[serde(default)]
     pub trigger_signal: Option<KrakenTriggerSignal>,
-    #[serde(rename = "cli_ord_id", default)]
+    /// The client order ID under the key the open-orders API documents.
+    #[serde(rename = "cliOrdId", default)]
     pub cli_ord_id: Option<String>,
+    /// The client order ID under the snake-case key the WebSocket feeds use, read as well since the
+    /// key the REST response carries is not verified against the live venue.
+    #[serde(rename = "cli_ord_id", default)]
+    pub cli_ord_id_snake_case: Option<String>,
+}
+
+impl FuturesOpenOrder {
+    /// The client order ID under whichever key the response carries.
+    #[must_use]
+    pub fn client_order_id(&self) -> Option<&str> {
+        self.cli_ord_id
+            .as_deref()
+            .or(self.cli_ord_id_snake_case.as_deref())
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -769,12 +784,27 @@ pub struct FuturesFill {
     #[serde(with = "decimal")]
     pub price: Decimal,
     pub fill_type: KrakenFillType,
-    #[serde(rename = "cli_ord_id", default)]
+    /// The client order ID under the key the fills API documents.
+    #[serde(rename = "cliOrdId", default)]
     pub cli_ord_id: Option<String>,
+    /// The client order ID under the snake-case key the WebSocket feeds use, read as well since the
+    /// key the REST response carries is not verified against the live venue.
+    #[serde(rename = "cli_ord_id", default)]
+    pub cli_ord_id_snake_case: Option<String>,
     #[serde(rename = "fee_paid", default, with = "optional_decimal")]
     pub fee_paid: Option<Decimal>,
     #[serde(rename = "fee_currency", default)]
     pub fee_currency: Option<String>,
+}
+
+impl FuturesFill {
+    /// The client order ID under whichever key the response carries.
+    #[must_use]
+    pub fn client_order_id(&self) -> Option<&str> {
+        self.cli_ord_id
+            .as_deref()
+            .or(self.cli_ord_id_snake_case.as_deref())
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1386,6 +1416,30 @@ mod tests {
         let unprotected = &response.instruments[1];
         assert_eq!(unprotected.symbol, "PF_ETHUSD");
         assert_eq!(unprotected.maker_protection_millis, None);
+    }
+
+    /// The open-orders and fills APIs document the client order ID as `cliOrdId`. The snake-case
+    /// key is read as well, and a body carrying both reads the documented one rather than failing.
+    #[rstest]
+    #[case::documented_key(r#","cliOrdId":"doc-1""#, Some("doc-1"))]
+    #[case::snake_case_key(r#","cli_ord_id":"snake-1""#, Some("snake-1"))]
+    #[case::both_keys(r#","cliOrdId":"doc-1","cli_ord_id":"snake-1""#, Some("doc-1"))]
+    #[case::neither_key("", None)]
+    fn test_futures_open_order_and_fill_read_either_client_order_id_key(
+        #[case] keys: &str,
+        #[case] expected: Option<&str>,
+    ) {
+        let order: FuturesOpenOrder = serde_json::from_str(&format!(
+            r#"{{"order_id":"o1","symbol":"PI_XBTUSD","side":"buy","orderType":"lmt","limitPrice":1.0,"unfilledSize":1.0,"receivedTime":"2023-04-07T14:15:30.250Z","status":"untouched","filledSize":0.0,"reduceOnly":false,"lastUpdateTime":"2023-04-07T14:15:30.250Z"{keys}}}"#
+        ))
+        .unwrap();
+        let fill: FuturesFill = serde_json::from_str(&format!(
+            r#"{{"fill_id":"f1","symbol":"PI_XBTUSD","side":"buy","order_id":"o1","fillTime":"2023-04-07T15:20:45.500Z","size":1,"price":1.0,"fillType":"taker"{keys}}}"#
+        ))
+        .unwrap();
+
+        assert_eq!(order.client_order_id(), expected);
+        assert_eq!(fill.client_order_id(), expected);
     }
 
     #[rstest]

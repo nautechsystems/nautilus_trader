@@ -249,12 +249,18 @@ mod tests {
 
     #[tokio::test]
     async fn send_with_deadline_zero_waits_for_slow_send() {
-        let send = async {
-            tokio::time::sleep(Duration::from_millis(50)).await;
-            Ok::<_, LighterWsError>(7)
-        };
+        let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+        let send = async { Ok::<_, LighterWsError>(release_rx.await.unwrap()) };
+        let work = send_with_deadline(send, Duration::ZERO);
+        tokio::pin!(work);
 
-        assert_eq!(send_with_deadline(send, Duration::ZERO).await.unwrap(), 7);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), &mut work)
+                .await
+                .is_err()
+        );
+        release_tx.send(7).unwrap();
+        assert_eq!(work.await.unwrap(), 7);
     }
 
     #[tokio::test]

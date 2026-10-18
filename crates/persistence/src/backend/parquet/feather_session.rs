@@ -23,7 +23,7 @@
     reason = "session registration keeps backend-specific ordering logic together"
 )]
 
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use std::{collections::HashMap, fs, io, sync::Arc};
 
 use ahash::AHashMap;
 use datafusion::arrow::{
@@ -156,13 +156,15 @@ impl ParquetDataCatalog {
     ///
     /// # Returns
     ///
-    /// Returns a vector of `Data` objects from the live run, sorted by timestamp,
-    /// or an error if the operation fails.
+    /// Returns a vector of `Data` objects from the live run, sorted by timestamp, or an empty
+    /// vector if the run does not exist. Returns an error if the operation fails.
     ///
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The instance ID doesn't exist.
+    /// - The instance ID is empty, is `.` or `..`, or contains `/`, `\`, `:`, or a NUL character.
+    /// - The `live` run root does not resolve strictly inside the catalog.
+    /// - The run directory does not resolve strictly inside the `live` run root.
     /// - Feather file reading fails.
     /// - Data deserialization fails.
     ///
@@ -209,13 +211,15 @@ impl ParquetDataCatalog {
     ///
     /// # Returns
     ///
-    /// Returns a vector of `Data` objects from the backtest run, sorted by timestamp,
-    /// or an error if the operation fails.
+    /// Returns a vector of `Data` objects from the backtest run, sorted by timestamp, or an empty
+    /// vector if the run does not exist. Returns an error if the operation fails.
     ///
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The instance ID doesn't exist.
+    /// - The instance ID is empty, is `.` or `..`, or contains `/`, `\`, `:`, or a NUL character.
+    /// - The `backtest` run root does not resolve strictly inside the catalog.
+    /// - The run directory does not resolve strictly inside the `backtest` run root.
     /// - Feather file reading fails.
     /// - Data deserialization fails.
     ///
@@ -249,7 +253,7 @@ impl ParquetDataCatalog {
     /// open are not read. Families that do not decode to `Data`, such as order events, are
     /// skipped.
     fn read_run(&self, environment: Environment, instance_id: &str) -> anyhow::Result<Vec<Data>> {
-        self.recover_partial_run_files(environment, instance_id);
+        self.recover_partial_run_files(environment, instance_id)?;
         let feather_files = self.list_feather_files(environment, instance_id, None, None)?;
         let mut all_data: Vec<Data> = Vec::new();
 
@@ -345,14 +349,56 @@ impl ParquetDataCatalog {
         Ok(Some(data))
     }
 
-    // Writers stage only to local directories, so other catalogs hold no partial files
-    fn recover_partial_run_files(&self, environment: Environment, instance_id: &str) {
-        if self.original_uri.starts_with("file://") {
-            let directory = PathBuf::from(self.native_base_path_string())
-                .join(environment_directory(environment))
-                .join(instance_id);
-            recover_partial_feather_files(&directory);
+    fn recover_partial_run_files(
+        &self,
+        environment: Environment,
+        instance_id: &str,
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            !instance_id.is_empty()
+                && !matches!(instance_id, "." | "..")
+                && !instance_id.contains(['/', '\\', ':', '\0']),
+            "Invalid run instance ID {instance_id:?}: expected a single path component",
+        );
+
+        // Writers stage only to local directories, so other catalogs hold no partial files
+        if !self.original_uri.starts_with("file://") {
+            return Ok(());
         }
+
+        let catalog_root = match fs::canonicalize(self.native_base_path_string()) {
+            Ok(path) => path,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
+            Err(e) => return Err(e.into()),
+        };
+
+        let run_root = match fs::canonicalize(catalog_root.join(environment_directory(environment)))
+        {
+            Ok(path) => path,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
+            Err(e) => return Err(e.into()),
+        };
+
+        anyhow::ensure!(
+            run_root.starts_with(&catalog_root) && run_root != catalog_root,
+            "Run root resolves outside the catalog: {}",
+            run_root.display(),
+        );
+
+        let directory = match fs::canonicalize(run_root.join(instance_id)) {
+            Ok(path) => path,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
+            Err(e) => return Err(e.into()),
+        };
+
+        anyhow::ensure!(
+            directory.starts_with(&run_root) && directory != run_root,
+            "Run directory resolves outside the run root: {}",
+            directory.display(),
+        );
+
+        recover_partial_feather_files(&directory);
+        Ok(())
     }
 
     /// Lists the feather files of a run, for one data type or every type when `data_type` is
@@ -545,6 +591,9 @@ impl ParquetDataCatalog {
     /// Returns an error if:
     /// - `data_type` is an instrument class selector, which has no staged stream name.
     /// - `data_type` is a family streams do not support.
+    /// - The instance ID is empty, is `.` or `..`, or contains `/`, `\`, `:`, or a NUL character.
+    /// - The environment's run root does not resolve strictly inside the catalog.
+    /// - The run directory does not resolve strictly inside the environment's run root.
     /// - Feather file listing fails.
     /// - Feather file reading fails.
     /// - Writing to parquet fails.
@@ -594,7 +643,7 @@ impl ParquetDataCatalog {
         use_ts_event_for_ts_init: bool,
     ) -> anyhow::Result<()> {
         Self::ensure_stream_data_type(data_type)?;
-        self.recover_partial_run_files(environment, instance_id);
+        self.recover_partial_run_files(environment, instance_id)?;
         let feather_files =
             self.list_feather_files(environment, instance_id, Some(data_type), identifiers)?;
 
@@ -1945,6 +1994,251 @@ mod read_run_tests {
         // Drops the end-of-stream marker and the last byte of the final batch
         let file = OpenOptions::new().write(true).open(&partial).unwrap();
         file.set_len(file.metadata().unwrap().len() - 9).unwrap();
+    }
+
+    #[rstest]
+    #[case::backtest(ParquetDataCatalog::read_backtest)]
+    #[case::live(ParquetDataCatalog::read_live_run)]
+    fn read_run_rejects_path_bearing_ids(
+        #[case] reader: fn(&ParquetDataCatalog, &str) -> anyhow::Result<Vec<Data>>,
+        #[values(
+            "",
+            ".",
+            "..",
+            "../run",
+            "run/child",
+            "run\\child",
+            "/run",
+            "\\run",
+            "C:run",
+            "C:/run",
+            "C:\\run",
+            "\\\\server\\share",
+            "run:stream",
+            "run\0id"
+        )]
+        instance_id: &str,
+    ) {
+        let temp_dir = TempDir::new().unwrap();
+        let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+
+        let e = reader(&catalog, instance_id).unwrap_err();
+
+        assert_eq!(
+            e.to_string(),
+            format!("Invalid run instance ID {instance_id:?}: expected a single path component"),
+        );
+    }
+
+    #[rstest]
+    #[case::backtest(ParquetDataCatalog::read_backtest)]
+    #[case::live(ParquetDataCatalog::read_live_run)]
+    fn read_run_rejects_external_paths_before_recovery(
+        #[case] reader: fn(&ParquetDataCatalog, &str) -> anyhow::Result<Vec<Data>>,
+        #[values(false, true)] absolute: bool,
+    ) {
+        let temp_dir = TempDir::new().unwrap();
+        let outside = TempDir::new_in(temp_dir.path()).unwrap();
+        let catalog_path = temp_dir.path().join("catalog");
+        fs::create_dir_all(catalog_path.join("backtest")).unwrap();
+        fs::create_dir_all(catalog_path.join("live")).unwrap();
+        write_crashed_run(&outside, &[quote_aud(1_000), quote_eth(2_000)]);
+        let directory = outside.path().join("backtest/run-001");
+        let partial = directory.join("quotes/quotes_0.feather.partial");
+        let original = fs::read(&partial).unwrap();
+
+        let instance_id = if absolute {
+            directory.to_str().unwrap().to_string()
+        } else {
+            format!(
+                "../../{}/backtest/run-001",
+                outside.path().file_name().unwrap().to_str().unwrap(),
+            )
+        };
+
+        let catalog = ParquetDataCatalog::new(&catalog_path, None, None, None, None);
+
+        let result = reader(&catalog, &instance_id);
+
+        assert!(result.is_err());
+        assert_eq!(fs::read(&partial).unwrap(), original);
+        assert!(!partial.with_extension("").exists());
+    }
+
+    #[rstest]
+    #[case::backtest(ParquetDataCatalog::read_backtest)]
+    #[case::live(ParquetDataCatalog::read_live_run)]
+    fn read_run_returns_no_data_for_missing_directories(
+        #[case] reader: fn(&ParquetDataCatalog, &str) -> anyhow::Result<Vec<Data>>,
+        #[values("", "backtest", "backtest/run-001")] directory: &str,
+    ) {
+        let temp_dir = TempDir::new().unwrap();
+        write_crashed_run(&temp_dir, &[quote_aud(1_000), quote_eth(2_000)]);
+        let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+        fs::remove_dir_all(temp_dir.path().join(directory)).unwrap();
+
+        let data = reader(&catalog, "run-001").unwrap();
+        let conversion = catalog.convert_stream_to_data(
+            "run-001",
+            &CatalogDataType::from(NautilusDataType::QuoteTick),
+            Environment::Backtest,
+            None,
+            false,
+        );
+
+        assert_eq!(data, Vec::<Data>::new());
+        conversion.unwrap();
+        assert!(!temp_dir.path().join(directory).exists());
+    }
+
+    #[rstest]
+    fn convert_stream_to_data_rejects_path_bearing_ids() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+
+        let e = catalog
+            .convert_stream_to_data(
+                "../run-001",
+                &CatalogDataType::from(NautilusDataType::QuoteTick),
+                Environment::Backtest,
+                None,
+                false,
+            )
+            .unwrap_err();
+
+        assert_eq!(
+            e.to_string(),
+            "Invalid run instance ID \"../run-001\": expected a single path component",
+        );
+    }
+
+    #[rstest]
+    #[cfg(unix)]
+    #[case::backtest(ParquetDataCatalog::read_backtest, "backtest")]
+    #[case::live(ParquetDataCatalog::read_live_run, "live")]
+    fn read_run_rejects_escaping_directory_symlinks(
+        #[case] reader: fn(&ParquetDataCatalog, &str) -> anyhow::Result<Vec<Data>>,
+        #[case] environment: &str,
+        #[values(false, true)] environment_symlink: bool,
+    ) {
+        let temp_dir = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        write_crashed_run(&outside, &[quote_aud(1_000), quote_eth(2_000)]);
+        let run = outside.path().join("backtest/run-001");
+        let partial = run.join("quotes/quotes_0.feather.partial");
+        let original = fs::read(&partial).unwrap();
+        let root = temp_dir.path().join(environment);
+        if environment_symlink {
+            std::os::unix::fs::symlink(outside.path().join("backtest"), &root).unwrap();
+        } else {
+            fs::create_dir(&root).unwrap();
+            std::os::unix::fs::symlink(&run, root.join("run-001")).unwrap();
+        }
+
+        let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+        let result = reader(&catalog, "run-001");
+
+        assert!(result.is_err());
+        assert_eq!(fs::read(&partial).unwrap(), original);
+        assert!(!partial.with_extension("").exists());
+    }
+
+    #[rstest]
+    #[cfg(unix)]
+    fn read_run_rejects_directory_symlinks_to_parent_roots(
+        #[values(false, true)] environment_symlink: bool,
+    ) {
+        let temp_dir = TempDir::new().unwrap();
+        write_crashed_run(&temp_dir, &[quote_aud(1_000), quote_eth(2_000)]);
+        let partial = temp_dir
+            .path()
+            .join("backtest/run-001/quotes/quotes_0.feather.partial");
+        let original = fs::read(&partial).unwrap();
+        let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+        let result = if environment_symlink {
+            std::os::unix::fs::symlink(temp_dir.path(), temp_dir.path().join("live")).unwrap();
+            catalog.read_live_run("backtest")
+        } else {
+            let root = temp_dir.path().join("backtest");
+            std::os::unix::fs::symlink(&root, root.join("run-alias")).unwrap();
+            catalog.read_backtest("run-alias")
+        };
+
+        assert!(result.is_err());
+        assert_eq!(fs::read(&partial).unwrap(), original);
+        assert!(!partial.with_extension("").exists());
+    }
+
+    #[rstest]
+    #[cfg(unix)]
+    #[case::backtest(ParquetDataCatalog::read_backtest, "backtest")]
+    #[case::live(ParquetDataCatalog::read_live_run, "live")]
+    fn read_run_leaves_symlinked_recovery_targets_untouched(
+        #[case] reader: fn(&ParquetDataCatalog, &str) -> anyhow::Result<Vec<Data>>,
+        #[case] environment: &str,
+        #[values(false, true)] directory_symlink: bool,
+    ) {
+        let temp_dir = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        write_crashed_run(&outside, &[quote_aud(1_000), quote_eth(2_000)]);
+        let partial = outside
+            .path()
+            .join("backtest/run-001/quotes/quotes_0.feather.partial");
+        let original = fs::read(&partial).unwrap();
+        let run = temp_dir.path().join(environment).join("run-001");
+        fs::create_dir_all(&run).unwrap();
+        let link = if directory_symlink {
+            let link = run.join("quotes");
+            std::os::unix::fs::symlink(partial.parent().unwrap(), &link).unwrap();
+            link
+        } else {
+            fs::create_dir(run.join("quotes")).unwrap();
+            let link = run.join("quotes/quotes_0.feather.partial");
+            std::os::unix::fs::symlink(&partial, &link).unwrap();
+            link
+        };
+
+        let target = fs::read_link(&link).unwrap();
+        let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+
+        let data = reader(&catalog, "run-001").unwrap();
+
+        assert_eq!(data, Vec::<Data>::new());
+        assert_eq!(fs::read(&partial).unwrap(), original);
+        assert_eq!(fs::read_link(&link).unwrap(), target);
+        assert!(!partial.with_extension("").exists());
+        assert!(!run.join("quotes/quotes_0.feather").exists());
+    }
+
+    #[rstest]
+    #[cfg(unix)]
+    fn read_run_recovers_in_root_directory_symlinks(
+        #[values(false, true)] environment_symlink: bool,
+    ) {
+        let temp_dir = TempDir::new().unwrap();
+        write_crashed_run(&temp_dir, &[quote_aud(1_000), quote_eth(2_000)]);
+        let run = temp_dir.path().join("backtest/run-001");
+
+        if environment_symlink {
+            std::os::unix::fs::symlink(
+                temp_dir.path().join("backtest"),
+                temp_dir.path().join("live"),
+            )
+            .unwrap();
+        } else {
+            std::os::unix::fs::symlink(&run, temp_dir.path().join("backtest/run-alias")).unwrap();
+        }
+
+        let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+        let data = if environment_symlink {
+            catalog.read_live_run("run-001").unwrap()
+        } else {
+            catalog.read_backtest("run-alias").unwrap()
+        };
+
+        assert_eq!(data, vec![Data::Quote(quote_aud(1_000))]);
+        assert!(!run.join("quotes/quotes_0.feather.partial").exists());
+        assert!(run.join("quotes/quotes_0.feather").exists());
     }
 
     #[rstest]

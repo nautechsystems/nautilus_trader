@@ -130,6 +130,7 @@ struct TestServerState {
     connection_count: Arc<tokio::sync::Mutex<usize>>,
     subscribes: Arc<tokio::sync::Mutex<Vec<Value>>>,
     unsubscribes: Arc<tokio::sync::Mutex<Vec<Value>>>,
+    unsubscribe_received: Arc<tokio::sync::Notify>,
     subscribe_errors: Arc<tokio::sync::Mutex<Vec<u64>>>,
     /// Frames queued by tests, drained one per `subscribe` ack in FIFO order.
     push_after_subscribe: Arc<tokio::sync::Mutex<Vec<String>>>,
@@ -146,6 +147,20 @@ impl TestServerState {
 
     async fn unsubscribes(&self) -> Vec<Value> {
         self.unsubscribes.lock().await.clone()
+    }
+
+    async fn assert_no_unsubscribes(&self) {
+        let received = self.unsubscribe_received.notified();
+        tokio::pin!(received);
+        received.as_mut().enable();
+        assert!(self.unsubscribes().await.is_empty());
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), received)
+                .await
+                .is_err(),
+            "unexpected venue unsubscribe",
+        );
+        assert!(self.unsubscribes().await.is_empty());
     }
 
     async fn enqueue_push(&self, frame: Value) {
@@ -312,6 +327,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<TestServerState>) {
                     }
                     "unsubscribe" => {
                         state.unsubscribes.lock().await.push(value.clone());
+                        state.unsubscribe_received.notify_waiters();
 
                         let channel = value
                             .get("channel")
@@ -727,11 +743,7 @@ async fn test_unsubscribe_instrument_is_cache_replay_noop() {
         ))
         .expect("unsubscribe_instrument");
 
-    tokio::time::sleep(Duration::from_millis(100)).await;
-    assert!(
-        state.unsubscribes().await.is_empty(),
-        "instrument unsubscribe is cache-local and must not hit the venue",
-    );
+    state.assert_no_unsubscribes().await;
 
     client.disconnect().await.expect("disconnect");
 }
@@ -934,9 +946,12 @@ async fn test_subscribe_book_depth_emits_depth_only() {
         other => panic!("expected Depth event, was {other:?}"),
     }
 
-    tokio::time::sleep(Duration::from_millis(100)).await;
     assert!(
-        rx.try_recv().is_err(),
+        next_event_matching(&mut rx, Duration::from_millis(100), |event| {
+            matches!(event, DataEvent::Data(Data::BookDeltas(_)))
+        })
+        .await
+        .is_none(),
         "depth-only subscription must not emit book deltas",
     );
 
@@ -1254,9 +1269,7 @@ async fn test_unsubscribe_market_stats_drops_last_share_triggers_unsubscribe() {
         ))
         .expect("unsubscribe_mark_prices");
 
-    // Pin no race: give the runtime a tick to confirm no unsubscribe is sent.
-    tokio::time::sleep(Duration::from_millis(100)).await;
-    assert!(state.unsubscribes().await.is_empty());
+    state.assert_no_unsubscribes().await;
 
     // Dropping the last share unsubscribes from the shared channel.
     client
@@ -1495,15 +1508,6 @@ async fn test_book_deltas_and_depth_share_order_book_stream() {
         ))
         .expect("subscribe_book_depth");
 
-    tokio::time::sleep(Duration::from_millis(100)).await;
-    let subs = state.subscribes().await;
-    assert_eq!(
-        subs.len(),
-        1,
-        "late local subscriber must reuse the venue order_book stream"
-    );
-    assert_eq!(subs[0]["channel"], "order_book/0");
-
     let event = next_event_matching(&mut rx, Duration::from_secs(2), |e| {
         matches!(e, DataEvent::Data(Data::BookDepth(_)))
     })
@@ -1517,11 +1521,23 @@ async fn test_book_deltas_and_depth_share_order_book_stream() {
         other => panic!("expected Depth event, was {other:?}"),
     }
 
-    let next = tokio::time::timeout(Duration::from_millis(200), rx.recv()).await;
+    let next = next_event_matching(&mut rx, Duration::from_millis(200), |event| {
+        matches!(event, DataEvent::Data(Data::BookDeltas(_)))
+    })
+    .await;
+
     assert!(
-        !matches!(next, Ok(Some(DataEvent::Data(Data::BookDeltas(_))))),
+        next.is_none(),
         "late depth subscriber must not re-emit deltas",
     );
+
+    let subs = state.subscribes().await;
+    assert_eq!(
+        subs.len(),
+        1,
+        "late local subscriber must reuse the venue order_book stream"
+    );
+    assert_eq!(subs[0]["channel"], "order_book/0");
 
     client
         .unsubscribe_book_depth(&UnsubscribeBookDepth::new(
@@ -1535,12 +1551,7 @@ async fn test_book_deltas_and_depth_share_order_book_stream() {
         ))
         .expect("unsubscribe_book_depth");
 
-    tokio::time::sleep(Duration::from_millis(100)).await;
-    assert!(
-        state.unsubscribes().await.is_empty(),
-        "dropping depth must leave the deltas stream active",
-    );
-
+    state.assert_no_unsubscribes().await;
     client
         .unsubscribe_book_deltas(&UnsubscribeBookDeltas::new(
             instrument_id,
@@ -1617,15 +1628,6 @@ async fn test_book_depth_and_deltas_share_order_book_stream() {
         ))
         .expect("subscribe_book_deltas");
 
-    tokio::time::sleep(Duration::from_millis(100)).await;
-    let subs = state.subscribes().await;
-    assert_eq!(
-        subs.len(),
-        1,
-        "late local subscriber must reuse the venue order_book stream"
-    );
-    assert_eq!(subs[0]["channel"], "order_book/0");
-
     let event = next_event_matching(&mut rx, Duration::from_secs(2), |e| {
         matches!(e, DataEvent::Data(Data::BookDeltas(_)))
     })
@@ -1639,11 +1641,23 @@ async fn test_book_depth_and_deltas_share_order_book_stream() {
         other => panic!("expected Deltas event, was {other:?}"),
     }
 
-    let next = tokio::time::timeout(Duration::from_millis(200), rx.recv()).await;
+    let next = next_event_matching(&mut rx, Duration::from_millis(200), |event| {
+        matches!(event, DataEvent::Data(Data::BookDepth(_)))
+    })
+    .await;
+
     assert!(
-        !matches!(next, Ok(Some(DataEvent::Data(Data::BookDepth(_))))),
+        next.is_none(),
         "late deltas subscriber must not re-emit depth",
     );
+
+    let subs = state.subscribes().await;
+    assert_eq!(
+        subs.len(),
+        1,
+        "late local subscriber must reuse the venue order_book stream"
+    );
+    assert_eq!(subs[0]["channel"], "order_book/0");
 
     client
         .unsubscribe_book_deltas(&UnsubscribeBookDeltas::new(
@@ -1657,12 +1671,7 @@ async fn test_book_depth_and_deltas_share_order_book_stream() {
         ))
         .expect("unsubscribe_book_deltas");
 
-    tokio::time::sleep(Duration::from_millis(100)).await;
-    assert!(
-        state.unsubscribes().await.is_empty(),
-        "dropping deltas must leave the depth stream active",
-    );
-
+    state.assert_no_unsubscribes().await;
     client
         .unsubscribe_book_depth(&UnsubscribeBookDepth::new(
             instrument_id,

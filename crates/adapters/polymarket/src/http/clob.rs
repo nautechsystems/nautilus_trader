@@ -646,7 +646,7 @@ impl PolymarketClobHttpClient {
         self.send_get("/tick-size", Some(&params), false).await
     }
 
-    /// Fetches the fee rate (in basis points) for a token from the CLOB API.
+    /// Fetches the legacy base fee in basis points, distinct from the effective taker rate.
     pub async fn get_fee_rate(&self, token_id: &str) -> Result<FeeRateResponse> {
         let params = [("token_id", token_id)];
         self.send_get("/fee-rate", Some(&params), false).await
@@ -731,7 +731,7 @@ impl PolymarketClobPublicClient {
         decode_response(&response)
     }
 
-    /// Fetches the fee rate (in basis points) for a token from the CLOB API.
+    /// Fetches the legacy base fee in basis points, distinct from the effective taker rate.
     pub async fn get_fee_rate(&self, token_id: &str) -> Result<FeeRateResponse> {
         let params = [("token_id", token_id)];
         let url = format!("{}/fee-rate", self.base_url);

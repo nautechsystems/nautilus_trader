@@ -4,7 +4,7 @@ Emulation lets you use order types even when your trading venue does not nativel
 
 The `OrderEmulator` monitors the market data selected by `emulation_trigger`. When the local order matches its
 release condition, the emulator transforms it into a `MARKET` or `LIMIT` order. It routes that order to the
-configured execution algorithm or the execution engine. For example, an emulated `STOP_LIMIT` becomes a
+configured execution algorithm or the risk engine. For example, an emulated `STOP_LIMIT` becomes a
 `LIMIT` order after its stop price triggers.
 
 ## Submitting an order for emulation
@@ -65,14 +65,21 @@ cost of market data processing provide practical limits.
 1. For a held order, a matching market update transforms it into a `MARKET` or `LIMIT` order and
    releases it once the required prices are available.
 1. The emulator routes the released order to an `ExecutionAlgorithm` when `exec_algorithm_id` is
-   set, or to the `ExecutionEngine` otherwise.
+   set, or to the `RiskEngine` otherwise.
 
-:::warning[Emulation does not guarantee pre-trade risk checks]
-Strategy submissions go directly to the `OrderEmulator`. Direct releases go to the `ExecutionEngine`
-without passing through `RiskEngine` command checks. The risk engine receives the `OrderReleased`
-event for logging, but does not validate it. An execution algorithm's `submit_order` method routes
-its submissions through the risk engine. Do not rely on emulation alone to enforce pre-trade risk
-limits.
+:::warning[Risk checks apply at release]
+Initial submissions and modifications of held emulated orders bypass the `RiskEngine`. Held orders
+do not reserve account funds. Releases without an execution algorithm pass through the `RiskEngine`
+before reaching the `ExecutionEngine`. An execution algorithm's `submit_order` method also routes
+its submissions through the risk engine.
+
+Unless risk checks are bypassed, a failed check on a release without an execution algorithm moves
+that order to `DENIED`, without automatic retry. This includes protective stops: `HALTED` denies
+them, while `REDUCING` permits only eligible reduce-only submissions with an identified open position.
+See [Trading state](../execution/index.md#trading-state).
+
+Denial also invokes contingency handling, which can cancel locally managed OTO children or OCO/OUO
+siblings. A denied stop can therefore cancel its linked take-profit order.
 :::
 
 :::note
@@ -100,8 +107,10 @@ in order.
 1. It transforms the order into a `MARKET` or `LIMIT` order through another `OrderInitialized` event. This
    sets `emulation_trigger` to `None`, so components no longer treat the order as emulated.
 1. It updates the original `SubmitOrder` command to describe the transformed order.
-1. It sends that command to the configured `ExecutionAlgorithm` or, otherwise, the `ExecutionEngine`.
-   The execution engine routes an eligible order to an `ExecutionClient`.
+1. It applies and publishes `OrderReleased` before sending the command.
+1. It sends that command to the configured `ExecutionAlgorithm` or, otherwise, the `RiskEngine`.
+   Risk-approved submissions reach the `ExecutionEngine`, which routes an eligible order to an
+   `ExecutionClient`.
 
 ## Order types that can be emulated
 

@@ -22,6 +22,7 @@ use nautilus_common::{
     clients::{DataClient, ExecutionClient},
     clock::Clock,
     factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
+    live::runner::try_get_exec_event_sender,
 };
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
@@ -223,7 +224,11 @@ impl ExecutionClientFactory for AxExecutionClientFactory {
             cache,
         );
 
-        let client = AxExecutionClient::new(core, ax_config)?;
+        let mut client = AxExecutionClient::new(core, ax_config)?;
+
+        if let Some(sender) = try_get_exec_event_sender() {
+            client.set_event_sender(sender);
+        }
 
         Ok(Box::new(client))
     }
@@ -239,7 +244,15 @@ impl ExecutionClientFactory for AxExecutionClientFactory {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_common::factories::ClientConfig;
+    use nautilus_common::{
+        cache::Cache, clock::VirtualClock, factories::ClientConfig,
+        live::runner::replace_exec_event_sender, messages::ExecutionEvent,
+    };
+    use nautilus_core::UnixNanos;
+    use nautilus_model::{
+        identifiers::AccountId,
+        types::{AccountBalance, Money},
+    };
     use rstest::rstest;
 
     use super::*;
@@ -266,5 +279,70 @@ mod tests {
     fn test_ax_data_client_factory_default() {
         let factory = AxDataClientFactory;
         assert_eq!(factory.name(), AX);
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    fn test_ax_execution_client_factory_sender(#[case] sender_bound: bool) {
+        std::thread::spawn(move || {
+            let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+            if sender_bound {
+                replace_exec_event_sender(sender.clone());
+            }
+
+            let account_id = AccountId::from("AX-FACTORY-002");
+            let config = AxExecutionClientConfig {
+                account_id,
+                api_key: Some("test_api_key".into()),
+                api_secret: Some("test_api_secret".into()),
+                ..Default::default()
+            };
+            let cache = Rc::new(RefCell::new(Cache::default()));
+            let clock = Rc::new(RefCell::new(VirtualClock::new()));
+            let mut client = AxExecutionClientFactory::new()
+                .create(
+                    TraderId::from("TESTER-002"),
+                    "AX",
+                    &config,
+                    cache.into(),
+                    clock,
+                )
+                .unwrap();
+            let balances = vec![AccountBalance::new(
+                Money::from("1234.50 USD"),
+                Money::from("234.25 USD"),
+                Money::from("1000.25 USD"),
+            )];
+            let ts_event = UnixNanos::from(123_456);
+
+            if !sender_bound {
+                assert!(try_get_exec_event_sender().is_none());
+                replace_exec_event_sender(sender);
+                client.start().unwrap();
+            }
+
+            client
+                .generate_account_state(balances.clone(), vec![], true, ts_event, None)
+                .unwrap();
+
+            let ExecutionEvent::Account(state) = receiver.try_recv().unwrap() else {
+                panic!("Expected account state");
+            };
+            assert_eq!(state.account_id, account_id);
+            assert_eq!(state.account_type, AccountType::Margin);
+            assert_eq!(state.base_currency, None);
+            assert_eq!(state.balances, balances);
+            assert_eq!(state.margins, vec![]);
+            assert!(state.is_reported);
+            assert_eq!(state.ts_event, ts_event);
+            assert_eq!(state.info, None);
+            assert_eq!(
+                receiver.try_recv().unwrap_err(),
+                tokio::sync::mpsc::error::TryRecvError::Empty
+            );
+        })
+        .join()
+        .unwrap();
     }
 }

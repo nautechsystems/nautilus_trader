@@ -480,27 +480,6 @@ async fn build_loader(
         .await
         .map_err(to_pyruntime_err)?;
 
-    if let Some(schedule) = market.fee_schedule.as_mut()
-        && schedule.rate.is_zero()
-        && !schedule.rebate_rate.is_zero()
-        && let Some(token) = details.tokens.get(token_index)
-    {
-        match clob.get_fee_rate(&token.token_id).await {
-            Ok(response) => {
-                let rate = response.to_rate();
-                if rate >= rust_decimal::Decimal::ZERO {
-                    schedule.rate = rate;
-                }
-            }
-            Err(e) => {
-                log::warn!(
-                    "CLOB fee-rate fallback failed for market {}: {e}",
-                    market.id
-                );
-            }
-        }
-    }
-
     build_loader_from_details(market, &details, token_index, data_api_client)
 }
 
@@ -1113,15 +1092,45 @@ mod tests {
         );
     }
 
+    #[rstest]
+    #[case(false, rust_decimal::Decimal::ZERO)]
+    #[case(true, rust_decimal::Decimal::ZERO)]
+    #[case(true, rust_decimal::Decimal::new(4, 2))]
     #[tokio::test]
-    async fn build_loader_recovers_zero_taker_rate_from_clob_fee_rate() {
+    async fn build_loader_uses_gamma_taker_rate_without_clob_fee_rate(
+        #[case] missing_schedule: bool,
+        #[case] expected_rate: rust_decimal::Decimal,
+    ) {
         Python::initialize();
 
         let calls = Arc::new(AtomicUsize::new(0));
         let asserted = Arc::clone(&calls);
         let details = serde_json::to_string(&clob_market()).unwrap();
 
+        let mut market = gamma_market();
+        market.fees_enabled = Some(true);
+        market.fee_type = Some("crypto_fees".to_string());
+        market.fee_schedule = Some(crate::http::models::FeeSchedule {
+            exponent: rust_decimal::Decimal::ONE,
+            rate: expected_rate,
+            taker_only: true,
+            rebate_rate: rust_decimal::Decimal::ZERO,
+        });
+
+        let recovery = serde_json::to_string(&json!({"markets": [market.clone()]})).unwrap();
+
+        if missing_schedule {
+            market.fee_schedule = None;
+        }
+
         let router = axum::Router::new()
+            .route(
+                "/markets/keyset",
+                axum::routing::get(move || {
+                    let recovery = recovery.clone();
+                    async move { recovery }
+                }),
+            )
             .route(
                 "/markets/0xcondition",
                 axum::routing::get(move || {
@@ -1137,7 +1146,8 @@ mod tests {
 
                     async move {
                         calls.fetch_add(1, Ordering::SeqCst);
-                        r#"{"base_fee":700}"#.to_string()
+                        include_str!("../../test_data/clob_fee_rate_response_nonzero.json")
+                            .to_string()
                     }
                 }),
             );
@@ -1146,19 +1156,9 @@ mod tests {
         let address = listener.local_addr().unwrap();
         let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
 
-        let mut market = gamma_market();
-        market.fees_enabled = Some(true);
-        market.fee_type = Some("crypto_fees".to_string());
-        market.fee_schedule = Some(crate::http::models::FeeSchedule {
-            exponent: rust_decimal::Decimal::ONE,
-            rate: rust_decimal::Decimal::ZERO,
-            taker_only: true,
-            rebate_rate: rust_decimal::Decimal::ZERO,
-        });
-
         let gamma = PolymarketGammaHttpClient::new(
-            Some("http://127.0.0.1:1".to_string()),
-            1,
+            Some(format!("http://{address}")),
+            5,
             RetryConfig::default(),
         )
         .expect("valid test client");
@@ -1169,13 +1169,15 @@ mod tests {
             .expect("loader should build");
         server.abort();
 
-        assert_eq!(asserted.load(Ordering::SeqCst), 1);
+        assert_eq!(asserted.load(Ordering::SeqCst), 0);
         assert_eq!(loader.token_id, "yes-token");
 
         let info = loader.instrument.info.as_ref().unwrap();
         let schedule: crate::http::models::FeeSchedule =
             serde_json::from_value(info.get("fee_schedule").unwrap().clone()).unwrap();
-        assert_eq!(schedule.rate, rust_decimal::Decimal::new(7, 2));
+        assert_eq!(schedule.rate, expected_rate);
+        assert_eq!(schedule.exponent, rust_decimal::Decimal::ONE);
+        assert!(schedule.taker_only);
         assert_eq!(schedule.rebate_rate, rust_decimal::Decimal::new(2, 1));
     }
 }

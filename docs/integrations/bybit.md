@@ -364,6 +364,17 @@ consumes one request. The adapter splits Spot, Linear, and Inverse batches into 
 default so one request cannot exceed the standard rolling UID allowance. It splits Option batches
 into groups of five. The HTTP batch-cancel method accepts up to 20 Option operations in one call.
 
+### Cancel-all orders
+
+For venue-wide cancel-all (`strategy_only=False`) without an `order_side` filter, the adapter updates
+cached orders only after the venue confirms cancellation. Fills use the execution stream and
+reconciliation. The cancel request, history lookup, and confirmation queries share one
+`http_timeout_secs` deadline. The adapter waits
+`retry_delay_initial_ms` (at least 1 ms) between polling rounds. If a request fails or the deadline
+expires, unconfirmed orders stay open locally until a later order update or reconciliation confirms
+closure. With an `order_side` filter, the adapter uses batch cancel for matching orders instead.
+See [Cancel-all routing](../concepts/execution/index.md#cancel-all-routing) for command routing.
+
 ### Position management
 
 | Feature          | Spot | Linear | Inverse | Option | Notes                                                       |
@@ -1009,9 +1020,9 @@ The product types for each client must be specified in the configurations.
 | `base_url_ws_private`       | `None`     | Override for the private WebSocket base URL.                                                                    |
 | `base_url_ws_trade`         | `None`     | Override for the trade WebSocket base URL.                                                                      |
 | `proxy_url`                 | `None`     | Optional proxy URL for HTTP and WebSocket transports.                                                           |
-| `http_timeout_secs`         | `60`       | Timeout (seconds) for REST requests.                                                                            |
+| `http_timeout_secs`         | `60`       | REST request timeout and total cancel-all confirmation deadline (seconds).                                      |
 | `max_retries`               | `3`        | Maximum retry attempts for REST requests.                                                                       |
-| `retry_delay_initial_ms`    | `1,000`    | Initial retry delay (milliseconds).                                                                             |
+| `retry_delay_initial_ms`    | `1,000`    | Initial REST retry delay and cancel-all polling interval (milliseconds).                                        |
 | `retry_delay_max_ms`        | `10,000`   | Maximum retry delay (milliseconds).                                                                             |
 | `heartbeat_interval_secs`   | `5`        | Heartbeat interval (seconds) for WebSocket clients.                                                             |
 | `auth_timeout_secs`         | `None`     | Optional WebSocket authentication timeout (seconds).                                                            |

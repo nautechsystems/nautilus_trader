@@ -2613,13 +2613,13 @@ mod tests {
             DataEvent::Response(DataResponse::FundingRates(response)) => {
                 assert_eq!(response.instrument_id, instrument_id);
                 assert_eq!(response.data.len(), 2);
-                assert_eq!(response.data[0].rate, Decimal::new(12, 4));
+                assert_eq!(response.data[0].rate, Decimal::new(12, 6));
                 assert_eq!(response.data[0].interval, Some(60));
                 assert_eq!(
                     response.data[0].ts_event,
                     UnixNanos::from(1_778_702_400_000_000_000)
                 );
-                assert_eq!(response.data[1].rate, Decimal::new(-2, 4));
+                assert_eq!(response.data[1].rate, Decimal::new(-2, 6));
                 assert_eq!(response.data[1].interval, Some(60));
             }
             event => panic!("expected funding rates response, was {event:?}"),

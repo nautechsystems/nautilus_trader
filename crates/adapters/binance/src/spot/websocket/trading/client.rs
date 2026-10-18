@@ -330,7 +330,7 @@ impl BinanceSpotWsTradingClient {
             .map_err(|e| BinanceWsApiError::ConnectionError(e.to_string()))?;
 
         client.set_auth_tracker(self.user_data_tracker.clone(), true);
-        self.connection_mode.store(client.connection_mode_atomic());
+        let connection_mode = client.connection_mode_atomic();
         let reconnect_handle = client.reconnect_handle();
 
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -348,6 +348,7 @@ impl BinanceSpotWsTradingClient {
         {
             let mut tx_guard = self.cmd_tx.write().await;
             *tx_guard = cmd_tx;
+            self.connection_mode.store(connection_mode);
         }
 
         let signal = self.signal.clone();
@@ -579,9 +580,89 @@ impl BinanceSpotWsTradingClient {
 
 #[cfg(test)]
 mod tests {
+    use futures_util::StreamExt;
+    use nautilus_testkit::connection::race_command_with_publication;
     use rstest::rstest;
 
     use super::*;
+
+    #[tokio::test]
+    async fn command_during_sender_publication_reaches_initialized_handler() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (received_tx, mut received_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let server = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let mut socket = tokio_tungstenite::accept_async(socket).await.unwrap();
+            while let Some(Ok(message)) = socket.next().await {
+                if let tokio_tungstenite::tungstenite::Message::Text(text) = message {
+                    let payload: serde_json::Value = serde_json::from_str(text.as_str()).unwrap();
+                    let _ = received_tx.send(payload);
+                }
+            }
+        });
+
+        let url = format!("ws://{addr}");
+
+        let mut ws_client = BinanceSpotWsTradingClient::new(
+            Some(url),
+            "startup-key".to_string(),
+            "startup-secret".to_string(),
+            None,
+            TransportBackend::default(),
+        );
+        let observer = ws_client.clone();
+
+        let command = BinanceSpotWsTradingCommand::CancelOrder {
+            id: "startup-73".to_string(),
+            params: CancelOrderParams::by_order_id("ETHUSDT", 724),
+        };
+
+        race_command_with_publication(
+            Arc::clone(&ws_client.cmd_tx),
+            ws_client.connect(),
+            move || command,
+            || observer.is_active(),
+        )
+        .await
+        .expect("connect failed");
+        let received = tokio::time::timeout(Duration::from_secs(2), received_rx.recv()).await;
+        ws_client.disconnect().await.expect("disconnect failed");
+        server.abort();
+
+        let mut payload = received
+            .expect("startup command must reach server")
+            .unwrap();
+        let timestamp = payload["params"]
+            .as_object_mut()
+            .unwrap()
+            .remove("timestamp")
+            .unwrap();
+        let signature = payload["params"]
+            .as_object_mut()
+            .unwrap()
+            .remove("signature")
+            .unwrap();
+        let timestamp = timestamp.as_u64().unwrap();
+        let query = format!("apiKey=startup-key&orderId=724&symbol=ETHUSDT&timestamp={timestamp}");
+        assert_eq!(
+            signature,
+            serde_json::json!(observer.credential.sign(&query))
+        );
+        assert_eq!(
+            payload,
+            serde_json::json!({
+                "id": "startup-73",
+                "method": "order.cancel",
+                "params": {
+                    "apiKey": "startup-key",
+                    "symbol": "ETHUSDT",
+                    "orderId": 724
+                }
+            })
+        );
+    }
 
     #[rstest]
     fn test_operational_options_are_preserved() {

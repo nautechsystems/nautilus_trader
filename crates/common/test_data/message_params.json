@@ -1,0 +1,8 @@
+{
+  "string": "alpha",
+  "signed": -9223372036854775808,
+  "unsigned": 18446744073709551615,
+  "boolean": true,
+  "null": null,
+  "nested": {"array": [0, 1.25, false, "beta", {"key": "value"}]}
+}

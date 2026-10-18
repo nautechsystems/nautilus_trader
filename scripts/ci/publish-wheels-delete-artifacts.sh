@@ -9,7 +9,9 @@ response=$(curl -sS --retry 5 --retry-delay 2 --retry-all-errors --connect-timeo
   "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts")
 
 # Extract artifact IDs
-ids=$(echo "$response" | jq -r '.artifacts[].id // empty')
+ids=$(echo "$response" | jq -r '.artifacts[]
+  | select(.name | test("^release-(verification|publication)-") | not)
+  | .id // empty')
 if [[ -z "$ids" ]]; then
   echo "No artifact IDs found for the current run"
   exit 0

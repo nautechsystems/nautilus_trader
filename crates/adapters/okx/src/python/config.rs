@@ -16,7 +16,7 @@
 //! Python bindings for OKX configuration.
 
 use nautilus_core::string::secret::SecretString;
-use nautilus_model::identifiers::AccountId;
+use nautilus_model::{enums::OmsType, identifiers::AccountId};
 use nautilus_network::websocket::TransportBackend;
 use pyo3::prelude::*;
 
@@ -148,6 +148,7 @@ impl OKXExecutionClientConfig {
         auth_timeout_secs = None,
         transport_backend = None,
         spot_trade_quote_ccy = None,
+        oms_type = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -171,10 +172,12 @@ impl OKXExecutionClientConfig {
         auth_timeout_secs: Option<u64>,
         transport_backend: Option<TransportBackend>,
         spot_trade_quote_ccy: Option<String>,
+        oms_type: Option<OmsType>,
     ) -> Self {
         let defaults = Self::default();
         Self {
             account_id,
+            oms_type,
             api_key: api_key.map(SecretString::from),
             api_secret: api_secret.map(SecretString::from),
             api_passphrase: api_passphrase.map(SecretString::from),
@@ -278,10 +281,12 @@ mod tests {
             None,
             None,
             Some("USD".to_string()),
+            Some(OmsType::Hedging),
         );
 
         assert!(config.load_spreads);
         assert_eq!(config.auth_timeout_secs, None);
         assert_eq!(config.spot_trade_quote_ccy.as_deref(), Some("USD"));
+        assert_eq!(config.oms_type, Some(OmsType::Hedging));
     }
 }

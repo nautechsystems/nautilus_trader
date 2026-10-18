@@ -213,6 +213,7 @@ impl PolymarketDataClient {
                                 now_ns,
                                 &subscriptions,
                                 Some(&cancellation),
+                                clock,
                             ) => result,
                             () = cancellation.cancelled() => break,
                         };
@@ -771,10 +772,89 @@ mod tests {
     }
 
     #[rstest]
-    fn test_data_client_wires_clob_client_for_fee_rate_fallback() {
-        let client = make_client_for_reset_test();
+    #[case(false)]
+    #[case(true)]
+    #[tokio::test]
+    async fn test_data_client_keeps_missing_taker_rate_at_zero(#[case] missing_schedule: bool) {
+        let mut market: Value = serde_json::from_str(include_str!(
+            "../../test_data/gamma_market_fee_zero_rate.json"
+        ))
+        .unwrap();
 
-        assert!(client.provider().http_client().clob_client().is_some());
+        if missing_schedule {
+            market["feeSchedule"] = Value::Null;
+        }
+
+        let response = serde_json::to_string(&vec![market]).unwrap();
+        let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let asserted = Arc::clone(&calls);
+
+        let router = axum::Router::new()
+            .route(
+                "/markets",
+                axum::routing::get(move || {
+                    let response = response.clone();
+                    async move { response }
+                }),
+            )
+            .route(
+                "/fee-rate",
+                axum::routing::get(move || {
+                    calls.fetch_add(1, Ordering::SeqCst);
+                    async { include_str!("../../test_data/clob_fee_rate_response_nonzero.json") }
+                }),
+            );
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        let gamma = PolymarketGammaHttpClient::new(
+            Some(format!("http://{address}")),
+            5,
+            RetryConfig::default(),
+        )
+        .unwrap();
+        let clob = PolymarketClobPublicClient::new(Some(format!("http://{address}")), 5).unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        replace_data_event_sender(tx);
+
+        let client = PolymarketDataClient::new(
+            ClientId::from("POLY-TEST"),
+            PolymarketDataClientConfig::default(),
+            gamma,
+            clob,
+            PolymarketDataApiHttpClient::new(None, 5).unwrap(),
+            PolymarketMarketConnectionPool::new(
+                None,
+                false,
+                TransportBackend::default(),
+                WS_DEFAULT_SUBSCRIPTIONS,
+            ),
+        );
+        let instruments = client
+            .provider()
+            .http_client()
+            .request_instruments_by_slugs(vec!["fee-market".to_string()])
+            .await
+            .unwrap();
+        server.abort();
+
+        assert_eq!(asserted.load(Ordering::SeqCst), 0);
+        assert_eq!(instruments.len(), 2);
+
+        for instrument in instruments {
+            let InstrumentAny::BinaryOption(binary) = instrument else {
+                panic!("expected a binary option instrument");
+            };
+
+            let info = binary.info.unwrap();
+            let schedule: crate::http::models::FeeSchedule =
+                serde_json::from_value(info.get("fee_schedule").unwrap().clone()).unwrap();
+            assert_eq!(schedule.rate, rust_decimal::Decimal::ZERO);
+            assert_eq!(schedule.exponent, rust_decimal::Decimal::ONE);
+            assert!(schedule.taker_only);
+            assert_eq!(schedule.rebate_rate, rust_decimal::Decimal::new(2, 1));
+        }
     }
 
     fn polybolt_crypto_data_type(symbol: &str) -> DataType {

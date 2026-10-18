@@ -1945,9 +1945,22 @@ in either design:
 
 > No public subscribe, order, or control command can overtake handler initialization.
 
-Queue initialization before publishing a command sender or connected state, or use another
-mechanism that proves the same ordering. Test a command issued at the connection boundary so a
-race cannot silently drop it.
+Use this startup order for command-based clients:
+
+1. Create the transport and command channels privately.
+1. Queue `SetClient`, required cache initialization, and initial subscription replay.
+1. Publish the initialized sender under the existing publication lock.
+1. Publish the connection epoch, if present, and then the active connection state.
+
+Synchronize cache writers with the startup snapshot and sender publication so an update either enters
+the snapshot or reaches the new handler. If cache dispatch depends on active state, publish that state
+before releasing the guard. Synchronous cache writers must preserve the same ordering.
+
+Keep authentication that awaits handler responses after handler startup and outside these locks.
+
+Clients that construct a handler with its transport, or publish an initialized connection pool slot,
+must preserve the same invariant. Test a command issued at the connection boundary so a race cannot
+silently drop it. Also test that the client remains inactive while sender publication is blocked.
 
 ### Authentication
 

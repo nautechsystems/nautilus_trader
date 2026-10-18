@@ -56,6 +56,7 @@ jobs:
       publish_environment: ${{ steps.wheel-publication.outputs.publish_environment }}
       wheel_matrix: ${{ steps.wheel-publication.outputs.wheel_matrix }}
       wheel_version: ${{ steps.wheel-publication.outputs.wheel_version }}
+      tag_name: ${{ steps.release-tag.outputs.tag_name }}
     steps:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
@@ -94,6 +95,13 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           REF_NAME: ${{ github.ref_name }}
         run: bash scripts/ci/plan-wheel-publication.bash
+
+      - name: Resolve release tag
+        id: release-tag
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        run: |
+          tag_name="v$(bash scripts/package-version.sh)"
+          echo "tag_name=$tag_name" >> "$GITHUB_OUTPUT"
 
   security-audit:
     name: security audit
@@ -260,7 +268,7 @@ jobs:
 
       - name: Install lychee
         # https://github.com/taiki-e/install-action
-        uses: taiki-e/install-action@94c31af3204a9f15ab40b35ad084410b905bbc73 # v2.87.17
+        uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
         with:
           tool: lychee@${{ env.LYCHEE_VERSION }}
         env:
@@ -274,15 +282,12 @@ jobs:
 
       - name: Install cargo-machete
         # https://github.com/taiki-e/install-action
-        uses: taiki-e/install-action@94c31af3204a9f15ab40b35ad084410b905bbc73 # v2.87.17
+        uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
         with:
           tool: cargo-machete@${{ env.CARGO_MACHETE_VERSION }}
 
       - name: Run pre-commit
         run: prek run --all-files
-
-      - name: Verify capnp schemas are up-to-date
-        run: make check-capnp-schemas
 
   build:
     if: &python-build-condition github.ref != 'refs/heads/test-pre-commit' && needs.plan.outputs.run-tests == 'true'
@@ -630,7 +635,7 @@ jobs:
       - name: Run Rust tests
         run: >-
           make cargo-test NEXTEST_PROFILE=ci
-          EXTRA_FEATURES="capnp,hypersync,nautilus-serialization/sbe,nautilus-infrastructure/postgres"
+          EXTRA_FEATURES="hypersync,nautilus-common/sbe,nautilus-infrastructure/postgres"
 
       - name: Report disk space after Rust tests
         if: always()
@@ -895,7 +900,7 @@ jobs:
         id: osv-scan
         continue-on-error: true
         # https://github.com/google/osv-scanner-action
-        uses: google/osv-scanner-action/osv-scanner-action@a345acffa64b0eaede81a3d9aae6141214d9c8fc # v2.6.0
+        uses: google/osv-scanner-action/osv-scanner-action@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
         with:
           scan-args: |-
             --config=osv-scanner.toml
@@ -1195,7 +1200,7 @@ jobs:
 
       - name: Install cargo-hack
         # https://github.com/taiki-e/install-action
-        uses: taiki-e/install-action@94c31af3204a9f15ab40b35ad084410b905bbc73 # v2.87.17
+        uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
         with:
           tool: cargo-hack
 
@@ -1209,7 +1214,11 @@ jobs:
         run: make check-all-targets
 
   tag-release:
+    concurrency:
+      group: release-publication-${{ needs.plan.outputs.tag_name }}
+      cancel-in-progress: false
     needs:
+      - plan
       - build
       - build-python314
       - build-linux-arm
@@ -1353,6 +1362,9 @@ jobs:
           retention-days: 7
 
   upload-sdist-release:
+    concurrency:
+      group: release-publication-${{ needs.tag-release.outputs.tag_name }}
+      cancel-in-progress: false
     needs:
       - build-sdist
       - tag-release
@@ -1390,6 +1402,9 @@ jobs:
         run: bash ./scripts/ci/upload-github-release-assets.bash sdist release-sdist/nautilus_trader-*.tar.gz
 
   publish-wheels-master:
+    concurrency:
+      group: release-publication-${{ needs.tag-release.outputs.tag_name }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     environment: release
     permissions:
@@ -1716,6 +1731,9 @@ jobs:
           retention-days: 7
 
   publish-release-integrity:
+    concurrency:
+      group: release-publication-${{ needs.tag-release.outputs.tag_name }}
+      cancel-in-progress: false
     needs:
       - publish-cargo-crates
       - publish-wheels-pypi
@@ -1748,6 +1766,12 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Prepare verifier diagnostics
+        run: |
+          mkdir -p "$RUNNER_TEMP/release-verification"
+          echo "RELEASE_VERIFICATION_DIAGNOSTICS_DIR=$RUNNER_TEMP/release-verification" >> "$GITHUB_ENV"
+          echo "XDG_CACHE_HOME=$RUNNER_TEMP/release-verification/cache" >> "$GITHUB_ENV"
+
       - name: Get release Python tool versions
         shell: bash
         run: |
@@ -1771,7 +1795,10 @@ jobs:
           TAG_NAME: ${{ needs.tag-release.outputs.tag_name }}
           ATTESTATION_IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
           ATTESTATION_ISSUER: https://token.actions.githubusercontent.com
-        run: bash ./scripts/ci/publish-release-checksums.sh --generate-only release-assets
+        run: |
+          echo generate-checksums > "$RELEASE_VERIFICATION_DIAGNOSTICS_DIR/checkpoint"
+          bash ./scripts/ci/publish-release-checksums.sh --generate-only release-assets 2>&1 |
+            tee "$RELEASE_VERIFICATION_DIAGNOSTICS_DIR/generate-checksums.log"
 
       - name: Verify published registries
         shell: bash
@@ -1784,7 +1811,14 @@ jobs:
           CARGO_PUBLISH_USER_AGENT: >-
             nautilus-trader-release-verifier
             (${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
-        run: bash ./scripts/ci/verify-published-registries.bash release-assets
+        run: |
+          mkdir -p "$RELEASE_VERIFICATION_DIAGNOSTICS_DIR"
+          gh --version > "$RELEASE_VERIFICATION_DIAGNOSTICS_DIR/tools.txt"
+          uv --version >> "$RELEASE_VERIFICATION_DIAGNOSTICS_DIR/tools.txt"
+          cargo --version >> "$RELEASE_VERIFICATION_DIAGNOSTICS_DIR/tools.txt"
+          echo registries > "$RELEASE_VERIFICATION_DIAGNOSTICS_DIR/checkpoint"
+          bash ./scripts/ci/verify-published-registries.bash release-assets 2>&1 |
+            tee "$RELEASE_VERIFICATION_DIAGNOSTICS_DIR/registry-verification.log"
 
       - name: Publish release checksums
         shell: bash
@@ -1793,7 +1827,10 @@ jobs:
           TAG_NAME: ${{ needs.tag-release.outputs.tag_name }}
           ATTESTATION_IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
           ATTESTATION_ISSUER: https://token.actions.githubusercontent.com
-        run: bash ./scripts/ci/publish-release-checksums.sh --publish-existing release-assets
+        run: |
+          echo publish-checksums > "$RELEASE_VERIFICATION_DIAGNOSTICS_DIR/checkpoint"
+          bash ./scripts/ci/publish-release-checksums.sh --publish-existing release-assets 2>&1 |
+            tee "$RELEASE_VERIFICATION_DIAGNOSTICS_DIR/publish-checksums.log"
 
       - name: Upload crates manifest
         env:
@@ -1819,6 +1856,17 @@ jobs:
           TAG_NAME: ${{ needs.tag-release.outputs.tag_name }}
         run: bash ./scripts/ci/upload-release-attestation-siblings.bash release-attestations
 
+      - name: Retain release verification diagnostics
+        if: failure() || cancelled()
+        # https://github.com/actions/upload-artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-verification-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/release-verification
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 30
+
       # A failed integrity job keeps workflow artifacts available for re-runs
       - name: Delete artifacts for current run
         if: success()
@@ -1829,6 +1877,9 @@ jobs:
         run: bash ./scripts/ci/publish-wheels-delete-artifacts.sh
 
   publish-github-release:
+    concurrency:
+      group: release-publication-${{ needs.tag-release.outputs.tag_name }}
+      cancel-in-progress: false
     needs:
       - publish-release-integrity
       - tag-release
@@ -1853,24 +1904,54 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Prepare publication diagnostics
+        run: |
+          mkdir -p "$RUNNER_TEMP/release-publication"
+          echo "RELEASE_VERIFICATION_DIAGNOSTICS_DIR=$RUNNER_TEMP/release-publication" >> "$GITHUB_ENV"
+          echo "XDG_CACHE_HOME=$RUNNER_TEMP/release-publication/cache" >> "$GITHUB_ENV"
+          gh --version > "$RUNNER_TEMP/release-publication/tools.txt"
+
       - name: Verify final release assets
+        shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ needs.tag-release.outputs.tag_name }}
           GH_RELEASE_EXPECT_DRAFT: "true"
-        run: bash ./scripts/ci/verify-github-release-assets.bash
+        run: |
+          echo final-assets > "$RELEASE_VERIFICATION_DIAGNOSTICS_DIR/checkpoint"
+          bash ./scripts/ci/verify-github-release-assets.bash 2>&1 |
+            tee "$RELEASE_VERIFICATION_DIAGNOSTICS_DIR/final-assets.log"
 
       - name: Check Rekor readiness
         run: bash ./scripts/ci/check-rekor-ready.bash
 
       - name: Publish GitHub release
+        shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ needs.tag-release.outputs.tag_name }}
-        run: bash ./scripts/ci/publish-github-release.bash
+        run: |
+          echo publish > "$RELEASE_VERIFICATION_DIAGNOSTICS_DIR/checkpoint"
+          bash ./scripts/ci/publish-github-release.bash 2>&1 |
+            tee "$RELEASE_VERIFICATION_DIAGNOSTICS_DIR/publish.log"
 
       - name: Verify GitHub release attestation
+        shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ needs.tag-release.outputs.tag_name }}
-        run: bash ./scripts/ci/verify-github-release-attestation.bash
+        run: |
+          echo sealed-release > "$RELEASE_VERIFICATION_DIAGNOSTICS_DIR/checkpoint"
+          bash ./scripts/ci/verify-github-release-attestation.bash 2>&1 |
+            tee "$RELEASE_VERIFICATION_DIAGNOSTICS_DIR/sealed-release.log"
+
+      - name: Retain release publication diagnostics
+        if: failure() || cancelled()
+        # https://github.com/actions/upload-artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-publication-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/release-publication
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 30

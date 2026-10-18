@@ -119,7 +119,7 @@ exception.
 - Keep adapter dependencies in the `# Adapter dependencies` section of the workspace
   `Cargo.toml`. Core crates must not depend on entries from that section.
 - Keep related dependency families compatible. The Cargo convention hook checks the known
-  constraints, including `capnp` with `capnpc`, `arrow` with `parquet`, and
+  constraints, including `arrow` with `parquet` and
   `dydx-proto` with `prost` and `tonic`.
 - List only declared dependencies under `[package.metadata.cargo-machete] ignored`.
 - Remove a root `[workspace.dependencies]` entry when no crate uses it. Cargo tools kept only for CI
@@ -908,19 +908,3 @@ The crate-local `cbindgen.toml` files define the header layout for native consum
 
 Run `make check-cbindgen-abi`. It generates both headers and checks their public names and compatibility enum
 values. It also compiles a C11 consumer against them. The scheduled nightly tests run this check.
-
-### Cap'n Proto schemas
-
-Schema files live under `crates/serialization/schemas/capnp/`, and generated Rust lives under
-`crates/serialization/generated/capnp/`.
-
-- Add fields at the end.
-- Do not remove fields or reuse field numbers. Mark obsolete fields as deprecated in comments.
-- Regenerate with `make regen-capnp`.
-- Review `git diff crates/serialization/generated/capnp`.
-- Run `make check-capnp-schemas` to verify the checked-in output.
-- Test the serialization crate with `make cargo-test-crate-nautilus-serialization`.
-
-Install the pinned compiler as described in
-[Environment setup](environment_setup.md#capn-proto). Generated bindings stay checked in so
-docs.rs can build without the compiler.

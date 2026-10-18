@@ -7680,8 +7680,10 @@ impl OrderMatchingEngine {
             -fill.last_qty.as_decimal()
         };
 
-        if matches!(self.instrument, InstrumentAny::CurrencyPair(_))
-            && let Some(commission) = fill.commission
+        if matches!(
+            self.instrument,
+            InstrumentAny::CurrencyPair(_) | InstrumentAny::TokenizedAsset(_)
+        ) && let Some(commission) = fill.commission
             && Some(commission.currency) == self.instrument.base_currency()
         {
             quantity_change -= commission.as_decimal();
@@ -7883,7 +7885,10 @@ mod tests {
         identifiers::{AccountId, ClientOrderId, StrategyId, TradeId, TraderId, VenueOrderId},
         instruments::{
             Instrument, InstrumentAny,
-            stubs::{crypto_option_btc_deribit, crypto_perpetual_ethusdt, futures_contract_es},
+            stubs::{
+                crypto_option_btc_deribit, crypto_perpetual_ethusdt, currency_pair_ethusdt,
+                futures_contract_es, tokenized_asset_aaplx,
+            },
         },
         orderbook::OrderBook,
         orders::{Order, OrderAny, OrderTestBuilder, stubs::TestOrderEventStubs},
@@ -8192,15 +8197,37 @@ mod tests {
     }
 
     #[rstest]
-    #[case::base_fee("0.010 ETH", "0.89000")]
-    #[case::quote_fee("0.010 USDT", "0.90000")]
+    #[case::currency_pair_base_fee(
+        InstrumentAny::CurrencyPair(currency_pair_ethusdt()),
+        true,
+        0.89
+    )]
+    #[case::currency_pair_quote_fee(
+        InstrumentAny::CurrencyPair(currency_pair_ethusdt()),
+        false,
+        0.90
+    )]
+    #[case::tokenized_asset_base_fee(
+        InstrumentAny::TokenizedAsset(tokenized_asset_aaplx()),
+        true,
+        0.89
+    )]
+    #[case::tokenized_asset_quote_fee(
+        InstrumentAny::TokenizedAsset(tokenized_asset_aaplx()),
+        false,
+        0.90
+    )]
     fn test_pending_spot_fills_include_base_currency_commission(
-        #[case] commission: &str,
-        #[case] expected: &str,
+        #[case] instrument: InstrumentAny,
+        #[case] base_fee: bool,
+        #[case] expected: f64,
     ) {
-        let instrument = InstrumentAny::CurrencyPair(
-            nautilus_model::instruments::stubs::currency_pair_ethusdt(),
-        );
+        let qty = |value: f64| Quantity::new(value, instrument.size_precision());
+        let commission_currency = if base_fee {
+            instrument.base_currency().unwrap()
+        } else {
+            instrument.quote_currency()
+        };
         let cache = Rc::new(RefCell::new(Cache::default()));
         let mut engine = OrderMatchingEngine::new(
             instrument.clone(),
@@ -8215,23 +8242,28 @@ mod tests {
             Default::default(),
         );
         let position_id = PositionId::from("POSITION-001");
-        let (opening, opening_fill) =
-            pending_position_fill(&instrument, position_id, "OPEN", OrderSide::Buy, "0.50000");
+        let (opening, opening_fill) = pending_position_fill(
+            &instrument,
+            position_id,
+            "OPEN",
+            OrderSide::Buy,
+            &qty(0.5).to_string(),
+        );
         let (_, mut increase_fill) = pending_position_fill(
             &instrument,
             position_id,
             "INCREASE",
             OrderSide::Buy,
-            "0.40000",
+            &qty(0.4).to_string(),
         );
         let (closing, _) = pending_position_fill(
             &instrument,
             position_id,
             "CLOSE",
             OrderSide::Sell,
-            "1.00000",
+            &qty(1.0).to_string(),
         );
-        increase_fill.commission = Some(Money::from(commission));
+        increase_fill.commission = Some(Money::new(0.01, commission_currency));
         let position = Position::new(&instrument, opening_fill);
         cache
             .borrow_mut()
@@ -8246,7 +8278,7 @@ mod tests {
             engine
                 .position_quantity_remaining(&closing, Some(&position))
                 .unwrap(),
-            Quantity::from(expected)
+            qty(expected)
         );
         let position = cache
             .borrow_mut()
@@ -8256,7 +8288,7 @@ mod tests {
             engine
                 .position_quantity_remaining(&closing, Some(&position))
                 .unwrap(),
-            Quantity::from(expected)
+            qty(expected)
         );
         assert!(engine.pending_fills.is_empty());
     }

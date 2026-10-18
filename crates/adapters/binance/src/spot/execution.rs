@@ -2642,8 +2642,12 @@ fn dispatch_ws_trading_message(
         }
         BinanceSpotWsTradingMessage::AccountPosition(position) => {
             let ts_init = clock.get_time_ns();
-            let state = parse_spot_account_position(&position, account_id, ts_init);
-            emitter.send_account_state(state);
+            match parse_spot_account_position(&position, account_id, ts_init) {
+                Ok(state) => emitter.send_account_state(state),
+                Err(e) => log::error!(
+                    "Ignoring invalid spot account position to avoid partial account state: {e:#}"
+                ),
+            }
         }
         BinanceSpotWsTradingMessage::BalanceUpdate(update) => {
             log::debug!(
@@ -4046,6 +4050,9 @@ mod tests {
                 self_trade_prevention_mode::SelfTradePreventionMode as SbeStp,
                 time_in_force::TimeInForce as SbeTimeInForce,
             },
+            websocket::trading::user_data::{
+                BinanceSpotAccountPositionMsg, BinanceSpotBalanceEntry,
+            },
         },
     };
 
@@ -4378,6 +4385,89 @@ mod tests {
             }
             other => panic!("Expected ModifyRejected event, was {other:?}"),
         }
+    }
+
+    fn dispatch_account_position(
+        position: BinanceSpotAccountPositionMsg,
+    ) -> tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent> {
+        let tasks = TaskGroup::new();
+        let task_spawner = tasks.spawner().expect("task spawner");
+        let clock = get_atomic_clock_realtime();
+        let (emitter, rx) = create_test_emitter(clock);
+        let http_client = create_test_http_client(clock);
+        let dispatch_state = WsDispatchState::default();
+        let ws_authenticated = tokio::sync::Notify::new();
+        let ws_user_data_subscribed = tokio::sync::Notify::new();
+        let (ws_setup_error_tx, _ws_setup_error_rx) = tokio::sync::mpsc::unbounded_channel();
+        let seen_trade_ids = Arc::new(Mutex::new(FifoCache::new()));
+
+        dispatch_ws_trading_message(
+            BinanceSpotWsTradingMessage::AccountPosition(position),
+            &emitter,
+            &http_client,
+            AccountId::from("BINANCE-001"),
+            false,
+            clock,
+            &dispatch_state,
+            &ws_authenticated,
+            &ws_user_data_subscribed,
+            &ws_setup_error_tx,
+            &seen_trade_ids,
+            &task_spawner,
+        );
+
+        rx
+    }
+
+    fn account_position(balances: Vec<BinanceSpotBalanceEntry>) -> BinanceSpotAccountPositionMsg {
+        BinanceSpotAccountPositionMsg {
+            event_type: "outboundAccountPosition".to_string(),
+            event_time: 1_700_000_000_000,
+            last_update_time: 1_700_000_000_000,
+            balances,
+        }
+    }
+
+    #[rstest]
+    fn test_dispatch_account_position_emits_exact_balance() {
+        let position = account_position(vec![BinanceSpotBalanceEntry {
+            asset: Ustr::from("BTC"),
+            free: Decimal::from(1),
+            locked: Decimal::from(2),
+        }]);
+
+        let mut rx = dispatch_account_position(position);
+
+        match rx.try_recv().expect("account state should be emitted") {
+            ExecutionEvent::Account(state) => {
+                assert_eq!(state.balances.len(), 1);
+                assert_eq!(state.balances[0].total.as_decimal(), Decimal::from(3));
+                assert_eq!(state.balances[0].locked.as_decimal(), Decimal::from(2));
+            }
+            other => panic!("Expected account state, was {other:?}"),
+        }
+
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_dispatch_account_position_does_not_emit_partial_state() {
+        let position = account_position(vec![
+            BinanceSpotBalanceEntry {
+                asset: Ustr::from("BTC"),
+                free: Decimal::from(1),
+                locked: Decimal::ZERO,
+            },
+            BinanceSpotBalanceEntry {
+                asset: Ustr::from("ETH"),
+                free: Decimal::from(i64::MAX),
+                locked: Decimal::ZERO,
+            },
+        ]);
+
+        let mut rx = dispatch_account_position(position);
+
+        assert!(rx.try_recv().is_err());
     }
 
     fn create_test_emitter(

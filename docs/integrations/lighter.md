@@ -430,7 +430,9 @@ core cache must retain its venue-order-ID mapping. Otherwise, reports use the un
 external client order ID.
 
 Queries use the numeric venue order ID for active and terminal history. Before that ID is known,
-the derived client index can query active orders only. Duplicate active matches fail as ambiguous.
+the derived client index can query active orders only. Assigning the caller's client order ID requires a
+registered selected-index binding. Otherwise, reports use the client order ID from an exact venue binding,
+or the venue order ID as their external client order ID. Duplicate active matches fail as ambiguous.
 
 ### Order types
 
@@ -919,8 +921,11 @@ Funding fields differ:
 - `current_funding_rate`: upcoming estimate used in live updates.
 - `funding_rate` and `funding_timestamp`: last completed payment.
 
-Market stats provide no future settlement time, so live updates leave `interval` and `next_funding_ns`
-unset. Spot `spot_market_stats` emits `IndexPriceUpdate`.
+Lighter funds hourly, so live updates set `interval=60`. Market stats provide no future settlement
+time, so `next_funding_ns` stays unset. Spot `spot_market_stats` emits `IndexPriceUpdate`.
+
+Lighter quotes funding rates in percent. The adapter converts live and historical rates to
+fractions, the Nautilus convention.
 
 Historical funding requests use public `/api/v1/fundings`, not account-specific `positionFunding`:
 

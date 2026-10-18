@@ -6250,6 +6250,7 @@ async fn test_startup_reconciliation_preserves_both_hedge_legs(
     #[case] expected_short_quantity: &str,
     #[case] expected_fill_count: usize,
     #[case] expected_event_count: usize,
+    #[values(false, true)] generate_missing_orders: bool,
 ) {
     let (addr, _captured_queries) = start_exec_test_server_with_query_capture_and_responses(
         CommandResponses::default(),
@@ -6290,12 +6291,13 @@ async fn test_startup_reconciliation_preserves_both_hedge_legs(
     assert_eq!(mass_status.position_reports()[&instrument_id].len(), 2);
 
     let clock = Rc::new(RefCell::new(VirtualClock::new()));
-    let mut manager = ExecutionManager::new(
-        clock.clone(),
-        cache.clone(),
-        ExecutionManagerConfig::default(),
-    )
-    .unwrap();
+
+    let config = ExecutionManagerConfig {
+        generate_missing_orders,
+        ..Default::default()
+    };
+
+    let mut manager = ExecutionManager::new(clock.clone(), cache.clone(), config).unwrap();
     let mut engine = ExecutionEngine::new(clock, cache.clone(), None);
     engine.register_client(Box::new(client)).unwrap();
     engine.register_oms_type(StrategyId::from("EXTERNAL"), OmsType::Hedging);
@@ -6305,6 +6307,34 @@ async fn test_startup_reconciliation_preserves_both_hedge_legs(
 
     let long_position_id = PositionId::from("BTCUSDT-PERP.BINANCE-LONG");
     let short_position_id = PositionId::from("BTCUSDT-PERP.BINANCE-SHORT");
+    let long_qty = Quantity::from("0.005");
+    let short_qty = Quantity::from(expected_short_quantity);
+
+    if !generate_missing_orders {
+        let cache_ref = cache.borrow();
+
+        let expected_unresolved = [
+            (long_position_id, long_qty.as_decimal()),
+            (short_position_id, -short_qty.as_decimal()),
+        ]
+        .map(|(position_id, qty)| {
+            format!(
+                "account={account_id}, instrument={instrument_id}, venue_position_id={:?}, venue_quantity={qty}: generate_missing_orders is disabled",
+                Some(position_id),
+            )
+        });
+
+        assert!(result.events.is_empty());
+        assert!(result.external_orders.is_empty());
+        assert_eq!(
+            cache_ref.orders_total_count(None, None, None, None, None),
+            0
+        );
+        assert!(cache_ref.positions(None, None, None, None, None).is_empty());
+        assert_eq!(result.unresolved_positions, expected_unresolved);
+        return;
+    }
+
     assert_eq!(result.events.len(), expected_event_count);
     assert!(result.unresolved_positions.is_empty());
 
@@ -6318,26 +6348,15 @@ async fn test_startup_reconciliation_preserves_both_hedge_legs(
         assert_eq!(long_position.account_id, account_id);
         assert_eq!(long_position.instrument_id, instrument_id);
         assert_eq!(long_position.side, PositionSide::Long);
-        assert_eq!(long_position.quantity, Quantity::from("0.005"));
-        assert_eq!(
-            long_position.signed_decimal_qty(),
-            rust_decimal_macros::dec!(0.005)
-        );
+        assert_eq!(long_position.quantity, long_qty);
+        assert_eq!(long_position.signed_decimal_qty(), long_qty.as_decimal());
         assert_eq!(long_position.avg_px_open, 50000.0);
         assert_eq!(short_position.id, short_position_id);
         assert_eq!(short_position.account_id, account_id);
         assert_eq!(short_position.instrument_id, instrument_id);
         assert_eq!(short_position.side, PositionSide::Short);
-        assert_eq!(
-            short_position.quantity,
-            Quantity::from(expected_short_quantity),
-        );
-        assert_eq!(
-            short_position.signed_decimal_qty(),
-            -expected_short_quantity
-                .parse::<rust_decimal::Decimal>()
-                .unwrap(),
-        );
+        assert_eq!(short_position.quantity, short_qty);
+        assert_eq!(short_position.signed_decimal_qty(), -short_qty.as_decimal());
         assert_eq!(short_position.avg_px_open, 52000.0);
 
         if expected_fill_count > 0 {

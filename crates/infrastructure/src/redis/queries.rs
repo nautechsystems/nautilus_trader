@@ -149,9 +149,6 @@ impl DatabaseQueries {
             SerializationEncoding::Sbe => {
                 anyhow::bail!("SBE encoding is not supported for Redis cache payloads")
             }
-            SerializationEncoding::Capnp => {
-                anyhow::bail!("Cap'n Proto encoding is not supported for Redis cache payloads")
-            }
         }
     }
 
@@ -171,9 +168,6 @@ impl DatabaseQueries {
                 .map_err(|e| anyhow::anyhow!("Failed to deserialize json `payload`: {e}"))?,
             SerializationEncoding::Sbe => {
                 anyhow::bail!("SBE encoding is not supported for Redis cache payloads")
-            }
-            SerializationEncoding::Capnp => {
-                anyhow::bail!("Cap'n Proto encoding is not supported for Redis cache payloads")
             }
         };
 
@@ -1335,7 +1329,7 @@ mod tests {
                 let value = serde_json::from_slice::<serde_json::Value>(json).unwrap();
                 rmp_serde::to_vec(&value).unwrap()
             }
-            _ => unreachable!(),
+            SerializationEncoding::Sbe => unreachable!(),
         };
 
         let result =

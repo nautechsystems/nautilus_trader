@@ -35,15 +35,19 @@ use axum::{
     routing::{get, post},
 };
 use jiff::{SignedDuration, Timestamp};
-use nautilus_common::{cache::InstrumentLookupError, testing::wait_until_async};
-use nautilus_core::UnixNanos;
+use nautilus_common::{
+    cache::InstrumentLookupError,
+    messages::{DataResponse, data::BarsResponse},
+    testing::wait_until_async,
+};
+use nautilus_core::{UUID4, UnixNanos};
 use nautilus_live::execution::failure::CommandFailure;
 use nautilus_model::{
-    data::BarType,
+    data::{Bar, BarType},
     enums::{
         LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce, TriggerType,
     },
-    identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, VenueOrderId},
+    identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     types::{Price, Quantity},
 };
@@ -1504,6 +1508,175 @@ async fn test_http_request_spread_instrument_by_id() {
         queries[0].get("sprdId").map(String::as_str),
         Some("BTC-USDT_BTC-USDT-SWAP")
     );
+}
+
+#[rstest]
+#[case("BTC-USD_UM_XPERP-310404")]
+#[case("BTC-USD_UM-261030")]
+#[tokio::test]
+async fn test_usd_margined_futures_use_regular_http_endpoints(#[case] symbol: &str) {
+    let mut instruments = load_test_data("http_get_instruments_futures.json");
+    instruments["data"].as_array_mut().unwrap().truncate(1);
+    instruments["data"][0]["instId"] = json!(symbol);
+    let requests = Arc::new(tokio::sync::Mutex::new(Vec::new()));
+    let captured = requests.clone();
+    let router = Router::new().fallback(
+        move |uri: Uri, Query(params): Query<HashMap<String, String>>, body: Bytes| {
+            let requests = captured.clone();
+            let instruments = instruments.clone();
+            async move {
+                let body = if body.is_empty() {
+                    Value::Null
+                } else {
+                    serde_json::from_slice(&body).unwrap()
+                };
+
+                requests
+                    .lock()
+                    .await
+                    .push((uri.path().to_string(), params, body));
+
+                let response = match uri.path() {
+                    "/api/v5/public/instruments" => instruments,
+                    "/api/v5/trade/order" | "/api/v5/trade/cancel-batch-orders" => {
+                        json!({"code": "0", "msg": "", "data": [load_test_data("http_place_order_response.json")]})
+                    }
+                    "/api/v5/trade/orders-pending"
+                    | "/api/v5/trade/orders-history"
+                    | "/api/v5/trade/fills" => json!({"code": "0", "msg": "", "data": []}),
+                    path => panic!("unexpected endpoint: {path}"),
+                };
+
+                Json(response)
+            }
+        },
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    let client = OKXHttpClient::with_credentials(
+        Some("test_key".into()),
+        Some("test_secret".into()),
+        Some("test_passphrase".into()),
+        Some(format!("http://{addr}")),
+        2,
+        0,
+        1,
+        1,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+    let instrument_id = InstrumentId::from(format!("{symbol}.OKX").as_str());
+    let instrument = client.request_instrument(instrument_id).await.unwrap();
+    let placed = client
+        .place_order_with_domain_types(
+            instrument_id,
+            OKXTradeMode::Cross,
+            ClientOrderId::from("OFUTUREHTTP"),
+            OrderSide::Buy,
+            OrderType::Limit,
+            Quantity::from("3"),
+            Some(TimeInForce::Gtc),
+            Some(Price::from("65000.1")),
+            None,
+            Some(true),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+    let canceled = client
+        .cancel_order(
+            instrument_id,
+            Some(ClientOrderId::from("OFUTUREHTTP")),
+            None,
+        )
+        .await
+        .unwrap();
+    let canceled_all = client.cancel_all_orders(instrument_id).await.unwrap();
+    let reports = client
+        .request_order_status_reports(
+            AccountId::from("OKX-001"),
+            None,
+            Some(instrument_id),
+            None,
+            None,
+            false,
+            None,
+        )
+        .await
+        .unwrap();
+    let fills = client
+        .request_fill_reports(
+            AccountId::from("OKX-001"),
+            None,
+            Some(instrument_id),
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+    let requests = requests.lock().await;
+    server.abort();
+    let mut paths = requests
+        .iter()
+        .map(|(path, _, _)| path.as_str())
+        .collect::<Vec<_>>();
+    paths.sort_unstable();
+
+    assert!(matches!(instrument, InstrumentAny::CryptoFuture(_)));
+    assert_eq!(placed.ord_id, Some(Ustr::from("12345678901234567890")));
+    assert_eq!(canceled.ord_id, "12345678901234567890");
+    assert_eq!(canceled_all.len(), 0);
+    assert_eq!(reports.len(), 0);
+    assert_eq!(fills.len(), 0);
+    assert_eq!(
+        paths,
+        vec![
+            "/api/v5/public/instruments",
+            "/api/v5/trade/cancel-batch-orders",
+            "/api/v5/trade/fills",
+            "/api/v5/trade/order",
+            "/api/v5/trade/orders-history",
+            "/api/v5/trade/orders-pending",
+            "/api/v5/trade/orders-pending",
+        ]
+    );
+    assert_eq!(
+        requests[0].1,
+        HashMap::from([
+            ("instType".to_string(), "FUTURES".to_string()),
+            ("instId".to_string(), symbol.to_string())
+        ])
+    );
+    assert_eq!(
+        requests[1].2,
+        json!({
+            "instId": symbol, "tdMode": "cross", "clOrdId": "OFUTUREHTTP",
+            "tag": OKX_NAUTILUS_BROKER_ID, "side": "buy", "ordType": "limit",
+            "sz": "3", "px": "65000.1", "reduceOnly": true, "posSide": "net",
+        })
+    );
+    assert_eq!(
+        requests[2].2,
+        json!([{"instId": symbol, "clOrdId": "OFUTUREHTTP"}])
+    );
+
+    for (_, params, _) in &requests[3..] {
+        assert_eq!(params.get("instType").map(String::as_str), Some("FUTURES"));
+        assert_eq!(params.get("instId").map(String::as_str), Some(symbol));
+    }
 }
 
 #[rstest]
@@ -3444,126 +3617,38 @@ async fn test_request_trades_range_mode_pagination() {
     }
 }
 
+#[rstest]
+#[case::unlimited(None, 1_440, 0, 86_400)]
+#[case::zero_limit(Some(0), 1_440, 0, 86_400)]
+#[case::limited(Some(150), 150, 0, 86_400)]
+#[case::single(Some(1), 1, 0, 86_400)]
+#[case::no_closed_candles(None, 0, 85_800, 85_830)]
+#[case::unaligned_start_single_page(None, 9, 85_830, 86_400)]
+#[case::unaligned_start_multiple_pages(None, 119, 30, 7_200)]
 #[tokio::test]
-async fn test_request_bars_range_mode_pagination() {
-    use nautilus_model::{
-        data::{BarSpecification, BarType},
-        enums::{AggregationSource, BarAggregation, PriceType},
-        identifiers::InstrumentId,
-    };
+async fn test_request_bars_range_mode_pagination(
+    #[case] limit: Option<u32>,
+    #[case] count: usize,
+    #[case] start_seconds: i64,
+    #[case] end_seconds: i64,
+) {
+    let start: Timestamp = "2026-09-01T00:00:00Z".parse().unwrap();
+    let end = start + SignedDuration::from_secs(end_seconds);
+    let bar_type = BarType::from("BTC-USD.OKX-1-MINUTE-LAST-EXTERNAL");
+    let template = load_test_data("http_get_candlesticks.json")["data"][0].clone();
+    let candles = (0..1_440)
+        .map(|index| {
+            let mut candle = template.clone();
+            candle[0] = json!((start.as_millisecond() + index * 60_000).to_string());
+            candle[3] = json!("33500.1");
+            candle[8] = json!("1");
+            candle
+        })
+        .collect();
 
-    let router = Router::new()
-        .route(
-            "/api/v5/public/instruments",
-            get({
-                move || async move {
-                    Json(load_test_data("http_get_instruments_swap.json")).into_response()
-                }
-            }),
-        )
-        .route(
-            "/api/v5/market/candles",
-            get({
-                move |Query(params): Query<HashMap<String, String>>| async move {
-                    // OKX backwards semantics: after=upper bound, before=lower bound
-                    let after = params.get("after").and_then(|s| s.parse::<i64>().ok());
-                    let before = params.get("before").and_then(|s| s.parse::<i64>().ok());
-
-                    let data = if let Some(a) = after {
-                        let mut bars = Vec::new();
-
-                        for i in 0..10 {
-                            let ts = a - ((i + 1) * 60_000);
-
-                            if let Some(b) = before
-                                && ts <= b
-                            {
-                                break;
-                            }
-                            bars.push(json!([
-                                ts.to_string(),
-                                "100000.0",
-                                "100100.0",
-                                "99900.0",
-                                "100050.0",
-                                "10.5",
-                                "0",
-                                "0",
-                                "0"
-                            ]));
-                        }
-                        bars
-                    } else {
-                        vec![]
-                    };
-
-                    Json(json!({
-                        "code": "0",
-                        "msg": "",
-                        "data": data,
-                    }))
-                }
-            }),
-        )
-        .route(
-            "/api/v5/market/history-candles",
-            get({
-                move |Query(params): Query<HashMap<String, String>>| async move {
-                    // OKX backwards semantics: after=upper bound, before=lower bound
-                    let after = params.get("after").and_then(|s| s.parse::<i64>().ok());
-                    let before = params.get("before").and_then(|s| s.parse::<i64>().ok());
-
-                    let data = if let Some(a) = after {
-                        let mut bars = Vec::new();
-
-                        for i in 0..50 {
-                            let ts = a - ((i + 1) * 60_000);
-
-                            if let Some(b) = before
-                                && ts <= b
-                            {
-                                break;
-                            }
-                            bars.push(json!([
-                                ts.to_string(),
-                                "100000.0",
-                                "100100.0",
-                                "99900.0",
-                                "100050.0",
-                                "10.5",
-                                "0",
-                                "0",
-                                "0"
-                            ]));
-                        }
-                        bars
-                    } else {
-                        vec![]
-                    };
-
-                    Json(json!({
-                        "code": "0",
-                        "msg": "",
-                        "data": data,
-                    }))
-                }
-            }),
-        );
-
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-
-    tokio::spawn(async move {
-        axum::serve(listener, router.into_make_service())
-            .await
-            .unwrap();
-    });
-
-    wait_for_server(addr, "/api/v5/public/instruments").await;
-
-    let base_url = format!("http://{addr}");
+    let addr = start_candlestick_server(candles).await;
     let client = OKXHttpClient::new(
-        Some(base_url),
+        Some(format!("http://{addr}")),
         60,
         3,
         1000,
@@ -3572,45 +3657,236 @@ async fn test_request_bars_range_mode_pagination() {
         None,
     )
     .unwrap();
+    let instrument = load_instruments_any()
+        .into_iter()
+        .find(|instrument| instrument.id() == bar_type.instrument_id())
+        .unwrap();
+    let price_precision = instrument.price_precision();
+    let size_precision = instrument.size_precision();
+    client.cache_instrument(instrument);
 
-    for instrument in load_instruments_any() {
-        client.cache_instrument(instrument);
-    }
-
-    let bar_type = BarType::new(
-        InstrumentId::from("BTC-USD.OKX"),
-        BarSpecification::new(1, BarAggregation::Minute, PriceType::Last),
-        AggregationSource::External,
-    );
-
-    // Regression test for issue #3145 where Range mode pagination could get stuck
-    // when all bars on a page are filtered out
-    let start = Timestamp::now() - SignedDuration::from_hours(2);
-    let end = Timestamp::now() - SignedDuration::from_hours(1);
-
+    let request_start = start + SignedDuration::from_secs(start_seconds);
     let bars = client
-        .request_bars(bar_type, Some(start), Some(end), Some(100))
+        .request_bars(bar_type, Some(request_start), Some(end), limit)
         .await
         .unwrap();
 
-    assert!(!bars.is_empty(), "Should retrieve bars in Range mode");
+    let end_index = usize::try_from(end_seconds / 60).unwrap();
 
-    for bar in &bars {
-        let bar_ts = bar.ts_event.as_i64();
-        let start_ns = i64::try_from(start.as_nanosecond()).unwrap();
-        let end_ns = i64::try_from(end.as_nanosecond()).unwrap();
-        assert!(
-            bar_ts >= start_ns && bar_ts <= end_ns,
-            "Bar timestamp should be within requested range"
-        );
+    let expected: Vec<Bar> = (end_index - count..end_index)
+        .map(|index| {
+            let open = start + SignedDuration::from_mins(index as i64);
+            let close = open + SignedDuration::from_mins(1);
+
+            Bar::new(
+                bar_type,
+                Price::from_decimal_dp(
+                    Decimal::from_str_exact("33528.6").unwrap(),
+                    price_precision,
+                )
+                .unwrap(),
+                Price::from_decimal_dp(
+                    Decimal::from_str_exact("33870.0").unwrap(),
+                    price_precision,
+                )
+                .unwrap(),
+                Price::from_decimal_dp(
+                    Decimal::from_str_exact("33500.1").unwrap(),
+                    price_precision,
+                )
+                .unwrap(),
+                Price::from_decimal_dp(
+                    Decimal::from_str_exact("33783.9").unwrap(),
+                    price_precision,
+                )
+                .unwrap(),
+                Quantity::from_decimal_dp(
+                    Decimal::from_str_exact("778.838").unwrap(),
+                    size_precision,
+                )
+                .unwrap(),
+                UnixNanos::from(open),
+                UnixNanos::from(close),
+            )
+        })
+        .collect();
+
+    let mut response = DataResponse::Bars(BarsResponse::new(
+        UUID4::new(),
+        ClientId::from("OKX"),
+        bar_type,
+        bars.clone(),
+        Some(UnixNanos::from(request_start)),
+        Some(UnixNanos::from(end)),
+        UnixNanos::default(),
+        None,
+    ));
+    response.trim_to_bounds();
+
+    let DataResponse::Bars(response) = response else {
+        panic!("expected bars response");
+    };
+
+    assert_eq!(bars, expected);
+    assert_eq!(response.data, expected);
+}
+
+#[rstest]
+#[case::minute("1-MINUTE", "2024-02-01T00:00:00Z", "2024-02-01T00:01:00Z")]
+#[case::hour("1-HOUR", "2024-02-01T00:00:00Z", "2024-02-01T01:00:00Z")]
+#[case::month_leap("1-MONTH", "2024-01-31T16:00:00Z", "2024-02-29T16:00:00Z")]
+#[case::month_short("1-MONTH", "2025-01-31T16:00:00Z", "2025-02-28T16:00:00Z")]
+#[case::quarter("3-MONTH", "2024-12-31T16:00:00Z", "2025-03-31T16:00:00Z")]
+#[tokio::test]
+async fn test_request_bars_historical_close_time(
+    #[case] specification: &str,
+    #[case] open: Timestamp,
+    #[case] close: Timestamp,
+    #[values("range", "start", "end", "latest", "range_partial", "end_partial")] bounds: &str,
+) {
+    let bar_type = BarType::from(format!("BTC-USD.OKX-{specification}-LAST-EXTERNAL").as_str());
+    let mut candle = load_test_data("http_get_candlesticks.json")["data"][0].clone();
+    candle[0] = json!(open.as_millisecond().to_string());
+    let mut candles = vec![candle.clone()];
+
+    if matches!(bounds, "range" | "end" | "range_partial" | "end_partial") {
+        candle[0] = json!(close.as_millisecond().to_string());
+        candles.push(candle);
     }
 
-    for i in 1..bars.len() {
-        assert!(
-            bars[i].ts_event >= bars[i - 1].ts_event,
-            "Bars should be in chronological order"
-        );
-    }
+    let addr = start_candlestick_server(candles).await;
+    let client = OKXHttpClient::new(
+        Some(format!("http://{addr}")),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+    client.cache_instruments(&load_instruments_any());
+
+    let start = match bounds {
+        "range" | "start" | "range_partial" => Some(open - SignedDuration::from_secs(1)),
+        _ => None,
+    };
+
+    let end = match bounds {
+        "range" | "end" => Some(close),
+        "range_partial" | "end_partial" => Some(close + SignedDuration::from_secs(30)),
+        _ => None,
+    };
+
+    let bars = client
+        .request_bars(bar_type, start, end, Some(1))
+        .await
+        .unwrap();
+
+    assert_eq!(bars.len(), 1);
+    assert_eq!(bars[0].ts_event, UnixNanos::from(open));
+    assert_eq!(bars[0].ts_init, UnixNanos::from(close));
+}
+
+#[tokio::test]
+async fn test_request_bars_monthly_range_stops_at_empty_page() {
+    let bar_type = BarType::from("BTC-USD.OKX-1-MONTH-LAST-EXTERNAL");
+    let start: Timestamp = "2024-02-28T00:00:00Z".parse().unwrap();
+    let end: Timestamp = "2024-05-15T00:00:00Z".parse().unwrap();
+    let template = load_test_data("http_get_candlesticks.json")["data"][0].clone();
+
+    let candles = [
+        "2020-01-31T16:00:00Z",
+        "2024-02-29T16:00:00Z",
+        "2024-03-31T16:00:00Z",
+        "2024-04-30T16:00:00Z",
+        "2026-01-31T16:00:00Z",
+    ]
+    .into_iter()
+    .map(|open| {
+        let open: Timestamp = open.parse().unwrap();
+        let mut candle = template.clone();
+        candle[0] = json!(open.as_millisecond().to_string());
+        candle
+    })
+    .collect();
+
+    let addr = start_candlestick_server(candles).await;
+    let client = OKXHttpClient::new(
+        Some(format!("http://{addr}")),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+    client.cache_instruments(&load_instruments_any());
+
+    let bars = client
+        .request_bars(bar_type, Some(start), Some(end), None)
+        .await
+        .unwrap();
+    let timestamps: Vec<_> = bars.iter().map(|bar| (bar.ts_event, bar.ts_init)).collect();
+
+    let expected: Vec<_> = [
+        ("2024-02-29T16:00:00Z", "2024-03-31T16:00:00Z"),
+        ("2024-03-31T16:00:00Z", "2024-04-30T16:00:00Z"),
+    ]
+    .into_iter()
+    .map(|(open, close)| {
+        let open: Timestamp = open.parse().unwrap();
+        let close: Timestamp = close.parse().unwrap();
+        (UnixNanos::from(open), UnixNanos::from(close))
+    })
+    .collect();
+
+    assert_eq!(timestamps, expected);
+}
+
+async fn start_candlestick_server(mut candles: Vec<Value>) -> SocketAddr {
+    candles.sort_by_key(|candle| {
+        std::cmp::Reverse(candle[0].as_str().unwrap().parse::<i64>().unwrap())
+    });
+
+    let route = get(move |Query(params): Query<HashMap<String, String>>| {
+        let candles = candles.clone();
+        async move {
+            let after = params
+                .get("after")
+                .map(|value| value.parse::<i64>().unwrap());
+            let before = params
+                .get("before")
+                .map(|value| value.parse::<i64>().unwrap());
+            let limit = params
+                .get("limit")
+                .map_or(100, |value| value.parse::<usize>().unwrap());
+
+            let data: Vec<Value> = candles
+                .into_iter()
+                .filter(|candle| {
+                    let ts = candle[0].as_str().unwrap().parse::<i64>().unwrap();
+                    after.is_none_or(|after| ts < after) && before.is_none_or(|before| ts > before)
+                })
+                .take(limit)
+                .collect();
+
+            Json(okx_response(&data))
+        }
+    });
+
+    let router = Router::new()
+        .route("/api/v5/market/candles", route.clone())
+        .route("/api/v5/market/history-candles", route);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, router).await.unwrap();
+    });
+
+    wait_for_server(addr, "/api/v5/market/candles").await;
+    addr
 }
 
 #[tokio::test]
@@ -4962,8 +5238,15 @@ async fn test_http_request_order_status_reports_preserves_attached_tp_sl_child_i
 }
 
 #[rstest]
+#[case(None, OrderSide::Sell, "net")]
+#[case(Some(PositionSide::Long), OrderSide::Sell, "long")]
+#[case(Some(PositionSide::Short), OrderSide::Buy, "short")]
 #[tokio::test]
-async fn test_http_place_algo_order_with_close_fraction_uses_conditional_close_order_payload() {
+async fn test_http_place_algo_order_with_close_fraction_uses_conditional_close_order_payload(
+    #[case] position_side: Option<PositionSide>,
+    #[case] order_side: OrderSide,
+    #[case] expected_side: &str,
+) {
     let state = Arc::new(TestServerState::default());
     let addr = start_test_server(state.clone()).await;
     let base_url = format!("http://{addr}");
@@ -4991,13 +5274,14 @@ async fn test_http_place_algo_order_with_close_fraction_uses_conditional_close_o
             InstrumentId::from("BTC-USDT-SWAP.OKX"),
             OKXTradeMode::Cross,
             ClientOrderId::from("O-close-frac"),
-            OrderSide::Sell,
+            order_side,
             OrderType::StopMarket,
             Quantity::from("0.01"),
             Some(Price::from("50000")),
             Some(TriggerType::Default),
             None,
             None,
+            position_side,
             Some("1".to_string()),
             None,
             None,
@@ -5017,8 +5301,19 @@ async fn test_http_place_algo_order_with_close_fraction_uses_conditional_close_o
 
     assert_eq!(body["ordType"], "conditional");
     assert_eq!(body["closeFraction"], "1");
-    assert_eq!(body["reduceOnly"], true);
-    assert_eq!(body["posSide"], "net");
+    assert_eq!(
+        body.get("reduceOnly"),
+        position_side.is_none().then_some(&json!(true))
+    );
+    assert_eq!(body["posSide"], expected_side);
+    assert_eq!(
+        body["side"],
+        if order_side == OrderSide::Buy {
+            "buy"
+        } else {
+            "sell"
+        }
+    );
     assert_eq!(body["slTriggerPx"], "50000");
     assert_eq!(body["slOrdPx"], "-1");
     assert_eq!(body["slTriggerPxType"], "last");
@@ -5795,6 +6090,81 @@ async fn test_http_get_positions_returns_data() {
 }
 
 #[rstest]
+#[case("5.00", "2.00", None, "30000")]
+#[case("0.00", "2.00", Some("2.00"), "31000")]
+#[case("5.00", "0.00", Some("5.00"), "30000")]
+#[case("0.00", "0.00", Some("0.00"), "30000")]
+#[tokio::test]
+async fn test_http_position_reports_reject_mixed_margin_legs(
+    #[case] isolated_qty: &str,
+    #[case] cross_qty: &str,
+    #[case] expected_qty: Option<&str>,
+    #[case] expected_price: &str,
+) {
+    let state = Arc::new(TestServerState::default());
+    let mut payload = load_test_data("http_get_positions_long_short.json");
+    let mut isolated = payload["data"][0].clone();
+    isolated["pos"] = serde_json::json!(isolated_qty);
+    let mut cross = isolated.clone();
+    cross["pos"] = serde_json::json!(cross_qty);
+    cross["mgnMode"] = serde_json::json!("cross");
+    cross["posId"] = serde_json::json!("98765");
+    cross["avgPx"] = serde_json::json!("31000");
+    payload["data"] = serde_json::json!([isolated, cross]);
+    *state.positions_response.lock().await = Some(payload);
+    let address = start_test_server(state).await;
+    let client = OKXHttpClient::with_credentials(
+        Some("test_key".to_string()),
+        Some("test_secret".to_string()),
+        Some("test_passphrase".to_string()),
+        Some(format!("http://{address}")),
+        5,
+        0,
+        1,
+        1,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    for instrument in load_swap_instruments_any() {
+        client.cache_instrument(instrument);
+    }
+
+    let account_id = AccountId::from("OKX-001");
+    let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
+    let result = client
+        .request_position_status_reports(
+            account_id,
+            Some(OKXInstrumentType::Swap),
+            Some(instrument_id),
+        )
+        .await;
+
+    if let Some(qty) = expected_qty {
+        let reports = result.unwrap();
+        assert_eq!(reports.len(), 1);
+        assert_eq!(reports[0].account_id, account_id);
+        assert_eq!(reports[0].instrument_id, instrument_id);
+        assert_eq!(
+            reports[0].venue_position_id,
+            Some(PositionId::from("BTC-USDT-SWAP.OKX-LONG"))
+        );
+        assert_eq!(reports[0].position_side, PositionSide::Long);
+        assert_eq!(reports[0].quantity, Quantity::from(qty));
+        assert_eq!(
+            reports[0].avg_px_open,
+            Some(expected_price.parse::<Decimal>().unwrap())
+        );
+    } else {
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Multiple OKX positions map to BTC-USDT-SWAP.OKX-LONG; mixed margin modes are not supported"
+        );
+    }
+}
+
+#[rstest]
 #[tokio::test]
 async fn test_http_request_position_status_reports_preserves_long_short_legs() {
     let state = Arc::new(TestServerState::default());
@@ -5838,7 +6208,7 @@ async fn test_http_request_position_status_reports_preserves_long_short_legs() {
     );
     assert_eq!(
         reports[0].venue_position_id,
-        Some(PositionId::new("12345-LONG")),
+        Some(PositionId::new("BTC-USDT-SWAP.OKX-LONG")),
     );
     assert_eq!(
         reports[0].avg_px_open,
@@ -5859,7 +6229,7 @@ async fn test_http_request_position_status_reports_preserves_long_short_legs() {
     );
     assert_eq!(
         reports[1].venue_position_id,
-        Some(PositionId::new("67890-SHORT")),
+        Some(PositionId::new("BTC-USDT-SWAP.OKX-SHORT")),
     );
     assert_eq!(
         reports[1].avg_px_open,
@@ -7979,6 +8349,7 @@ async fn test_http_place_algo_order_returns_error_on_nonzero_scode() {
             Quantity::from("0.01"),
             Some(Price::from("50000")),
             Some(TriggerType::Default),
+            None,
             None,
             None,
             None,

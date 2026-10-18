@@ -24,7 +24,7 @@ default = ["transport-sockudo"]
 extension-module = ["python", "pyo3/extension-module"]
 python = ["pyo3", "pyo3-stub-gen"]
 simulation = ["dep:madsim", "nautilus-core/simulation"]
-turmoil = ["dep:turmoil"]
+turmoil = ["dep:turmoil", "sockudo-ws?/test-util"]
 # Backend selection for the WebSocket transport abstraction.
 # `tokio-tungstenite` is always compiled; `transport-sockudo` (enabled by
 # default) adds the `sockudo-ws` backend, selectable at runtime via
@@ -120,5 +120,11 @@ required-features = ["transport-sockudo"]
 [[bench]]
 name = "websocket_latency"
 path = "benches/websocket_latency.rs"
+harness = false
+required-features = ["transport-sockudo"]
+
+[[bench]]
+name = "websocket_client"
+path = "benches/websocket_client.rs"
 harness = false
 required-features = ["transport-sockudo"]

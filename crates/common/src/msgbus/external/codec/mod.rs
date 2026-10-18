@@ -22,16 +22,12 @@ use nautilus_model::data::{
     Bar, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, OptionGreeks, OrderBookDeltas,
     OrderBookDepth, QuoteTick, TradeTick,
 };
+#[cfg(feature = "defi")]
+use nautilus_model::defi::{Block, Blockchain};
 use serde::de::DeserializeOwned;
 
 use super::super::BusPayloadType;
 use crate::enums::SerializationEncoding;
-
-#[cfg(feature = "capnp")]
-mod capnp;
-#[cfg(not(feature = "capnp"))]
-#[path = "capnp_unavailable.rs"]
-mod capnp;
 
 #[cfg(feature = "sbe")]
 mod sbe;
@@ -58,21 +54,50 @@ where
 {
     let type_name = payload_type.as_str();
 
+    #[cfg(feature = "defi")]
+    if payload_type == BusPayloadType::Block
+        && matches!(
+            encoding,
+            SerializationEncoding::Json | SerializationEncoding::MsgPack
+        )
+    {
+        let block = (message as &dyn Any)
+            .downcast_ref::<Block>()
+            .ok_or_else(|| PayloadCodecError::Failed("Block payload type mismatch".into()))?;
+
+        let payload = ExternalBlockRef {
+            block,
+            chain: block.chain,
+        };
+
+        return match encoding {
+            SerializationEncoding::Json => json::serialize(&payload, type_name),
+            _ => msgpack::serialize(&payload, type_name),
+        };
+    }
+
     match encoding {
         SerializationEncoding::Json => json::serialize(message, type_name),
         SerializationEncoding::MsgPack => msgpack::serialize(message, type_name),
-        SerializationEncoding::Capnp => capnp::serialize_payload(payload_type, message),
         SerializationEncoding::Sbe => sbe::serialize_payload(payload_type, message),
     }
 }
 
-pub(crate) fn deserialize_json_msgpack_payload<T>(
+#[cfg(feature = "defi")]
+#[derive(serde::Serialize)]
+struct ExternalBlockRef<'a> {
+    #[serde(flatten)]
+    block: &'a Block,
+    chain: Option<Blockchain>,
+}
+
+pub(crate) fn deserialize_payload<T>(
     payload_type: BusPayloadType,
     encoding: SerializationEncoding,
     payload: &[u8],
 ) -> anyhow::Result<Option<T>>
 where
-    T: DeserializeOwned,
+    T: DeserializeOwned + 'static,
 {
     if !payload_type.supports(encoding) {
         warn_unsupported_inbound(payload_type, encoding);
@@ -83,7 +108,7 @@ where
     match encoding {
         SerializationEncoding::Json => deserialize_json_payload(payload, type_name).map(Some),
         SerializationEncoding::MsgPack => deserialize_msgpack_payload(payload, type_name).map(Some),
-        SerializationEncoding::Sbe | SerializationEncoding::Capnp => {
+        SerializationEncoding::Sbe => {
             warn_unsupported_inbound(payload_type, encoding);
             Ok(None)
         }
@@ -101,7 +126,6 @@ macro_rules! define_market_data_deserializer {
                 encoding,
                 payload,
                 sbe::$fn_name,
-                capnp::$fn_name,
             )
         }
     };
@@ -130,7 +154,6 @@ fn deserialize_market_data_payload<T>(
     encoding: SerializationEncoding,
     payload: &[u8],
     deserialize_sbe: fn(&[u8]) -> anyhow::Result<T>,
-    deserialize_capnp: fn(&[u8]) -> anyhow::Result<T>,
 ) -> anyhow::Result<Option<T>>
 where
     T: DeserializeOwned,
@@ -145,7 +168,6 @@ where
         SerializationEncoding::Json => deserialize_json_payload(payload, type_name).map(Some),
         SerializationEncoding::MsgPack => deserialize_msgpack_payload(payload, type_name).map(Some),
         SerializationEncoding::Sbe => deserialize_sbe(payload).map(Some),
-        SerializationEncoding::Capnp => deserialize_capnp(payload).map(Some),
     }
 }
 
@@ -176,12 +198,12 @@ pub(super) fn warn_unsupported_inbound(
 
 #[cfg(test)]
 mod tests {
-    #[cfg(any(not(feature = "sbe"), not(feature = "capnp")))]
+    #[cfg(not(feature = "sbe"))]
     use nautilus_model::data::QuoteTick;
-    #[cfg(any(feature = "sbe", feature = "capnp"))]
+    #[cfg(feature = "sbe")]
     use nautilus_model::data::stubs::stub_custom_data;
     use rstest::rstest;
-    #[cfg(any(feature = "sbe", feature = "capnp"))]
+    #[cfg(feature = "sbe")]
     use ustr::Ustr;
 
     use super::*;
@@ -215,34 +237,11 @@ mod tests {
 
         assert!(matches!(error, PayloadCodecError::Dropped(_)));
     }
-
-    #[cfg(feature = "capnp")]
-    #[rstest]
-    fn unsupported_payload_under_capnp_is_classified_as_dropped() {
-        let custom = stub_custom_data(100, 42, None, Some("stub-id".to_string()));
-
-        let error = serialize_payload(
-            SerializationEncoding::Capnp,
-            BusPayloadType::Custom(Ustr::from("StubCustomData")),
-            &custom,
-        )
-        .expect_err("unsupported Cap'n Proto payload must be dropped");
-
-        assert!(matches!(error, PayloadCodecError::Dropped(_)));
-    }
-
-    #[cfg(not(feature = "capnp"))]
-    #[rstest]
-    fn capnp_without_feature_is_classified_as_dropped() {
-        let quote = QuoteTick::default();
-
-        let error = serialize_payload(
-            SerializationEncoding::Capnp,
-            BusPayloadType::QuoteTick,
-            &quote,
-        )
-        .expect_err("Cap'n Proto without feature must be dropped");
-
-        assert!(matches!(error, PayloadCodecError::Dropped(_)));
-    }
 }
+
+#[cfg(test)]
+#[path = "../../../../benches/codecs/measure.rs"]
+mod benchmarks;
+
+#[cfg(test)]
+mod native_tests;

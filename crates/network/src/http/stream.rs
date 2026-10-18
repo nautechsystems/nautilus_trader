@@ -72,6 +72,7 @@ where
                         REQUEST_TIMEOUT_MESSAGE.into(),
                     ));
                 }
+
                 tokio::select! {
                     biased;
                     () = crate::dst::time::sleep_until(deadline) => return Err(HttpClientError::TimeoutError(REQUEST_TIMEOUT_MESSAGE.into())),
@@ -80,6 +81,7 @@ where
             }
             None => body.frame().await,
         };
+
         let Some(frame) = frame else {
             return Ok(None);
         };

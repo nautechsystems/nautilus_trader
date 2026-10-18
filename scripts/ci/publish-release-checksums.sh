@@ -2,7 +2,12 @@
 # Publish SHA256 checksums for wheel and sdist assets on a GitHub release.
 #
 # Usage:
-#   publish-release-checksums.sh [--generate-only|--publish-existing] [asset-dir]
+#   publish-release-checksums.sh [mode] [asset-dir]
+# Modes:
+#   --generate-only    - download packages and generate checksum assets without publishing
+#   --generate-local   - generate checksum assets from local packages without publishing
+#   --publish-existing - publish generated checksum assets and update notes
+#   --update-notes     - update checksum notes without uploading assets
 #
 # Required env:
 #   TAG_NAME          - release tag to update
@@ -98,26 +103,33 @@ checksum_files() {
 
 mode="publish"
 case "${1:-}" in
-  "")
-    ;;
+  "") ;;
   --generate-only)
     mode="generate"
+    shift
+    ;;
+  --generate-local)
+    mode="generate_local"
     shift
     ;;
   --publish-existing)
     mode="publish_existing"
     shift
     ;;
+  --update-notes)
+    mode="update_notes"
+    shift
+    ;;
   *)
     if [[ "${1:-}" == -* ]]; then
-      echo "::error::Usage: publish-release-checksums.sh [--generate-only|--publish-existing] [asset-dir]"
+      echo "::error::Usage: publish-release-checksums.sh [--generate-only|--generate-local|--publish-existing|--update-notes] [asset-dir]"
       exit 1
     fi
     ;;
 esac
 
 if [[ "$#" -gt 1 ]]; then
-  echo "::error::Usage: publish-release-checksums.sh [--generate-only|--publish-existing] [asset-dir]"
+  echo "::error::Usage: publish-release-checksums.sh [--generate-only|--generate-local|--publish-existing|--update-notes] [asset-dir]"
   exit 1
 fi
 
@@ -138,13 +150,15 @@ else
 fi
 
 generate_checksum_assets() {
-  rm -rf "$asset_dir"
-  mkdir -p "$asset_dir"
-  retry_gh "gh release download" gh release download "$TAG_NAME" \
-    --repo "$GITHUB_REPOSITORY" \
-    --dir "$asset_dir" \
-    --pattern '*.whl' \
-    --pattern '*.tar.gz'
+  if [[ "$mode" != "generate_local" ]]; then
+    rm -rf "$asset_dir"
+    mkdir -p "$asset_dir"
+    retry_gh "gh release download" gh release download "$TAG_NAME" \
+      --repo "$GITHUB_REPOSITORY" \
+      --dir "$asset_dir" \
+      --pattern '*.whl' \
+      --pattern '*.tar.gz'
+  fi
 
   : > "$asset_dir/SHA256SUMS"
   while IFS= read -r artifact; do
@@ -211,23 +225,39 @@ publish_checksum_assets() {
   fi
   rm -f "$missing_checksums"
 
-  local -a upload_assets
-  upload_assets=("$asset_dir/SHA256SUMS" "$asset_dir/dist-manifest.json")
-  while IFS= read -r checksum_file; do
-    upload_assets+=("$checksum_file")
-  done < <(checksum_files)
+  if [[ "$mode" != "update_notes" ]]; then
+    local -a upload_assets
+    upload_assets=("$asset_dir/SHA256SUMS" "$asset_dir/dist-manifest.json")
+    while IFS= read -r checksum_file; do
+      upload_assets+=("$checksum_file")
+    done < <(checksum_files)
 
-  retry_gh "gh release upload" gh release upload "$TAG_NAME" "${upload_assets[@]}" \
-    --clobber \
-    --repo "$GITHUB_REPOSITORY"
+    retry_gh "gh release upload" gh release upload "$TAG_NAME" "${upload_assets[@]}" \
+      --clobber \
+      --repo "$GITHUB_REPOSITORY"
+  fi
 
   local body_file clean_body_file asset_url_base
   body_file=$(mktemp)
-  retry_gh "gh release view" gh release view "$TAG_NAME" \
-    --repo "$GITHUB_REPOSITORY" \
-    --json body \
-    --jq '.body // ""' > "$body_file"
+  if [[ "$mode" == "update_notes" ]]; then
+    retry_gh "gh release view" gh release view "$TAG_NAME" \
+      --repo "$GITHUB_REPOSITORY" --json body,isDraft > "$body_file"
+    if ! jq -e '.isDraft == true' "$body_file" > /dev/null; then
+      echo "::error::Checksum notes can only be updated on a draft release." >&2
+      rm -f "$body_file"
+      exit 1
+    fi
+    clean_body_file=$(mktemp)
+    jq -r '.body // ""' "$body_file" > "$clean_body_file"
+    mv "$clean_body_file" "$body_file"
+  else
+    retry_gh "gh release view" gh release view "$TAG_NAME" \
+      --repo "$GITHUB_REPOSITORY" --json body --jq '.body // ""' > "$body_file"
+  fi
 
+  local original_body_file
+  original_body_file=$(mktemp)
+  cp "$body_file" "$original_body_file"
   clean_body_file=$(mktemp)
 
   # shellcheck disable=SC2016
@@ -238,6 +268,11 @@ publish_checksum_assets() {
     !skip { print }
   ' "$body_file" > "$clean_body_file"
   mv "$clean_body_file" "$body_file"
+  if [[ "$mode" == "update_notes" ]]; then
+    awk 'NF { for (i = 0; i < blanks; i++) print ""; blanks = 0; print; next } { blanks++ }' \
+      "$body_file" > "$clean_body_file"
+    mv "$clean_body_file" "$body_file"
+  fi
 
   {
     printf '\n<!-- release-checksums:start -->\n'
@@ -261,16 +296,33 @@ publish_checksum_assets() {
     printf '<!-- release-checksums:end -->\n'
   } >> "$body_file"
 
-  retry_gh "gh release edit" gh release edit "$TAG_NAME" \
-    --repo "$GITHUB_REPOSITORY" \
-    --notes-file "$body_file"
+  local existing_block expected_block
+  if [[ "$mode" != "update_notes" ]] ||
+    ! existing_block="$(checksum_block "$original_body_file")" ||
+    ! expected_block="$(checksum_block "$body_file")" ||
+    [[ "$existing_block" != "$expected_block" ]]; then
+    retry_gh "gh release edit" gh release edit "$TAG_NAME" \
+      --repo "$GITHUB_REPOSITORY" \
+      --notes-file "$body_file"
+  fi
+  rm -f "$original_body_file" "$body_file"
+}
+
+checksum_block() {
+  awk '
+    { marker = $0; sub(/\r$/, "", marker) }
+    marker == "<!-- release-checksums:start -->" { starts++; block = 1 }
+    block { print }
+    marker == "<!-- release-checksums:end -->" { ends++; block = 0 }
+    END { if (starts != 1 || ends != 1 || block) exit 1 }
+  ' "$1"
 }
 
 case "$mode" in
-  generate)
+  generate | generate_local)
     generate_checksum_assets
     ;;
-  publish_existing)
+  publish_existing | update_notes)
     publish_checksum_assets
     ;;
   publish)

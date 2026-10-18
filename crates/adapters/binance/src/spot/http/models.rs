@@ -19,6 +19,7 @@
 
 use std::fmt::Debug;
 
+use anyhow::Context;
 use nautilus_core::{UUID4, nanos::UnixNanos, string::secret::SecretString};
 use nautilus_model::{
     enums::AccountType,
@@ -34,7 +35,7 @@ use crate::{
         enums::{
             BinanceOrderStatus, BinanceSelfTradePreventionMode, BinanceSide, BinanceTimeInForce,
         },
-        parse::parse_micros_or_init,
+        parse::{account_balance_from_free_locked, parse_micros_or_init, sbe_mantissa_to_decimal},
     },
     spot::sbe::spot::{
         contingency_type::ContingencyType, list_order_status::ListOrderStatus,
@@ -371,28 +372,33 @@ pub struct BinanceAccountInfo {
 
 impl BinanceAccountInfo {
     /// Converts this Binance account info to a Nautilus [`AccountState`].
-    #[must_use]
-    pub fn to_account_state(&self, account_id: AccountId, ts_init: UnixNanos) -> AccountState {
+    ///
+    /// An empty venue balance list still returns one zero USDT balance. A conversion error does
+    /// not use that placeholder.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a balance mantissa and exponent cannot be converted to a decimal, if
+    /// free and locked overflow when added, or if an amount cannot be represented as money.
+    pub fn to_account_state(
+        &self,
+        account_id: AccountId,
+        ts_init: UnixNanos,
+    ) -> anyhow::Result<AccountState> {
         let mut balances = Vec::with_capacity(self.balances.len());
 
         for asset in &self.balances {
+            let free = sbe_mantissa_to_decimal(asset.free_mantissa, asset.exponent)
+                .with_context(|| format!("failed to convert free balance for {}", asset.asset))?;
+            let locked = sbe_mantissa_to_decimal(asset.locked_mantissa, asset.exponent)
+                .with_context(|| format!("failed to convert locked balance for {}", asset.asset))?;
             let currency =
                 Currency::get_or_create_crypto_with_context(&asset.asset, Some("spot balance"));
-
-            let exponent = asset.exponent as i32;
-            let multiplier = Decimal::new(1, (-exponent) as u32);
-
-            let free = Decimal::new(asset.free_mantissa, 0) * multiplier;
-            let locked = Decimal::new(asset.locked_mantissa, 0) * multiplier;
-            let total = free + locked;
-
-            match AccountBalance::from_total_and_locked(total, locked, currency) {
-                Ok(balance) => balances.push(balance),
-                Err(e) => log::warn!("Skipping spot balance for {}: {e}", currency.code),
-            }
+            let balance = account_balance_from_free_locked(&asset.asset, free, locked, currency)?;
+            balances.push(balance);
         }
 
-        // Ensure at least one balance exists
+        // Ensure at least one balance exists when the venue reported none.
         if balances.is_empty() {
             let zero_currency = Currency::USDT();
             let zero_money = Money::zero(zero_currency);
@@ -403,7 +409,7 @@ impl BinanceAccountInfo {
         let ts_event =
             parse_micros_or_init(self.update_time, "Spot SBE account update time", ts_init);
 
-        AccountState::new(
+        Ok(AccountState::new(
             account_id,
             AccountType::Cash,
             balances,
@@ -413,7 +419,7 @@ impl BinanceAccountInfo {
             ts_event,
             ts_init,
             None, // No base currency for spot
-        )
+        ))
     }
 }
 
@@ -1078,5 +1084,117 @@ mod tests {
         assert_eq!(response.symbol, "BNBBTC");
         assert_eq!(response.last_price, "4.00000200");
         assert_eq!(response.count, 76);
+    }
+
+    fn account_info(balances: Vec<BinanceBalance>) -> BinanceAccountInfo {
+        BinanceAccountInfo {
+            commission_exponent: -8,
+            maker_commission_mantissa: 10,
+            taker_commission_mantissa: 10,
+            buyer_commission_mantissa: 0,
+            seller_commission_mantissa: 0,
+            can_trade: true,
+            can_withdraw: true,
+            can_deposit: true,
+            require_self_trade_prevention: false,
+            prevent_sor: false,
+            update_time: 1_700_000_000_000_000,
+            account_type: "SPOT".to_string(),
+            balances,
+        }
+    }
+
+    fn balance(asset: &str, exponent: i8, free: i64, locked: i64) -> BinanceBalance {
+        BinanceBalance {
+            asset: asset.to_string(),
+            free_mantissa: free,
+            locked_mantissa: locked,
+            exponent,
+        }
+    }
+
+    #[rstest]
+    fn test_account_info_to_account_state_keeps_exact_balance() {
+        let info = account_info(vec![balance("BTC", -8, 100_000_000, 50_000_000)]);
+
+        let state = info
+            .to_account_state(AccountId::from("BINANCE-001"), UnixNanos::default())
+            .unwrap();
+
+        assert_eq!(state.balances.len(), 1);
+        assert_eq!(
+            state.balances[0].total.as_decimal(),
+            Decimal::from_str_exact("1.5").unwrap()
+        );
+        assert_eq!(
+            state.balances[0].locked.as_decimal(),
+            Decimal::from_str_exact("0.5").unwrap()
+        );
+    }
+
+    #[rstest]
+    fn test_account_info_to_account_state_positive_exponent_is_exact() {
+        let info = account_info(vec![balance("BTC", 2, 42, 7)]);
+
+        let state = info
+            .to_account_state(AccountId::from("BINANCE-001"), UnixNanos::default())
+            .unwrap();
+
+        assert_eq!(state.balances[0].total.as_decimal(), Decimal::from(4_900));
+        assert_eq!(state.balances[0].locked.as_decimal(), Decimal::from(700));
+    }
+
+    #[rstest]
+    #[case::scale_above_max(-29_i8, 1_i64)]
+    #[case::min_exponent(i8::MIN, 1_i64)]
+    #[case::positive_overflow(29_i8, 1_i64)]
+    #[case::product_overflow(18_i8, i64::MAX)]
+    fn test_account_info_to_account_state_rejects_unrepresentable_balance(
+        #[case] exponent: i8,
+        #[case] mantissa: i64,
+    ) {
+        let info = account_info(vec![
+            balance("BTC", -8, 100_000_000, 0),
+            balance("ETH", exponent, mantissa, mantissa),
+        ]);
+
+        let err = info
+            .to_account_state(AccountId::from("BINANCE-001"), UnixNanos::default())
+            .unwrap_err();
+        let message = format!("{err:#}");
+
+        assert!(message.contains("ETH"), "{message}");
+        assert!(message.contains(&exponent.to_string()), "{message}");
+    }
+
+    #[rstest]
+    #[case::free_overflow(i64::MAX, 1_i64)]
+    #[case::locked_overflow(1_i64, i64::MAX)]
+    fn test_account_info_to_account_state_rejects_one_sided_overflow(
+        #[case] free: i64,
+        #[case] locked: i64,
+    ) {
+        let info = account_info(vec![balance("ETH", 10, free, locked)]);
+
+        let err = info
+            .to_account_state(AccountId::from("BINANCE-001"), UnixNanos::default())
+            .unwrap_err();
+        let message = format!("{err:#}");
+
+        assert!(message.contains("ETH"), "{message}");
+        assert!(message.contains("10"), "{message}");
+    }
+
+    #[rstest]
+    fn test_account_info_to_account_state_empty_list_uses_zero_usdt() {
+        let info = account_info(vec![]);
+
+        let state = info
+            .to_account_state(AccountId::from("BINANCE-001"), UnixNanos::default())
+            .unwrap();
+
+        assert_eq!(state.balances.len(), 1);
+        assert_eq!(state.balances[0].currency, Currency::USDT());
+        assert!(state.balances[0].total.is_zero());
     }
 }
