@@ -21,6 +21,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use ahash::AHashMap;
 use anyhow::Context;
 use async_trait::async_trait;
 use dashmap::DashMap;
@@ -49,7 +50,10 @@ use nautilus_live::{
 };
 use nautilus_model::{
     accounts::AccountAny,
-    enums::{AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce},
+    enums::{
+        AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, PositionSide,
+        TimeInForce,
+    },
     events::{
         OrderAccepted, OrderCancelRejected, OrderCanceled, OrderEventAny, OrderExpired,
         OrderFilled, OrderInitialized, OrderRejected, OrderUpdated,
@@ -70,7 +74,7 @@ use crate::{
     common::{
         auth::run_auth_token_refresh,
         consts::{
-            AX_ACCOUNT_REGISTRATION_TIMEOUT_SECS, AX_AUTH_TOKEN_TTL_SECS,
+            AX_ACCOUNT_REGISTRATION_TIMEOUT_SECS, AX_AUTH_TOKEN_TTL_SECS, AX_FILL_ORDER_PREFIX,
             AX_FILLS_MAX_LOOKBACK_DAYS, AX_POST_ONLY_REJECT, AX_VENUE,
         },
         credential::Credential,
@@ -1218,6 +1222,20 @@ impl ExecutionClient for AxExecutionClient {
 
         let ts_now = self.clock.get_time_ns();
 
+        let positions_cached = self
+            .core
+            .cache()
+            .positions_open(
+                Some(&AX_VENUE),
+                None,
+                None,
+                Some(&self.core.account_id),
+                None,
+            )
+            .into_iter()
+            .map(|position| (position.instrument_id, position.quantity.precision))
+            .collect();
+
         let start = lookback_mins
             .map(DurationNanos::try_from_mins)
             .transpose()?
@@ -1226,7 +1244,15 @@ impl ExecutionClient for AxExecutionClient {
         // Floor the declared window at the /fills span cap so it does not overstate coverage
         let fills_span = DurationNanos::try_from_days(u64::try_from(AX_FILLS_MAX_LOOKBACK_DAYS)?)?;
         let fills_floor = ts_now.saturating_sub(fills_span);
-        let declared_start = start.map(|start| start.max(fills_floor));
+
+        // AX rejects zero-width fill windows, including a zero-minute lookback
+        let fills_latest_start = ts_now.saturating_sub(DurationNanos::new(1));
+        let declared_start = Some(
+            start
+                .unwrap_or(fills_floor)
+                .max(fills_floor)
+                .min(fills_latest_start),
+        );
 
         let order_cmd = GenerateOrderStatusReports::new(
             UUID4::new(),
@@ -1244,10 +1270,10 @@ impl ExecutionClient for AxExecutionClient {
             ts_now,
             None, // instrument_id
             None, // venue_order_id
-            start,
-            None, // end
-            None, // params
-            None, // correlation_id
+            declared_start,
+            Some(ts_now), // end
+            None,         // params
+            None,         // correlation_id
         );
 
         let position_cmd = GeneratePositionStatusReports::new(
@@ -1260,7 +1286,7 @@ impl ExecutionClient for AxExecutionClient {
             None, // correlation_id
         );
 
-        let (mut order_reports, fill_reports, position_reports) = tokio::try_join!(
+        let (mut order_reports, fill_reports, mut position_reports) = tokio::try_join!(
             async {
                 let cid_resolver = |cid| {
                     self.ws_orders
@@ -1285,6 +1311,8 @@ impl ExecutionClient for AxExecutionClient {
             self.generate_position_status_reports(&position_cmd),
         )?;
 
+        self.add_flat_position_reports(positions_cached, &mut position_reports, ts_now);
+
         log::info!("Received {} OrderStatusReports", order_reports.len());
         log::info!("Received {} FillReports", fill_reports.len());
         log::info!("Received {} PositionReports", position_reports.len());
@@ -1301,6 +1329,7 @@ impl ExecutionClient for AxExecutionClient {
         mass_status.set_report_window(declared_start, true);
 
         update_order_report_timestamps(&mut order_reports, &fill_reports);
+        add_special_fill_order_reports(&mut order_reports, &fill_reports);
 
         mass_status.add_order_reports(order_reports);
         mass_status.add_fill_reports(fill_reports);
@@ -1332,6 +1361,35 @@ impl AxExecutionClient {
             http_client: self.http_client.clone(),
             account_id: self.core.account_id,
             cid_to_client_order_id: self.ws_orders.caches().cid_to_client_order_id.clone(),
+        }
+    }
+
+    fn add_flat_position_reports(
+        &self,
+        mut positions_expected: AHashMap<InstrumentId, u8>,
+        position_reports: &mut Vec<PositionStatusReport>,
+        ts_init: UnixNanos,
+    ) {
+        for report in position_reports.iter() {
+            positions_expected.remove(&report.instrument_id);
+        }
+
+        let mut positions_expected: Vec<_> = positions_expected.into_iter().collect();
+        positions_expected.sort_unstable_by_key(|(instrument_id, _)| *instrument_id);
+
+        // The successful complete AX positions snapshot establishes absent instruments as flat
+        for (instrument_id, precision) in positions_expected {
+            position_reports.push(PositionStatusReport::new(
+                self.core.account_id,
+                instrument_id,
+                PositionSide::Flat,
+                Quantity::zero(precision),
+                ts_init,
+                ts_init,
+                None,
+                None,
+                None,
+            ));
         }
     }
 }
@@ -1437,6 +1495,41 @@ impl AxReportClient {
         }
 
         Ok(reports)
+    }
+}
+
+fn add_special_fill_order_reports(
+    order_reports: &mut Vec<OrderStatusReport>,
+    fill_reports: &[FillReport],
+) {
+    for fill in fill_reports {
+        if fill
+            .venue_order_id
+            .as_str()
+            .strip_prefix(AX_FILL_ORDER_PREFIX)
+            != Some(fill.trade_id.as_str())
+        {
+            continue;
+        }
+
+        let report = OrderStatusReport::new(
+            fill.account_id,
+            fill.instrument_id,
+            fill.client_order_id,
+            fill.venue_order_id,
+            Some(fill.order_side),
+            OrderType::Market,
+            TimeInForce::Gtc,
+            OrderStatus::Filled,
+            fill.last_qty,
+            fill.last_qty,
+            fill.ts_event,
+            fill.ts_event,
+            fill.ts_init,
+            None,
+        )
+        .with_avg_px(fill.last_px.as_decimal());
+        order_reports.push(report);
     }
 }
 

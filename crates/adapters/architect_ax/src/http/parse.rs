@@ -41,7 +41,7 @@ use super::models::{
     AxOrderRejectReason, AxPosition, AxRestTrade, AxRiskSnapshot,
 };
 use crate::common::{
-    consts::AX_VENUE,
+    consts::{AX_FILL_ORDER_PREFIX, AX_VENUE},
     enums::{AxCandleWidth, AxOrderSide, AxOrderStatus, AxTimeInForce},
     parse::{
         ax_timestamp_ns_to_unix_nanos, ax_timestamp_s_to_unix_nanos,
@@ -724,8 +724,9 @@ pub fn parse_fill_report(
     );
 
     let is_special_fill = is_block_trade == Some(true) || is_final_settlement == Some(true);
+
     let venue_order_id = if is_special_fill {
-        VenueOrderId::new_checked(format!("AX-FILL-{}", fill.trade_id))
+        VenueOrderId::new_checked(format!("{AX_FILL_ORDER_PREFIX}{}", fill.trade_id))
             .context("Invalid synthetic venue order ID for AX fill")?
     } else {
         let order_id = fill

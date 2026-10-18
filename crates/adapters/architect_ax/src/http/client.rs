@@ -2370,10 +2370,7 @@ impl AxHttpClient {
     /// Returns an error if:
     /// - The HTTP request fails.
     /// - A position's instrument cannot be fetched or parsed.
-    ///
-    /// # Notes
-    ///
-    /// Position parsing failures are skipped with a warning.
+    /// - A position cannot be parsed.
     pub async fn request_position_reports(
         &self,
         account_id: AccountId,
@@ -2388,19 +2385,14 @@ impl AxHttpClient {
         let mut reports = Vec::with_capacity(response.positions.len());
 
         for position in &response.positions {
-            // Skip flat positions (zero quantity)
-            if position.signed_quantity == 0 {
-                continue;
-            }
-
             let instrument = self.resolve_report_instrument(position.symbol).await?;
 
-            match parse_position_status_report(position, account_id, &instrument, ts_init) {
-                Ok(report) => reports.push(report),
-                Err(e) => {
-                    log::warn!("Failed to parse position for {}: {e}", position.symbol);
-                }
-            }
+            let report = parse_position_status_report(position, account_id, &instrument, ts_init)
+                .with_context(|| {
+                format!("failed to parse AX position for {}", position.symbol)
+            })?;
+
+            reports.push(report);
         }
 
         Ok(reports)

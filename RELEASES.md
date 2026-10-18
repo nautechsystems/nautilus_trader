@@ -26,6 +26,8 @@ Released on TBD (UTC).
 - Fixed risk denials for released orders and cleanup of their contingent orders
 - Fixed Python isolation checks failing with inherited `PYTHONHOME`
 - Fixed Architect AX closed-order reports preceding their fills during reconciliation
+- Fixed Architect AX special-fill reconciliation, fill-history windows, and cached flat-position recovery
+- Fixed Architect AX position-report requests dropping flat rows and skipping invalid rows
 - Fixed Binance Futures HTTP order reports using update time as acceptance time
 - Fixed Binance spot SBE exponent overflow aborting user-data decode (#5320), thanks @zifulifufu
 - Fixed Binance Spot HTTP SBE order reports mapping take-profit orders as stop orders

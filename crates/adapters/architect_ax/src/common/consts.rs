@@ -71,5 +71,8 @@ pub const AX_FUNDING_RATE_LOOKBACK_DAYS: i64 = 7;
 /// Maximum lookback span (days) accepted by the AX `/fills` endpoint.
 pub const AX_FILLS_MAX_LOOKBACK_DAYS: i64 = 7;
 
+/// Prefix for reconciliation order IDs derived from AX trade IDs.
+pub const AX_FILL_ORDER_PREFIX: &str = "AX-FILL-";
+
 // Error message substrings for detecting specific rejection reasons
 pub const AX_POST_ONLY_REJECT: &str = "post-only order would cross the book";
