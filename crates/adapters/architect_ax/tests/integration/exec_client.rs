@@ -1264,6 +1264,38 @@ async fn test_live_mass_status_declares_fill_window_sandbox(
     let _rx = setup_exec_channel();
     let mut client = AxExecutionClient::new(core, config).unwrap();
     client.connect().await.unwrap();
+    let now = nautilus_core::time::get_atomic_clock_realtime().get_time_ns();
+    let active_command = GenerateOrderStatusReportsBuilder::default()
+        .ts_init(now)
+        .open_only(true)
+        .build()
+        .unwrap();
+    let active = client
+        .generate_order_status_reports(&active_command)
+        .await
+        .unwrap();
+    let history_command = GenerateOrderStatusReportsBuilder::default()
+        .ts_init(now)
+        .open_only(false)
+        .start(Some(UnixNanos::from(now.as_u64() - 60_000_000_000)))
+        .end(Some(now))
+        .build()
+        .unwrap();
+    let bounded = client
+        .generate_order_status_reports(&history_command)
+        .await
+        .unwrap();
+
+    for report in active {
+        assert_eq!(
+            bounded
+                .iter()
+                .filter(|row| row.venue_order_id == report.venue_order_id)
+                .count(),
+            1
+        );
+    }
+
     let result = client.generate_mass_status(lookback_mins).await;
     client.disconnect().await.unwrap();
     let mass_status = result.unwrap().unwrap();
@@ -1537,7 +1569,7 @@ async fn test_generate_mass_status_restores_historical_terminal_orders() {
     assert_eq!(queries[0].end_timestamp_ns, None);
     drop(queries);
     assert_eq!(state.fills_queries.lock().await.len(), 1);
-    assert_eq!(state.open_orders_queries.lock().await.len(), 0);
+    assert_eq!(state.open_orders_queries.lock().await.len(), 1);
 
     client.disconnect().await.expect("Failed to disconnect");
 }
@@ -1975,6 +2007,8 @@ async fn test_generate_order_status_reports_filters() {
 #[tokio::test]
 async fn test_generate_order_status_reports_reads_all_partial_pages() {
     let (addr, state) = start_test_server().await.unwrap();
+    *state.open_orders_payload.lock().await = Some(serde_json::json!({"orders": []}));
+
     let orders = (0..101)
         .map(|index| {
             serde_json::json!({
@@ -2132,6 +2166,7 @@ async fn test_generate_order_status_reports_rejects_repeated_cursor() {
 #[tokio::test]
 async fn test_generate_order_status_reports_forwards_historical_bounds() {
     let (addr, state) = start_test_server().await.unwrap();
+    *state.open_orders_payload.lock().await = Some(serde_json::json!({ "orders": [] }));
     *state.orders_payload.lock().await = Some(serde_json::json!({ "orders": [] }));
 
     let (mut client, mut rx, cache) = create_test_execution_client(addr);
@@ -4069,7 +4104,9 @@ async fn test_owned_reports_match_inline(
     let single = GenerateOrderStatusReportBuilder::default()
         .ts_init(ts_init)
         .instrument_id(instrument_id)
-        .venue_order_id(venue_order_id)
+        .venue_order_id(Some(
+            venue_order_id.unwrap_or_else(|| VenueOrderId::from("O-01ARZ3NDEKTSV4RRFFQ69G5FAV")),
+        ))
         .build()
         .unwrap();
     let orders = GenerateOrderStatusReportsBuilder::default()
@@ -4094,19 +4131,33 @@ async fn test_owned_reports_match_inline(
         .unwrap();
 
     let before = nautilus_core::time::get_atomic_clock_realtime().get_time_ns();
-    let inline = client.generate_order_status_report(&single).await.unwrap();
-    let task = collect_report_task(client.generate_order_status_report_task(&single).unwrap())
-        .await
-        .unwrap();
-    assert_eq!(
-        usize::from(inline.is_some()),
-        usize::from(instrument != Some("UNKNOWN.AX"))
-    );
-    assert_reports_equal(
-        inline.into_iter().collect(),
-        task.into_iter().collect(),
-        before,
-    );
+
+    if instrument == Some("UNKNOWN.AX") {
+        let inline = client
+            .generate_order_status_report(&single)
+            .await
+            .unwrap_err();
+        let owned = collect_report_task(client.generate_order_status_report_task(&single).unwrap())
+            .await
+            .unwrap_err();
+        assert_eq!(
+            inline.to_string(),
+            "AX order report instrument does not match requested instrument"
+        );
+        assert_eq!(owned.to_string(), inline.to_string());
+    } else {
+        let inline = client.generate_order_status_report(&single).await.unwrap();
+        let task = collect_report_task(client.generate_order_status_report_task(&single).unwrap())
+            .await
+            .unwrap();
+        assert!(inline.is_some());
+        assert_reports_equal(
+            inline.into_iter().collect(),
+            task.into_iter().collect(),
+            before,
+        );
+    }
+
     let inline = client.generate_order_status_reports(&orders).await.unwrap();
     let task = collect_report_task(client.generate_order_status_reports_task(&orders).unwrap())
         .await
@@ -4291,6 +4342,9 @@ async fn test_owned_report_failure_matches_inline(#[case] kind: u8) {
     client.start().unwrap();
     client.connect().await.unwrap();
     set_uncached_mass_status_payload(&state).await;
+    let mut status = load_test_data("http_get_order_status.json");
+    status["status"]["order_id"] = "OID-UNCACHED".into();
+    *state.order_status_response.lock().await = Some((200, status));
     *state.open_orders_payload.lock().await = state.orders_payload.lock().await.clone();
     state
         .instrument_fail
@@ -4301,6 +4355,7 @@ async fn test_owned_report_failure_matches_inline(#[case] kind: u8) {
         0 => {
             let command = GenerateOrderStatusReportBuilder::default()
                 .ts_init(now)
+                .venue_order_id(Some(VenueOrderId::from("OID-UNCACHED")))
                 .build()
                 .unwrap();
             (
@@ -4372,5 +4427,232 @@ async fn test_owned_report_failure_matches_inline(#[case] kind: u8) {
     let owned = format!("{:#}", owned.unwrap_err());
     assert_eq!(owned, inline);
     assert!(owned.contains("instrument unavailable"), "{owned}");
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::venue(true)]
+#[case::client(false)]
+#[tokio::test]
+async fn test_single_closed_order_lookup(#[case] by_venue: bool) {
+    let (addr, state) = start_test_server().await.unwrap();
+    let order_id = "O-01ARZ3NDEKTSV4RRFFQ69G5FAV";
+    *state.open_orders_payload.lock().await = Some(serde_json::json!({"orders": []}));
+    *state.orders_payload.lock().await = Some(serde_json::json!({
+        "orders": [create_historical_order(order_id, "CANCELED", 1_704_067_200)]
+    }));
+    let mut status = load_test_data("http_get_order_status.json");
+    status["status"]["state"] = "CANCELED".into();
+    *state.order_status_response.lock().await = Some((200, status));
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("AX-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    let coid = ClientOrderId::from("O-STRATEGY-123");
+    let command = GenerateOrderStatusReportBuilder::default()
+        .ts_init(UnixNanos::default())
+        .client_order_id(Some(coid))
+        .venue_order_id(by_venue.then(|| VenueOrderId::from(order_id)))
+        .build()
+        .unwrap();
+    let report = client
+        .generate_order_status_report(&command)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(report.venue_order_id, VenueOrderId::from(order_id));
+    assert_eq!(report.client_order_id, Some(coid));
+    assert_eq!(report.order_status, OrderStatus::Canceled);
+    assert_eq!(report.quantity.as_decimal(), dec!(100));
+    assert_eq!(report.filled_qty.as_decimal(), dec!(0));
+    let queries = state.order_status_queries.lock().await;
+    assert_eq!(queries.len(), 1);
+    assert_eq!(queries[0].order_id.as_deref(), by_venue.then_some(order_id));
+    assert_eq!(
+        queries[0].client_order_id,
+        (!by_venue).then(|| nautilus_architect_ax::common::parse::client_order_id_to_cid(&coid))
+    );
+    drop(queries);
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::absent(404, serde_json::json!({"error": "no matching orders"}), true)]
+#[case::other_not_found(404, serde_json::json!({"error": "unknown route"}), false)]
+#[case::failed(400, serde_json::json!({"error": "lookup failed"}), false)]
+#[case::decode(200, serde_json::json!({"status": {}}), false)]
+#[tokio::test]
+async fn test_single_order_absence_requires_authoritative_response(
+    #[case] status: u16,
+    #[case] body: serde_json::Value,
+    #[case] absent: bool,
+) {
+    let (addr, state) = start_test_server().await.unwrap();
+    *state.order_status_response.lock().await = Some((status, body));
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("AX-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    let command = GenerateOrderStatusReportBuilder::default()
+        .ts_init(UnixNanos::default())
+        .client_order_id(Some(ClientOrderId::from("O-MISSING")))
+        .build()
+        .unwrap();
+    let result = client.generate_order_status_report(&command).await;
+
+    if absent {
+        assert!(result.unwrap().is_none());
+    } else {
+        assert!(result.is_err());
+    }
+
+    assert_eq!(state.order_status_queries.lock().await.len(), 1);
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_bounded_history_keeps_old_active_orders() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let active = create_historical_order("OID-OLD", "ACCEPTED", 1_704_067_100);
+    let mut pending = active.clone();
+    pending["oid"] = "OID-PENDING-OLD".into();
+    pending["o"] = "PENDING".into();
+    let closed = create_historical_order("OID-CLOSED", "CANCELED", 1_704_067_201);
+    *state.orders_payload.lock().await =
+        Some(serde_json::json!({"orders": [active.clone(), pending.clone(), closed]}));
+    *state.open_orders_payload.lock().await = Some(serde_json::json!({"orders": [active,pending]}));
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("AX-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    let command = GenerateOrderStatusReportsBuilder::default()
+        .ts_init(UnixNanos::default())
+        .open_only(false)
+        .start(Some(UnixNanos::from(1_704_067_200_000_000_000)))
+        .end(Some(UnixNanos::from(1_704_067_202_000_000_000)))
+        .build()
+        .unwrap();
+    let reports = client
+        .generate_order_status_reports(&command)
+        .await
+        .unwrap();
+    let actual = reports
+        .iter()
+        .map(|r| (r.venue_order_id.as_str(), r.order_status))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        actual,
+        vec![
+            ("OID-CLOSED", OrderStatus::Canceled),
+            ("OID-OLD", OrderStatus::Accepted),
+            ("OID-PENDING-OLD", OrderStatus::Submitted)
+        ]
+    );
+    let queries = state.orders_queries.lock().await;
+    assert_eq!(queries.len(), 1);
+    assert_eq!(
+        queries[0].start_timestamp_ns,
+        Some(1_704_067_200_000_000_000)
+    );
+    drop(queries);
+    assert_eq!(state.open_orders_queries.lock().await.len(), 1);
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_single_order_missing_history_is_failure() {
+    let (addr, state) = start_test_server().await.unwrap();
+    *state.orders_payload.lock().await = Some(serde_json::json!({"orders": []}));
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("AX-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    let command = GenerateOrderStatusReportBuilder::default()
+        .ts_init(UnixNanos::default())
+        .venue_order_id(Some(VenueOrderId::from("O-01ARZ3NDEKTSV4RRFFQ69G5FAV")))
+        .build()
+        .unwrap();
+    let error = client
+        .generate_order_status_report(&command)
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "AX order status exists but its complete history record is unavailable"
+    );
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_single_closed_order_uses_latest_fill_timestamp() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let clock = nautilus_core::time::get_atomic_clock_realtime();
+    let now = clock.get_time_ns().as_u64();
+    let created = (now / 1_000_000_000 - 10) * 1_000_000_000;
+    let latest_fill = now - 2_000_000_000;
+    let mut orders = load_test_data("http_get_orders_partial_canceled.json");
+    orders["orders"][0]["ts"] = (created / 1_000_000_000).into();
+    orders["orders"][0]["tn"] = 0.into();
+    *state.orders_payload.lock().await = Some(orders);
+    let mut fills = load_test_data("http_get_fills_partial_canceled.json");
+    for (index, timestamp) in [latest_fill, now - 3_000_000_000, now - 1_000_000_000]
+        .into_iter()
+        .enumerate()
+    {
+        fills["fills"][index]["timestamp"] =
+            jiff::Timestamp::from_nanosecond(i128::from(timestamp))
+                .unwrap()
+                .to_string()
+                .into();
+    }
+
+    *state.fills_payload.lock().await = Some(fills);
+    let mut status = load_test_data("http_get_order_status.json");
+    status["status"]["order_id"] = "O-PARTIAL-CANCELED".into();
+    status["status"]["state"] = "CANCELED".into();
+    *state.order_status_response.lock().await = Some((200, status));
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    let account_id = AccountId::from("AX-001");
+    add_test_account_to_cache(&cache, account_id);
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    let venue_order_id = VenueOrderId::from("O-PARTIAL-CANCELED");
+    let command = GenerateOrderStatusReportBuilder::default()
+        .ts_init(UnixNanos::default())
+        .venue_order_id(Some(venue_order_id))
+        .build()
+        .unwrap();
+    let before = clock.get_time_ns();
+    let report = client
+        .generate_order_status_report(&command)
+        .await
+        .unwrap()
+        .unwrap();
+    let price = Price::from("1.0840");
+    let quantity = Quantity::from("200");
+    let filled_qty = Quantity::from("100");
+    let expected = OrderStatusReport::new(
+        account_id,
+        InstrumentId::from("EURUSD-PERP.AX"),
+        Some(ClientOrderId::from("CID-42")),
+        venue_order_id,
+        Some(OrderSide::Buy),
+        OrderType::Limit,
+        TimeInForce::Ioc,
+        OrderStatus::Canceled,
+        quantity,
+        filled_qty,
+        UnixNanos::from(created),
+        UnixNanos::from(latest_fill),
+        before,
+        None,
+    )
+    .with_price(price)
+    .with_post_only(false);
+    assert_reports_equal(vec![report], vec![expected], before);
+    assert_eq!(state.fills_queries.lock().await.len(), 1);
     client.disconnect().await.unwrap();
 }

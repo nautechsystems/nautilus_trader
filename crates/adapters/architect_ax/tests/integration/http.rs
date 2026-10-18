@@ -1540,3 +1540,146 @@ async fn test_unknown_order_classification_aborts_complete_snapshot(
     assert_eq!(error.to_string(), "failed to parse AX order OID-UNCACHED-2");
     assert_eq!(error.root_cause().to_string(), expected);
 }
+
+#[rstest]
+#[case::negative_total(Some(-1), Some(100), None, 1, "AX orders total_count must be non-negative, was -1")]
+#[case::truncated(
+    Some(2),
+    Some(100),
+    None,
+    1,
+    "AX orders pagination returned 1 unique rows, expected 2"
+)]
+#[case::excess_rows(
+    Some(0),
+    Some(100),
+    None,
+    1,
+    "AX orders pagination returned more unique rows (1) than total_count 0"
+)]
+#[case::negative_limit(Some(1), Some(-1), None, 1, "AX orders applied limit must be between 0 and 100, was -1")]
+#[case::excess_limit(
+    Some(1),
+    Some(101),
+    None,
+    1,
+    "AX orders applied limit must be between 0 and 100, was 101"
+)]
+#[case::small_limit(
+    Some(1),
+    Some(0),
+    None,
+    1,
+    "AX orders page length 1 exceeds applied limit 0"
+)]
+#[case::empty_cursor(
+    Some(1),
+    Some(100),
+    Some(""),
+    1,
+    "AX orders returned an empty next_cursor"
+)]
+#[case::empty_page(
+    Some(1),
+    Some(100),
+    Some("next"),
+    0,
+    "AX orders returned an empty page with a next_cursor"
+)]
+#[tokio::test]
+async fn test_order_history_rejects_invalid_page_metadata(
+    #[case] total: Option<i64>,
+    #[case] limit: Option<i32>,
+    #[case] cursor: Option<&str>,
+    #[case] rows: usize,
+    #[case] expected: &str,
+) {
+    let mut payload = load_test_data("http_get_orders.json");
+    payload["orders"].as_array_mut().unwrap().truncate(rows);
+    payload["total_count"] = json!(total);
+    payload["limit"] = json!(limit);
+    payload["next_cursor"] = json!(cursor);
+    let app = Router::new().route(
+        "/orders",
+        get(move || {
+            let payload = payload.clone();
+            async move { Json(payload) }
+        }),
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let client = AxHttpClient::new(
+        Some(format!("http://{addr}")),
+        Some(format!("http://{addr}")),
+        5,
+        0,
+        1,
+        1,
+        None,
+    )
+    .unwrap();
+    client.set_session_token("test-token".into());
+    let error = client
+        .request_historical_order_status_reports(
+            AccountId::from("AX-001"),
+            None,
+            None,
+            None::<fn(u64) -> Option<ClientOrderId>>,
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(error.to_string(), expected);
+    server.abort();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_order_history_rejects_changed_total() {
+    let payload = load_test_data("http_get_orders.json");
+    let first = json!({"orders": [payload["orders"][0]], "total_count": 2, "limit": 100, "next_cursor": "next"});
+    let second = json!({"orders": [payload["orders"][1]], "total_count": 3, "limit": 100});
+
+    let app = Router::new().route(
+        "/orders",
+        get(move |Query(query): Query<HashMap<String, String>>| {
+            let response = if query.contains_key("cursor") {
+                second.clone()
+            } else {
+                first.clone()
+            };
+
+            async move { Json(response) }
+        }),
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let client = AxHttpClient::new(
+        Some(format!("http://{addr}")),
+        Some(format!("http://{addr}")),
+        5,
+        0,
+        1,
+        1,
+        None,
+    )
+    .unwrap();
+    client.set_session_token("test-token".into());
+    let error = client
+        .request_historical_order_status_reports(
+            AccountId::from("AX-001"),
+            None,
+            None,
+            None::<fn(u64) -> Option<ClientOrderId>>,
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "AX orders total_count changed during pagination: expected 2, was 3"
+    );
+    server.abort();
+}

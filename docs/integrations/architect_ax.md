@@ -328,8 +328,9 @@ and output format.
 - `GET /fills` and `GET /funding-rates` use cursor pagination. The adapter traverses each cursor chain as a
   best-effort historical read. AX corrections during traversal are not an atomic snapshot.
 - `GET /orders` exposes cursor metadata and supports `order_id`, `order_ids`, `account_id`, and
-  optional timestamp filters. Startup mass-status reconciliation traverses its cursor chain,
-  accepts partial pages, and rejects repeated cursors or duplicate order IDs.
+  optional timestamp filters. Order-report history traversals follow the cursor chain,
+  accept partial pages, and validate declared limits and totals. Empty continuation pages,
+  repeated cursors, duplicate order IDs, and incomplete declared totals fail the request.
 - Open-order, historical-order, fill, and position report requests resolve an uncached symbol
   through `GET /instrument` and cache the result. An instrument request or parse failure fails that
   entire report request instead of dropping venue state.
@@ -462,10 +463,17 @@ one.
 
 :::note
 Bulk open-order checks use `/open-orders` when `open_check_open_only` is enabled, which is the
-default. Otherwise, they use `/orders`. Startup mass-status reconciliation uses `/orders`, so its
-snapshot includes historical terminal orders such as filled and canceled orders. Single-order
-queries via `query_order` use the dedicated `/order-status` endpoint, which works for any order
-state.
+default. Otherwise, they combine `/orders` with an unbounded `/open-orders` snapshot. Startup mass-status
+reconciliation uses the same combination, including historical terminal orders such as filled and canceled
+orders. The merged result applies history bounds only to closed reports. Active and in-flight reports
+survive the bounds and take precedence over historical rows with the same venue order ID.
+
+Single-order queries via `query_order` use `/order-status`, which works for any order state. Canceled,
+expired, and rejected orders with no remaining quantity also use `/orders` to recover their original
+quantity. Targeted reconciliation probes use `/order-status` by venue or client order ID, then fetch the
+complete `/orders` record. Only AX's HTTP 404 `no matching orders` error establishes absence. Other error
+responses, transport or decode failures, and missing detail records fail the probe. Instrument resolution,
+report parsing, and identity mismatches also fail the probe.
 
 AX open and historical order payloads do not expose a stop order type or trigger price.
 REST-derived reconciliation therefore reports every visible external order as a limit order. The
@@ -480,7 +488,7 @@ AX `/orders` payloads expose creation time without a terminal timestamp. When hi
 closed order with fills, the adapter also requests `/fills` in the same window (at most seven days).
 Historical reports keep `ts_accepted` at creation and raise a closed order's `ts_last` to its latest
 matching fill. With no matching fill, `ts_last` stays at creation. The fill time is a lower bound for
-cancellation or expiry.
+cancellation or expiry. Targeted probes use the latest seven days for this fill lookup.
 
 Replaced historical order IDs are terminal. Day-complete orders expire, and expired IOC orders cancel,
 matching the WebSocket event path. An unknown order state fails the reconciliation request instead of omitting
@@ -500,6 +508,17 @@ resting orders fill while the node is offline, without leaving offsetting extern
 instruments without a position report update orders without opening positions, so incomplete history for an
 uncached flat instrument does not require a position correction. An invalid position row fails mass-status
 collection instead of implying that its instrument is flat.
+
+Position reports divide the signed fill-ledger cost basis by signed net quantity. The
+[AX gateway schema](https://docs.architect.exchange/openapi/api-gateway.json) defines `signed_notional`
+as a deprecated alias for `signed_cost_basis`; reports prefer `signed_cost_basis` when present. This
+ledger average can change on reductions and reversals independently of Nautilus's opening-fill average,
+and it can be zero or negative.
+
+Reports use [`AvgPxReconciliation::OpeningOnly`](../concepts/execution/reconciliation.md#reported-entry-averages),
+so reconciliation uses the value for synthetic openings and reversals without comparing it with the cached
+average. Reports preserve the signed decimal quotient without rounding it to instrument price precision
+or declaring an average-price precision.
 :::
 
 :::warning[Position ownership during recovery]

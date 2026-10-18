@@ -21,14 +21,16 @@ use std::{
     time::{Duration, Instant},
 };
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
 use async_trait::async_trait;
 use dashmap::DashMap;
 use futures_util::{StreamExt, pin_mut};
 use nautilus_common::{
     clients::{ExecutionClient, ExecutionReportTask},
+    enums::LogLevel,
     live::{runner::get_exec_event_sender, sender::EventSender},
+    logging::map_log_level_to_filter,
     messages::{
         ExecutionEvent,
         execution::{
@@ -1265,7 +1267,7 @@ impl ExecutionClient for AxExecutionClient {
             None, // correlation_id
         );
 
-        let fill_cmd = GenerateFillReports::new(
+        let mut fill_cmd = GenerateFillReports::new(
             UUID4::new(),
             ts_now,
             None, // instrument_id
@@ -1276,7 +1278,9 @@ impl ExecutionClient for AxExecutionClient {
             None,         // correlation_id
         );
 
-        let position_cmd = GeneratePositionStatusReports::new(
+        fill_cmd.log_receipt_level = LogLevel::Off;
+
+        let mut position_cmd = GeneratePositionStatusReports::new(
             UUID4::new(),
             ts_now,
             None, // instrument_id
@@ -1285,6 +1289,8 @@ impl ExecutionClient for AxExecutionClient {
             None, // params
             None, // correlation_id
         );
+
+        position_cmd.log_receipt_level = LogLevel::Off;
 
         let (mut order_reports, fill_reports, mut position_reports) = tokio::try_join!(
             async {
@@ -1297,8 +1303,13 @@ impl ExecutionClient for AxExecutionClient {
                 };
                 let mut reports = self
                     .http_client
-                    .request_order_history(self.core.account_id, start, None, Some(cid_resolver))
+                    .request_order_history(self.core.account_id, start, None, Some(&cid_resolver))
                     .await?;
+                let active = self
+                    .http_client
+                    .request_order_status_reports(self.core.account_id, Some(&cid_resolver))
+                    .await?;
+                reports = merge_active_order_reports(reports, active);
                 retain_order_status_reports(&mut reports, &order_cmd);
 
                 for report in &reports {
@@ -1408,26 +1419,30 @@ impl AxReportClient {
         let cid_map = self.cid_to_client_order_id.clone();
         let cid_resolver = move |cid: u64| cid_map.get(&cid).map(|v| *v);
 
-        let mut reports = self
+        let Some(report) = self
             .http_client
-            .request_order_status_reports(self.account_id, Some(cid_resolver))
-            .await?;
+            .request_order_report(
+                self.account_id,
+                cmd.client_order_id,
+                cmd.venue_order_id,
+                Some(cid_resolver),
+            )
+            .await?
+        else {
+            return Ok(None);
+        };
 
-        if let Some(instrument_id) = cmd.instrument_id {
-            reports.retain(|report| report.instrument_id == instrument_id);
-        }
-
-        if let Some(client_order_id) = cmd.client_order_id {
-            reports.retain(|report| report.client_order_id == Some(client_order_id));
-        }
-
-        if let Some(venue_order_id) = cmd.venue_order_id {
-            reports.retain(|report| report.venue_order_id.as_str() == venue_order_id.as_str());
-        }
-
-        let report = reports.into_iter().next();
-
-        Ok(report)
+        anyhow::ensure!(
+            cmd.instrument_id
+                .is_none_or(|id| report.instrument_id == id),
+            "AX order report instrument does not match requested instrument"
+        );
+        anyhow::ensure!(
+            cmd.venue_order_id
+                .is_none_or(|id| report.venue_order_id == id),
+            "AX order report venue identity does not match requested order"
+        );
+        Ok(Some(report))
     }
 
     async fn generate_order_status_reports(
@@ -1439,17 +1454,23 @@ impl AxReportClient {
 
         let mut reports = if cmd.open_only {
             self.http_client
-                .request_order_status_reports(self.account_id, Some(cid_resolver))
+                .request_order_status_reports(self.account_id, Some(&cid_resolver))
                 .await?
         } else {
-            self.http_client
+            let reports = self
+                .http_client
                 .request_historical_order_status_reports(
                     self.account_id,
                     cmd.start,
                     cmd.end,
-                    Some(cid_resolver),
+                    Some(&cid_resolver),
                 )
-                .await?
+                .await?;
+            let active = self
+                .http_client
+                .request_order_status_reports(self.account_id, Some(&cid_resolver))
+                .await?;
+            merge_active_order_reports(reports, active)
         };
 
         if let Some(instrument_id) = cmd.instrument_id {
@@ -1457,6 +1478,7 @@ impl AxReportClient {
         }
 
         retain_order_status_reports(&mut reports, cmd);
+        log_report_receipt(reports.len(), "OrderStatusReport", cmd.log_receipt_level);
 
         Ok(reports)
     }
@@ -1465,6 +1487,7 @@ impl AxReportClient {
         &self,
         cmd: GenerateFillReports,
     ) -> anyhow::Result<Vec<FillReport>> {
+        let log_level = cmd.log_receipt_level;
         let mut reports = self
             .http_client
             .request_fill_reports(self.account_id, cmd.start, cmd.end)
@@ -1478,6 +1501,7 @@ impl AxReportClient {
             reports.retain(|report| report.venue_order_id.as_str() == venue_order_id.as_str());
         }
 
+        log_report_receipt(reports.len(), "FillReport", log_level);
         Ok(reports)
     }
 
@@ -1494,7 +1518,24 @@ impl AxReportClient {
             reports.retain(|report| report.instrument_id == instrument_id);
         }
 
+        log_report_receipt(reports.len(), "PositionStatusReport", cmd.log_receipt_level);
         Ok(reports)
+    }
+}
+
+fn merge_active_order_reports(
+    mut reports: Vec<OrderStatusReport>,
+    active: Vec<OrderStatusReport>,
+) -> Vec<OrderStatusReport> {
+    let active_ids: AHashSet<_> = active.iter().map(|report| report.venue_order_id).collect();
+    reports.retain(|report| !active_ids.contains(&report.venue_order_id));
+    reports.extend(active);
+    reports
+}
+
+fn log_report_receipt(count: usize, report_type: &str, level: LogLevel) {
+    if let Some(level) = map_log_level_to_filter(level).to_level() {
+        log::log!(level, "Received {count} {report_type} reports");
     }
 }
 
@@ -2748,7 +2789,17 @@ mod tests {
             open_body["total_count"] = serde_json::json!(body["orders"].as_array().unwrap().len());
             open_body["limit"] = serde_json::json!(100);
             open_body["offset"] = serde_json::json!(0);
+            let order = &body["orders"][0];
+            let status_body = serde_json::json!({"status": {
+                "order_id": order["oid"], "state": order["o"], "symbol": order["s"],
+                "clord_id": order["cid"], "filled_quantity": order["xq"], "remaining_quantity": order["rq"]
+            }});
+
             let app = axum::Router::new()
+                .route(
+                    "/order-status",
+                    axum::routing::get(move || async { axum::Json(status_body) }),
+                )
                 .route(
                     "/orders",
                     axum::routing::get(move || async { axum::Json(body) }),

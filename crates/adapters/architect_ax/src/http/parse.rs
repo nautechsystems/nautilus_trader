@@ -23,8 +23,9 @@ use nautilus_core::{Params, UUID4, datetime::datetime_to_unix_nanos, nanos::Unix
 use nautilus_model::{
     data::{Bar, BarSpecification, BarType, FundingRateUpdate, TradeTick},
     enums::{
-        AccountType, AggregationSource, AggressorSide, AssetClass, BarAggregation, CurrencyType,
-        LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide, PriceType, TimeInForce,
+        AccountType, AggregationSource, AggressorSide, AssetClass, AvgPxReconciliation,
+        BarAggregation, CurrencyType, LiquiditySide, OrderSide, OrderStatus, OrderType,
+        PositionSide, PriceType, TimeInForce,
     },
     events::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, TradeId, VenueOrderId},
@@ -789,6 +790,9 @@ pub fn parse_fill_report(
 
 /// Parses an Ax position into a Nautilus [`PositionStatusReport`].
 ///
+/// Reports the signed fill-ledger cost-basis average with
+/// [`AvgPxReconciliation::OpeningOnly`] semantics.
+///
 /// # Errors
 ///
 /// Returns an error if:
@@ -827,12 +831,11 @@ pub fn parse_position_status_report(
     };
 
     let avg_px_open = if position.signed_quantity != 0 {
-        let qty_dec = Decimal::from(position.signed_quantity.unsigned_abs());
+        let qty_dec = Decimal::from(position.signed_quantity);
         Some(
             position
                 .signed_cost_basis
                 .unwrap_or(position.signed_notional)
-                .abs()
                 / qty_dec,
         )
     } else {
@@ -861,7 +864,8 @@ pub fn parse_position_status_report(
         None,
         None,
         avg_px_open,
-    ))
+    )
+    .with_avg_px_open_reconciliation(AvgPxReconciliation::OpeningOnly))
 }
 
 /// Parses an Ax REST trade into a Nautilus [`TradeTick`].
@@ -2253,6 +2257,62 @@ mod tests {
         assert_eq!(report.position_side, PositionSide::Short);
         assert_eq!(report.quantity.as_decimal(), dec!(300));
     }
+
+    #[rstest]
+    #[case::reduction(1, dec!(2) * dec!(100) - dec!(150), dec!(50))]
+    #[case::short_reduction(-1, -dec!(2) * dec!(100) + dec!(150), dec!(50))]
+    #[case::reversal(-1, dec!(2) * dec!(100) - dec!(3) * dec!(120), dec!(160))]
+    #[case::short_reversal(1, -dec!(2) * dec!(100) + dec!(3) * dec!(120), dec!(160))]
+    #[case::negative(1, dec!(-100), dec!(-100))]
+    #[case::zero(1, dec!(0), dec!(0))]
+    #[case::fraction(4, dec!(99), dec!(24.75))]
+    #[case::flat(0, dec!(100), dec!(0))]
+    fn test_position_ledger_average_contract(
+        #[case] quantity: i64,
+        #[case] basis: Decimal,
+        #[case] expected: Decimal,
+        #[values(false, true)] legacy_alias: bool,
+    ) {
+        let mut response: crate::http::models::AxPositionsResponse =
+            serde_json::from_str(include_str!("../../test_data/http_get_positions.json")).unwrap();
+        let position = &mut response.positions[0];
+        position.signed_quantity = quantity;
+
+        position.signed_notional = if legacy_alias { basis } else { dec!(999) };
+        position.signed_cost_basis = (!legacy_alias).then_some(basis);
+        let instrument = parse_instrument(
+            &create_eurusd_instrument(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+        .unwrap();
+        let result = parse_position_status_report(
+            position,
+            AccountId::from("AX-001"),
+            &instrument,
+            UnixNanos::default(),
+        );
+
+        let report = result.unwrap();
+        assert_eq!(report.avg_px_open, (quantity != 0).then_some(expected));
+        assert_eq!(
+            report.avg_px_open_reconciliation,
+            AvgPxReconciliation::OpeningOnly
+        );
+        assert_eq!(report.avg_px_open_precision, None);
+        assert_eq!(report.quantity.as_decimal(), Decimal::from(quantity).abs());
+        assert_eq!(
+            report.position_side,
+            if quantity > 0 {
+                PositionSide::Long
+            } else if quantity < 0 {
+                PositionSide::Short
+            } else {
+                PositionSide::Flat
+            }
+        );
+    }
+
     #[rstest]
     #[case(TimeInForce::Ioc, OrderStatus::Canceled)]
     #[case(TimeInForce::Fok, OrderStatus::Canceled)]
