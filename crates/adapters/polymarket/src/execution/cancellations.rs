@@ -15,6 +15,7 @@
 
 use std::{sync::Arc, time::Duration};
 
+use ahash::AHashSet;
 use nautilus_common::messages::execution::{BatchCancelOrders, CancelAllOrders, CancelOrder};
 use nautilus_core::time::AtomicTime;
 use nautilus_live::{ExecutionEventEmitter, execution::failure::CommandFailure};
@@ -25,7 +26,9 @@ use nautilus_model::{
 };
 use parking_lot::Mutex;
 
-use super::{PolymarketExecutionClient, pending::PendingCancelTracker};
+use super::{
+    PolymarketExecutionClient, pending::PendingCancelTracker, submitter::CancelOrdersError,
+};
 use crate::{
     common::enums::PolymarketSignerType,
     execution::{
@@ -327,7 +330,12 @@ impl PolymarketExecutionClient {
                 let asset_id = asset_id
                     .as_deref()
                     .expect("asset_id must be resolved for unsided cancellation");
-                submitter.cancel_market_orders(asset_id).await
+                submitter.cancel_market_orders(asset_id).await.map_err(|e| CancelOrdersError {
+                    response: Box::default(),
+                    error: e,
+                    failed_range: 0..orders.len(),
+                    attempted_end: orders.len(),
+                })
             };
 
             match response {
@@ -367,7 +375,7 @@ impl PolymarketExecutionClient {
                     Ok(())
                 }
                 Err(e) => {
-                    apply_cancel_http_failure(&e, &orders, &emitter, clock);
+                    process_cancel_chunk_failure(&e, &orders, &order_contexts, &emitter, clock);
                     Err(anyhow::Error::new(e).context("failed to cancel all orders"))
                 }
             }
@@ -471,7 +479,8 @@ impl PolymarketExecutionClient {
                             (VenueOrderId::from(venue_id_str.as_str()), order.clone())
                         })
                         .collect();
-                    apply_cancel_http_failure(&e, &orders, &emitter, clock);
+
+                    process_cancel_chunk_failure(&e, &orders, &order_contexts, &emitter, clock);
                     Err(anyhow::Error::new(e).context("failed to batch cancel orders"))
                 }
             }
@@ -552,6 +561,68 @@ impl Drop for CancelCommandGuard {
     }
 }
 
+fn process_cancel_chunk_failure(
+    failure: &CancelOrdersError,
+    orders: &[(VenueOrderId, OrderAny)],
+    order_contexts: &OrderContextRegistry,
+    emitter: &ExecutionEventEmitter,
+    clock: &'static AtomicTime,
+) {
+    let attempted_ids = orders[..failure.attempted_end]
+        .iter()
+        .map(|(venue_order_id, _)| *venue_order_id)
+        .collect::<AHashSet<_>>();
+
+    for (index, (venue_order_id, order)) in orders.iter().enumerate() {
+        let order_id = venue_order_id.as_str();
+
+        if index < failure.failed_range.start {
+            process_cancel_result(
+                &failure.response,
+                order_id,
+                order,
+                *venue_order_id,
+                Some(order_contexts),
+                emitter,
+                clock,
+            );
+            continue;
+        }
+
+        if failure.response.canceled.iter().any(|id| id == order_id)
+            || failure.response.not_canceled.contains_key(order_id)
+        {
+            continue;
+        }
+
+        if index >= failure.attempted_end && attempted_ids.contains(venue_order_id) {
+            continue;
+        }
+
+        if index < failure.failed_range.end {
+            apply_cancel_http_failure(
+                &failure.error,
+                std::slice::from_ref(&orders[index]),
+                emitter,
+                clock,
+            );
+        } else if index < failure.attempted_end {
+            log::warn!(
+                "Cancel outcome unknown for {} ({}), awaiting reconciliation after a smaller retry failed",
+                order.client_order_id(),
+                venue_order_id,
+            );
+        } else {
+            emitter.emit_order_cancel_rejected(
+                order,
+                Some(*venue_order_id),
+                "Cancel not sent because an earlier chunk failed",
+                clock.get_time_ns(),
+            );
+        }
+    }
+}
+
 fn apply_cancel_http_failure(
     error: &crate::http::error::Error,
     orders: &[(VenueOrderId, OrderAny)],
@@ -586,6 +657,19 @@ pub(super) fn process_cancel_result(
     emitter: &ExecutionEventEmitter,
     clock: &'static AtomicTime,
 ) {
+    if response
+        .canceled
+        .iter()
+        .any(|order_id| order_id == venue_order_id_str)
+    {
+        // Tracked orders close from the user stream. An external order may shut down first
+        if order_contexts.is_some_and(|contexts| contexts.get(&venue_order_id).is_none()) {
+            emitter.emit_order_canceled(order, Some(venue_order_id), clock.get_time_ns());
+        }
+
+        return;
+    }
+
     if let Some(reason_opt) = response.not_canceled.get(venue_order_id_str) {
         let reason = sanitize_error_text(reason_opt.as_deref().unwrap_or("unknown reason"));
 
@@ -600,19 +684,6 @@ pub(super) fn process_cancel_result(
                 let ts_now = clock.get_time_ns();
                 emitter.emit_order_cancel_rejected(order, Some(venue_order_id), &msg, ts_now);
             }
-        }
-
-        return;
-    }
-
-    if response
-        .canceled
-        .iter()
-        .any(|order_id| order_id == venue_order_id_str)
-    {
-        // Tracked orders close from the user stream. An external order may shut down first
-        if order_contexts.is_some_and(|contexts| contexts.get(&venue_order_id).is_none()) {
-            emitter.emit_order_canceled(order, Some(venue_order_id), clock.get_time_ns());
         }
 
         return;
@@ -741,9 +812,14 @@ mod tests {
     }
 
     #[rstest]
-    #[case::untracked(false)]
-    #[case::tracked(true)]
-    fn test_http_cancel_emits_only_without_stream_context(#[case] tracked: bool) {
+    #[case::untracked(false, false)]
+    #[case::tracked(true, false)]
+    #[case::untracked_conflicting_result(false, true)]
+    #[case::tracked_conflicting_result(true, true)]
+    fn test_http_cancel_emits_only_without_stream_context(
+        #[case] tracked: bool,
+        #[case] conflicting_result: bool,
+    ) {
         let (order, venue_order_id) = open_limit();
         let registry = OrderContextRegistry::default();
 
@@ -753,10 +829,17 @@ mod tests {
 
         let (emitter, mut receiver) = test_emitter();
 
-        let response = CancelResponse {
+        let mut response = CancelResponse {
             canceled: vec![venue_order_id.to_string()],
             ..CancelResponse::default()
         };
+
+        if conflicting_result {
+            response.not_canceled.insert(
+                venue_order_id.to_string(),
+                Some("order not found".to_string()),
+            );
+        }
 
         process_cancel_result(
             &response,

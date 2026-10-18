@@ -100,6 +100,8 @@ const TEST_CHUNK_FAILURE_PRIVATE_KEY: &str =
     "0x4234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
 const TEST_CHUNK_DOWNGRADE_PRIVATE_KEY: &str =
     "0x5234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
+const TEST_CHUNK_DOWNGRADE_FAILURE_PRIVATE_KEY: &str =
+    "0x6234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
 const CANCEL_ALREADY_DONE_ORDER_ID: &str =
     "0xb816482a1234567890abcdef1234567890abcdef1234567890abcdef12345678";
 const FAK_NO_MATCH_REASON: &str = concat!(
@@ -18158,6 +18160,260 @@ async fn test_cancel_all_missing_instrument_returns_error_without_request() {
 }
 
 #[rstest]
+#[tokio::test]
+async fn test_group_cancel_preserves_unknown_suffix_after_tier_downgrade() {
+    let state = TestServerState::default();
+    state
+        .batch_cancel_echo_rejections
+        .store(true, Ordering::Release);
+    state.batch_cancel_response_statuses.lock().await.extend([
+        StatusCode::OK,
+        StatusCode::INTERNAL_SERVER_ERROR,
+        StatusCode::BAD_REQUEST,
+    ]);
+
+    for tier in ["Gold", "Standard"] {
+        let mut headers = HeaderMap::new();
+        headers.insert("poly-ratelimit-tier", tier.parse().unwrap());
+        state
+            .batch_cancel_response_headers
+            .lock()
+            .await
+            .push_back(headers);
+    }
+
+    let addr = start_mock_server(state.clone()).await;
+    let mut config = create_test_exec_config_with_retries(addr, 1);
+    config.private_key = Some(TEST_CHUNK_DOWNGRADE_FAILURE_PRIVATE_KEY.into());
+    let (mut client, mut rx, cache) = create_test_execution_client_from_config(config);
+    client.start().unwrap();
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    let mut cancels = Vec::new();
+
+    for index in 0..241 {
+        let client_order_id = format!("O-DOWNGRADE-FAILURE-{index}");
+        let venue_order_id = format!("0x{index:064x}");
+        let mut order = make_limit_order(
+            &client_order_id,
+            instrument_id,
+            OrderSide::Buy,
+            false,
+            false,
+            false,
+            TimeInForce::Gtc,
+        );
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+        submit_and_accept_order(&cache, &mut order, &venue_order_id);
+        cancels.push(make_cancel_cmd(&client_order_id, instrument_id));
+    }
+
+    client
+        .batch_cancel_orders(BatchCancelOrders::new(
+            TraderId::from("TESTER-001"),
+            Some(*POLYMARKET_CLIENT_ID),
+            StrategyId::from("S-001"),
+            instrument_id,
+            cancels,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+    let mut rejected = HashSet::new();
+
+    for _ in 0..240 {
+        let event = assert_order_event(recv_execution_event(&mut rx).await, "CancelRejected");
+        assert!(rejected.insert(event.client_order_id().to_string()));
+    }
+
+    assert_no_execution_event(&mut rx).await;
+    let bodies = state.batch_cancel_bodies.lock().await;
+    assert_eq!(
+        bodies
+            .iter()
+            .map(|body| body.as_array().unwrap().len())
+            .collect::<Vec<_>>(),
+        [120, 121, 120]
+    );
+    assert_eq!(
+        rejected,
+        (0..240)
+            .map(|index| format!("O-DOWNGRADE-FAILURE-{index}"))
+            .collect()
+    );
+    assert_eq!(
+        bodies[1].as_array().unwrap()[..120],
+        bodies[2].as_array().unwrap()[..]
+    );
+    assert_eq!(*state.batch_cancel_delete_count.lock().await, 3);
+}
+
+#[rstest]
+#[case::batch_rejected(false, StatusCode::BAD_REQUEST, None)]
+#[case::all_by_id_rejected(true, StatusCode::BAD_REQUEST, None)]
+#[case::batch_ambiguous(false, StatusCode::INTERNAL_SERVER_ERROR, None)]
+#[case::all_by_id_ambiguous(true, StatusCode::INTERNAL_SERVER_ERROR, None)]
+#[case::batch_signer_limited(false, StatusCode::TOO_MANY_REQUESTS, None)]
+#[case::all_by_id_signer_limited(true, StatusCode::TOO_MANY_REQUESTS, None)]
+#[case::duplicate_completed_id(false, StatusCode::BAD_REQUEST, Some((0, 120)))]
+#[case::duplicate_failed_suffix_ambiguous(false, StatusCode::INTERNAL_SERVER_ERROR, Some((120, 240)))]
+#[case::duplicate_failed_suffix_rejected(false, StatusCode::BAD_REQUEST, Some((120, 240)))]
+#[tokio::test]
+async fn test_group_cancel_preserves_completed_chunks_on_later_failure(
+    #[case] cancel_all: bool,
+    #[case] failure_status: StatusCode,
+    #[case] duplicate: Option<(usize, usize)>,
+) {
+    let state = TestServerState::default();
+    state
+        .batch_cancel_echo_cancellations
+        .store(true, Ordering::Release);
+    state
+        .batch_cancel_response_statuses
+        .lock()
+        .await
+        .extend([StatusCode::OK, failure_status]);
+    let mut headers = HeaderMap::new();
+    headers.insert("poly-ratelimit-tier", "Standard".parse().unwrap());
+    state
+        .batch_cancel_response_headers
+        .lock()
+        .await
+        .extend([HeaderMap::new(), headers]);
+    let addr = start_mock_server(state.clone()).await;
+    let mut config = create_test_exec_config_with_retries(addr, 0);
+    config.private_key = Some(TEST_CHUNK_FAILURE_PRIVATE_KEY.into());
+    let (mut client, mut rx, cache) = create_test_execution_client_from_config(config);
+    client.start().unwrap();
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    let mut cancels = Vec::new();
+    let mut client_ids = std::collections::HashMap::new();
+
+    for index in 0..241 {
+        let client_order_id = format!("O-PRESERVE-{index}");
+        let venue_order_id = format!("0x{index:064x}");
+        let mut order = make_limit_order(
+            &client_order_id,
+            instrument_id,
+            OrderSide::Buy,
+            false,
+            false,
+            false,
+            TimeInForce::Gtc,
+        );
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+        submit_and_accept_order(&cache, &mut order, &venue_order_id);
+        cancels.push(make_cancel_cmd(&client_order_id, instrument_id));
+        client_ids.insert(
+            venue_order_id,
+            ClientOrderId::from(client_order_id.as_str()),
+        );
+    }
+
+    if let Some((source, position)) = duplicate {
+        let client_order_id = format!("O-PRESERVE-{source}");
+        cancels.insert(position, make_cancel_cmd(&client_order_id, instrument_id));
+    }
+
+    if cancel_all {
+        client
+            .cancel_all_orders(make_cancel_all_cmd(
+                StrategyId::from("S-001"),
+                instrument_id,
+                Some(OrderSide::Buy),
+            ))
+            .unwrap();
+    } else {
+        client
+            .batch_cancel_orders(BatchCancelOrders::new(
+                TraderId::from("TESTER-001"),
+                Some(*POLYMARKET_CLIENT_ID),
+                StrategyId::from("S-001"),
+                instrument_id,
+                cancels,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .unwrap();
+    }
+
+    let ambiguous = failure_status == StatusCode::INTERNAL_SERVER_ERROR;
+    let expected_count = if ambiguous { 121 } else { 241 };
+    let mut canceled = HashSet::new();
+    let mut rejected = HashSet::new();
+    let mut unsent = HashSet::new();
+
+    for _ in 0..expected_count {
+        let ExecutionEvent::Order(event) = recv_execution_event(&mut rx).await else {
+            panic!("expected order event");
+        };
+
+        match event {
+            OrderEventAny::Canceled(event) => {
+                assert!(canceled.insert(event.client_order_id));
+            }
+            OrderEventAny::CancelRejected(event) => {
+                if event.reason == "Cancel not sent because an earlier chunk failed" {
+                    assert!(unsent.insert(event.client_order_id));
+                } else {
+                    assert!(rejected.insert(event.client_order_id));
+                }
+            }
+            event => panic!("unexpected order event: {event:?}"),
+        }
+    }
+
+    assert_no_execution_event(&mut rx).await;
+    let bodies = state.batch_cancel_bodies.lock().await;
+    let completed_ids = bodies[0]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|id| client_ids[id.as_str().unwrap()])
+        .collect::<HashSet<_>>();
+    let failed_ids = bodies[1]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|id| client_ids[id.as_str().unwrap()])
+        .filter(|id| !completed_ids.contains(id))
+        .collect::<HashSet<_>>();
+    let unsent_ids = client_ids
+        .values()
+        .copied()
+        .filter(|id| !completed_ids.contains(id) && !failed_ids.contains(id))
+        .collect::<HashSet<_>>();
+
+    assert_eq!(
+        bodies
+            .iter()
+            .map(|body| body.as_array().unwrap().len())
+            .collect::<Vec<_>>(),
+        [120, 120]
+    );
+    assert_eq!(canceled, completed_ids);
+    assert_eq!(
+        rejected,
+        if ambiguous {
+            HashSet::new()
+        } else {
+            failed_ids
+        }
+    );
+    assert_eq!(unsent, unsent_ids);
+    assert_eq!(*state.batch_cancel_delete_count.lock().await, 2);
+}
+
+#[rstest]
 #[case::batch(1_121, TEST_CHUNK_PRIVATE_KEY, CancelChunkRetry::Succeeds)]
 #[case::late_failure(121, TEST_CHUNK_FAILURE_PRIVATE_KEY, CancelChunkRetry::Exhausts)]
 #[case::tier_downgrade(241, TEST_CHUNK_DOWNGRADE_PRIVATE_KEY, CancelChunkRetry::Downgrades)]
@@ -18260,23 +18516,20 @@ async fn test_group_cancel_orders_bounds_retries_and_result_processing(
 
     let mut processed_client_order_ids = HashSet::with_capacity(order_count);
 
-    if matches!(chunk_retry, CancelChunkRetry::Exhausts) {
-        wait_until_async(
-            || {
-                let state = state.clone();
-                async move { *state.batch_cancel_delete_count.lock().await == 3 }
-            },
-            Duration::from_secs(5),
-        )
-        .await;
+    let expected_processed_count = if matches!(chunk_retry, CancelChunkRetry::Exhausts) {
+        120
     } else {
-        for _ in 0..order_count {
-            let event = assert_order_event(recv_execution_event(&mut rx).await, "CancelRejected");
-            let OrderEventAny::CancelRejected(event) = event else {
-                unreachable!();
-            };
-            assert!(processed_client_order_ids.insert(event.client_order_id.to_string()));
-        }
+        order_count
+    };
+
+    for _ in 0..expected_processed_count {
+        let event = assert_order_event(recv_execution_event(&mut rx).await, "CancelRejected");
+
+        let OrderEventAny::CancelRejected(event) = event else {
+            unreachable!();
+        };
+
+        assert!(processed_client_order_ids.insert(event.client_order_id.to_string()));
     }
     assert_no_execution_event(&mut rx).await;
 
@@ -18320,11 +18573,13 @@ async fn test_group_cancel_orders_bounds_retries_and_result_processing(
 
     assert_eq!(successful_order_ids, expected_successful_order_ids);
 
-    if matches!(chunk_retry, CancelChunkRetry::Exhausts) {
-        assert!(processed_client_order_ids.is_empty());
+    let expected_processed_ids = if matches!(chunk_retry, CancelChunkRetry::Exhausts) {
+        (0..120).map(|index| format!("O-CHUNK-{index}")).collect()
     } else {
-        assert_eq!(processed_client_order_ids, expected_client_order_ids);
-    }
+        expected_client_order_ids
+    };
+
+    assert_eq!(processed_client_order_ids, expected_processed_ids);
     assert_eq!(*state.batch_cancel_delete_count.lock().await, bodies.len());
 }
 
