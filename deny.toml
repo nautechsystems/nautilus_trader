@@ -214,9 +214,6 @@ skip = [
   { crate = "prost:<0.14" },
   { crate = "prost-derive:<0.14" },
 
-  # Cap'n Proto - hypersync-client uses 0.23.x, nautilus-serialization uses 0.27.x
-  { crate = "capnp:<0.27" },
-
   # TOML parser - cbindgen requires 0.9.x; the workspace and pyo3-stub-gen use 1.x
   { crate = "toml:<1" },
   { crate = "toml_datetime:<1" },

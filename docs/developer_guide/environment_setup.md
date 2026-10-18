@@ -9,9 +9,9 @@ Use an editor with current Rust and Python language support, such as PyCharm or 
 Source builds and the Rust crates require [Rust](https://www.rust-lang.org)
 ([installation guide](https://www.rust-lang.org/tools/install)).
 
-[Cap'n Proto](https://capnproto.org) is required for serialization schema compilation. The required
-version is specified in `.nautilus-engineering/tools.toml`. Ubuntu's default package is typically
-too old, so you may need to install from source (see below).
+[Cap'n Proto](https://capnproto.org) tooling is retained for HyperSync development. Its pinned version
+is specified in `.nautilus-engineering/tools.toml`. Ubuntu's default package is typically too old,
+so you may need to install from source (see below).
 
 :::info
 NautilusTrader *must* compile and run on **Linux, macOS, and Windows**. Please keep portability in
@@ -443,7 +443,9 @@ In Fish, use `source python/.venv/bin/activate.fish` for activation. Activation 
 
 ## Cap'n Proto
 
-[Cap'n Proto](https://capnproto.org) is required for serialization schema compilation.
+[Cap'n Proto](https://capnproto.org) tooling remains available for HyperSync development. The pinned
+HyperSync dependencies ship generated Rust bindings, so normal builds do not regenerate their schemas.
+NautilusTrader does not provide Cap'n Proto codecs.
 The required version is defined in `.nautilus-engineering/tools.toml`.
 
 Install the correct version for your platform:

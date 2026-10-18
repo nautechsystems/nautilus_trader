@@ -4,9 +4,14 @@ Released on TBD (UTC).
 
 ### Enhancements
 
+- Added native external MessageBus data requests and replies for JSON and MessagePack
+
 ### Breaking Changes
 
+- Removed Cap'n Proto codecs and `capnp` features; use JSON or MessagePack for native messages
 - Removed Polymarket `FeeRateResponse::to_rate` and Gamma `set_clob_client` and `clob_client` methods
+- Changed `BusPayloadType`: add `RequestCommand` and `DataResponse` arms to exhaustive matches
+- Changed SBE depth encoding for padded or variable levels and nonzero order IDs; update readers for the new layout
 - Changed emulated releases to undergo risk checks; use `REDUCING` for eligible exits, as `HALTED` denies stops
 - Changed order-list validation to deny unsent siblings; retry with new IDs (#5336), thanks @imbolc
 - Changed Binance Spot SBE `parse_trades_event` and `parse_bbo_event` to return `Result`; handle parse errors
@@ -25,6 +30,8 @@ Released on TBD (UTC).
 
 ### Fixes
 
+- Fixed external JSON and MessagePack DeFi blocks losing their chain identity
+- Fixed SBE market data decoding panics on invalid prices and quantities
 - Fixed startup reconciliation leaving orders partially filled after venue quantity reductions
 - Fixed risk denials for released orders and cleanup of their contingent orders
 - Fixed Python isolation checks failing with inherited `PYTHONHOME`

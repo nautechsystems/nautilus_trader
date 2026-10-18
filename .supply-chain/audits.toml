@@ -1517,58 +1517,6 @@ who = "Chris Sellers <chris@cjdsellers.io>"
 criteria = "safe-to-deploy"
 delta = "2.1.6 -> 2.1.7"
 
-[[audits.capnp]]
-who = "Chris Sellers <chris@cjdsellers.io>"
-criteria = "safe-to-deploy"
-delta = "0.23.2 -> 0.24.1"
-
-[[audits.capnp]]
-who = "Nautech Systems <info@nautechsystems.io>"
-criteria = "safe-to-deploy"
-delta = "0.25.2 -> 0.25.3"
-notes = "Iterator size_hint() fix, Into-to-From cleanup. No new unsafe."
-
-[[audits.capnp]]
-who = "Nautech Systems <info@nautechsystems.io>"
-criteria = "safe-to-deploy"
-delta = "0.25.4 -> 0.25.5"
-notes = "Adds FromTypelessPipeline for FromClientHook and refactors pointer arithmetic to add/sub and offset_in_words helpers. Reviewed unsafe pointer changes as equivalent bounds-checked address calculations; no new dependencies, build script, filesystem, or network behavior."
-
-[[audits.capnp]]
-who = "Nautech Systems <info@nautechsystems.io>"
-criteria = "safe-to-deploy"
-delta = "0.26.2 -> 0.27.0"
-notes = "Adds precise TypeId-based schema equality and bool-list bounds checks, replaces nullable capability-table pointers with NonNull, and narrows internal API visibility. Reviewed changed unsafe pointer access as equivalent or safer. No new build script or ambient capabilities."
-
-[[audits.capnp]]
-who = "Nautech Systems <info@nautechsystems.io>"
-criteria = "safe-to-deploy"
-delta = "0.27.0 -> 0.27.2"
-notes = "Fixes an integer overflow in StructReader::get_data_field (reachable only via capnp::private) with checked arithmetic, fixes a ScratchSpaceHeapAllocator off-by-one, and adds a regression test. No new unsafe, network, or build behavior."
-
-[[audits.capnpc]]
-who = "Chris Sellers <chris@cjdsellers.io>"
-criteria = "safe-to-deploy"
-delta = "0.23.3 -> 0.24.1"
-
-[[audits.capnpc]]
-who = "Nautech Systems <info@nautechsystems.io>"
-criteria = "safe-to-deploy"
-delta = "0.25.0 -> 0.25.2"
-notes = "4-space indents in codegen, version comment in generated files, TryFrom preference. No new unsafe."
-
-[[audits.capnpc]]
-who = "Nautech Systems <info@nautechsystems.io>"
-criteria = "safe-to-deploy"
-delta = "0.25.2 -> 0.25.3"
-notes = "pub -> pub(crate) visibility narrowing in generated code and codegen internals. No logic changes, no new unsafe."
-
-[[audits.capnpc]]
-who = "Nautech Systems <info@nautechsystems.io>"
-criteria = "safe-to-deploy"
-delta = "0.26.0 -> 0.27.0"
-notes = "Updates generated code for capnp 0.27 APIs, including schema TypeId and NonNull capability-table constructors. Reviewed regenerated workspace output; no new unsafe, build-time network, filesystem destination, or process behavior."
-
 [[audits.cc]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"

@@ -45,18 +45,12 @@ high-precision = [
   "nautilus-model/high-precision",
   "nautilus-serialization?/high-precision",
 ]
-capnp = [
-  "dep:capnp",
-  "dep:nautilus-serialization",
-  "nautilus-serialization/capnp",
-]
 sbe = ["dep:nautilus-serialization", "nautilus-serialization/sbe"]
 tracing-bridge = ["tracing", "tracing-subscriber"]
 
 [package.metadata.docs.rs]
 # Python docs depend on the local pyo3-stub-gen patch for now, which published crates do not carry
 features = [
-  "capnp",
   "defi",
   "high-precision",
   "indicators",
@@ -96,7 +90,6 @@ thiserror = { workspace = true }
 ustr = { workspace = true }
 
 alloy-primitives = { workspace = true, optional = true }
-capnp = { workspace = true, optional = true }
 madsim = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-async-runtimes = { workspace = true, optional = true }

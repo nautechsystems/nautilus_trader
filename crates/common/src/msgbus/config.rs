@@ -242,7 +242,6 @@ mod tests {
 
     #[rstest]
     #[case("sbe", SerializationEncoding::Sbe)]
-    #[case("capnp", SerializationEncoding::Capnp)]
     fn test_deserialize_message_bus_config_with_schema_encoding(
         #[case] encoding_name: &str,
         #[case] expected: SerializationEncoding,
@@ -263,6 +262,22 @@ mod tests {
     }
 
     #[rstest]
+    #[case("encoding")]
+    #[case("encoding_market_data")]
+    #[case("encoding_builtin")]
+    fn message_bus_config_rejects_removed_encoding(#[case] field: &str) {
+        let mut config = serde_json::Map::new();
+        config.insert(field.into(), json!("capnp"));
+
+        let error = serde_json::from_value::<MessageBusConfig>(config.into()).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "unknown variant `capnp`, expected one of `json`, `msgpack`, `sbe`"
+        );
+    }
+
+    #[rstest]
     #[case(SerializationEncoding::Json)]
     #[case(SerializationEncoding::MsgPack)]
     fn message_bus_config_validate_accepts_custom_safe_default(
@@ -278,7 +293,6 @@ mod tests {
 
     #[rstest]
     #[case(SerializationEncoding::Sbe)]
-    #[case(SerializationEncoding::Capnp)]
     fn message_bus_config_validate_rejects_schema_default(#[case] encoding: SerializationEncoding) {
         let config = MessageBusConfig {
             encoding,
@@ -293,10 +307,9 @@ mod tests {
         ));
     }
 
-    #[cfg(any(feature = "sbe", feature = "capnp"))]
+    #[cfg(feature = "sbe")]
     #[rstest]
     #[cfg_attr(feature = "sbe", case(SerializationEncoding::Sbe))]
-    #[cfg_attr(feature = "capnp", case(SerializationEncoding::Capnp))]
     fn message_bus_config_validate_accepts_market_data_override(
         #[case] encoding: SerializationEncoding,
     ) {
@@ -324,25 +337,8 @@ mod tests {
         ));
     }
 
-    #[cfg(not(feature = "capnp"))]
-    #[rstest]
-    fn message_bus_config_validate_rejects_market_data_capnp_without_feature() {
-        let config = MessageBusConfig {
-            encoding_market_data: Some(SerializationEncoding::Capnp),
-            ..Default::default()
-        };
-
-        let error = config.validate().unwrap_err();
-        assert!(matches!(
-            error,
-            ConfigError::UnsupportedValue { field, .. }
-                if field == "MessageBusConfig.encoding_market_data"
-        ));
-    }
-
     #[rstest]
     #[case(SerializationEncoding::Sbe)]
-    #[case(SerializationEncoding::Capnp)]
     fn message_bus_config_validate_rejects_builtin_schema_override(
         #[case] encoding: SerializationEncoding,
     ) {

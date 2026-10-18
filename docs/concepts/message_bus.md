@@ -373,8 +373,8 @@ internal streaming registration check, so they receive supported typed messages 
 republishing is disabled. Python processors receive a mapping with an added `payload_type` field. A
 processor error stops later processors and skips internal republishing for that message.
 
-For custom data, egress writes and ingress expects an envelope in the Redis `payload` field, not the
-bare custom object. The canonical JSON envelope is:
+For JSON and MessagePack custom data, egress writes and ingress expects an envelope in the Redis
+`payload` field, not the bare custom object. The canonical JSON envelope is:
 
 ```json
 {
@@ -429,15 +429,15 @@ With MessagePack or JSON, Rust-native external egress forwards serializable type
 - Account state, portfolio snapshots, order events, position events, and custom data.
 - With the `defi` feature, DeFi blocks, pools, liquidity updates, fee collects, and flash events.
 
-Full order book snapshots, `GreeksData` records, option chain slices, and DeFi pool swaps are not forwarded
-because those types do not implement Serde serialization.
+Standalone full order book snapshots, `GreeksData` records, option chain slices, and DeFi pool swaps are not
+forwarded because those types do not implement Serde serialization.
 
-When `external_streams` is non-empty, JSON or MessagePack egress also forwards subscription commands, trading
-commands, and execution mass-status requests. It also forwards order status reports, fill reports, position
+When `external_streams` is non-empty, JSON or MessagePack egress also forwards subscription
+commands, trading commands, data requests and replies, and execution mass-status requests. It also forwards order status reports, fill reports, position
 status reports, and execution mass-status reports. These payloads stay local when no external streams are
 configured.
 
-With SBE or Cap'n Proto, Rust-native external egress forwards only these built-in market data payloads with schema codecs:
+With SBE, Rust-native external egress forwards only these built-in market data payloads with schema codecs:
 
 - Quotes
 - Trades
@@ -449,7 +449,7 @@ With SBE or Cap'n Proto, Rust-native external egress forwards only these built-i
 - Funding rate updates
 - Option greeks
 
-Other payload types are dropped with a debug log when those schema encodings are selected.
+Other payload types are dropped with a debug log when SBE is selected.
 
 ## Configuration
 
@@ -522,7 +522,6 @@ Rust-native external message bus egress supports these encoding names:
 
 - JSON (`json`)
 - MessagePack (`msgpack`)
-- Cap'n Proto (`capnp`, with the Rust `capnp` feature)
 - SBE (`sbe`, with the Rust `sbe` feature)
 
 Use the `encoding` config option to control the message writing encoding.
@@ -530,15 +529,13 @@ Use `encoding_market_data` to override the encoding for market data payloads bac
 bus binary codecs. Use `encoding_builtin` to override account state, portfolio snapshot, order
 event, and position event payloads. Custom and unmapped payload types always use `encoding`.
 
-`MessageBusConfig::validate` requires the default `encoding` to support custom payloads, so it must be JSON or
-MessagePack. Category overrides must be supported by each published payload type in that category. SBE and
-Cap'n Proto can be used only for `encoding_market_data`, and only when the matching Rust feature is enabled.
-`encoding_builtin = "sbe"` and `encoding_builtin = "capnp"` fail validation until those schema codecs cover
-the built-in event category.
+`MessageBusConfig::validate` requires the default `encoding` to support custom payloads: JSON or
+MessagePack. Category overrides must be supported by each published payload type in that category.
+SBE requires the `sbe` feature and supports only `encoding_market_data`;
+`encoding_builtin = "sbe"` fails validation.
 
-The Redis cache payload path supports MessagePack and JSON only. SBE and Cap'n Proto are schema payload
-encodings for Rust-native external message bus egress, not Redis cache encodings. Either encoding is an error
-for a Redis cache payload.
+The Redis cache payload path supports MessagePack and JSON only. SBE is a market data encoding for
+Rust-native external message bus egress. Selecting SBE for a Redis cache payload returns an error.
 
 :::tip
 The `json` encoding is used by default for human readability and interoperability.

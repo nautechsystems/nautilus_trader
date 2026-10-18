@@ -158,7 +158,7 @@ FAIL_FAST_FLAG := --no-fail-fast
 endif
 
 # EXTRA_FEATURES allows adding optional features to cargo builds/tests.
-# Can be set directly: make cargo-test EXTRA_FEATURES="capnp,hypersync"
+# Can be set directly: make cargo-test EXTRA_FEATURES="hypersync,nautilus-common/sbe"
 # Or use convenience flags below for backwards compatibility.
 EXTRA_FEATURES ?=
 
@@ -236,7 +236,7 @@ CARGO_BUILD_JOB_TARGETS := install install-debug build build-debug build-wheel p
 	cargo-test-coverage-crate-% cargo-test-coverage-html \
 	cargo-test-coverage-crate-html-% cargo-miri-core cargo-miri-model \
 	cargo-miri-plugin cargo-miri-core-ffi cargo-miri cargo-ci-benches cargo-codspeed-build \
-	install-cli check-capnp-schemas regen-capnp
+	install-cli
 
 # Apple ld can emit compact-unwind size warnings for large Rust binaries
 # Rust source warnings remain denied by -Dwarnings in .cargo/config.toml
@@ -499,7 +499,7 @@ pre-flight-steps:
 		&& $(MAKE) --no-print-directory format \
 		&& $(MAKE) --no-print-directory test-scripts-quiet \
 		&& $(MAKE) --no-print-directory check-cargo-cooldown \
-		&& $(MAKE) --no-print-directory check-code EXTRA_FEATURES="capnp,hypersync" \
+		&& $(MAKE) --no-print-directory check-code EXTRA_FEATURES="hypersync,nautilus-common/sbe" \
 		&& $(MAKE) --no-print-directory check-code-sim \
 		&& $(MAKE) --no-print-directory cargo-test-sim \
 		&& $(MAKE) --no-print-directory cargo-test-extras \
@@ -661,7 +661,7 @@ check-docsrs: export DOCS_RS=1
 check-docsrs: export RUSTDOCFLAGS=--cfg docsrs -D warnings
 check-docsrs: check-cargo-cooldown check-hack-installed #-- Check documentation builds for docs.rs compatibility
 	cargo +$(DOCSRS_TOOLCHAIN) hack --workspace --ignore-private --ignore-unknown-features \
-		--features arrow,arrow-display,capnp,cloud,defi \
+		--features arrow,arrow-display,cloud,defi \
 		--features example-databento,examples,ffi,high-precision,host \
 		--features hypersync,indicators,live,node,persistence,plugin \
 		--features postgres,redis,replay,sbe,simulation,streaming,test-support \
@@ -842,32 +842,6 @@ check-cbindgen-abi:  #-- Verify generated C headers preserve the public ABI name
 	$(info $(M) Checking cbindgen C ABI...)
 	$Q bash scripts/ci/check-cbindgen-abi.bash
 
-.PHONY: check-capnp-schemas  #-- Verify Cap'n Proto schemas are up-to-date
-check-capnp-schemas: check-cargo-cooldown
-	$(info $(M) Checking if Cap'n Proto schemas are up-to-date...)
-	@if ! command -v capnp > /dev/null 2>&1; then \
-		echo "$(YELLOW)⚠ capnp not installed, skipping schema check$(RESET)"; \
-	elif ! CAPNP_CHECK=1 bash scripts/regen-capnp.sh; then \
-		echo "$(RED)Error: Cap'n Proto regeneration failed$(RESET)"; \
-		echo "Run manually to see errors: ./scripts/regen-capnp.sh"; \
-		exit 1; \
-	else \
-		DIFF_OUTPUT="$$(git diff -I\"ENCODED_NODE\" -- crates/serialization/generated/capnp)"; \
-		if [ -n "$$DIFF_OUTPUT" ]; then \
-			echo "$(RED)Error: Cap'n Proto generated files are out of date$(RESET)"; \
-			echo "Please run: ./scripts/regen-capnp.sh"; \
-			echo "Or: make regen-capnp"; \
-			exit 1; \
-		else \
-			echo "$(GREEN)✓ Cap'n Proto schemas are up-to-date$(RESET)"; \
-		fi; \
-	fi
-
-.PHONY: regen-capnp  #-- Regenerate Cap'n Proto schema files
-regen-capnp: check-cargo-cooldown
-	$(info $(M) Regenerating Cap'n Proto schemas...)
-	@bash scripts/regen-capnp.sh
-
 .PHONY: check-docker-toolchain-pins
 check-docker-toolchain-pins:  #-- Check Docker toolchain pins
 	$(info $(M) Checking Docker toolchain pins...)
@@ -970,8 +944,8 @@ else
 endif
 
 .PHONY: cargo-test-extras
-cargo-test-extras: check-cargo-cooldown  #-- Run all Rust tests with capnp and hypersync features (convenience shortcut)
-	$(MAKE) cargo-test EXTRA_FEATURES="capnp,hypersync"
+cargo-test-extras: check-cargo-cooldown  #-- Run all Rust tests with HyperSync and SBE support (convenience shortcut)
+	$(MAKE) cargo-test EXTRA_FEATURES="hypersync,nautilus-common/sbe"
 
 .PHONY: cargo-test-postgres-ci
 cargo-test-postgres-ci: export RUST_BACKTRACE=1
@@ -981,7 +955,7 @@ cargo-test-postgres-ci:  #-- Run focused PostgreSQL tests with the CI bootstrap 
 	NEXTEST_PROFILE="$(NEXTEST_PROFILE)" \
 	NEXTEST_VERBOSE="$(NEXTEST_VERBOSE)" \
 	CARGO_CI_PROFILE="$(CARGO_CI_PROFILE)" \
-	POSTGRES_TEST_FEATURES="$(BASE_FEATURES),capnp,hypersync" \
+	POSTGRES_TEST_FEATURES="$(BASE_FEATURES),hypersync,nautilus-common/sbe" \
 	bash scripts/ci/test-postgres-bootstrap.bash
 
 POSTGRES_BOOTSTRAP_INPUTS := schema/sql \

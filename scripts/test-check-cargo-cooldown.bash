@@ -232,16 +232,11 @@ printf '%s\n' "$*" >> "${BUILD_LOG:?}"
 FAKE_CARGO
 chmod +x "${fake_bin}/uv" "${fake_bin}/cargo"
 
-cat > "${fake_bin}/capnp" << 'FAKE_CAPNP'
-#!/bin/sh
-# Stop regeneration before it can remove source files if its gate regresses
-exit 1
-FAKE_CAPNP
 cat > "${fake_bin}/docker" << 'FAKE_DOCKER'
 #!/bin/sh
 printf '%s\n' "$*" >> "${BUILD_LOG:?}"
 FAKE_DOCKER
-chmod +x "${fake_bin}/capnp" "${fake_bin}/docker"
+chmod +x "${fake_bin}/docker"
 
 run_build() {
   PATH="${fake_bin}:${PATH}" BUILD_LOG="$build_log" \
@@ -322,8 +317,7 @@ for source in \
   .github/workflows/test.yml \
   .github/workflows/cli-binaries.yml \
   .github/workflows/nightly-tests.yml \
-  .docker/nautilus_trader.dockerfile \
-  scripts/regen-capnp.sh; do
+  .docker/nautilus_trader.dockerfile; do
   if ! awk '
     BEGIN {
       build = "(build|check|test|run|clippy|doc|bench|nextest[[:space:]]+run)"

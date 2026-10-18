@@ -155,7 +155,7 @@ nightly_doctest_job=$(awk '
   fail "Nightly Rust doctests do not cover Python 3.13 and 3.14"
 [[ "$nightly_doctest_job" == *'make cargo-test-doc'* ]] ||
   fail "Nightly tests do not run Rust doctests"
-[[ "$nightly_doctest_job" == *'EXTRA_FEATURES="capnp,hypersync,nautilus-serialization/sbe,nautilus-infrastructure/postgres"'* ]] ||
+[[ "$nightly_doctest_job" == *'EXTRA_FEATURES="hypersync,nautilus-common/sbe,nautilus-infrastructure/postgres"'* ]] ||
   fail "Nightly Rust doctests do not preserve the CI feature set"
 
 : > "$CARGO_LOG"

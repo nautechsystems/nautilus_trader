@@ -289,9 +289,6 @@ jobs:
       - name: Run pre-commit
         run: prek run --all-files
 
-      - name: Verify capnp schemas are up-to-date
-        run: make check-capnp-schemas
-
   build:
     if: &python-build-condition github.ref != 'refs/heads/test-pre-commit' && needs.plan.outputs.run-tests == 'true'
     needs: &python-build-needs
@@ -638,7 +635,7 @@ jobs:
       - name: Run Rust tests
         run: >-
           make cargo-test NEXTEST_PROFILE=ci
-          EXTRA_FEATURES="capnp,hypersync,nautilus-serialization/sbe,nautilus-infrastructure/postgres"
+          EXTRA_FEATURES="hypersync,nautilus-common/sbe,nautilus-infrastructure/postgres"
 
       - name: Report disk space after Rust tests
         if: always()

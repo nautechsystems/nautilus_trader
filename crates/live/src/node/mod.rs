@@ -400,10 +400,11 @@ impl LiveNode {
     ///
     /// While [`run`](Self::run) or [`run_with_mode`](Self::run_with_mode) services external ingress,
     /// the node invokes processors in registration order before normal inbound streaming filters
-    /// for JSON or MessagePack payloads when [`msgbus::BusPayloadType::is_typed_message`] returns
-    /// `true`. Other encodings are skipped with a warning. Each callback receives the decoded
-    /// concrete value as [`Any`], allowing it to downcast to the concrete payload type. External
-    /// egress is suppressed while the processors run, so synchronous publications remain local.
+    /// for JSON or MessagePack payloads when
+    /// [`msgbus::BusPayloadType::is_typed_message`] returns `true`. Other encodings are skipped
+    /// with a warning. Each callback receives the decoded concrete value as [`Any`], allowing it
+    /// to downcast to the payload type. External egress is suppressed while the processors run,
+    /// so synchronous publications remain local.
     pub fn add_stream_processor<F>(&mut self, callback: F)
     where
         F: Fn(&dyn Any) + 'static,

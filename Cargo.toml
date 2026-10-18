@@ -141,7 +141,6 @@ blake3 = { version = "1.8.7", default-features = false, features = ["std"] }
 # Pinned: 3.10.1 pulls prettyplease 0.3 while prost-build still requires 0.2.
 bon = "=3.9.3"
 bytes = { version = "1.12.1", features = ["serde"] }
-capnp = "0.27.2"
 clap = { version = "4.6.7", features = ["derive", "env"] }
 dashmap = "6.2.1"
 datafusion = { version = "55.2.0", default-features = false, features = [
@@ -383,12 +382,6 @@ rcgen = { version = "0.14.10", default-features = false, features = [
 rstest = { version = "0.27.0", default-features = false }
 tempfile = "3.27.0"
 turmoil = "0.7.2"
-
-# -----------------------------------------------------------------------------
-# Build dependencies
-# -----------------------------------------------------------------------------
-capnpc = "0.27.0"
-walkdir = "2.5.0"
 
 [patch.crates-io]
 # HyperSync 1.4 requires Arrow 57, whose Parquet release depends on the external thrift crate.

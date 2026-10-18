@@ -180,7 +180,7 @@ jobs:
       - name: Run Rust doctests
         run: >-
           make cargo-test-doc
-          EXTRA_FEATURES="capnp,hypersync,nautilus-serialization/sbe,nautilus-infrastructure/postgres"
+          EXTRA_FEATURES="hypersync,nautilus-common/sbe,nautilus-infrastructure/postgres"
 
   python-memray:
     name: Python memory leak tests

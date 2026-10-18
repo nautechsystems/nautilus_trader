@@ -1083,7 +1083,7 @@ mod tests {
             let err = MessageBusConfig::py_new(
                 Some(SerializationEncoding::Json),
                 None,
-                Some(SerializationEncoding::Capnp),
+                Some(SerializationEncoding::Sbe),
                 None,
                 None,
                 None,
@@ -1104,7 +1104,7 @@ mod tests {
                 err.value(py).to_string(),
                 format!(
                     "MessageBusConfig.encoding_builtin has unsupported value: {} is not supported by AccountState, OrderEventAny, PositionEvent, PortfolioSnapshot",
-                    SerializationEncoding::Capnp
+                    SerializationEncoding::Sbe
                 )
             );
         });
