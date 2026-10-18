@@ -229,6 +229,21 @@ impl InteractiveBrokersExecutionClient {
         instrument_ids
     }
 
+    // Instruments the data client loads at runtime reach the cache but not this provider,
+    // so seed them before an order on one resolves its contract or its updates
+    pub(super) fn seed_instruments_from_cache(
+        &self,
+        instrument_ids: impl IntoIterator<Item = InstrumentId>,
+    ) {
+        let cache = self.core.cache();
+        let instruments: Vec<_> = instrument_ids
+            .into_iter()
+            .filter(|instrument_id| self.instrument_provider.find(instrument_id).is_none())
+            .filter_map(|instrument_id| cache.instrument(&instrument_id).cloned())
+            .collect();
+        self.instrument_provider.add_cached_instruments(instruments);
+    }
+
     pub(super) async fn preload_cached_instruments(&self, client: &Client) {
         let instrument_ids = {
             let cache = self.core.cache();

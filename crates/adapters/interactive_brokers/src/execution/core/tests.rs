@@ -36,7 +36,7 @@ use nautilus_model::{
         Venue, VenueOrderId,
     },
     instruments::{
-        FuturesContract, InstrumentAny, OptionSpread,
+        CurrencyPair, FuturesContract, InstrumentAny, OptionSpread,
         stubs::{equity_aapl, equity_aapl_itch},
     },
     orders::{OrderList, builder::OrderTestBuilder},
@@ -6367,4 +6367,56 @@ async fn cancel_while_price_magnifier_loads_stops_the_order_list(
     assert!(state.order_id_map.is_empty());
     assert!(state.active_orders.is_empty());
     assert!(rx.try_recv().is_err());
+}
+
+#[rstest]
+fn seed_instruments_from_cache_adds_instruments_loaded_by_data_client() {
+    let (client, _rx, cache) = create_test_execution_client();
+    let instrument_id = InstrumentId::from("AAPL.NASDAQ");
+    let absent_id = InstrumentId::from("MSFT.NASDAQ");
+
+    let contract = Contract {
+        contract_id: 265598,
+        symbol: IBSymbol::from("AAPL"),
+        security_type: SecurityType::Stock,
+        exchange: Exchange::from("SMART"),
+        currency: IBCurrency::from("USD"),
+        ..Default::default()
+    };
+
+    let mut info = Params::new();
+    info.insert(
+        String::from("contract"),
+        crate::common::contracts::contract_to_json_value(&contract),
+    );
+    info.insert(String::from("priceMagnifier"), serde_json::Value::from(1));
+    let instrument: InstrumentAny = CurrencyPair::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(Symbol::from("AAPL"))
+        .base_currency(Currency::from("EUR"))
+        .quote_currency(Currency::from("USD"))
+        .price_precision(2)
+        .size_precision(0)
+        .price_increment(Price::from("0.01"))
+        .size_increment(Quantity::from(1))
+        .maybe_info(Some(info))
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap()
+        .into();
+    cache.borrow_mut().add_instrument(instrument).unwrap();
+    assert!(client.instrument_provider.find(&instrument_id).is_none());
+
+    client.seed_instruments_from_cache([instrument_id, absent_id]);
+
+    assert!(client.instrument_provider.find(&instrument_id).is_some());
+    assert_eq!(
+        client
+            .instrument_provider
+            .resolve_contract_for_instrument(instrument_id)
+            .unwrap(),
+        contract
+    );
+    assert!(client.instrument_provider.find(&absent_id).is_none());
 }
