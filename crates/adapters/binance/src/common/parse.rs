@@ -38,7 +38,7 @@ use nautilus_model::{
         perpetual_contract::PerpetualContract,
     },
     reports::{FillReport, OrderStatusReport},
-    types::{Currency, Money, Price, Quantity},
+    types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
 use serde_json::Value;
@@ -594,6 +594,50 @@ pub(crate) fn parse_coinm_instrument_with_fees(
 /// SBE status value for Trading.
 const SBE_STATUS_TRADING: u8 = 0;
 
+/// Converts an SBE `mantissa * 10^exponent` pair to a [`Decimal`] with exact integer scaling.
+///
+/// # Errors
+///
+/// Returns an error if the magnitude of a negative `exponent` exceeds [`Decimal`]'s maximum scale of 28, or if
+/// scaling by a positive exponent overflows. The conversion does not wrap and does not replace a
+/// nonzero mantissa with zero.
+pub(crate) fn sbe_mantissa_to_decimal(mantissa: i64, exponent: i8) -> anyhow::Result<Decimal> {
+    if exponent >= 0 {
+        let mut value = Decimal::from(mantissa);
+        for _ in 0..exponent {
+            value = value.checked_mul(Decimal::TEN).ok_or_else(|| {
+                anyhow::anyhow!("decimal overflow for mantissa {mantissa}, exponent {exponent}")
+            })?;
+        }
+
+        Ok(value)
+    } else {
+        let scale = u32::from(exponent.unsigned_abs());
+        Decimal::try_new(mantissa, scale).map_err(|e| {
+            anyhow::anyhow!("invalid decimal for mantissa {mantissa}, exponent {exponent}: {e}")
+        })
+    }
+}
+
+/// Builds an account balance from free and locked decimals.
+///
+/// # Errors
+///
+/// Returns an error if `free + locked` overflows, or if the total, locked, or derived free amount
+/// cannot be represented as [`Money`] for `currency`.
+pub(crate) fn account_balance_from_free_locked(
+    asset: &str,
+    free: Decimal,
+    locked: Decimal,
+    currency: Currency,
+) -> anyhow::Result<AccountBalance> {
+    let total = free
+        .checked_add(locked)
+        .ok_or_else(|| anyhow::anyhow!("decimal overflow adding free and locked for {asset}"))?;
+    AccountBalance::from_total_and_locked(total, locked, currency)
+        .with_context(|| format!("failed to build account balance for {asset}"))
+}
+
 /// Derives the number of significant decimal places from an SBE mantissa/exponent pair.
 ///
 /// Binance SBE encodes values as `mantissa * 10^exponent` where `exponent` is a global
@@ -1054,8 +1098,10 @@ pub fn map_order_type_sbe(order_type: SbeOrderType) -> anyhow::Result<OrderType>
     Ok(match order_type {
         SbeOrderType::Market => OrderType::Market,
         SbeOrderType::Limit | SbeOrderType::LimitMaker => OrderType::Limit,
-        SbeOrderType::StopLoss | SbeOrderType::TakeProfit => OrderType::StopMarket,
-        SbeOrderType::StopLossLimit | SbeOrderType::TakeProfitLimit => OrderType::StopLimit,
+        SbeOrderType::StopLoss => OrderType::StopMarket,
+        SbeOrderType::StopLossLimit => OrderType::StopLimit,
+        SbeOrderType::TakeProfit => OrderType::MarketIfTouched,
+        SbeOrderType::TakeProfitLimit => OrderType::LimitIfTouched,
         SbeOrderType::NonRepresentable | SbeOrderType::NullVal => {
             anyhow::bail!("unknown Binance SBE order type")
         }
@@ -1619,10 +1665,51 @@ mod tests {
     use ustr::Ustr;
 
     use super::*;
-    use crate::common::{
-        consts::BINANCE_NAUTILUS_SPOT_BROKER_ID,
-        enums::{BinanceContractStatus, BinanceTradingStatus},
+    use crate::{
+        common::{
+            consts::BINANCE_NAUTILUS_SPOT_BROKER_ID,
+            enums::{BinanceContractStatus, BinanceTradingStatus},
+            testing::load_fixture_string,
+        },
+        spot::websocket::trading::{
+            parse::parse_spot_exec_report_to_order_status, user_data::BinanceSpotExecutionReport,
+        },
     };
+
+    #[rstest]
+    #[case(SbeOrderType::TakeProfit, "TAKE_PROFIT", OrderType::MarketIfTouched)]
+    #[case(
+        SbeOrderType::TakeProfitLimit,
+        "TAKE_PROFIT_LIMIT",
+        OrderType::LimitIfTouched
+    )]
+    #[case(SbeOrderType::StopLoss, "STOP_LOSS", OrderType::StopMarket)]
+    #[case(SbeOrderType::StopLossLimit, "STOP_LOSS_LIMIT", OrderType::StopLimit)]
+    fn test_sbe_order_type_matches_json_report(
+        #[case] sbe_order_type: SbeOrderType,
+        #[case] json_order_type: &str,
+        #[case] expected: OrderType,
+    ) {
+        let json = load_fixture_string("spot/user_data_json/execution_report_new.json");
+        let mut msg: BinanceSpotExecutionReport = serde_json::from_str(&json).unwrap();
+        msg.order_type = json_order_type.to_string();
+        let report = parse_spot_exec_report_to_order_status(
+            &msg,
+            InstrumentId::from("ETHUSDT.BINANCE"),
+            2,
+            5,
+            sample_account_id(),
+            false,
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.order_type, expected);
+        assert_eq!(
+            map_order_type_sbe(sbe_order_type).unwrap(),
+            report.order_type
+        );
+    }
 
     #[rstest]
     fn test_sbe_order_mappings_reject_unknown_values() {
@@ -2422,7 +2509,16 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_order_status_report_sbe() {
+    #[case(SbeOrderType::LimitMaker, OrderType::Limit, None)]
+    #[case(SbeOrderType::TakeProfit, OrderType::MarketIfTouched, Some(12_000))]
+    #[case(SbeOrderType::TakeProfitLimit, OrderType::LimitIfTouched, Some(12_000))]
+    #[case(SbeOrderType::StopLoss, OrderType::StopMarket, Some(12_000))]
+    #[case(SbeOrderType::StopLossLimit, OrderType::StopLimit, Some(12_000))]
+    fn test_parse_order_status_report_sbe(
+        #[case] order_type: SbeOrderType,
+        #[case] expected: OrderType,
+        #[case] stop_price_mantissa: Option<i64>,
+    ) {
         let instrument = sample_spot_instrument();
         let order = BinanceOrderResponse {
             price_exponent: -2,
@@ -2435,9 +2531,9 @@ mod tests {
             cummulative_quote_qty_mantissa: 123_450_000,
             status: SbeOrderStatus::PartiallyFilled,
             time_in_force: SbeTimeInForce::Gtc,
-            order_type: SbeOrderType::LimitMaker,
+            order_type,
             side: SbeOrderSide::Buy,
-            stop_price_mantissa: None,
+            stop_price_mantissa,
             iceberg_qty_mantissa: None,
             time: 1_700_000_000_000_000,
             update_time: 1_700_000_000_100_000,
@@ -2469,14 +2565,22 @@ mod tests {
         );
         assert_eq!(report.venue_order_id, VenueOrderId::new("42"));
         assert_eq!(report.order_side, OrderSide::Buy.into());
-        assert_eq!(report.order_type, OrderType::Limit);
+        assert_eq!(report.order_type, expected);
         assert_eq!(report.order_status, OrderStatus::PartiallyFilled);
         assert_eq!(report.quantity.as_f64(), 2.5);
         assert_eq!(report.filled_qty.as_f64(), 1.0);
         assert_eq!(report.order_list_id, Some(OrderListId::new("77")));
         assert_eq!(report.price, Some(Price::new(123.45, 2)));
         assert_eq!(report.avg_px.unwrap().to_string(), "123.45");
-        assert!(report.post_only);
+        assert_eq!(report.post_only, order_type == SbeOrderType::LimitMaker);
+        assert_eq!(
+            report.trigger_price,
+            stop_price_mantissa.map(|_| Price::from("120.00"))
+        );
+        assert_eq!(
+            report.trigger_type,
+            stop_price_mantissa.map(|_| TriggerType::LastPrice)
+        );
         assert_eq!(
             report.ts_accepted,
             UnixNanos::from(1_700_000_000_000_000_000u64)
@@ -2489,7 +2593,14 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_new_order_response_sbe() {
+    #[case(SbeOrderType::TakeProfit, OrderType::MarketIfTouched)]
+    #[case(SbeOrderType::TakeProfitLimit, OrderType::LimitIfTouched)]
+    #[case(SbeOrderType::StopLoss, OrderType::StopMarket)]
+    #[case(SbeOrderType::StopLossLimit, OrderType::StopLimit)]
+    fn test_parse_new_order_response_sbe(
+        #[case] order_type: SbeOrderType,
+        #[case] expected: OrderType,
+    ) {
         let instrument = sample_spot_instrument();
         let response = BinanceNewOrderResponse {
             price_exponent: -2,
@@ -2503,7 +2614,7 @@ mod tests {
             cummulative_quote_qty_mantissa: 60_500_000,
             status: SbeOrderStatus::New,
             time_in_force: SbeTimeInForce::Gtc,
-            order_type: SbeOrderType::StopLossLimit,
+            order_type,
             side: SbeOrderSide::Sell,
             stop_price_mantissa: Some(12_000),
             working_time: Some(1_700_000_000_000_000),
@@ -2533,7 +2644,7 @@ mod tests {
         );
         assert_eq!(report.venue_order_id, VenueOrderId::new("99"));
         assert_eq!(report.order_side, OrderSide::Sell.into());
-        assert_eq!(report.order_type, OrderType::StopLimit);
+        assert_eq!(report.order_type, expected);
         assert_eq!(report.order_status, OrderStatus::Accepted);
         assert_eq!(report.quantity.as_f64(), 2.0);
         assert_eq!(report.filled_qty.as_f64(), 0.5);

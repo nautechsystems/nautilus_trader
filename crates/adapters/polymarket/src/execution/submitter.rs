@@ -21,9 +21,12 @@
 //! Uses [`RetryManager`] from `nautilus-network` with exponential backoff for
 //! transient HTTP failures (timeouts, 5xx, rate limits).
 
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
+use std::{
+    ops::Range,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use nautilus_core::UnixNanos;
@@ -349,22 +352,37 @@ impl OrderSubmitter {
     }
 
     /// Cancels multiple orders with retry on transient failures.
-    pub(crate) async fn cancel_orders(
+    pub(super) async fn cancel_orders(
         &self,
         venue_order_ids: &[&str],
-    ) -> HttpResult<CancelResponse> {
+    ) -> Result<CancelResponse, CancelOrdersError> {
         let order_ids: Vec<String> = venue_order_ids.iter().map(|s| s.to_string()).collect();
         if order_ids.is_empty() {
-            return self.cancel_orders_chunk(&order_ids).await;
+            return self
+                .cancel_orders_chunk(&order_ids)
+                .await
+                .0
+                .map_err(|e| CancelOrdersError {
+                    response: Box::default(),
+                    error: e,
+                    failed_range: 0..0,
+                    attempted_end: 0,
+                });
         }
 
         let mut response = CancelResponse::default();
         let mut offset = 0;
+        let mut attempted_end = 0;
 
         while offset < order_ids.len() {
             let limit = self.http_client.cancel_batch_limit().await;
             let end = offset.saturating_add(limit).min(order_ids.len());
-            match self.cancel_orders_chunk(&order_ids[offset..end]).await {
+            let (result, attempted) = self.cancel_orders_chunk(&order_ids[offset..end]).await;
+            if attempted {
+                attempted_end = attempted_end.max(end);
+            }
+
+            match result {
                 Ok(chunk_response) => {
                     response.merge(chunk_response);
                     offset = end;
@@ -372,33 +390,57 @@ impl OrderSubmitter {
                 Err(e @ Error::BurstExceeded { .. }) => {
                     log::warn!("Cancellation batch limit changed, reselecting chunk: {e}");
                 }
-                Err(e) => return Err(e),
+                Err(e) => {
+                    return Err(CancelOrdersError {
+                        response: Box::new(response),
+                        error: e,
+                        failed_range: offset..end,
+                        attempted_end,
+                    });
+                }
             }
         }
         Ok(response)
     }
 
-    async fn cancel_orders_chunk(&self, order_ids: &[String]) -> HttpResult<CancelResponse> {
+    async fn cancel_orders_chunk(
+        &self,
+        order_ids: &[String],
+    ) -> (HttpResult<CancelResponse>, bool) {
         let http_client = self.http_client.clone();
         let order_ids = order_ids.to_vec();
+        let attempted = AtomicBool::new(false);
 
-        self.retry_manager
+        let result = self
+            .retry_manager
             .invocation(
                 "cancel_orders",
                 || {
                     let http_client = http_client.clone();
                     let order_ids = order_ids.clone();
+                    let attempted = &attempted;
                     async move {
                         let refs: Vec<&str> = order_ids.iter().map(String::as_str).collect();
-                        http_client.cancel_orders(&refs).await
+                        let result = http_client.cancel_orders(&refs).await;
+
+                        if !matches!(result, Err(Error::BurstExceeded { .. })) {
+                            attempted.store(true, Ordering::Release);
+                        }
+
+                        result
                     }
                 },
                 |e| e.is_retryable(),
-                |e| Error::transport(e.to_string()),
+                |e| {
+                    attempted.store(true, Ordering::Release);
+                    Error::transport(e.to_string())
+                },
             )
             .retry_delay(&Error::retry_after)
             .execute()
-            .await
+            .await;
+
+        (result, attempted.load(Ordering::Acquire))
     }
 
     /// Fetches a single order by its venue order ID from the CLOB REST API.
@@ -593,6 +635,16 @@ impl OrderSubmitter {
     }
 }
 
+#[derive(Debug, Error)]
+#[error("cancel chunk {failed_range:?} failed")]
+pub(super) struct CancelOrdersError {
+    pub(super) response: Box<CancelResponse>,
+    #[source]
+    pub(super) error: Error,
+    pub(super) failed_range: Range<usize>,
+    pub(super) attempted_end: usize,
+}
+
 fn submit_outcome_is_unknown(error: &Error, earlier_attempt_unknown: bool) -> bool {
     error.is_submit_outcome_unknown() || earlier_attempt_unknown
 }
@@ -724,10 +776,131 @@ fn limit_order_expiration(expire_time: Option<UnixNanos>) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::{future::Future, task::Poll};
+
+    use axum::{Router, http::StatusCode, routing::delete};
+    use nautilus_core::string::secret::SecretString;
+    use nautilus_model::identifiers::AccountId;
     use rstest::rstest;
     use rust_decimal_macros::dec;
 
     use super::*;
+    use crate::{
+        common::{
+            credential::{Credential, EvmPrivateKey},
+            enums::PolymarketSignatureType,
+        },
+        http::rate_limits::{PolymarketRateLimiter, RateLimitHeaders, TradingBucket},
+        signing::eip712::OrderSigner,
+    };
+
+    #[rstest]
+    #[case::local_burst(false, 120)]
+    #[case::operation_timeout(true, 121)]
+    #[tokio::test]
+    async fn test_cancel_orders_attempted_range_after_local_wait(
+        #[case] operation_timeout: bool,
+        #[case] expected_end: usize,
+    ) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+
+        let server = tokio::spawn(async move {
+            axum::serve(
+                listener,
+                Router::new().route(
+                    "/orders",
+                    delete(|| async { (StatusCode::BAD_REQUEST, "{}") }),
+                ),
+            )
+            .await
+            .unwrap();
+        });
+
+        let signer_address = format!("0xlocal-burst-cancel-{operation_timeout}");
+        let limiter = PolymarketRateLimiter::for_signer(&signer_address);
+        let headers = RateLimitHeaders::parse(
+            &[
+                ("Poly-RateLimit-Tier".to_string(), "Gold".to_string()),
+                ("Poly-RateLimit-Remaining".to_string(), "0".to_string()),
+            ]
+            .into(),
+        );
+        limiter
+            .observe_response("/orders", TradingBucket::Cancel, 0, 0, &headers, false)
+            .await;
+        let credential = Credential::new(
+            SecretString::from("test-key"),
+            SecretString::from("dGVzdA=="),
+            SecretString::from("test-passphrase"),
+        )
+        .unwrap();
+        let http_client = PolymarketClobHttpClient::new(
+            credential,
+            signer_address.clone(),
+            Some(format!("http://{address}")),
+            5,
+        )
+        .unwrap();
+        let private_key = EvmPrivateKey::new(
+            "0x7234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+        )
+        .unwrap();
+
+        let builder = Arc::new(PolymarketOrderBuilder::new(
+            OrderSigner::new(&private_key).unwrap(),
+            signer_address.clone(),
+            signer_address,
+            PolymarketSignatureType::Eoa,
+        ));
+
+        let submitter = OrderSubmitter::new(
+            http_client,
+            builder,
+            RetryConfig {
+                max_retries: 0,
+                operation_timeout_ms: Some(if operation_timeout { 10 } else { 30_000 }),
+                ..RetryConfig::default()
+            },
+            Arc::new(SettlementRegistry::new(AccountId::from("POLYMARKET-001"))),
+        );
+
+        let ids = (0..121).map(|index| index.to_string()).collect::<Vec<_>>();
+        let refs = ids.iter().map(String::as_str).collect::<Vec<_>>();
+        let mut cancellation = Box::pin(submitter.cancel_orders(&refs));
+        std::future::poll_fn(|cx| {
+            assert!(cancellation.as_mut().poll(cx).is_pending());
+            Poll::Ready(())
+        })
+        .await;
+
+        if !operation_timeout {
+            let headers = RateLimitHeaders::parse(
+                &[("Poly-RateLimit-Tier".to_string(), "Standard".to_string())].into(),
+            );
+            limiter
+                .observe_response("/orders", TradingBucket::Cancel, 0, 0, &headers, false)
+                .await;
+        }
+
+        let error = tokio::time::timeout(std::time::Duration::from_secs(5), cancellation)
+            .await
+            .unwrap()
+            .unwrap_err();
+        server.abort();
+
+        assert_eq!(error.failed_range, 0..expected_end);
+        assert_eq!(error.attempted_end, expected_end);
+
+        if operation_timeout {
+            assert!(matches!(error.error, Error::Transport(_)));
+        } else {
+            assert!(matches!(error.error, Error::Http { status: 400, .. }));
+        }
+
+        assert!(error.response.canceled.is_empty());
+        assert!(error.response.not_canceled.is_empty());
+    }
 
     #[rstest]
     #[case::none(None, "0")]

@@ -418,6 +418,11 @@ impl HyperliquidExecutionClient {
         http_client.set_normalize_prices(config.normalize_prices);
         http_client.set_market_order_slippage_bps(config.market_order_slippage_bps);
         http_client.set_include_builder_attribution(config.include_builder_attribution);
+        http_client.set_info_retry_config(
+            config.max_retries,
+            Duration::from_millis(config.retry_delay_initial_ms),
+            Duration::from_millis(config.retry_delay_max_ms),
+        );
 
         if let Some(url) = &config.base_url_http {
             http_client.set_base_info_url(url.clone());

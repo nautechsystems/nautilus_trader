@@ -15,6 +15,8 @@
 
 //! Parsing functions to convert Ax HTTP responses to Nautilus domain types.
 
+use std::collections::HashMap;
+
 use anyhow::Context;
 use jiff::tz::Offset;
 use nautilus_core::{Params, UUID4, datetime::datetime_to_unix_nanos, nanos::UnixNanos};
@@ -39,7 +41,7 @@ use super::models::{
     AxOrderRejectReason, AxPosition, AxRestTrade, AxRiskSnapshot,
 };
 use crate::common::{
-    consts::AX_VENUE,
+    consts::{AX_FILL_ORDER_PREFIX, AX_VENUE},
     enums::{AxCandleWidth, AxOrderSide, AxOrderStatus, AxTimeInForce},
     parse::{
         ax_timestamp_ns_to_unix_nanos, ax_timestamp_s_to_unix_nanos,
@@ -528,6 +530,31 @@ where
     )
 }
 
+pub(crate) fn update_order_report_timestamps(
+    reports: &mut [OrderStatusReport],
+    fills: &[FillReport],
+) {
+    let mut last_fill_timestamps = HashMap::new();
+    for fill in fills {
+        last_fill_timestamps
+            .entry((fill.account_id, fill.venue_order_id))
+            .and_modify(|ts: &mut UnixNanos| *ts = (*ts).max(fill.ts_event))
+            .or_insert(fill.ts_event);
+    }
+
+    for report in reports {
+        if !report.order_status.is_closed() {
+            continue;
+        }
+
+        if let Some(ts_last_fill) =
+            last_fill_timestamps.get(&(report.account_id, report.venue_order_id))
+        {
+            report.ts_last = report.ts_last.max(*ts_last_fill);
+        }
+    }
+}
+
 struct OrderStatusReportFields<'a> {
     ts: i64,
     tn: i64,
@@ -697,8 +724,9 @@ pub fn parse_fill_report(
     );
 
     let is_special_fill = is_block_trade == Some(true) || is_final_settlement == Some(true);
+
     let venue_order_id = if is_special_fill {
-        VenueOrderId::new_checked(format!("AX-FILL-{}", fill.trade_id))
+        VenueOrderId::new_checked(format!("{AX_FILL_ORDER_PREFIX}{}", fill.trade_id))
             .context("Invalid synthetic venue order ID for AX fill")?
     } else {
         let order_id = fill
@@ -1069,6 +1097,104 @@ mod tests {
             po: false,
             rb: None,
         }
+    }
+
+    #[rstest]
+    #[case::canceled(AxOrderStatus::Canceled, "matching", 1_704_067_200_508_000_123)]
+    #[case::expired(AxOrderStatus::Expired, "matching", 1_704_067_200_508_000_123)]
+    #[case::filled(AxOrderStatus::Filled, "matching", 1_704_067_200_508_000_123)]
+    #[case::open(AxOrderStatus::PartiallyFilled, "matching", 1_704_067_200_500_000_000)]
+    #[case::empty(AxOrderStatus::Canceled, "empty", 1_704_067_200_500_000_000)]
+    #[case::older(AxOrderStatus::Canceled, "older", 1_704_067_200_500_000_000)]
+    #[case::other_account(AxOrderStatus::Canceled, "other_account", 1_704_067_200_500_000_000)]
+    #[case::later_report(AxOrderStatus::Canceled, "later_report", 1_704_067_200_600_000_000)]
+    fn test_closed_order_report_uses_latest_fill_timestamp(
+        #[case] status: AxOrderStatus,
+        #[case] scenario: &str,
+        #[case] expected_last: u64,
+    ) {
+        let orders: crate::http::models::AxOrdersResponse = serde_json::from_str(include_str!(
+            "../../test_data/http_get_orders_partial_canceled.json"
+        ))
+        .unwrap();
+        let fills: crate::http::models::AxFillsResponse = serde_json::from_str(include_str!(
+            "../../test_data/http_get_fills_partial_canceled.json"
+        ))
+        .unwrap();
+        let instrument = parse_instrument(
+            &create_eurusd_instrument(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+        .unwrap();
+        let account_id = AccountId::from("AX-001");
+        let ts_init = UnixNanos::from(1_704_067_201_000_000_000_u64);
+        let mut order = orders.orders[0].clone();
+        order.o = status;
+        order.q = if status == AxOrderStatus::Filled {
+            100
+        } else {
+            200
+        };
+
+        order.rq = if status == AxOrderStatus::PartiallyFilled {
+            100
+        } else {
+            0
+        };
+
+        let mut reports = [parse_order_detail_status_report(
+            &order,
+            account_id,
+            &instrument,
+            ts_init,
+            None::<&fn(u64) -> Option<ClientOrderId>>,
+        )
+        .unwrap()];
+        let mut fills: Vec<_> = fills
+            .fills
+            .iter()
+            .map(|fill| parse_fill_report(fill, account_id, &instrument, ts_init).unwrap())
+            .collect();
+
+        match scenario {
+            "empty" => fills.clear(),
+            "older" => {
+                for fill in &mut fills {
+                    fill.ts_event = UnixNanos::from(1_704_067_200_400_000_000_u64);
+                }
+            }
+            "other_account" => {
+                for fill in &mut fills {
+                    fill.account_id = AccountId::from("AX-OTHER");
+                }
+            }
+            "later_report" => {
+                reports[0].ts_last = UnixNanos::from(1_704_067_200_600_000_000_u64);
+            }
+            "matching" => {}
+            _ => panic!("unexpected test scenario: {scenario}"),
+        }
+
+        let mut expected = reports[0].clone();
+        expected.ts_last = UnixNanos::from(expected_last);
+
+        update_order_report_timestamps(&mut reports, &fills);
+
+        let report = &reports[0];
+        assert_eq!(*report, expected);
+        assert_eq!(
+            report.ts_accepted,
+            UnixNanos::from(1_704_067_200_500_000_000_u64)
+        );
+        assert_eq!(report.ts_last, UnixNanos::from(expected_last));
+        assert_eq!(report.ts_init, ts_init);
+        assert_eq!(report.quantity.as_decimal(), Decimal::from(order.q));
+        assert_eq!(report.filled_qty.as_decimal(), dec!(100));
+        assert_eq!(
+            report.venue_order_id,
+            VenueOrderId::from("O-PARTIAL-CANCELED")
+        );
     }
 
     #[rstest]

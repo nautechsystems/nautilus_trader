@@ -69,13 +69,16 @@ That measurement excludes DNS, TCP connect, TLS, HTTP upgrade, kernel network I/
 and external network latency. It also excludes Compio, sockudo's native
 split-stream driver, compression, and keepalive traffic.
 
-The current WebSocket harness also includes `nautilus_sockudo` cases. These use the
+The `websocket_transport` benchmark also includes `nautilus_sockudo` cases. These use the
 neutral message conversions and Sockudo's unified stream through `SockudoTransport::new`,
 matching the client transport adapter. Both endpoints use that adapter; the cases do not
 include the client's reader and writer tasks. The raw `sockudo_ws` cases retain the unified
 stream and the `sockudo_native` cases use Sockudo's split handles directly, to distinguish
-library performance from adapter performance. The July tables below cover only the raw
-streams.
+library performance from adapter performance.
+
+The `websocket_latency` benchmark reports the native split adapter as `nautilus_sockudo_native`.
+Both endpoints use `SockudoTransport::into_split`. These cases measure a different path from the
+unified stream adapter in `websocket_transport`. The July tables below cover only the raw streams.
 
 The `websocket_client` benchmark drives the public `WebSocketClient` over loopback TCP
 against a Tungstenite peer, with the client's own reader and writer tasks, for both client

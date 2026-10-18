@@ -1,0 +1,512 @@
+{
+  "decode": [
+    {
+      "text": "{\"channel\":\"subscriptionResponse\",\"user\":\"0xabcdefabcdefabcdefabcdefabcdefabcdefabcd\",\"oid\":\"PRIVATE_ORDER_SENTINEL\",\"signature\":\"PRIVATE_SIGNATURE_SENTINEL\",\"account\":\"PRIVATE_ACCOUNT_SENTINEL\"}",
+      "channel": "subscriptionResponse"
+    },
+    {
+      "text": "{\"channel\":\"post\",\"user\":\"0xabcdefabcdefabcdefabcdefabcdefabcdefabcd\",\"oid\":\"PRIVATE_ORDER_SENTINEL\",\"signature\":\"PRIVATE_SIGNATURE_SENTINEL\",\"account\":\"PRIVATE_ACCOUNT_SENTINEL\"}",
+      "channel": "post"
+    },
+    {
+      "text": "{\"channel\":\"notification\",\"user\":\"0xabcdefabcdefabcdefabcdefabcdefabcdefabcd\",\"oid\":\"PRIVATE_ORDER_SENTINEL\",\"signature\":\"PRIVATE_SIGNATURE_SENTINEL\",\"account\":\"PRIVATE_ACCOUNT_SENTINEL\"}",
+      "channel": "notification"
+    },
+    {
+      "text": "{\"channel\":\"webData2\",\"user\":\"0xabcdefabcdefabcdefabcdefabcdefabcdefabcd\",\"oid\":\"PRIVATE_ORDER_SENTINEL\",\"signature\":\"PRIVATE_SIGNATURE_SENTINEL\",\"account\":\"PRIVATE_ACCOUNT_SENTINEL\"}",
+      "channel": "webData2"
+    },
+    {
+      "text": "{\"channel\":\"orderUpdates\",\"user\":\"0xabcdefabcdefabcdefabcdefabcdefabcdefabcd\",\"oid\":\"PRIVATE_ORDER_SENTINEL\",\"signature\":\"PRIVATE_SIGNATURE_SENTINEL\",\"account\":\"PRIVATE_ACCOUNT_SENTINEL\"}",
+      "channel": "orderUpdates"
+    },
+    {
+      "text": "{\"channel\":\"userEvents\",\"user\":\"0xabcdefabcdefabcdefabcdefabcdefabcdefabcd\",\"oid\":\"PRIVATE_ORDER_SENTINEL\",\"signature\":\"PRIVATE_SIGNATURE_SENTINEL\",\"account\":\"PRIVATE_ACCOUNT_SENTINEL\"}",
+      "channel": "userEvents"
+    },
+    {
+      "text": "{\"channel\":\"user\",\"user\":\"0xabcdefabcdefabcdefabcdefabcdefabcdefabcd\",\"oid\":\"PRIVATE_ORDER_SENTINEL\",\"signature\":\"PRIVATE_SIGNATURE_SENTINEL\",\"account\":\"PRIVATE_ACCOUNT_SENTINEL\"}",
+      "channel": "user"
+    },
+    {
+      "text": "{\"channel\":\"userFills\",\"user\":\"0xabcdefabcdefabcdefabcdefabcdefabcdefabcd\",\"oid\":\"PRIVATE_ORDER_SENTINEL\",\"signature\":\"PRIVATE_SIGNATURE_SENTINEL\",\"account\":\"PRIVATE_ACCOUNT_SENTINEL\"}",
+      "channel": "userFills"
+    },
+    {
+      "text": "{\"channel\":\"userFundings\",\"user\":\"0xabcdefabcdefabcdefabcdefabcdefabcdefabcd\",\"oid\":\"PRIVATE_ORDER_SENTINEL\",\"signature\":\"PRIVATE_SIGNATURE_SENTINEL\",\"account\":\"PRIVATE_ACCOUNT_SENTINEL\"}",
+      "channel": "userFundings"
+    },
+    {
+      "text": "{\"channel\":\"userNonFundingLedgerUpdates\",\"user\":\"0xabcdefabcdefabcdefabcdefabcdefabcdefabcd\",\"oid\":\"PRIVATE_ORDER_SENTINEL\",\"signature\":\"PRIVATE_SIGNATURE_SENTINEL\",\"account\":\"PRIVATE_ACCOUNT_SENTINEL\"}",
+      "channel": "userNonFundingLedgerUpdates"
+    },
+    {
+      "text": "{\"channel\":\"activeAssetData\",\"user\":\"0xabcdefabcdefabcdefabcdefabcdefabcdefabcd\",\"oid\":\"PRIVATE_ORDER_SENTINEL\",\"signature\":\"PRIVATE_SIGNATURE_SENTINEL\",\"account\":\"PRIVATE_ACCOUNT_SENTINEL\"}",
+      "channel": "activeAssetData"
+    },
+    {
+      "text": "{\"channel\":\"userTwapSliceFills\",\"user\":\"0xabcdefabcdefabcdefabcdefabcdefabcdefabcd\",\"oid\":\"PRIVATE_ORDER_SENTINEL\",\"signature\":\"PRIVATE_SIGNATURE_SENTINEL\",\"account\":\"PRIVATE_ACCOUNT_SENTINEL\"}",
+      "channel": "userTwapSliceFills"
+    },
+    {
+      "text": "{\"channel\":\"userTwapHistory\",\"user\":\"0xabcdefabcdefabcdefabcdefabcdefabcdefabcd\",\"oid\":\"PRIVATE_ORDER_SENTINEL\",\"signature\":\"PRIVATE_SIGNATURE_SENTINEL\",\"account\":\"PRIVATE_ACCOUNT_SENTINEL\"}",
+      "channel": "userTwapHistory"
+    },
+    {
+      "text": "{\"channel\":\"error\",\"user\":\"0xabcdefabcdefabcdefabcdefabcdefabcdefabcd\",\"oid\":\"PRIVATE_ORDER_SENTINEL\",\"signature\":\"PRIVATE_SIGNATURE_SENTINEL\",\"account\":\"PRIVATE_ACCOUNT_SENTINEL\"}",
+      "channel": "error"
+    },
+    {
+      "text": "{\"channel\":\"trades\",\"user\":\"0xabcdefabcdefabcdefabcdefabcdefabcdefabcd\",\"oid\":\"PRIVATE_ORDER_SENTINEL\",\"signature\":\"PRIVATE_SIGNATURE_SENTINEL\",\"account\":\"PRIVATE_ACCOUNT_SENTINEL\"}",
+      "channel": "trades"
+    },
+    {
+      "text": "{\"channel\":\"l2Book\",\"user\":\"0xabcdefabcdefabcdefabcdefabcdefabcdefabcd\",\"oid\":\"PRIVATE_ORDER_SENTINEL\",\"signature\":\"PRIVATE_SIGNATURE_SENTINEL\",\"account\":\"PRIVATE_ACCOUNT_SENTINEL\"}",
+      "channel": "l2Book"
+    },
+    {
+      "text": "{\"channel\":\"bbo\",\"user\":\"0xabcdefabcdefabcdefabcdefabcdefabcdefabcd\",\"oid\":\"PRIVATE_ORDER_SENTINEL\",\"signature\":\"PRIVATE_SIGNATURE_SENTINEL\",\"account\":\"PRIVATE_ACCOUNT_SENTINEL\"}",
+      "channel": "bbo"
+    },
+    {
+      "text": "{\"channel\":\"candle\",\"user\":\"0xabcdefabcdefabcdefabcdefabcdefabcdefabcd\",\"oid\":\"PRIVATE_ORDER_SENTINEL\",\"signature\":\"PRIVATE_SIGNATURE_SENTINEL\",\"account\":\"PRIVATE_ACCOUNT_SENTINEL\"}",
+      "channel": "candle"
+    },
+    {
+      "text": "{\"channel\":\"allMids\",\"user\":\"0xabcdefabcdefabcdefabcdefabcdefabcdefabcd\",\"oid\":\"PRIVATE_ORDER_SENTINEL\",\"signature\":\"PRIVATE_SIGNATURE_SENTINEL\",\"account\":\"PRIVATE_ACCOUNT_SENTINEL\"}",
+      "channel": "allMids"
+    },
+    {
+      "text": "{\"channel\":\"allDexsAssetCtxs\",\"user\":\"0xabcdefabcdefabcdefabcdefabcdefabcdefabcd\",\"oid\":\"PRIVATE_ORDER_SENTINEL\",\"signature\":\"PRIVATE_SIGNATURE_SENTINEL\",\"account\":\"PRIVATE_ACCOUNT_SENTINEL\"}",
+      "channel": "allDexsAssetCtxs"
+    },
+    {
+      "text": "{\"channel\":\"activeAssetCtx\",\"user\":\"0xabcdefabcdefabcdefabcdefabcdefabcdefabcd\",\"oid\":\"PRIVATE_ORDER_SENTINEL\",\"signature\":\"PRIVATE_SIGNATURE_SENTINEL\",\"account\":\"PRIVATE_ACCOUNT_SENTINEL\"}",
+      "channel": "activeAssetCtx"
+    },
+    {
+      "text": "{\"channel\":\"activeSpotAssetCtx\",\"user\":\"0xabcdefabcdefabcdefabcdefabcdefabcdefabcd\",\"oid\":\"PRIVATE_ORDER_SENTINEL\",\"signature\":\"PRIVATE_SIGNATURE_SENTINEL\",\"account\":\"PRIVATE_ACCOUNT_SENTINEL\"}",
+      "channel": "activeSpotAssetCtx"
+    },
+    {
+      "text": "{\"channel\":\"PRIVATE_TAG_SENTINEL\",\"data\":\"PRIVATE_FILL_SENTINEL\"}",
+      "channel": "unknown"
+    },
+    {
+      "text": "{\"channel\":{\"private\":\"PRIVATE_ACCOUNT_SENTINEL\"},\"data\":\"PRIVATE_FILL_SENTINEL\"}",
+      "channel": "unknown"
+    },
+    {
+      "text": "{\"data\":\"PRIVATE_FILL_SENTINEL\"}",
+      "channel": "unknown"
+    },
+    {
+      "text": "{\"channel\":\"post\",\"data\":{\"id\":\"PRIVATE_ORDER_SENTINEL\",\"response\":{\"type\":\"PRIVATE_TAG_SENTINEL\",\"payload\":\"PRIVATE_SIGNATURE_SENTINEL\"}}}",
+      "channel": "post"
+    },
+    {
+      "text": "{\"channel\":\"userFills\",\"data\":\"PRIVATE_FILL_SENTINEL\"",
+      "channel": "unknown"
+    },
+    {
+      "text": "{\"channel\":\"post\",\"channel\":\"PRIVATE_TAG_SENTINEL\",\"data\":\"PRIVATE_SIGNATURE_SENTINEL\"}",
+      "channel": "unknown"
+    },
+    {
+      "text": "PRIVATE_SIGNATURE_SENTINEL",
+      "channel": "unknown"
+    },
+    {
+      "text": "{\"channel\":\"post\",\"data\":\"PRIVATE_SIGNATURE_SENTINEL\"} trailing",
+      "channel": "unknown"
+    },
+    {
+      "text": "{\"channel\": \"trades\", \"data\": \"PRIVATE_ACCOUNT_SENTINEL\"}",
+      "channel": "trades"
+    }
+  ],
+  "conversion": [
+    {
+      "class": "fill",
+      "message": {
+        "channel": "user",
+        "data": {
+          "fills": [
+            {
+              "coin": "BTC",
+              "px": "66653.0",
+              "sz": "0.001",
+              "side": "A",
+              "time": 9876543210987654321,
+              "startPosition": "-0.0213",
+              "dir": "Open Short",
+              "closedPnl": "0.0",
+              "hash": "PRIVATE_FILL_SENTINEL",
+              "oid": 9876543210987654321,
+              "crossed": false,
+              "fee": "0.009997",
+              "tid": 745210434703679,
+              "cloid": "PRIVATE_ORDER_SENTINEL",
+              "liquidation": {
+                "liquidatedUser": "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd",
+                "markPx": "66607.0",
+                "method": "market"
+              },
+              "feeToken": "USDC",
+              "twapId": null
+            }
+          ],
+          "user": "PRIVATE_ACCOUNT_SENTINEL"
+        }
+      }
+    },
+    {
+      "class": "fill",
+      "message": {
+        "channel": "userEvents",
+        "data": {
+          "fills": [
+            {
+              "coin": "BTC",
+              "px": "66653.0",
+              "sz": "0.001",
+              "side": "A",
+              "time": 9876543210987654321,
+              "startPosition": "-0.0213",
+              "dir": "Open Short",
+              "closedPnl": "0.0",
+              "hash": "PRIVATE_FILL_SENTINEL",
+              "oid": 9876543210987654321,
+              "crossed": false,
+              "fee": "0.009997",
+              "tid": 745210434703679,
+              "cloid": "PRIVATE_ORDER_SENTINEL",
+              "liquidation": {
+                "liquidatedUser": "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd",
+                "markPx": "66607.0",
+                "method": "market"
+              },
+              "feeToken": "USDC",
+              "twapId": null
+            }
+          ],
+          "user": "PRIVATE_ACCOUNT_SENTINEL"
+        }
+      }
+    },
+    {
+      "class": "fill",
+      "message": {
+        "channel": "userFills",
+        "data": {
+          "fills": [
+            {
+              "coin": "BTC",
+              "px": "66653.0",
+              "sz": "0.001",
+              "side": "A",
+              "time": 9876543210987654321,
+              "startPosition": "-0.0213",
+              "dir": "Open Short",
+              "closedPnl": "0.0",
+              "hash": "PRIVATE_FILL_SENTINEL",
+              "oid": 9876543210987654321,
+              "crossed": false,
+              "fee": "0.009997",
+              "tid": 745210434703679,
+              "cloid": "PRIVATE_ORDER_SENTINEL",
+              "liquidation": {
+                "liquidatedUser": "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd",
+                "markPx": "66607.0",
+                "method": "market"
+              },
+              "feeToken": "USDC",
+              "twapId": null
+            }
+          ],
+          "user": "PRIVATE_ACCOUNT_SENTINEL"
+        }
+      }
+    },
+    {
+      "class": "order_update",
+      "message": {
+        "channel": "orderUpdates",
+        "data": [
+          {
+            "order": {
+              "coin": "BTC",
+              "side": "B",
+              "limitPx": "12345",
+              "sz": "1",
+              "origSz": "2",
+              "oid": 9876543210987654321,
+              "timestamp": 9876543210987654321,
+              "cloid": "PRIVATE_ORDER_SENTINEL"
+            },
+            "status": "open",
+            "statusTimestamp": 9876543210987654321
+          }
+        ]
+      }
+    },
+    {
+      "class": "twap_history",
+      "message": {
+        "channel": "userTwapHistory",
+        "data": {
+          "isSnapshot": true,
+          "user": "PRIVATE_ACCOUNT_SENTINEL",
+          "history": [
+            {
+              "time": 9876543210987654321,
+              "state": {
+                "coin": "xyz:HOOD",
+                "user": "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd",
+                "side": "B",
+                "sz": "100.0",
+                "executedSz": "100.0",
+                "executedNtl": "9122.799854",
+                "minutes": 240,
+                "reduceOnly": false,
+                "randomize": false,
+                "timestamp": 1785833655711,
+                "trigger": null,
+                "stopPx": null
+              },
+              "status": {
+                "status": "finished"
+              },
+              "twapId": 2081397
+            }
+          ]
+        }
+      }
+    },
+    {
+      "class": "twap_slice_fill",
+      "message": {
+        "channel": "userTwapSliceFills",
+        "data": {
+          "isSnapshot": true,
+          "user": "PRIVATE_ACCOUNT_SENTINEL",
+          "twapSliceFills": [
+            {
+              "fill": {
+                "coin": "BTC",
+                "px": "66653.0",
+                "sz": "0.001",
+                "side": "A",
+                "time": 9876543210987654321,
+                "startPosition": "-0.0213",
+                "dir": "Open Short",
+                "closedPnl": "0.0",
+                "hash": "PRIVATE_FILL_SENTINEL",
+                "oid": 9876543210987654321,
+                "crossed": false,
+                "fee": "0.009997",
+                "tid": 745210434703679,
+                "cloid": "PRIVATE_ORDER_SENTINEL",
+                "liquidation": {
+                  "liquidatedUser": "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd",
+                  "markPx": "66607.0",
+                  "method": "market"
+                },
+                "feeToken": "USDC",
+                "twapId": null
+              },
+              "twapId": 2087225
+            }
+          ]
+        }
+      }
+    },
+    {
+      "class": "fill_instrument",
+      "message": {
+        "channel": "user",
+        "data": {
+          "fills": [
+            {
+              "coin": "PRIVATE_FILL_SENTINEL",
+              "px": "66653.0",
+              "sz": "0.001",
+              "side": "A",
+              "time": 9876543210987654321,
+              "startPosition": "-0.0213",
+              "dir": "Open Short",
+              "closedPnl": "0.0",
+              "hash": "PRIVATE_FILL_SENTINEL",
+              "oid": 9876543210987654321,
+              "crossed": false,
+              "fee": "0.009997",
+              "tid": 745210434703679,
+              "cloid": "PRIVATE_ORDER_SENTINEL",
+              "liquidation": {
+                "liquidatedUser": "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd",
+                "markPx": "66607.0",
+                "method": "market"
+              },
+              "feeToken": "USDC",
+              "twapId": null
+            }
+          ],
+          "user": "PRIVATE_ACCOUNT_SENTINEL"
+        }
+      }
+    },
+    {
+      "class": "order_instrument",
+      "message": {
+        "channel": "orderUpdates",
+        "data": [
+          {
+            "order": {
+              "coin": "PRIVATE_ORDER_SENTINEL",
+              "side": "B",
+              "limitPx": "12345",
+              "sz": "1",
+              "origSz": "2",
+              "oid": 9876543210987654321,
+              "timestamp": 9876543210987654321,
+              "cloid": "PRIVATE_ORDER_SENTINEL"
+            },
+            "status": "open",
+            "statusTimestamp": 9876543210987654321
+          }
+        ]
+      }
+    },
+    {
+      "class": "subscription_response",
+      "message": {
+        "channel": "subscriptionResponse",
+        "data": {
+          "method": "PRIVATE_SIGNATURE_SENTINEL",
+          "subscription": {
+            "type": "userFills",
+            "user": "PRIVATE_ACCOUNT_SENTINEL"
+          }
+        }
+      }
+    },
+    {
+      "class": "fill",
+      "message": {
+        "channel": "user",
+        "data": {
+          "fills": [
+            {
+              "coin": "BTC",
+              "px": "66653.0",
+              "sz": "0.001",
+              "side": "A",
+              "time": 9876543210987654321,
+              "startPosition": "-0.0213",
+              "dir": "Open Short",
+              "closedPnl": "0.0",
+              "hash": "PRIVATE_FILL_SENTINEL",
+              "oid": 9876543210987654321,
+              "crossed": false,
+              "fee": "0",
+              "tid": 745210434703679,
+              "cloid": "PRIVATE_ORDER_SENTINEL",
+              "liquidation": {
+                "liquidatedUser": "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd",
+                "markPx": "66607.0",
+                "method": "market"
+              },
+              "feeToken": "PRIVATE_SIGNATURE_SENTINEL",
+              "twapId": null
+            }
+          ],
+          "user": "PRIVATE_ACCOUNT_SENTINEL"
+        }
+      }
+    }
+  ],
+  "secrets": [
+    "PRIVATE_ACCOUNT_SENTINEL",
+    "PRIVATE_ORDER_SENTINEL",
+    "PRIVATE_SIGNATURE_SENTINEL",
+    "PRIVATE_FILL_SENTINEL",
+    "PRIVATE_TAG_SENTINEL",
+    "9876543210987654321",
+    "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd"
+  ],
+  "post_payload": {
+    "status": "PRIVATE_TAG_SENTINEL",
+    "user": "PRIVATE_ACCOUNT_SENTINEL",
+    "signature": "PRIVATE_SIGNATURE_SENTINEL",
+    "data": "PRIVATE_ORDER_SENTINEL"
+  },
+  "post_valid_payloads": [
+    {
+      "status": "ok",
+      "response": {
+        "type": "order",
+        "data": {
+          "statuses": [
+            {
+              "resting": {
+                "oid": 246813579
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "error": "PRIVATE_ORDER_SENTINEL"
+    }
+  ],
+  "post_report_payloads": [
+    {
+      "status": "ok",
+      "response": {
+        "type": "order",
+        "data": "PRIVATE_ACCOUNT_SENTINEL"
+      }
+    },
+    {
+      "status": "ok",
+      "response": {
+        "type": "order",
+        "data": {
+          "statuses": "PRIVATE_SIGNATURE_SENTINEL"
+        }
+      }
+    },
+    {
+      "status": "ok",
+      "response": {
+        "type": "order",
+        "data": 9876543210987654321
+      }
+    }
+  ],
+  "post_report_payload_bytes": [
+    50,
+    65,
+    43
+  ],
+  "post_unexpected_status": {
+    "status": "PRIVATE_TAG_SENTINEL",
+    "response": {
+      "user": "PRIVATE_ACCOUNT_SENTINEL",
+      "signature": "PRIVATE_SIGNATURE_SENTINEL",
+      "order": "PRIVATE_ORDER_SENTINEL",
+      "address": "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd"
+    }
+  },
+  "post_unexpected_status_bytes": 164,
+  "post_business_rejection": {
+    "status": "err",
+    "response": "Known venue rejection"
+  },
+  "post_unexpected_status_string": {
+    "status": "unexpected",
+    "response": "PRIVATE_SIGNATURE_SENTINEL"
+  },
+  "post_unexpected_status_string_bytes": 28
+}

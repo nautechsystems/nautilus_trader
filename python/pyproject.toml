@@ -71,7 +71,6 @@ environments = [
   "sys_platform == 'win32' and platform_machine == 'AMD64'",
 ]
 exclude-newer = "7 days"
-exclude-newer-package = { ruff = "2026-10-01T19:00:00Z" }
 # Block sdist builds for every third-party package in python/uv.lock so
 # unexpected loss of wheel publishing fails `uv lock` instead of silently
 # building from source. Kept in sync with python/uv.lock by
@@ -153,9 +152,9 @@ no-build-package = [
 ]
 
 [dependency-groups]
-dev = ["maturin==1.15.0", "ruff>=0.16.10", "ty>=0.0.85"]
+dev = ["maturin==1.15.0", "ruff>=0.16.10", "ty>=0.0.86"]
 test = [
-  "pyarrow>=25.0.0",
+  "pyarrow>=26.0.0",
   "polars",
   "pytest>=9.1.1",
   "pytest-asyncio>=1.4.0",

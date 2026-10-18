@@ -69,6 +69,7 @@ async fn rejected_redirect_preserves_response_without_contacting_destination(#[c
             .unwrap();
         (headers, body)
     });
+
     let client = HttpClient::builder()
         .redirect_policy(HttpRedirectPolicy::Reject)
         .headers(HashMap::from([("x-api-key".into(), "test-key".into())]))
@@ -112,6 +113,7 @@ async fn pooled_requests_consume_complete_bodies() {
             stream.write_all(b"HTTP/1.1 206 Partial Content\r\nTransfer-Encoding: chunked\r\nX-Receipt: receipt-53\r\n\r\n3\r\nabc\r\n4\r\ndefg\r\n0\r\n\r\n").await.unwrap();
         }
     });
+
     let client = HttpClient::builder()
         .header_keys(vec!["x-receipt".into()])
         .use_system_proxy(false)
@@ -135,6 +137,7 @@ async fn pooled_requests_consume_complete_bodies() {
         );
         assert_eq!(response.body, Bytes::from_static(b"abcdefg"));
     }
+
     peer.await.unwrap();
 }
 
@@ -157,6 +160,7 @@ async fn redirect_method_body_and_credentials_match(
         let addr = listener.local_addr().unwrap();
         let destination = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let target = destination.local_addr().unwrap();
+
         let peer = tokio::spawn(async move {
             let (mut stream, _) = listener.accept().await.unwrap();
             read_headers(&mut stream).await;
@@ -171,12 +175,14 @@ async fn redirect_method_body_and_credentials_match(
                 body.resize(7, 0);
                 stream.read_exact(&mut body).await.unwrap();
             }
+
             stream
                 .write_all(b"HTTP/1.1 201 Created\r\nContent-Length: 2\r\n\r\nok")
                 .await
                 .unwrap();
             (headers, body)
         });
+
         let defaults = HashMap::from([
             ("authorization".into(), "Bearer private-27".into()),
             ("cookie".into(), "session=private-91".into()),
@@ -348,6 +354,7 @@ async fn redirect_limit_preserves_same_origin_credentials(
                 "{headers}"
             );
             assert!(headers.contains("cookie: session=91\r\n"), "{headers}");
+
             let response = if step == redirects {
                 "HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\ndone".to_string()
             } else {
@@ -356,9 +363,11 @@ async fn redirect_limit_preserves_same_origin_credentials(
                     step + 1
                 )
             };
+
             stream.write_all(response.as_bytes()).await.unwrap();
         }
     });
+
     let client = HttpClient::builder()
         .headers(HashMap::from([
             ("authorization".into(), "Bearer token-37".into()),
@@ -397,6 +406,7 @@ async fn redirect_rejects_unsupported_scheme() {
         read_headers(&mut stream).await;
         stream.write_all(b"HTTP/1.1 302 Found\r\nContent-Length: 0\r\nLocation: ftp://127.0.0.1/file\r\n\r\n").await.unwrap();
     });
+
     let client = HttpClient::builder()
         .use_system_proxy(false)
         .timeout_secs(3)
@@ -431,6 +441,7 @@ async fn truncated_body_returns_transport_error(
             .unwrap();
         stream.shutdown().await.unwrap();
     });
+
     let client = HttpClient::builder()
         .redact_url(redact_url)
         .use_system_proxy(false)
@@ -450,11 +461,13 @@ async fn truncated_body_returns_transport_error(
     } else {
         send(&client, Method::GET, url, None).await.unwrap_err()
     };
+
     peer.await.unwrap();
 
     let HttpClientError::TransportError(message) = error else {
         panic!("expected transport error, was {error:?}");
     };
+
     assert!(
         message.contains("end of file before message length reached"),
         "{message}"
@@ -483,7 +496,6 @@ async fn streamed_response_url_policy_redacts_debug_and_body_errors(
     const QUERY_SECRET: &str = "stream-query-secret";
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
-
     let peer = tokio::spawn(async move {
         let (mut stream, _) = listener.accept().await.unwrap();
         let request = read_headers(&mut stream).await;
@@ -575,6 +587,7 @@ async fn body_deadline_overrides_default_and_closes_connection() {
             0
         );
     });
+
     let client = HttpClient::builder()
         .timeout_secs(20)
         .use_system_proxy(false)
@@ -606,6 +619,7 @@ async fn http_proxy_preserves_absolute_target_and_authentication() {
             .unwrap();
         headers
     });
+
     let proxy = format!("http://{USERNAME}:{PASSWORD}@{addr}");
     let client = HttpClient::builder()
         .proxy_url(proxy.clone())
@@ -665,6 +679,7 @@ async fn canceled_request_releases_partial_response() {
             "connection was not released: {read:?}"
         );
     });
+
     let client = HttpClient::builder()
         .use_system_proxy(false)
         .build()
@@ -675,6 +690,7 @@ async fn canceled_request_releases_partial_response() {
             .get(format!("http://{addr}/body"), None, None, None, None)
             .await
     });
+
     received.await.unwrap();
     request.abort();
     assert!(request.await.unwrap_err().is_cancelled());
@@ -693,6 +709,7 @@ async fn streamed_response_exceeds_buffered_limit() {
             .await
             .unwrap();
     });
+
     let mut client = HttpClient::builder()
         .use_system_proxy(false)
         .timeout_secs(3)
@@ -708,6 +725,7 @@ async fn streamed_response_exceeds_buffered_limit() {
     while let Some(chunk) = response.chunk().await.unwrap() {
         body.extend_from_slice(&chunk);
     }
+
     peer.await.unwrap();
     assert_eq!(status, http::StatusCode::PARTIAL_CONTENT);
     assert_eq!(body, b"abcdefgh");
@@ -736,6 +754,7 @@ async fn streamed_response_releases_partial_body(#[case] timeout: bool) {
             0
         );
     });
+
     let client = HttpClient::builder()
         .use_system_proxy(false)
         .timeout_secs(1)
@@ -757,6 +776,7 @@ async fn streamed_response_releases_partial_body(#[case] timeout: bool) {
             Err(HttpClientError::TimeoutError(_))
         ));
     }
+
     drop(response);
     peer.await.unwrap();
 }
@@ -813,6 +833,7 @@ fn platform_tls_http2_and_protocol_retries() {
                             }
                         }
                     });
+
                     let client = HttpClient::builder()
                         .use_system_proxy(false)
                         .timeout_secs(3)
@@ -842,6 +863,7 @@ fn platform_tls_http2_and_protocol_retries() {
                             "{result:?}"
                         );
                     }
+
                     peer.abort();
                     assert!(peer.await.unwrap_err().is_cancelled());
                 }
@@ -1003,7 +1025,6 @@ fn http2_initial_window_follows_environment() {
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             let port = listener.local_addr().unwrap().port();
             let url = format!("https://localhost:{port}/");
-
             let mut task = tokio::spawn(async move { send(&client, Method::GET, url, None).await });
 
             let (stream, _) = tokio::select! {
@@ -1067,7 +1088,6 @@ fn platform_roots_load_once_per_process() {
 
     let roots = std::path::PathBuf::from(std::env::var_os("SSL_CERT_FILE").unwrap());
     let parked = roots.with_extension("parked");
-
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -1199,5 +1219,6 @@ async fn read_headers(stream: &mut (impl tokio::io::AsyncRead + Unpin)) -> Strin
     while !bytes.ends_with(b"\r\n\r\n") {
         bytes.push(stream.read_u8().await.unwrap());
     }
+
     String::from_utf8(bytes).unwrap()
 }

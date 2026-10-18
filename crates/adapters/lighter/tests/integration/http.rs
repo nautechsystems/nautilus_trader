@@ -22,6 +22,7 @@ use std::{
         Arc,
         atomic::{AtomicUsize, Ordering},
     },
+    time::{Duration, Instant},
 };
 
 use axum::{
@@ -73,6 +74,7 @@ use nautilus_network::{
     ratelimiter::quota::Quota,
     retry::{RetryConfig, RetryManager},
 };
+use rstest::rstest;
 use rust_decimal::Decimal;
 
 const HTTP_NEXT_NONCE: &str = include_str!("../../test_data/http_next_nonce.json");
@@ -509,7 +511,7 @@ async fn raw_client_send_tx_maps_success_body_errors() {
     ));
     assert!(matches!(
         rate_limit_error,
-        LighterHttpError::RateLimit(message) if message == "slow down"
+        LighterHttpError::RateLimit { message, .. } if message == "slow down"
     ));
 }
 
@@ -525,7 +527,7 @@ async fn raw_client_maps_rate_limit_status() {
 
     let error = client.get_recent_trades(&query).await.unwrap_err();
 
-    assert!(matches!(error, LighterHttpError::RateLimit(_)));
+    assert!(matches!(error, LighterHttpError::RateLimit { .. }));
 }
 
 #[tokio::test]
@@ -555,7 +557,7 @@ async fn raw_client_maps_405_status_as_rate_limit() {
 
     let error = client.get_order_books(&query).await.unwrap_err();
 
-    assert!(matches!(error, LighterHttpError::RateLimit(_)));
+    assert!(matches!(error, LighterHttpError::RateLimit { .. }));
 }
 
 #[tokio::test]
@@ -569,7 +571,7 @@ async fn raw_client_maps_structured_rate_limit_code() {
 
     assert!(matches!(
         error,
-        LighterHttpError::RateLimit(message) if message == "slow down"
+        LighterHttpError::RateLimit { message, .. } if message == "slow down"
     ));
 }
 
@@ -603,7 +605,7 @@ async fn raw_client_maps_success_body_errors() {
     ));
     assert!(matches!(
         rate_limit_error,
-        LighterHttpError::RateLimit(message) if message == "slow down"
+        LighterHttpError::RateLimit { message, .. } if message == "slow down"
     ));
 }
 
@@ -779,6 +781,150 @@ async fn raw_client_send_tx_post_is_single_shot_on_5xx() {
     let error = client.send_tx(&request).await.unwrap_err();
 
     assert!(matches!(error, LighterHttpError::Http { status: 503, .. }));
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+
+#[rstest]
+#[case::rate_limit(StatusCode::TOO_MANY_REQUESTS, false)]
+#[case::firewall(StatusCode::METHOD_NOT_ALLOWED, false)]
+#[case::server_busy(StatusCode::SERVICE_UNAVAILABLE, false)]
+#[case::venue_rate_limit(StatusCode::OK, true)]
+#[tokio::test]
+async fn raw_client_honors_retry_after_before_retrying(
+    #[case] status: StatusCode,
+    #[case] venue_rate_limit: bool,
+) {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let requests = Arc::clone(&calls);
+    let router = Router::new().route(
+        "/api/v1/orderBooks",
+        get(move || {
+            let calls = Arc::clone(&requests);
+            async move {
+                if calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                    let body = if venue_rate_limit {
+                        include_str!("../../test_data/http_rate_limit_synthetic.json")
+                    } else {
+                        "busy"
+                    };
+
+                    (status, [("retry-after", "1")], body).into_response()
+                } else {
+                    (StatusCode::OK, HTTP_ORDER_BOOKS).into_response()
+                }
+            }
+        }),
+    );
+
+    let base_url = spawn_server(router).await;
+    let client = raw_client(base_url);
+    let query = LighterOrderBooksQueryBuilder::default().build().unwrap();
+    let started = Instant::now();
+
+    let response = client.get_order_books(&query).await.unwrap();
+
+    assert_eq!(response.code, 200);
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    assert!(started.elapsed() >= Duration::from_secs(1));
+}
+
+#[rstest]
+#[case::rate_limit(StatusCode::TOO_MANY_REQUESTS)]
+#[case::firewall(StatusCode::METHOD_NOT_ALLOWED)]
+#[case::server_busy(StatusCode::SERVICE_UNAVAILABLE)]
+#[tokio::test]
+async fn raw_client_stops_when_retry_after_exceeds_budget(#[case] status: StatusCode) {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let requests = Arc::clone(&calls);
+    let router = Router::new().route(
+        "/api/v1/orderBooks",
+        get(move || {
+            let calls = Arc::clone(&requests);
+            async move {
+                calls.fetch_add(1, Ordering::SeqCst);
+                (status, [("retry-after", "120")], "busy").into_response()
+            }
+        }),
+    );
+
+    let base_url = spawn_server(router).await;
+    let client = raw_client(base_url);
+    let query = LighterOrderBooksQueryBuilder::default().build().unwrap();
+
+    let error = client.get_order_books(&query).await.unwrap_err();
+
+    let retry_after = match error {
+        LighterHttpError::RateLimit {
+            message,
+            retry_after,
+        } => {
+            assert_eq!(message, "busy");
+            retry_after
+        }
+        LighterHttpError::Http {
+            status: actual,
+            body,
+            retry_after,
+        } => {
+            assert_eq!(actual, status.as_u16());
+            assert_eq!(body, "busy");
+            retry_after
+        }
+        other => panic!("expected response error, was {other:?}"),
+    };
+
+    assert_eq!(retry_after, Some(Duration::from_secs(120)));
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+
+#[rstest]
+#[case::send_tx("/api/v1/sendTx")]
+#[case::send_tx_batch("/api/v1/sendTxBatch")]
+#[case::referral("/api/v1/referral/use")]
+#[tokio::test]
+async fn raw_client_writes_remain_single_shot_with_retry_after(#[case] endpoint: &str) {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let requests = Arc::clone(&calls);
+    let router = Router::new().route(
+        endpoint,
+        post(move || {
+            let calls = Arc::clone(&requests);
+            async move {
+                calls.fetch_add(1, Ordering::SeqCst);
+                (
+                    StatusCode::TOO_MANY_REQUESTS,
+                    [("retry-after", "1")],
+                    "busy",
+                )
+                    .into_response()
+            }
+        }),
+    );
+
+    let base_url = spawn_server(router).await;
+    let client = raw_client(base_url);
+
+    let error = match endpoint {
+        "/api/v1/sendTx" => {
+            let request = LighterSendTxRequest::new(LighterTxType::CreateOrder as u8, "{}");
+            client.send_tx(&request).await.unwrap_err()
+        }
+        "/api/v1/sendTxBatch" => {
+            let tx_types = serde_json::to_string(&[LighterTxType::CreateOrder as u8]).unwrap();
+            let tx_infos = serde_json::to_string(&["{}"]).unwrap();
+            let request = LighterSendTxBatchRequest::new(tx_types, tx_infos);
+            client.send_tx_batch(&request).await.unwrap_err()
+        }
+        "/api/v1/referral/use" => client
+            .use_referral("address", "referral", "token")
+            .await
+            .unwrap_err(),
+        _ => unreachable!("unsupported write endpoint"),
+    };
+
+    assert!(
+        matches!(error, LighterHttpError::RateLimit { message, retry_after: Some(delay) } if message == "busy" && delay == Duration::from_secs(1))
+    );
     assert_eq!(calls.load(Ordering::SeqCst), 1);
 }
 
@@ -984,13 +1130,13 @@ async fn domain_client_request_funding_rates_parses_signed_rates() {
 
     assert_eq!(funding_rates.len(), 2);
     assert_eq!(funding_rates[0].instrument_id, instrument.id());
-    assert_eq!(funding_rates[0].rate, Decimal::new(12, 4));
+    assert_eq!(funding_rates[0].rate, Decimal::new(12, 6));
     assert_eq!(funding_rates[0].interval, Some(60));
     assert_eq!(
         funding_rates[0].ts_event,
         UnixNanos::from(1_778_702_400_000_000_000),
     );
-    assert_eq!(funding_rates[1].rate, Decimal::new(-2, 4));
+    assert_eq!(funding_rates[1].rate, Decimal::new(-2, 6));
 }
 
 #[tokio::test]
@@ -1033,11 +1179,11 @@ async fn domain_client_request_funding_rates_paginates_range() {
         funding_rates[0].ts_event,
         millis_to_unix_nanos(state.start_ms)
     );
-    assert_eq!(funding_rates[0].rate, Decimal::new(12, 4));
+    assert_eq!(funding_rates[0].rate, Decimal::new(12, 6));
     assert_eq!(funding_rates[1].ts_event, millis_to_unix_nanos(boundary_ms));
-    assert_eq!(funding_rates[1].rate, Decimal::new(-2, 4));
+    assert_eq!(funding_rates[1].rate, Decimal::new(-2, 6));
     assert_eq!(funding_rates[2].ts_event, millis_to_unix_nanos(end_ms));
-    assert_eq!(funding_rates[2].rate, Decimal::new(1, 4));
+    assert_eq!(funding_rates[2].rate, Decimal::new(1, 6));
 }
 
 #[tokio::test]
@@ -1080,12 +1226,12 @@ async fn domain_client_request_funding_rates_caps_to_limit_across_pages() {
         funding_rates[0].ts_event,
         millis_to_unix_nanos(state.start_ms)
     );
-    assert_eq!(funding_rates[0].rate, Decimal::new(12, 4));
+    assert_eq!(funding_rates[0].rate, Decimal::new(12, 6));
     assert_eq!(
         funding_rates[1].ts_event,
         millis_to_unix_nanos(state.start_ms + interval_ms)
     );
-    assert_eq!(funding_rates[1].rate, Decimal::new(3, 4));
+    assert_eq!(funding_rates[1].rate, Decimal::new(3, 6));
 }
 
 #[tokio::test]
@@ -1121,12 +1267,12 @@ async fn domain_client_request_funding_rates_without_start_returns_latest_limit(
         funding_rates[0].ts_event,
         millis_to_unix_nanos(state.end_ms - interval_ms)
     );
-    assert_eq!(funding_rates[0].rate, Decimal::new(7, 4));
+    assert_eq!(funding_rates[0].rate, Decimal::new(7, 6));
     assert_eq!(
         funding_rates[1].ts_event,
         millis_to_unix_nanos(state.end_ms)
     );
-    assert_eq!(funding_rates[1].rate, Decimal::new(-8, 4));
+    assert_eq!(funding_rates[1].rate, Decimal::new(-8, 6));
 }
 
 #[tokio::test]
@@ -1170,7 +1316,7 @@ async fn domain_client_request_funding_rates_accepts_limit_on_final_capped_page(
         funding_rates[0].instrument_id,
         create_test_instrument().id()
     );
-    assert_eq!(funding_rates[0].rate, Decimal::new(12, 4));
+    assert_eq!(funding_rates[0].rate, Decimal::new(12, 6));
     assert_eq!(funding_rates[0].interval, Some(60));
     assert_eq!(funding_rates[0].next_funding_ns, None);
     assert_eq!(funding_rates[0].ts_event, expected_ts);

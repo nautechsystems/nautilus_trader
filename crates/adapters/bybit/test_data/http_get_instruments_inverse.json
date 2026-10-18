@@ -8,6 +8,7 @@
         "symbol": "BTCUSD",
         "contractType": "InversePerpetual",
         "status": "Trading",
+        "symbolType": "",
         "baseCoin": "BTC",
         "quoteCoin": "USD",
         "launchTime": "1699980000000",

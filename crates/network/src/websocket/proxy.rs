@@ -252,6 +252,7 @@ impl ProxyKind {
                         "proxy URL is missing a host (did you mean {scheme}://...)?"
                     )));
                 }
+
                 Ok(Self::Unsupported {
                     scheme: scheme.to_string(),
                 })
@@ -385,7 +386,6 @@ pub async fn tunnel_via_proxy(
         .map_err(TransportError::Io)?;
 
     crate::net::apply_socket_options(&tcp);
-
     if proxy.is_tls {
         let proxy_tls = wrap_tls(tcp, &proxy.host).await?;
         let tunneled = send_connect(proxy_tls, target, proxy).await?;
@@ -429,6 +429,7 @@ where
         request.push_str(auth);
         request.push_str("\r\n");
     }
+
     request.push_str("\r\n");
 
     stream
@@ -457,7 +458,6 @@ where
 {
     let mut buf = Vec::with_capacity(512);
     let mut byte = [0u8; 1];
-
     loop {
         let n = stream.read(&mut byte).await.map_err(TransportError::Io)?;
         if n == 0 {
@@ -487,6 +487,7 @@ where
 
     // Expect: `HTTP/1.1 200 Connection established` (or any 2xx).
     let mut parts = status_line.splitn(3, ' ');
+
     let version = parts.next().ok_or_else(|| {
         TransportError::Handshake("proxy CONNECT response has a malformed status line".to_string())
     })?;
@@ -704,9 +705,11 @@ mod tests {
     #[rstest]
     fn proxy_target_rejects_socks() {
         let err = ProxyTarget::parse("socks5://127.0.0.1:1080").unwrap_err();
+
         let TransportError::InvalidUrl(msg) = err else {
             panic!("expected InvalidUrl");
         };
+
         assert!(msg.contains("SOCKS"));
     }
 
@@ -719,9 +722,11 @@ mod tests {
     #[rstest]
     fn proxy_kind_classifies_socks_as_unsupported() {
         let kind = ProxyKind::parse("socks5://127.0.0.1:1080").unwrap();
+
         let ProxyKind::Unsupported { scheme } = kind else {
             panic!("expected Unsupported");
         };
+
         assert_eq!(scheme, "socks5");
     }
 
@@ -766,6 +771,7 @@ mod tests {
         tokio::spawn(async move {
             let (mut stream, _) = listener.accept().await.unwrap();
             let mut buf = vec![0u8; 1024];
+
             // Read until we see the CONNECT terminator.
             loop {
                 let n = AsyncReadExt::read(&mut stream, &mut buf).await.unwrap();
@@ -777,9 +783,11 @@ mod tests {
                     break;
                 }
             }
+
             stream.write_all(response).await.unwrap();
             stream.flush().await.unwrap();
         });
+
         addr
     }
 
@@ -849,6 +857,7 @@ mod tests {
                 let TransportError::Handshake(msg) = err else {
                     panic!("expected Handshake error, was {err:?}");
                 };
+
                 assert!(
                     msg.contains(expected_msg_substring),
                     "expected error message to contain {expected_msg_substring:?}, was {msg:?}"
@@ -906,9 +915,11 @@ mod tests {
             .unwrap();
         stream.flush().await.unwrap();
         let err = read_connect_response(&mut stream).await.unwrap_err();
+
         let TransportError::Handshake(msg) = err else {
             panic!("expected Handshake error, was {err:?}");
         };
+
         assert!(msg.contains("malformed status line"), "was {msg}");
     }
 
@@ -925,9 +936,11 @@ mod tests {
             .unwrap();
         stream.flush().await.unwrap();
         let err = read_connect_response(&mut stream).await.unwrap_err();
+
         let TransportError::Handshake(msg) = err else {
             panic!("expected Handshake error, was {err:?}");
         };
+
         assert!(msg.contains("invalid status code"), "was {msg}");
     }
 
@@ -939,6 +952,7 @@ mod tests {
         while response.len() <= MAX_PROXY_RESPONSE_BYTES {
             response.extend_from_slice(b"X-Pad: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\r\n");
         }
+
         let leaked: &'static [u8] = response.leak();
         let addr = spawn_fake_proxy(leaked).await;
         let mut stream = TcpStream::connect(addr).await.unwrap();
@@ -948,9 +962,11 @@ mod tests {
             .unwrap();
         stream.flush().await.unwrap();
         let err = read_connect_response(&mut stream).await.unwrap_err();
+
         let TransportError::Handshake(msg) = err else {
             panic!("expected Handshake error, was {err:?}");
         };
+
         assert!(
             msg.contains("exceeded"),
             "unexpected handshake error: {msg}"

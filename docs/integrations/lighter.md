@@ -430,7 +430,9 @@ core cache must retain its venue-order-ID mapping. Otherwise, reports use the un
 external client order ID.
 
 Queries use the numeric venue order ID for active and terminal history. Before that ID is known,
-the derived client index can query active orders only. Duplicate active matches fail as ambiguous.
+the derived client index can query active orders only. Assigning the caller's client order ID requires a
+registered selected-index binding. Otherwise, reports use the client order ID from an exact venue binding,
+or the venue order ID as their external client order ID. Duplicate active matches fail as ambiguous.
 
 ### Order types
 

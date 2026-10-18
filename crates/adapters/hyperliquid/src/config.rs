@@ -212,13 +212,16 @@ pub struct HyperliquidExecutionClientConfig {
     /// HTTP timeout in seconds.
     #[builder(default = 60)]
     pub http_timeout_secs: u64,
-    /// Maximum number of retry attempts for HTTP requests.
+    /// Maximum retries after the initial attempt for read-only HTTP info requests.
+    /// Zero disables retries. Does not apply to exchange actions or WebSocket posts.
     #[builder(default = 3)]
     pub max_retries: u32,
-    /// Initial retry delay in milliseconds.
+    /// Initial full-jitter backoff bound for HTTP info retries, in milliseconds.
+    /// Zero disables backoff. A valid `Retry-After` header overrides backoff.
     #[builder(default = 100)]
     pub retry_delay_initial_ms: u64,
-    /// Maximum retry delay in milliseconds.
+    /// Maximum full-jitter backoff bound for HTTP info retries, in milliseconds.
+    /// Zero disables backoff. Does not cap a valid `Retry-After` header.
     #[builder(default = 5000)]
     pub retry_delay_max_ms: u64,
     /// When true, normalize order prices to 5 significant figures

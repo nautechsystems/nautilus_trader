@@ -77,7 +77,6 @@ fn config(
 async fn spawn_ping_sender(payload: String) -> SocketAddr {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
-
     tokio::spawn(async move {
         let (stream, _) = listener.accept().await.unwrap();
         let mut socket = accept_async(stream).await.unwrap();
@@ -94,7 +93,6 @@ async fn spawn_ping_sender(payload: String) -> SocketAddr {
 async fn spawn_sender(payload: String) -> SocketAddr {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
-
     tokio::spawn(async move {
         let (stream, _) = listener.accept().await.unwrap();
         let mut socket = accept_async(stream).await.unwrap();
@@ -158,7 +156,6 @@ async fn tunnel_connect(stream: TcpStream, upstream: SocketAddr) -> std::io::Res
 
     let client_to_upstream = async {
         let mut buf = vec![0u8; 8192];
-
         loop {
             let n = client_read.read(&mut buf).await?;
             if n == 0 {
@@ -173,7 +170,6 @@ async fn tunnel_connect(stream: TcpStream, upstream: SocketAddr) -> std::io::Res
 
     let upstream_to_client = async {
         let mut buf = vec![0u8; 8192];
-
         loop {
             let n = upstream_read.read(&mut buf).await?;
             if n == 0 {

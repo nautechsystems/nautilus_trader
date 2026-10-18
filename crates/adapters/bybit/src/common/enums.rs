@@ -18,7 +18,7 @@
 use std::fmt::Display;
 
 use jiff::{Timestamp, civil::Date, tz::Offset};
-use nautilus_model::enums::{AggressorSide, OrderSide, TriggerType};
+use nautilus_model::enums::{AggressorSide, AssetClass, OrderSide, TriggerType};
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use strum::{AsRefStr, EnumIter, EnumString};
@@ -444,6 +444,21 @@ impl BybitSymbolType {
             Self::Etf => Some("ETF"),
             Self::Mstocks => Some("mstocks"),
             Self::Other => None,
+        }
+    }
+}
+
+impl From<BybitSymbolType> for AssetClass {
+    fn from(symbol_type: BybitSymbolType) -> Self {
+        match symbol_type {
+            BybitSymbolType::Innovation | BybitSymbolType::Adventure => Self::Cryptocurrency,
+            BybitSymbolType::Stock
+            | BybitSymbolType::Etf
+            | BybitSymbolType::Xstocks
+            | BybitSymbolType::Mstocks => Self::Equity,
+            BybitSymbolType::Commodity => Self::Commodity,
+            BybitSymbolType::Forex => Self::FX,
+            BybitSymbolType::Other => Self::Alternative,
         }
     }
 }
@@ -1276,6 +1291,23 @@ mod tests {
     #[rstest]
     fn test_unknown_symbol_type_has_no_wire_value() {
         assert_eq!(BybitSymbolType::Other.as_str(), None);
+    }
+
+    #[rstest]
+    #[case(BybitSymbolType::Innovation, AssetClass::Cryptocurrency)]
+    #[case(BybitSymbolType::Adventure, AssetClass::Cryptocurrency)]
+    #[case(BybitSymbolType::Stock, AssetClass::Equity)]
+    #[case(BybitSymbolType::Etf, AssetClass::Equity)]
+    #[case(BybitSymbolType::Xstocks, AssetClass::Equity)]
+    #[case(BybitSymbolType::Mstocks, AssetClass::Equity)]
+    #[case(BybitSymbolType::Commodity, AssetClass::Commodity)]
+    #[case(BybitSymbolType::Forex, AssetClass::FX)]
+    #[case(BybitSymbolType::Other, AssetClass::Alternative)]
+    fn test_symbol_type_to_asset_class(
+        #[case] symbol_type: BybitSymbolType,
+        #[case] expected: AssetClass,
+    ) {
+        assert_eq!(AssetClass::from(symbol_type), expected);
     }
 
     #[rstest]

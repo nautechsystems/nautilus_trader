@@ -35,7 +35,7 @@ use nautilus_core::{AtomicMap, string::secret::SecretString};
 use nautilus_live::{
     SocketControl,
     book::snapshot::SnapshotGate,
-    task::{SharedTaskSlot, TaskJoinOutcome},
+    task::{SharedTaskSlot, TaskGroupGuard, TaskJoinOutcome},
 };
 use nautilus_model::{
     data::BarType,
@@ -57,6 +57,7 @@ use nautilus_network::{
 };
 use parking_lot::Mutex;
 use rust_decimal::Decimal;
+use serde::Deserialize;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
@@ -102,6 +103,8 @@ use crate::{
         trades::{TradeStreamRegistry, TradeStreamUse},
     },
 };
+
+const RESPONSE_STATUS_ERR: &str = "err";
 
 static NEXT_WEBSOCKET_CLIENT_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -266,7 +269,7 @@ impl HyperliquidWebSocketClient {
         self
     }
 
-    /// Establishes WebSocket connection and spawns the message handler.
+    /// Establishes the WebSocket connection and waits for the message handler to initialize.
     pub async fn connect(&mut self) -> anyhow::Result<()> {
         let connect_lock = Arc::clone(&self.connect_lock);
         let _guard = connect_lock.lock().await;
@@ -358,9 +361,12 @@ impl HyperliquidWebSocketClient {
 
         self.out_rx = Some(out_rx);
         let connection_mode = client.connection_mode_atomic();
+        let (initialized_tx, initialized_rx) = tokio::sync::oneshot::channel();
 
-        // Send SetClient command immediately
-        if let Err(e) = cmd_tx.send(HandlerCommand::SetClient(client)) {
+        if let Err(e) = cmd_tx.send(HandlerCommand::SetClient {
+            client,
+            initialized: initialized_tx,
+        }) {
             self.release_limit_reservations();
             anyhow::bail!("Failed to send SetClient command: {e}");
         }
@@ -400,10 +406,7 @@ impl HyperliquidWebSocketClient {
 
             *cache_sender = cmd_tx.clone();
             *command_sender = cmd_tx.clone();
-            self.connection_mode.store(connection_mode);
         }
-
-        log::debug!("Hyperliquid WebSocket connected: {}", self.url.origin());
 
         // Spawn handler task
         let signal = Arc::clone(&self.signal);
@@ -523,7 +526,42 @@ impl HyperliquidWebSocketClient {
             self.release_limit_reservations();
             anyhow::bail!("Failed to start Hyperliquid WebSocket handler task: {e}");
         }
+
+        self.wait_for_initialization(initialized_rx, connection_mode)
+            .await?;
+
+        log::debug!("Hyperliquid WebSocket connected: {}", self.url.origin());
+
         Ok(())
+    }
+
+    async fn wait_for_initialization(
+        &mut self,
+        initialized: tokio::sync::oneshot::Receiver<()>,
+        connection_mode: Arc<AtomicU8>,
+    ) -> anyhow::Result<()> {
+        let setup_guard = TaskGroupGuard::new(&[], || {
+            self.task_handle.abort();
+            self.release_limit_reservations();
+        });
+
+        let result = tokio::time::timeout(HTTP_TIMEOUT, initialized)
+            .await
+            .context("Hyperliquid WebSocket handler initialization timed out")
+            .and_then(|result| {
+                result.context("Hyperliquid WebSocket handler stopped before initialization")
+            });
+
+        if result.is_ok() {
+            self.connection_mode.store(connection_mode);
+            setup_guard.disarm();
+            return Ok(());
+        }
+
+        drop(setup_guard);
+        self.out_rx = None;
+        self.disconnect_locked().await?;
+        result
     }
 
     pub fn set_post_timeout(&mut self, timeout: Duration) {
@@ -676,45 +714,18 @@ impl HyperliquidWebSocketClient {
 
         match response.response {
             PostResponsePayload::Action { payload } => {
-                let parsed: HyperliquidExchangeResponse = serde_json::from_value(payload)
-                    .map_err(HyperliquidError::Serde)
+                let parsed = self
+                    .parse_post_action_payload(&payload)
                     .map_err(PostRequestError::AfterDispatch)?;
 
-                match &parsed {
-                    HyperliquidExchangeResponse::Status { status, response }
-                        if status != RESPONSE_STATUS_OK =>
-                    {
-                        let reason = response
-                            .as_str()
-                            .map_or_else(|| response.to_string(), str::to_string);
-                        let error = HyperliquidError::bad_request(format!("API error: {reason}"));
-
-                        if status == "err" {
-                            Err(PostRequestError::Rejected {
-                                error,
-                                reason: extract_error_message(&parsed),
-                            })
-                        } else {
-                            Err(PostRequestError::AfterDispatch(error))
-                        }
-                    }
-                    HyperliquidExchangeResponse::Error { error } => {
-                        Err(PostRequestError::Rejected {
-                            error: HyperliquidError::bad_request(format!("API error: {error}")),
-                            reason: error.clone(),
-                        })
-                    }
-                    _ => Ok(parsed),
-                }
+                self.check_post_action_response(parsed)
             }
             PostResponsePayload::Error { payload } => Err(PostRequestError::AfterDispatch(
                 map_post_payload_error(payload, weight),
             )),
-            PostResponsePayload::Info { payload } => {
-                Err(PostRequestError::AfterDispatch(HyperliquidError::decode(
-                    format!("expected action post response, received info payload: {payload}"),
-                )))
-            }
+            PostResponsePayload::Info { payload } => Err(PostRequestError::AfterDispatch(
+                HyperliquidError::decode(self.post_decode_context(&payload, "unexpected_info")),
+            )),
         }
     }
 
@@ -823,8 +834,10 @@ impl HyperliquidWebSocketClient {
         // Verdict first: a real rejection must still error
         ensure_ws_action_accepted(&response, "Order submission")?;
 
+        let payload_bytes = Self::response_bytes(&response);
+
         // Past the verdict, a build failure is local; defer to WS, never reject
-        match signer.build_submit_order_report(
+        let report = signer.build_submit_order_report(
             instrument_id,
             client_order_id,
             order_side,
@@ -834,15 +847,8 @@ impl HyperliquidWebSocketClient {
             price,
             trigger_price,
             response,
-        ) {
-            Ok(report) => Ok(report),
-            Err(e) => {
-                log::warn!(
-                    "Failed to build submit report for {client_order_id}: {e}; awaiting WS reconciliation"
-                );
-                Ok(None)
-            }
-        }
+        );
+        Ok(self.resolve_submit_report(report, payload_bytes))
     }
 
     /// Submit multiple orders through the Hyperliquid WebSocket post API.
@@ -912,16 +918,11 @@ impl HyperliquidWebSocketClient {
 
         ensure_ws_action_accepted(&response, "Order list submission")?;
 
+        let payload_bytes = Self::response_bytes(&response);
+
         // Past the verdict, a build failure is local; defer to WS, never reject
-        match signer.build_submit_orders_reports(orders, grouping, response) {
-            Ok(reports) => Ok(reports),
-            Err(e) => {
-                log::warn!(
-                    "Failed to build submit reports for order list: {e}; awaiting WS reconciliation"
-                );
-                Ok(Vec::new())
-            }
-        }
+        let reports = signer.build_submit_orders_reports(orders, grouping, response);
+        Ok(self.resolve_submit_report(reports, payload_bytes))
     }
 
     /// Cancel an order through the Hyperliquid WebSocket post API.
@@ -1069,13 +1070,7 @@ impl HyperliquidWebSocketClient {
                     Err(e) => Ok(vec![Some(e.to_string()); request_count]),
                 }
             }
-            Ok(response) => Ok(vec![
-                Some(format!(
-                    "Cancel orders failed: {}",
-                    extract_error_message(&response)
-                ));
-                request_count
-            ]),
+            Ok(response) => Ok(self.cancel_response_errors(&response, request_count)),
             Err(e) => Err(e),
         }
     }
@@ -1093,14 +1088,108 @@ impl HyperliquidWebSocketClient {
             .await?;
 
         match response.response {
-            PostResponsePayload::Action { payload } => {
-                serde_json::from_value(payload).map_err(HyperliquidError::Serde)
-            }
+            PostResponsePayload::Action { payload } => self.parse_post_action_payload(&payload),
             PostResponsePayload::Error { payload } => Err(map_post_payload_error(payload, weight)),
-            PostResponsePayload::Info { payload } => Err(HyperliquidError::decode(format!(
-                "expected action post response, received info payload: {payload}"
-            ))),
+            PostResponsePayload::Info { payload } => Err(HyperliquidError::decode(
+                self.post_decode_context(&payload, "unexpected_info"),
+            )),
         }
+    }
+
+    fn response_bytes(response: &HyperliquidExchangeResponse) -> usize {
+        match response {
+            HyperliquidExchangeResponse::Status { response, .. } => response.to_string().len(),
+            HyperliquidExchangeResponse::Error { error } => error.len(),
+        }
+    }
+
+    fn resolve_submit_report<T: Default>(
+        &self,
+        result: HyperliquidResult<T>,
+        payload_bytes: usize,
+    ) -> T {
+        match result {
+            Ok(report) => report,
+            Err(_) => {
+                log::warn!(
+                    "Failed to build WebSocket submit report: class=order_status, client_id={}, payload_bytes={payload_bytes}, category=conversion; awaiting WS reconciliation",
+                    self.client_id,
+                );
+                T::default()
+            }
+        }
+    }
+
+    fn parse_post_action_payload(
+        &self,
+        payload: &serde_json::Value,
+    ) -> HyperliquidResult<HyperliquidExchangeResponse> {
+        HyperliquidExchangeResponse::deserialize(payload).map_err(|e| {
+            let category = format!("{:?}", e.classify());
+            let context = self.post_decode_context(payload, &category);
+            HyperliquidError::Serde(<serde_json::Error as serde::de::Error>::custom(context))
+        })
+    }
+
+    fn check_post_action_response(
+        &self,
+        parsed: HyperliquidExchangeResponse,
+    ) -> Result<HyperliquidExchangeResponse, PostRequestError> {
+        self.check_post_status(&parsed)
+            .map_err(PostRequestError::AfterDispatch)?;
+
+        match &parsed {
+            HyperliquidExchangeResponse::Status { status, response }
+                if status == RESPONSE_STATUS_ERR =>
+            {
+                let reason = response
+                    .as_str()
+                    .map_or_else(|| response.to_string(), str::to_string);
+                let error = HyperliquidError::bad_request(format!("API error: {reason}"));
+                Err(PostRequestError::Rejected {
+                    error,
+                    reason: extract_error_message(&parsed),
+                })
+            }
+            HyperliquidExchangeResponse::Error { error } => Err(PostRequestError::Rejected {
+                error: HyperliquidError::bad_request(format!("API error: {error}")),
+                reason: error.clone(),
+            }),
+            _ => Ok(parsed),
+        }
+    }
+
+    fn cancel_response_errors(
+        &self,
+        response: &HyperliquidExchangeResponse,
+        request_count: usize,
+    ) -> Vec<Option<String>> {
+        let reason = self
+            .check_post_status(response)
+            .err()
+            .map_or_else(|| extract_error_message(response), |e| e.to_string());
+        let reason = format!("Cancel orders failed: {reason}");
+        vec![Some(reason); request_count]
+    }
+
+    fn check_post_status(&self, parsed: &HyperliquidExchangeResponse) -> HyperliquidResult<()> {
+        if let HyperliquidExchangeResponse::Status { status, response } = parsed
+            && status != RESPONSE_STATUS_OK
+            && status != RESPONSE_STATUS_ERR
+        {
+            let context = self.post_decode_context(response, "unexpected_status");
+            return Err(HyperliquidError::bad_request(context));
+        }
+
+        Ok(())
+    }
+
+    fn post_decode_context(&self, payload: &serde_json::Value, category: &str) -> String {
+        format!(
+            "Invalid WebSocket post response: class=action, client_id={}, payload_bytes={}, category={category}",
+            self.client_id,
+            payload.to_string().len(),
+        )
     }
 
     /// Modify an order through the Hyperliquid WebSocket post API.
@@ -2717,6 +2806,171 @@ mod tests {
         websocket::handler::subscription_to_key,
     };
 
+    #[tokio::test]
+    async fn initialization_waits_for_acknowledgement() {
+        let mut ws_client = HyperliquidWebSocketClient::new(
+            None,
+            HyperliquidEnvironment::Testnet,
+            None,
+            TransportBackend::default(),
+            None,
+        );
+        let observer = ws_client.clone();
+        let mode = Arc::new(AtomicU8::new(ConnectionMode::Active as u8));
+        let (initialized_tx, initialized_rx) = tokio::sync::oneshot::channel();
+        let mut initialization =
+            Box::pin(ws_client.wait_for_initialization(initialized_rx, Arc::clone(&mode)));
+
+        let polled =
+            std::future::poll_fn(|cx| std::task::Poll::Ready(initialization.as_mut().poll(cx)))
+                .await;
+        assert!(polled.is_pending());
+        assert!(!observer.is_active());
+
+        initialized_tx.send(()).unwrap();
+        initialization.await.unwrap();
+
+        assert!(observer.is_active());
+        assert!(Arc::ptr_eq(&observer.connection_mode.load_full(), &mode));
+    }
+
+    #[rstest]
+    #[case::closed(false)]
+    #[case::timeout(true)]
+    #[tokio::test(start_paused = true)]
+    async fn initialization_failure_releases_runtime(#[case] timeout: bool) {
+        let mut ws_client = HyperliquidWebSocketClient::new(
+            None,
+            HyperliquidEnvironment::Testnet,
+            None,
+            TransportBackend::default(),
+            None,
+        );
+        ws_client.rate_limits = Arc::new(WebSocketRateLimits::new());
+        let available = ws_client.rate_limits.connection_slots.available_permits();
+        *ws_client.connection_permit.lock() = Some(
+            Arc::clone(&ws_client.rate_limits.connection_slots)
+                .try_acquire_owned()
+                .unwrap(),
+        );
+
+        let (_out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel();
+        ws_client.out_rx = Some(out_rx);
+        let (initialized_tx, initialized_rx) = tokio::sync::oneshot::channel();
+        let initialized_tx = timeout.then_some(initialized_tx);
+        let mode = Arc::new(AtomicU8::new(ConnectionMode::Active as u8));
+        let started = tokio::time::Instant::now();
+
+        let error = ws_client
+            .wait_for_initialization(initialized_rx, mode)
+            .await
+            .unwrap_err();
+        drop(initialized_tx);
+
+        let expected = if timeout {
+            "Hyperliquid WebSocket handler initialization timed out"
+        } else {
+            "Hyperliquid WebSocket handler stopped before initialization"
+        };
+
+        assert_eq!(error.to_string(), expected);
+        assert_eq!(
+            tokio::time::Instant::now() - started,
+            if timeout {
+                HTTP_TIMEOUT
+            } else {
+                Duration::ZERO
+            },
+        );
+        assert!(!ws_client.is_active());
+        assert!(ws_client.out_rx.is_none());
+        assert!(ws_client.task_handle.is_empty());
+        assert!(ws_client.connection_permit.lock().is_none());
+        assert_eq!(
+            ws_client.rate_limits.connection_slots.available_permits(),
+            available,
+        );
+    }
+
+    #[tokio::test]
+    async fn cancelled_initialization_rejects_stale_acknowledgement() {
+        let mut ws_client = HyperliquidWebSocketClient::new(
+            None,
+            HyperliquidEnvironment::Testnet,
+            None,
+            TransportBackend::default(),
+            None,
+        );
+        ws_client.rate_limits = Arc::new(WebSocketRateLimits::new());
+        let available = ws_client.rate_limits.connection_slots.available_permits();
+        *ws_client.connection_permit.lock() = Some(
+            Arc::clone(&ws_client.rate_limits.connection_slots)
+                .try_acquire_owned()
+                .unwrap(),
+        );
+
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let (stopped_tx, stopped_rx) = tokio::sync::oneshot::channel::<()>();
+        ws_client
+            .task_handle
+            .spawn(async move {
+                let _stopped_tx = stopped_tx;
+                started_tx.send(()).unwrap();
+                std::future::pending::<()>().await;
+            })
+            .unwrap();
+
+        started_rx.await.unwrap();
+        let observer = ws_client.clone();
+        let old_mode = Arc::new(AtomicU8::new(ConnectionMode::Active as u8));
+        let (old_tx, old_rx) = tokio::sync::oneshot::channel();
+        let mut initialization =
+            Box::pin(ws_client.wait_for_initialization(old_rx, Arc::clone(&old_mode)));
+        let polled =
+            std::future::poll_fn(|cx| std::task::Poll::Ready(initialization.as_mut().poll(cx)))
+                .await;
+        assert!(polled.is_pending());
+        drop(initialization);
+        assert!(
+            tokio::time::timeout(Duration::from_secs(1), stopped_rx)
+                .await
+                .unwrap()
+                .is_err(),
+        );
+        assert!(ws_client.connection_permit.lock().is_none());
+        ws_client.disconnect_locked().await.unwrap();
+
+        assert!(ws_client.task_handle.is_empty());
+        assert_eq!(
+            ws_client.rate_limits.connection_slots.available_permits(),
+            available,
+        );
+
+        let new_mode = Arc::new(AtomicU8::new(ConnectionMode::Active as u8));
+        let (new_tx, new_rx) = tokio::sync::oneshot::channel();
+        let mut initialization =
+            Box::pin(ws_client.wait_for_initialization(new_rx, Arc::clone(&new_mode)));
+        let polled =
+            std::future::poll_fn(|cx| std::task::Poll::Ready(initialization.as_mut().poll(cx)))
+                .await;
+        assert!(polled.is_pending());
+
+        assert_eq!(old_tx.send(()), Err(()));
+        assert!(!observer.is_active());
+        new_tx.send(()).unwrap();
+        initialization.await.unwrap();
+
+        assert!(observer.is_active());
+        assert!(Arc::ptr_eq(
+            &observer.connection_mode.load_full(),
+            &new_mode
+        ));
+        assert!(!Arc::ptr_eq(
+            &observer.connection_mode.load_full(),
+            &old_mode
+        ));
+    }
+
     #[rstest]
     fn cache_sender_reset_isolates_connection_generation() {
         let mut ws_client = HyperliquidWebSocketClient::new(
@@ -2798,8 +3052,11 @@ mod tests {
         assert!(cmd_rx.try_recv().is_err());
     }
 
+    #[rstest]
+    #[case::publication(false)]
+    #[case::readiness(true)]
     #[tokio::test]
-    async fn command_during_sender_publication_reaches_initialized_handler() {
+    async fn command_at_publication_or_readiness_reaches_handler(#[case] readiness: bool) {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         let (received_tx, mut received_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -2832,14 +3089,45 @@ mod tests {
             }],
         };
 
-        race_command_with_publication(
-            Arc::clone(&ws_client.cmd_tx),
-            ws_client.connect(),
-            move || command,
-            || observer.is_active(),
-        )
-        .await
-        .expect("connect failed");
+        if readiness {
+            let mut connect = Box::pin(ws_client.connect());
+            let mut command = Some(command);
+
+            let result = tokio::time::timeout(
+                Duration::from_secs(5),
+                std::future::poll_fn(|cx| {
+                    let polled = connect.as_mut().poll(cx);
+
+                    if observer.is_active()
+                        && let Some(command) = command.take()
+                    {
+                        assert!(polled.is_ready(), "readiness must follow initialization");
+                        observer.cmd_tx.try_read().unwrap().send(command).unwrap();
+                    }
+
+                    polled
+                }),
+            )
+            .await
+            .expect("connect must publish readiness");
+
+            result.expect("connect failed");
+            assert!(command.is_none(), "command must be sent at first readiness");
+        } else {
+            let publication_observer = observer.clone();
+            race_command_with_publication(
+                Arc::clone(&ws_client.cmd_tx),
+                ws_client.connect(),
+                move || {
+                    assert!(!publication_observer.is_active());
+                    command
+                },
+                || observer.is_active(),
+            )
+            .await
+            .expect("connect failed");
+        }
+
         let command_sender = ws_client.cmd_tx.read().await.clone();
         assert!(ws_client.cache_tx.lock().same_channel(&command_sender));
         let received = tokio::time::timeout(Duration::from_secs(2), received_rx.recv()).await;
@@ -2859,6 +3147,46 @@ mod tests {
                 }
             })
         );
+    }
+
+    #[tokio::test]
+    #[ignore = "connects to Hyperliquid mainnet public market data"]
+    async fn mainnet_initialization_routes_subscription() {
+        let http_client =
+            HyperliquidHttpClient::new(HyperliquidEnvironment::Mainnet, 15, None).unwrap();
+        let instruments = http_client.request_instruments().await.unwrap();
+        let instrument = instruments
+            .into_iter()
+            .find(|instrument| instrument.raw_symbol().as_str() == "BTC")
+            .expect("BTC perpetual must exist");
+        let instrument_id = instrument.id();
+
+        let mut ws_client = HyperliquidWebSocketClient::new(
+            None,
+            HyperliquidEnvironment::Mainnet,
+            None,
+            TransportBackend::default(),
+            None,
+        );
+        ws_client.cache_instrument(instrument);
+
+        ws_client.connect().await.unwrap();
+        assert!(ws_client.is_active());
+        ws_client.subscribe_trades(instrument_id).await.unwrap();
+        let received = tokio::time::timeout(Duration::from_secs(15), ws_client.next_event()).await;
+        ws_client.disconnect().await.unwrap();
+
+        let Some(NautilusWsMessage::Trades(trades)) = received.unwrap() else {
+            panic!("expected BTC trades after immediate subscription");
+        };
+
+        assert!(!trades.is_empty());
+        assert!(
+            trades
+                .iter()
+                .all(|trade| trade.instrument_id == instrument_id)
+        );
+        assert!(!ws_client.is_active());
     }
 
     #[rstest]
@@ -2987,6 +3315,225 @@ mod tests {
         let topic = subscription_topic(&subscription);
         let reconstructed = subscription_from_topic(&topic).expect("Failed to reconstruct");
         assert_eq!(subscription_topic(&reconstructed), topic);
+    }
+
+    #[rstest]
+    fn malformed_post_payload_errors_omit_private_data() {
+        let ws_client = HyperliquidWebSocketClient::new(
+            None,
+            HyperliquidEnvironment::Mainnet,
+            None,
+            TransportBackend::default(),
+            None,
+        );
+        let fixtures: serde_json::Value = serde_json::from_str(include_str!(
+            "../../test_data/ws_malformed_private_frames.json"
+        ))
+        .unwrap();
+
+        for payload in fixtures["post_valid_payloads"].as_array().unwrap() {
+            let parsed = ws_client.parse_post_action_payload(payload).unwrap();
+            assert_eq!(serde_json::to_value(parsed).unwrap(), *payload);
+        }
+
+        let payload = &fixtures["post_payload"];
+        let e = ws_client.parse_post_action_payload(payload).unwrap_err();
+        let diagnostic = e.to_string();
+        let unexpected =
+            HyperliquidError::decode(ws_client.post_decode_context(payload, "unexpected_info"))
+                .to_string();
+
+        assert!(matches!(e, HyperliquidError::Serde(_)));
+        assert_eq!(
+            diagnostic,
+            format!(
+                "serde error: Invalid WebSocket post response: class=action, client_id={}, payload_bytes={}, category=Data",
+                ws_client.client_id,
+                payload.to_string().len()
+            )
+        );
+        assert_eq!(
+            unexpected,
+            format!(
+                "decode error: Invalid WebSocket post response: class=action, client_id={}, payload_bytes={}, category=unexpected_info",
+                ws_client.client_id,
+                payload.to_string().len()
+            )
+        );
+
+        for secret in fixtures["secrets"].as_array().unwrap() {
+            let secret = secret.as_str().unwrap();
+            assert!(!diagnostic.contains(secret));
+            assert!(!unexpected.contains(secret));
+        }
+    }
+
+    #[rstest]
+    #[case("post_unexpected_status", "post_unexpected_status_bytes")]
+    #[case("post_unexpected_status_string", "post_unexpected_status_string_bytes")]
+    fn unknown_post_status_omits_private_data(#[case] payload_key: &str, #[case] bytes_key: &str) {
+        let ws_client = HyperliquidWebSocketClient::new(
+            None,
+            HyperliquidEnvironment::Mainnet,
+            None,
+            TransportBackend::default(),
+            None,
+        );
+        let fixtures: serde_json::Value = serde_json::from_str(include_str!(
+            "../../test_data/ws_malformed_private_frames.json"
+        ))
+        .unwrap();
+        let parsed = ws_client
+            .parse_post_action_payload(&fixtures[payload_key])
+            .unwrap();
+        let cancel_errors = ws_client.cancel_response_errors(&parsed, 2);
+        let failure = ws_client.check_post_action_response(parsed).unwrap_err();
+
+        let PostRequestError::AfterDispatch(e) = failure else {
+            panic!("unknown status must remain an ambiguous dispatched result");
+        };
+
+        let diagnostic = e.to_string();
+        let debug = format!("{e:?}");
+        let success = ws_client
+            .parse_post_action_payload(&fixtures["post_valid_payloads"][0])
+            .unwrap();
+        let success = ws_client.check_post_action_response(success).unwrap();
+        let rejected = ws_client
+            .parse_post_action_payload(&fixtures["post_business_rejection"])
+            .unwrap();
+        let cancel_rejections = ws_client.cancel_response_errors(&rejected, 3);
+        let rejected = ws_client.check_post_action_response(rejected).unwrap_err();
+
+        let PostRequestError::Rejected { error, reason } = rejected else {
+            panic!("known rejection must remain rejected");
+        };
+
+        assert!(matches!(&e, HyperliquidError::BadRequest(_)));
+        assert_eq!(
+            cancel_errors,
+            vec![Some(format!("Cancel orders failed: {diagnostic}")); 2]
+        );
+        assert_eq!(
+            cancel_rejections,
+            vec![Some("Cancel orders failed: Known venue rejection".to_string()); 3]
+        );
+        assert_eq!(
+            diagnostic,
+            format!(
+                "bad request: Invalid WebSocket post response: class=action, client_id={}, payload_bytes={}, category=unexpected_status",
+                ws_client.client_id,
+                fixtures[bytes_key].as_u64().unwrap(),
+            )
+        );
+        assert_eq!(
+            serde_json::to_value(success).unwrap(),
+            fixtures["post_valid_payloads"][0]
+        );
+        assert!(matches!(&error, HyperliquidError::BadRequest(_)));
+        assert_eq!(
+            error.to_string(),
+            "bad request: API error: Known venue rejection"
+        );
+        assert_eq!(reason, "Known venue rejection");
+
+        for secret in fixtures["secrets"].as_array().unwrap() {
+            let secret = secret.as_str().unwrap();
+            assert!(!diagnostic.contains(secret));
+            assert!(!debug.contains(secret));
+            assert!(
+                cancel_errors
+                    .iter()
+                    .all(|reason| !reason.as_ref().unwrap().contains(secret))
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn malformed_submit_report_logs_omit_private_data() {
+        let _capture = crate::websocket::handler::tests::capture_logs().await;
+
+        let ws_client = HyperliquidWebSocketClient::new(
+            None,
+            HyperliquidEnvironment::Mainnet,
+            None,
+            TransportBackend::default(),
+            None,
+        );
+        let signer = HyperliquidHttpClient::new(HyperliquidEnvironment::Mainnet, 10, None).unwrap();
+        let fixtures: serde_json::Value = serde_json::from_str(include_str!(
+            "../../test_data/ws_malformed_private_frames.json"
+        ))
+        .unwrap();
+        let mut expected = Vec::new();
+
+        for (payload, expected_bytes) in fixtures["post_report_payloads"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .zip(fixtures["post_report_payload_bytes"].as_array().unwrap())
+        {
+            let response: HyperliquidExchangeResponse =
+                serde_json::from_value(payload.clone()).unwrap();
+            ensure_ws_action_accepted(&response, "Order submission").unwrap();
+            let payload_bytes = HyperliquidWebSocketClient::response_bytes(&response);
+            assert_eq!(payload_bytes as u64, expected_bytes.as_u64().unwrap());
+            let single = signer.build_submit_order_report(
+                InstrumentId::from("BTC-PERP.HYPERLIQUID"),
+                ClientOrderId::from("PRIVATE_ORDER_SENTINEL"),
+                OrderSide::Buy,
+                OrderType::Limit,
+                Quantity::from("1"),
+                TimeInForce::Gtc,
+                Some(Price::from("12345")),
+                None,
+                response.clone(),
+            );
+            let batch =
+                signer.build_submit_orders_reports(&[], HyperliquidExchangeGrouping::Na, response);
+
+            for e in [single.as_ref().unwrap_err(), batch.as_ref().unwrap_err()] {
+                assert!(
+                    fixtures["secrets"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|secret| e.to_string().contains(secret.as_str().unwrap()))
+                );
+                expected.push(format!(
+                    "Failed to build WebSocket submit report: class=order_status, client_id={}, payload_bytes={payload_bytes}, category=conversion; awaiting WS reconciliation",
+                    ws_client.client_id,
+                ));
+            }
+
+            let single = ws_client.resolve_submit_report(single, payload_bytes);
+            let batch = ws_client.resolve_submit_report(batch, payload_bytes);
+            assert!(single.is_none());
+            assert_eq!(batch.len(), 0);
+        }
+
+        let success = ws_client.resolve_submit_report(Ok(Some(42_u64)), 123);
+        assert_eq!(success, Some(42));
+        let messages = crate::websocket::handler::tests::captured_logs();
+
+        let diagnostics: Vec<_> = messages
+            .iter()
+            .filter(|message| {
+                message.starts_with("Failed to build WebSocket submit report:")
+                    && message.contains(&format!("client_id={},", ws_client.client_id))
+            })
+            .cloned()
+            .collect();
+
+        assert_eq!(diagnostics, expected);
+
+        for secret in fixtures["secrets"].as_array().unwrap() {
+            assert!(
+                messages
+                    .iter()
+                    .all(|message| !message.contains(secret.as_str().unwrap()))
+            );
+        }
     }
 
     #[rstest]

@@ -2302,8 +2302,12 @@ pub(crate) fn cap_order_report_filled_qty(
     let confirmed_filled = confirmed_filled
         .and_then(|qty| Quantity::from_decimal_dp(qty, report.quantity.precision).ok())
         .unwrap_or_else(|| Quantity::zero(report.quantity.precision));
+
     let capped = report.filled_qty.min(local_filled.max(confirmed_filled));
     report.filled_qty = capped;
+    if report.order_status == OrderStatus::PartiallyFilled && capped.is_zero() {
+        report.order_status = OrderStatus::Accepted;
+    }
 
     normalize_terminal_order_report_quantity(report, non_reopened_voided);
 }

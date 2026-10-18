@@ -82,6 +82,7 @@ pub fn channel_message_handler() -> (
     tokio::sync::mpsc::UnboundedReceiver<tokio_tungstenite::tungstenite::Message>,
 ) {
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+
     let handler: MessageHandler = Arc::new(move |msg: Message| {
         match tokio_tungstenite::tungstenite::Message::try_from(msg) {
             Ok(legacy) => {
@@ -92,6 +93,7 @@ pub fn channel_message_handler() -> (
             Err(e) => log::debug!("Dropping message that failed legacy conversion: {e}"),
         }
     });
+
     (handler, rx)
 }
 
@@ -104,6 +106,7 @@ pub fn channel_epoch_message_handler() -> (
     tokio::sync::mpsc::UnboundedReceiver<(u64, tokio_tungstenite::tungstenite::Message)>,
 ) {
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+
     let handler: EpochMessageHandler =
         Arc::new(
             move |epoch, msg: Message| match tokio_tungstenite::tungstenite::Message::try_from(msg)
@@ -116,6 +119,7 @@ pub fn channel_epoch_message_handler() -> (
                 Err(e) => log::debug!("Dropping message that failed legacy conversion: {e}"),
             },
         );
+
     (handler, rx)
 }
 
@@ -198,6 +202,7 @@ mod tests {
 
         let (connection_epoch, received) = rx.try_recv().expect("text should arrive");
         assert_eq!(connection_epoch, 7);
+
         match received {
             TgMessage::Text(text) => assert_eq!(text.as_str(), "hello"),
             other => panic!("expected text, was {other:?}"),

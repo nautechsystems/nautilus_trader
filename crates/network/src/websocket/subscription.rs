@@ -187,6 +187,7 @@ impl SubscriptionState {
         {
             return true;
         }
+
         false
     }
 
@@ -406,7 +407,6 @@ impl SubscriptionState {
             self.reference_counts.entry(topic_ustr)
         {
             let current = entry.get().get();
-
             if current == 1 {
                 entry.remove();
                 return true;
@@ -1503,6 +1503,7 @@ mod tests {
                     state_clone.add_reference(topic);
                 }
             });
+
             handles.push(handle);
         }
 
@@ -1582,6 +1583,7 @@ mod tests {
                 state_clone.mark_subscribe("tickers.BTCUSDT");
                 state_clone.confirm_subscribe("tickers.BTCUSDT");
             });
+
             handles.push(handle);
         }
 
@@ -1616,6 +1618,7 @@ mod tests {
                 // Remove 1 reference (should still have 1 remaining)
                 state_clone.remove_reference(&topic);
             });
+
             handles.push(handle);
         }
 
@@ -1670,6 +1673,7 @@ mod tests {
                 // Confirm topic2
                 state_clone.confirm_subscribe(&topic2);
             });
+
             handles.push(handle);
         }
 
@@ -1678,6 +1682,7 @@ mod tests {
         }
 
         let actual = state.all_topics().into_iter().collect::<AHashSet<_>>();
+
         let expected = (0..50)
             .flat_map(|i| {
                 let topic2 = format!("channel.SYMBOL{}", i + 100);
@@ -1721,6 +1726,7 @@ mod tests {
                 // Subscribe ACK arrives
                 state_clone.confirm_subscribe(&topic);
             });
+
             handles.push(handle);
         }
 
@@ -1755,6 +1761,7 @@ mod tests {
                     state_clone.confirm_subscribe(&topic); // Re-confirm after retry
                 }
             });
+
             handles.push(handle);
         }
 
@@ -2042,6 +2049,7 @@ mod tests {
                     .map(|(topic, _state)| topic.clone())
                     .collect::<AHashSet<_>>()
             };
+
             let confirmed = state
                 .topics_from_map(&state.confirmed)
                 .into_iter()

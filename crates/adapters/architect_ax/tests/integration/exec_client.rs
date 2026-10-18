@@ -23,10 +23,12 @@ use std::{cell::RefCell, collections::HashSet, net::SocketAddr, rc::Rc, time::Du
 use nautilus_architect_ax::{
     common::{
         consts::{AX_CLIENT_ID, AX_VENUE},
+        credential::Credential,
         enums::AxEnvironment,
     },
     config::AxExecutionClientConfig,
     execution::AxExecutionClient,
+    http::{models::AxInstrumentsResponse, parse::parse_instrument},
 };
 use nautilus_common::{
     cache::Cache,
@@ -46,15 +48,26 @@ use nautilus_common::{
     testing::wait_until_async,
 };
 use nautilus_core::{UUID4, UnixNanos};
-use nautilus_live::{ExecutionClientCore, SocketReconnectRegistry, SocketReconnectRequestOutcome};
+use nautilus_live::{
+    ExecutionClientCore, SocketReconnectRegistry, SocketReconnectRequestOutcome,
+    manager::{ExecutionManager, ExecutionManagerConfig},
+    testing::ExecutionHarness,
+};
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
-    enums::{AccountType, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType},
+    enums::{
+        AccountType, OmsType, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
+        TriggerType,
+    },
     events::{AccountState, OrderAccepted, OrderCanceled, OrderEventAny, OrderRejected},
     identifiers::{
-        AccountId, ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId, VenueOrderId,
+        AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, TraderId,
+        VenueOrderId,
     },
-    orders::{LimitOrder, Order, OrderAny, builder::OrderTestBuilder},
+    instruments::{Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
+    orders::{LimitOrder, Order, OrderAny, builder::OrderTestBuilder, stubs::TestOrderEventStubs},
+    position::Position,
+    reports::{OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, Money, Price, Quantity},
 };
 use rstest::rstest;
@@ -765,8 +778,15 @@ async fn test_cancel_all_orders_with_side_and_empty_cache_sends_nothing() {
 }
 
 #[rstest]
+#[case::short(Some(60), 60 * 60 * 1_000_000_000)]
+#[case::long(Some(60 * 24 * 30), 7 * 24 * 60 * 60 * 1_000_000_000)]
+#[case::default(None, 7 * 24 * 60 * 60 * 1_000_000_000)]
+#[case::zero(Some(0), 1)]
 #[tokio::test]
-async fn test_generate_mass_status_declares_bounded_lookback_window() {
+async fn test_generate_mass_status_declares_bounded_lookback_window(
+    #[case] lookback_mins: Option<u64>,
+    #[case] expected_span_ns: u64,
+) {
     let (addr, state) = start_test_server().await.unwrap();
     *state.open_orders_payload.lock().await = Some(serde_json::json!({ "orders": [] }));
     *state.orders_payload.lock().await = Some(serde_json::json!({ "orders": [] }));
@@ -779,41 +799,597 @@ async fn test_generate_mass_status_declares_bounded_lookback_window() {
     client.connect().await.expect("Failed to connect");
     drain_rx(&mut rx);
 
-    let before = nautilus_core::time::get_atomic_clock_realtime().get_time_ns();
-
     let mass_status = client
-        .generate_mass_status(Some(60))
+        .generate_mass_status(lookback_mins)
         .await
         .unwrap()
         .expect("mass status");
+    let expected_start = mass_status.ts_init.as_u64() - expected_span_ns;
 
-    let lookback_start = mass_status
-        .lookback_start()
-        .expect("bounded lookback must be declared on the mass status");
-    let after = nautilus_core::time::get_atomic_clock_realtime().get_time_ns();
-
-    // A one-hour lookback must not be floored to the fills coverage cap
-    let hour_ns = 60 * 60 * 1_000_000_000;
-    assert!(lookback_start.as_i64() > after.as_i64() - hour_ns - 5_000_000_000);
-    assert!(lookback_start.as_i64() < before.as_i64());
-
-    // A lookback past the fills cap declares that cap
-    let mass_status = client
-        .generate_mass_status(Some(60 * 24 * 30))
-        .await
-        .unwrap()
-        .expect("mass status");
-
-    let lookback_start = mass_status
-        .lookback_start()
-        .expect("bounded lookback must be declared on the mass status");
-    let fills_cap_ns = 7 * 24 * 60 * 60 * 1_000_000_000;
-    assert!(
-        lookback_start.as_i64() > after.as_i64() - fills_cap_ns - 5_000_000_000,
-        "declared window must not precede the fills coverage floor"
+    assert_eq!(
+        mass_status.lookback_start(),
+        Some(UnixNanos::from(expected_start))
     );
+    assert!(mass_status.reports_complete());
+    let queries = state.fills_queries.lock().await;
+    assert_eq!(queries.len(), 1);
+    assert_eq!(queries[0].start_timestamp_ns, expected_start as i64);
+    assert_eq!(queries[0].end_timestamp_ns, mass_status.ts_init.as_i64());
 
     client.disconnect().await.expect("Failed to disconnect");
+}
+
+#[rstest]
+#[case::long(OrderSide::Buy, OrderSide::Sell)]
+#[case::short(OrderSide::Sell, OrderSide::Buy)]
+#[tokio::test]
+async fn test_generate_mass_status_recovers_cached_position_closed_offline(
+    #[case] side_open: OrderSide,
+    #[case] side_close: OrderSide,
+) {
+    let (addr, state) = start_test_server().await.unwrap();
+    let instruments: AxInstrumentsResponse =
+        serde_json::from_value(load_test_data("http_get_instruments.json")).unwrap();
+    let instrument = parse_instrument(
+        &instruments.instruments[0],
+        UnixNanos::default(),
+        UnixNanos::default(),
+    )
+    .unwrap();
+    let instrument_id = instrument.id();
+    let trader_id = TraderId::from("TESTER-001");
+    let account_id = AccountId::from("AX-001");
+    let strategy_id = StrategyId::from("S-001");
+    let harness = ExecutionHarness::new(trader_id, *AX_CLIENT_ID, account_id, instrument.clone());
+    add_test_account_to_cache(harness.cache(), account_id);
+    let position = add_retained_position(
+        harness.cache(),
+        &instrument,
+        account_id,
+        strategy_id,
+        side_open,
+    );
+    let position_id = position.id;
+    let closing = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .client_order_id(ClientOrderId::from("O-CLOSE"))
+        .side(side_close)
+        .quantity(Quantity::from("100"))
+        .price(Price::from("1.0845"))
+        .time_in_force(TimeInForce::Gtc)
+        .build();
+    let venue_order_id = VenueOrderId::from("O-01ARZ3NDEKTSV4RRFFQ69G5FAV");
+    let accepted = TestOrderEventStubs::accepted(&closing, account_id, venue_order_id);
+    harness
+        .cache()
+        .borrow_mut()
+        .add_order(closing, Some(position_id), Some(*AX_CLIENT_ID), false)
+        .unwrap();
+    harness
+        .cache()
+        .borrow_mut()
+        .update_order(&accepted)
+        .unwrap();
+    harness
+        .exec_engine()
+        .borrow_mut()
+        .register_oms_type(strategy_id, OmsType::Netting);
+    assert_eq!(
+        harness
+            .cache()
+            .borrow()
+            .position(&position_id)
+            .unwrap()
+            .quantity,
+        Quantity::from("100")
+    );
+
+    let now = nautilus_core::time::get_atomic_clock_realtime()
+        .get_time_ns()
+        .as_u64()
+        - 1_000_000_000;
+
+    let direction = if side_close == OrderSide::Buy {
+        "B"
+    } else {
+        "S"
+    };
+
+    let mut orders = load_test_data("http_get_orders.json");
+    orders["orders"].as_array_mut().unwrap().truncate(1);
+    let order = &mut orders["orders"][0];
+    order["ts"] = serde_json::json!(now / 1_000_000_000);
+    order["tn"] = serde_json::json!(now % 1_000_000_000);
+    order["o"] = serde_json::json!("FILLED");
+    order["d"] = serde_json::json!(direction);
+    order["p"] = serde_json::json!("1.0845");
+    order["q"] = serde_json::json!(100);
+    order["xq"] = serde_json::json!(100);
+    order["rq"] = serde_json::json!(0);
+    order["cid"] = serde_json::Value::Null;
+    let mut fills = load_test_data("http_get_fills.json");
+    fills["fills"].as_array_mut().unwrap().truncate(1);
+    fills["fills"][0]["quantity"] = serde_json::json!(100);
+    fills["fills"][0]["side"] = serde_json::json!(direction);
+    fills["fills"][0]["timestamp"] = serde_json::json!(
+        jiff::Timestamp::from_nanosecond(i128::from(now))
+            .unwrap()
+            .to_string()
+    );
+    *state.open_orders_payload.lock().await = Some(serde_json::json!({"orders": []}));
+    *state.orders_payload.lock().await = Some(orders);
+    *state.fills_payload.lock().await = Some(fills);
+    *state.positions_payload.lock().await = Some(serde_json::json!({"positions": []}));
+
+    let core = ExecutionClientCore::new(
+        trader_id,
+        *AX_CLIENT_ID,
+        *AX_VENUE,
+        OmsType::Netting,
+        account_id,
+        AccountType::Margin,
+        None,
+        harness.cache().clone(),
+    );
+    let mut client = AxExecutionClient::new(core, create_test_exec_config(addr)).unwrap();
+    client.connect().await.unwrap();
+    let mass_status = client.generate_mass_status(None).await.unwrap().unwrap();
+    client.disconnect().await.unwrap();
+    harness.register_client(Box::new(client)).unwrap();
+    let mut manager = ExecutionManager::new(
+        harness.clock().clone(),
+        harness.cache().clone(),
+        ExecutionManagerConfig::default(),
+    )
+    .unwrap();
+    let result = manager.reconcile_execution_mass_status(&mass_status, harness.exec_engine());
+    let cache = harness.cache().borrow();
+    let recovered = cache.position(&position_id).unwrap();
+
+    assert!(result.unresolved_positions.is_empty());
+    assert!(recovered.is_closed());
+    assert_eq!(recovered.quantity, Quantity::zero(0));
+    assert_eq!(recovered.strategy_id, strategy_id);
+    assert_eq!(
+        cache
+            .order(&ClientOrderId::from("O-CLOSE"))
+            .unwrap()
+            .status(),
+        OrderStatus::Filled
+    );
+    assert_eq!(
+        cache
+            .positions_open(None, None, None, Some(&account_id), None)
+            .len(),
+        0
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_mass_status_scopes_cached_flat_reports() {
+    let (addr, state) = start_test_server().await.unwrap();
+    *state.open_orders_payload.lock().await = Some(serde_json::json!({"orders": []}));
+    *state.orders_payload.lock().await = Some(serde_json::json!({"orders": []}));
+    *state.fills_payload.lock().await = Some(serde_json::json!({"fills": []}));
+    *state.positions_payload.lock().await = Some(serde_json::json!({"positions": []}));
+    let instruments: AxInstrumentsResponse =
+        serde_json::from_value(load_test_data("http_get_instruments.json")).unwrap();
+    let instrument = parse_instrument(
+        &instruments.instruments[0],
+        UnixNanos::default(),
+        UnixNanos::default(),
+    )
+    .unwrap();
+    let instrument_other_account = parse_instrument(
+        &instruments.instruments[1],
+        UnixNanos::default(),
+        UnixNanos::default(),
+    )
+    .unwrap();
+    let instrument_second = parse_instrument(
+        &instruments.instruments[2],
+        UnixNanos::default(),
+        UnixNanos::default(),
+    )
+    .unwrap();
+    let foreign_instrument: InstrumentAny = crypto_perpetual_ethusdt().into();
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    let account_id = AccountId::from("AX-001");
+    add_test_account_to_cache(&cache, account_id);
+    let retained_second = add_retained_position(
+        &cache,
+        &instrument_second,
+        account_id,
+        StrategyId::from("S-004"),
+        OrderSide::Sell,
+    );
+    let retained = add_retained_position(
+        &cache,
+        &instrument,
+        account_id,
+        StrategyId::from("S-001"),
+        OrderSide::Buy,
+    );
+    let other_account = add_retained_position(
+        &cache,
+        &instrument_other_account,
+        AccountId::from("AX-002"),
+        StrategyId::from("S-002"),
+        OrderSide::Sell,
+    );
+    let other_venue = add_retained_position(
+        &cache,
+        &foreign_instrument,
+        account_id,
+        StrategyId::from("S-003"),
+        OrderSide::Buy,
+    );
+    client.connect().await.unwrap();
+
+    let mass_status = client.generate_mass_status(None).await.unwrap().unwrap();
+    client.disconnect().await.unwrap();
+    let positions = mass_status.position_reports();
+    assert_eq!(
+        positions.keys().copied().collect::<Vec<_>>(),
+        vec![instrument.id(), instrument_second.id()]
+    );
+
+    for retained in [&retained, &retained_second] {
+        let reports = &positions[&retained.instrument_id];
+        let report = &reports[0];
+
+        let expected = PositionStatusReport::new(
+            account_id,
+            retained.instrument_id,
+            PositionSide::Flat,
+            Quantity::zero(retained.quantity.precision),
+            mass_status.ts_init,
+            mass_status.ts_init,
+            Some(report.report_id),
+            None,
+            None,
+        );
+
+        assert_eq!(reports.len(), 1);
+        assert_eq!(*report, expected);
+    }
+
+    assert_eq!(
+        cache.borrow().position(&other_account.id).unwrap().quantity,
+        other_account.quantity
+    );
+    assert_eq!(
+        cache.borrow().position(&other_venue.id).unwrap().quantity,
+        other_venue.quantity
+    );
+}
+
+fn add_retained_position(
+    cache: &Rc<RefCell<Cache>>,
+    instrument: &InstrumentAny,
+    account_id: AccountId,
+    strategy_id: StrategyId,
+    side: OrderSide,
+) -> Position {
+    let position_id = PositionId::from(format!("{}-{strategy_id}", instrument.id()));
+    let quantity = Quantity::from_decimal_dp(dec!(100), instrument.size_precision()).unwrap();
+    let price = Price::from_decimal_dp(dec!(1), instrument.price_precision()).unwrap();
+    let opening = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(TraderId::from("TESTER-001"))
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::from(format!("OPEN-{strategy_id}")))
+        .side(side)
+        .quantity(quantity)
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &opening,
+        instrument,
+        Some(TradeId::from(format!("T-OPEN-{strategy_id}"))),
+        Some(position_id),
+        Some(price),
+        Some(quantity),
+        None,
+        Some(Money::from("0.02 USD")),
+        Some(UnixNanos::from(1_000_000_000)),
+        Some(account_id),
+    );
+    let position = Position::new(instrument, fill.clone().into());
+    let accepted = TestOrderEventStubs::accepted(
+        &opening,
+        account_id,
+        VenueOrderId::from(format!("V-OPEN-{strategy_id}")),
+    );
+    let mut cache = cache.borrow_mut();
+    cache.add_position(&position, OmsType::Netting).unwrap();
+    cache
+        .add_order(opening, None, Some(*AX_CLIENT_ID), false)
+        .unwrap();
+    cache.update_order(&accepted).unwrap();
+    cache.update_order(&fill).unwrap();
+    position
+}
+
+#[rstest]
+#[case::invalid_qty("quantity")]
+#[case::malformed_row("malformed")]
+#[tokio::test]
+async fn test_generate_mass_status_rejects_invalid_position_snapshot(#[case] invalid: &str) {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("AX-001"));
+    client.connect().await.unwrap();
+    drain_rx(&mut rx);
+    let mut positions = load_test_data("http_get_positions.json");
+    positions["positions"][0]["symbol"] = serde_json::json!("EURUSD-PERP");
+    positions["positions"][1]["symbol"] = serde_json::json!("XAU-PERP");
+    if invalid == "quantity" {
+        positions["positions"][1]["signed_quantity"] = serde_json::json!(i64::MAX);
+    } else {
+        positions["positions"][1]["signed_quantity"] = serde_json::json!("invalid");
+    }
+
+    *state.positions_payload.lock().await = Some(positions);
+
+    let result = client.generate_mass_status(None).await;
+    client.disconnect().await.unwrap();
+    let error = format!("{:#}", result.unwrap_err());
+
+    if invalid == "quantity" {
+        assert!(
+            error.contains("failed to parse AX position for XAU-PERP"),
+            "{error}"
+        );
+    } else {
+        assert!(error.contains("invalid type"), "{error}");
+    }
+}
+
+#[rstest]
+#[case::block_trade(false)]
+#[case::final_settlement(true)]
+#[tokio::test]
+async fn test_generate_mass_status_gives_special_fills_order_evidence(
+    #[case] is_final_settlement: bool,
+) {
+    let (addr, state) = start_test_server().await.unwrap();
+    *state.open_orders_payload.lock().await = Some(serde_json::json!({ "orders": [] }));
+    *state.orders_payload.lock().await = Some(serde_json::json!({ "orders": [] }));
+    *state.positions_payload.lock().await = Some(serde_json::json!({ "positions": [] }));
+    let mut fills = load_test_data("http_get_fills.json");
+    fills["fills"].as_array_mut().unwrap().truncate(1);
+    fills["total_count"] = serde_json::json!(1);
+    let fill = &mut fills["fills"][0];
+    fill["order_id"] = serde_json::Value::Null;
+    fill["is_block_trade"] = serde_json::json!(true);
+    fill["is_final_settlement"] = serde_json::json!(is_final_settlement);
+    *state.fills_payload.lock().await = Some(fills);
+
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("AX-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    drain_rx(&mut rx);
+
+    let mass_status = client.generate_mass_status(None).await.unwrap().unwrap();
+    let repeated = client.generate_mass_status(None).await.unwrap().unwrap();
+    let order_reports = mass_status.order_reports();
+    let fill_reports = mass_status.fill_reports();
+    let venue_order_id = VenueOrderId::from("AX-FILL-T-01ARZ3NDEKTSV4RRFFQ69G5FAV");
+    let order = order_reports
+        .get(&venue_order_id)
+        .expect("special-fill order");
+    let fills = fill_reports.get(&venue_order_id).expect("special fill");
+    let fill = &fills[0];
+    let expected = OrderStatusReport::new(
+        AccountId::from("AX-001"),
+        InstrumentId::from("EURUSD-PERP.AX"),
+        None,
+        venue_order_id,
+        Some(OrderSide::Buy),
+        OrderType::Market,
+        TimeInForce::Gtc,
+        OrderStatus::Filled,
+        Quantity::from("500"),
+        Quantity::from("500"),
+        UnixNanos::from(1_705_314_645_000_000_000_u64),
+        UnixNanos::from(1_705_314_645_000_000_000_u64),
+        fill.ts_init,
+        Some(order.report_id),
+    )
+    .with_avg_px(dec!(1.08450));
+
+    assert_eq!(order_reports.len(), 1);
+    assert_eq!(fill_reports.len(), 1);
+    assert_eq!(fills.len(), 1);
+    assert_eq!(
+        repeated.order_reports().keys().collect::<HashSet<_>>(),
+        order_reports.keys().collect::<HashSet<_>>()
+    );
+    assert_eq!(
+        repeated.fill_reports()[&venue_order_id][0].trade_id,
+        fill.trade_id
+    );
+    assert_eq!(*order, expected);
+    assert_eq!(fill.trade_id, TradeId::from("T-01ARZ3NDEKTSV4RRFFQ69G5FAV"));
+    assert_eq!(fill.last_qty, Quantity::from("500"));
+    assert_eq!(fill.last_px, Price::from("1.08450"));
+    assert_eq!(
+        mass_status.lookback_start(),
+        Some(UnixNanos::from(
+            mass_status.ts_init.as_u64() - 7 * 24 * 60 * 60 * 1_000_000_000,
+        ))
+    );
+    assert!(mass_status.reports_complete());
+    assert!(mass_status.position_reports().is_empty());
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::default(None, 7 * 24 * 60 * 60 * 1_000_000_000)]
+#[case::zero(Some(0), 1)]
+#[tokio::test]
+#[ignore = "requires AX sandbox credentials; reads live account reports"]
+async fn test_live_mass_status_declares_fill_window_sandbox(
+    #[case] lookback_mins: Option<u64>,
+    #[case] expected_span_ns: u64,
+) {
+    let credential = Credential::resolve(None, None).expect("AX sandbox credentials");
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let account_id = AccountId::from("AX-001");
+    add_test_account_to_cache(&cache, account_id);
+
+    let core = ExecutionClientCore::new(
+        TraderId::from("TESTER-001"),
+        *AX_CLIENT_ID,
+        *AX_VENUE,
+        OmsType::Netting,
+        account_id,
+        AccountType::Margin,
+        None,
+        cache,
+    );
+
+    let config = AxExecutionClientConfig {
+        api_key: Some(credential.api_key().to_owned().into()),
+        api_secret: Some(credential.api_secret().to_owned().into()),
+        environment: AxEnvironment::Sandbox,
+        ..Default::default()
+    };
+
+    let _rx = setup_exec_channel();
+    let mut client = AxExecutionClient::new(core, config).unwrap();
+    client.connect().await.unwrap();
+    let result = client.generate_mass_status(lookback_mins).await;
+    client.disconnect().await.unwrap();
+    let mass_status = result.unwrap().unwrap();
+
+    assert_eq!(
+        mass_status.lookback_start(),
+        Some(UnixNanos::from(
+            mass_status.ts_init.as_u64() - expected_span_ns,
+        ))
+    );
+    assert!(mass_status.reports_complete());
+    let orders = mass_status.order_reports();
+    for (venue_order_id, fills) in mass_status.fill_reports() {
+        let order = orders
+            .get(&venue_order_id)
+            .expect("live fills have order evidence");
+        assert_eq!(order.account_id, account_id);
+
+        for fill in fills {
+            assert_eq!(fill.account_id, account_id);
+            assert_eq!(fill.instrument_id, order.instrument_id);
+            assert_eq!(fill.venue_order_id, order.venue_order_id);
+        }
+    }
+}
+
+#[rstest]
+#[tokio::test]
+#[ignore = "requires AX sandbox credentials and a flat EURUSD position; reads live reports"]
+async fn test_live_mass_status_recovers_cached_flat_position_sandbox() {
+    let credential = Credential::resolve(None, None).expect("AX sandbox credentials");
+    let instruments: AxInstrumentsResponse =
+        serde_json::from_value(load_test_data("http_get_instruments.json")).unwrap();
+    let instrument = parse_instrument(
+        &instruments.instruments[0],
+        UnixNanos::default(),
+        UnixNanos::default(),
+    )
+    .unwrap();
+    let trader_id = TraderId::from("TESTER-001");
+    let account_id = AccountId::from("AX-001");
+    let strategy_id = StrategyId::external();
+    let harness = ExecutionHarness::new(trader_id, *AX_CLIENT_ID, account_id, instrument.clone());
+    add_test_account_to_cache(harness.cache(), account_id);
+
+    let core = ExecutionClientCore::new(
+        trader_id,
+        *AX_CLIENT_ID,
+        *AX_VENUE,
+        OmsType::Netting,
+        account_id,
+        AccountType::Margin,
+        None,
+        harness.cache().clone(),
+    );
+
+    let config = AxExecutionClientConfig {
+        api_key: Some(credential.api_key().to_owned().into()),
+        api_secret: Some(credential.api_secret().to_owned().into()),
+        environment: AxEnvironment::Sandbox,
+        ..Default::default()
+    };
+
+    let mut client = AxExecutionClient::new(core, config).unwrap();
+    client.connect().await.unwrap();
+
+    let cmd = GeneratePositionStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(instrument.id()),
+        None,
+        None,
+        None,
+        None,
+    );
+    let live_positions = client.generate_position_status_reports(&cmd).await.unwrap();
+    assert!(
+        live_positions
+            .iter()
+            .all(|report| report.quantity.is_zero()),
+        "Sandbox EURUSD must be flat for this read-only recovery check"
+    );
+    let instrument = harness
+        .cache()
+        .borrow()
+        .instrument(&instrument.id())
+        .unwrap()
+        .clone();
+    let retained = add_retained_position(
+        harness.cache(),
+        &instrument,
+        account_id,
+        strategy_id,
+        OrderSide::Buy,
+    );
+    let result = client.generate_mass_status(Some(0)).await;
+    client.disconnect().await.unwrap();
+    let mass_status = result.unwrap().unwrap();
+    let positions = mass_status.position_reports();
+    let flat = &positions[&instrument.id()][0];
+    assert_eq!(flat.position_side, PositionSide::Flat);
+    assert_eq!(flat.quantity, Quantity::zero(instrument.size_precision()));
+    harness.register_client(Box::new(client)).unwrap();
+    let mut manager = ExecutionManager::new(
+        harness.clock().clone(),
+        harness.cache().clone(),
+        ExecutionManagerConfig::default(),
+    )
+    .unwrap();
+    let result = manager.reconcile_execution_mass_status(&mass_status, harness.exec_engine());
+    let cache = harness.cache().borrow();
+    let recovered = cache.position(&retained.id).unwrap();
+
+    assert!(result.unresolved_positions.is_empty());
+    assert!(recovered.is_closed());
+    assert_eq!(recovered.strategy_id, strategy_id);
+    assert_eq!(
+        recovered.quantity,
+        Quantity::zero(instrument.size_precision())
+    );
+    assert_eq!(
+        cache
+            .positions_open(None, None, None, Some(&account_id), None)
+            .len(),
+        0
+    );
 }
 
 #[rstest]
@@ -877,10 +1453,20 @@ async fn test_generate_mass_status_restores_historical_terminal_orders() {
             "quantity": 100,
             "side": "B",
             "symbol": "EURUSD-PERP",
-            "timestamp": "2024-01-01T00:00:00Z",
+            "timestamp": "2024-01-01T00:00:00.508000123Z",
             "account_id": "account-1"
         }]
     }));
+    let mut canceled_fill = state.fills_payload.lock().await.as_ref().unwrap()["fills"][0].clone();
+    canceled_fill["trade_id"] = serde_json::json!("T-CANCELED");
+    canceled_fill["order_id"] = serde_json::json!("OID-CANCELED");
+    canceled_fill["quantity"] = serde_json::json!(50);
+    canceled_fill["side"] = serde_json::json!("S");
+    canceled_fill["timestamp"] = serde_json::json!("2024-01-01T00:00:01.608000456Z");
+    state.fills_payload.lock().await.as_mut().unwrap()["fills"]
+        .as_array_mut()
+        .unwrap()
+        .push(canceled_fill);
     *state.positions_payload.lock().await = Some(serde_json::json!({ "positions": [] }));
 
     let (mut client, mut rx, cache) = create_test_execution_client(addr);
@@ -919,7 +1505,23 @@ async fn test_generate_mass_status_restores_historical_terminal_orders() {
     assert_eq!(canceled.filled_qty, Quantity::from("50"));
     assert_eq!(canceled.price, Some(Price::from("1.08390")));
     assert_eq!(canceled.order_side, Some(OrderSide::Sell));
-    assert_eq!(fill_reports.len(), 1);
+    assert_eq!(
+        filled.ts_accepted,
+        UnixNanos::from(1_704_067_200_500_000_000_u64)
+    );
+    assert_eq!(
+        filled.ts_last,
+        UnixNanos::from(1_704_067_200_508_000_123_u64)
+    );
+    assert_eq!(
+        canceled.ts_accepted,
+        UnixNanos::from(1_704_067_201_600_000_000_u64)
+    );
+    assert_eq!(
+        canceled.ts_last,
+        UnixNanos::from(1_704_067_201_608_000_456_u64)
+    );
+    assert_eq!(fill_reports.len(), 2);
     assert_eq!(
         fill_reports
             .get(&VenueOrderId::from("OID-FILLED"))
@@ -934,6 +1536,7 @@ async fn test_generate_mass_status_restores_historical_terminal_orders() {
     assert_eq!(queries[0].start_timestamp_ns, None);
     assert_eq!(queries[0].end_timestamp_ns, None);
     drop(queries);
+    assert_eq!(state.fills_queries.lock().await.len(), 1);
     assert_eq!(state.open_orders_queries.lock().await.len(), 0);
 
     client.disconnect().await.expect("Failed to disconnect");
@@ -987,6 +1590,10 @@ async fn test_generate_mass_status_fetches_uncached_report_instrument() {
     assert!(position.is_long());
     assert_eq!(position.quantity, Quantity::from("100"));
     assert_eq!(position.avg_px_open, Some(dec!(1.084)));
+    assert_eq!(
+        mass_status.position_reports()[&position.instrument_id].len(),
+        1
+    );
     assert!(!instrument_queries.is_empty());
     assert!(
         instrument_queries
@@ -2160,7 +2767,6 @@ async fn test_generate_position_status_reports_filters() {
     client.connect().await.expect("Failed to connect");
     drain_rx(&mut rx);
 
-    // No filter -> flat position is skipped, yields 2
     let cmd = GeneratePositionStatusReports::new(
         UUID4::new(),
         UnixNanos::default(),
@@ -2174,7 +2780,15 @@ async fn test_generate_position_status_reports_filters() {
         .generate_position_status_reports(&cmd)
         .await
         .expect("generate_position_status_reports");
-    assert_eq!(reports.len(), 2);
+    assert_eq!(reports.len(), 3);
+    let flat = reports
+        .iter()
+        .find(|report| report.instrument_id == InstrumentId::from("NVDA-PERP.AX"))
+        .unwrap();
+    assert_eq!(flat.position_side, PositionSide::Flat);
+    assert_eq!(flat.quantity, Quantity::zero(0));
+    assert_eq!(flat.signed_decimal_qty, dec!(0));
+    assert_eq!(flat.avg_px_open, None);
 
     // Filter by instrument -> only XAU short position
     let cmd = GeneratePositionStatusReports::new(

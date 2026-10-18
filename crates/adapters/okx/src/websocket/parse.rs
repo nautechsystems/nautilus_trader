@@ -65,6 +65,7 @@ use crate::{
             parse_instrument_any, parse_instrument_id, parse_message_vec,
             parse_millisecond_timestamp, parse_parent_client_order_id, parse_price, parse_quantity,
             parse_spread_order_status_report as parse_common_spread_order_status_report,
+            venue_position_id,
         },
     },
     http::models::OKXSpreadOrder,
@@ -1648,7 +1649,7 @@ pub fn parse_algo_order_status_report(
     }
 
     report.trigger_type = Some(trigger_type);
-
+    report.venue_position_id = venue_position_id(instrument.id(), msg.pos_side);
     if let Some(limit_price) = price {
         report.price = Some(limit_price);
     }
@@ -1934,6 +1935,8 @@ pub fn parse_order_status_report(
     );
 
     let price_precision = instrument.price_precision();
+
+    report.venue_position_id = venue_position_id(instrument.id(), msg.pos_side);
 
     if okx_order_type == OKXOrderType::Trigger {
         // For triggered orders coming through regular orders channel,
@@ -2294,7 +2297,7 @@ pub fn parse_fill_report(
         commission,
         liquidity_side,
         client_order_id,
-        None,
+        venue_position_id(instrument.id(), msg.pos_side),
         ts_event,
         ts_init,
         None, // Generate UUID4 automatically
@@ -2532,7 +2535,7 @@ mod tests {
     use nautilus_model::{
         data::bar::BAR_SPEC_1_DAY_LAST,
         enums::{AccountType, BookType, GreeksConvention},
-        identifiers::{ClientOrderId, Symbol, VenueOrderId},
+        identifiers::{ClientOrderId, PositionId, Symbol, VenueOrderId},
         instruments::{CryptoPerpetual, CurrencyPair},
         orderbook::OrderBook,
         types::Currency,
@@ -8274,5 +8277,55 @@ mod tests {
             .expect("should have an ask delta");
         assert_eq!(bid.order.price.as_decimal(), dec!(16.65));
         assert_eq!(ask.order.price.as_decimal(), dec!(16.7));
+    }
+
+    #[rstest]
+    #[case(OKXPositionSide::Long, Some("BTC-USDT-SWAP.OKX-LONG"))]
+    #[case(OKXPositionSide::Short, Some("BTC-USDT-SWAP.OKX-SHORT"))]
+    #[case(OKXPositionSide::Net, None)]
+    #[case(OKXPositionSide::None, None)]
+    fn test_order_and_fill_position_ids(
+        #[case] side: OKXPositionSide,
+        #[case] expected: Option<&str>,
+    ) {
+        let payload: Value = serde_json::from_str(&load_test_json("ws_orders.json")).unwrap();
+        let mut msg: OKXOrderMsg = serde_json::from_value(payload["data"][0].clone()).unwrap();
+        msg.pos_side = side;
+        let instrument = InstrumentAny::CryptoPerpetual(create_stub_instrument());
+        let account_id = AccountId::from("OKX-001");
+        let order =
+            parse_order_status_report(&msg, &instrument, account_id, UnixNanos::default()).unwrap();
+        let fill = parse_fill_report(
+            &msg,
+            &instrument,
+            account_id,
+            None,
+            None,
+            UnixNanos::default(),
+        )
+        .unwrap()
+        .unwrap();
+        let expected = expected.map(PositionId::from);
+        assert_eq!(order.venue_position_id, expected);
+        assert_eq!(fill.venue_position_id, expected);
+    }
+
+    #[rstest]
+    #[case(OKXPositionSide::Long, Some("BTC-USDT-SWAP.OKX-LONG"))]
+    #[case(OKXPositionSide::Short, Some("BTC-USDT-SWAP.OKX-SHORT"))]
+    #[case(OKXPositionSide::Net, None)]
+    fn test_algo_order_position_id(#[case] side: OKXPositionSide, #[case] expected: Option<&str>) {
+        let payload: Value = serde_json::from_str(&load_test_json("ws_orders_algo.json")).unwrap();
+        let mut msg: OKXAlgoOrderMsg = serde_json::from_value(payload["data"][0].clone()).unwrap();
+        msg.pos_side = side;
+        let instrument = InstrumentAny::CryptoPerpetual(create_stub_instrument());
+        let report = parse_algo_order_status_report(
+            &msg,
+            &instrument,
+            AccountId::from("OKX-001"),
+            UnixNanos::default(),
+        )
+        .unwrap();
+        assert_eq!(report.venue_position_id, expected.map(PositionId::from));
     }
 }

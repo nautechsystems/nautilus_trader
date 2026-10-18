@@ -147,6 +147,7 @@ impl HttpClient {
                     "Cannot combine shared rate limiters with quota configuration".to_string(),
                 ));
             }
+
             rate_limiters
         } else {
             let keyed_quotas = keyed_quotas
@@ -192,9 +193,11 @@ impl HttpClient {
         for (key, value) in headers {
             let header_name = HeaderName::from_str(&key)
                 .map_err(|e| HttpClientError::Error(format!("Invalid header name '{key}': {e}")))?;
+
             let header_value = HeaderValue::from_str(&value).map_err(|e| {
                 HttpClientError::Error(format!("Invalid header value for '{key}': {e}"))
             })?;
+
             header_map.insert(header_name, header_value);
         }
 
@@ -215,6 +218,7 @@ impl HttpClient {
                 adaptive_window: http2_adaptive_window()?,
             },
         )?;
+
         #[cfg(all(feature = "simulation", madsim))]
         let _ = use_system_proxy;
 
@@ -657,6 +661,7 @@ impl InnerHttpClient {
                     .map_err(|e| HttpClientError::from(format!("Invalid header name: {e}")))?;
                 let value = HeaderValue::from_str(&value)
                     .map_err(|e| HttpClientError::from(format!("Invalid header value: {e}")))?;
+
                 if header_map.insert(key.clone(), value).is_some() {
                     log::trace!("Replaced duplicate request header '{key}'");
                 }
@@ -700,6 +705,7 @@ impl InnerHttpClient {
 
         let duration = timeout_secs.map(Duration::from_secs).or(self.timeout);
         let deadline = duration.map(|duration| crate::dst::time::Instant::now() + duration);
+
         let operation = async {
             #[cfg(all(feature = "simulation", madsim))]
             let (response, connection) = self.simulation.send(request, &url).await?;
@@ -749,6 +755,7 @@ impl InnerHttpClient {
         }
 
         let max = self.max_response_bytes;
+
         if let Some(len) = body.size_hint().exact()
             && len > max as u64
         {
@@ -764,6 +771,7 @@ impl InnerHttpClient {
                     "HTTP response body exceeds maximum of {max} bytes",
                 )));
             }
+
             buf.extend_from_slice(&chunk);
         }
 
@@ -853,6 +861,7 @@ fn encode_url_params<'a>(
         Some((base, fragment)) => (base, Some(fragment)),
         None => (url, None),
     };
+
     let separator = if base.contains('?') { '&' } else { '?' };
 
     Ok(Cow::Owned(match fragment {
@@ -871,7 +880,6 @@ mod encode_url_params_tests {
 
     fn params(pairs: &[(&str, &str)]) -> HashMap<String, Vec<String>> {
         let mut map: HashMap<String, Vec<String>> = HashMap::new();
-
         for (key, value) in pairs {
             map.entry((*key).to_string())
                 .or_default()
@@ -1093,7 +1101,6 @@ mod tests {
     async fn start_test_server() -> Result<SocketAddr, Box<dyn std::error::Error + Send + Sync>> {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
-
         tokio::spawn(async move {
             serve(listener, create_router()).await.unwrap();
         });
@@ -1122,12 +1129,12 @@ mod tests {
             let (mut stream, _) = listener.accept().await.unwrap();
             let mut request = Vec::new();
             let mut chunk = [0u8; 1024];
-
             loop {
                 let read = stream.read(&mut chunk).await.unwrap();
                 if read == 0 {
                     break;
                 }
+
                 request.extend_from_slice(&chunk[..read]);
                 if request.windows(4).any(|window| window == b"\r\n\r\n") {
                     break;
@@ -1160,11 +1167,13 @@ mod tests {
                 if read == 0 {
                     break;
                 }
+
                 request.extend_from_slice(&chunk[..read]);
                 if request.windows(4).any(|window| window == b"\r\n\r\n") {
                     break;
                 }
             }
+
             request_tx
                 .send(String::from_utf8(request).unwrap())
                 .unwrap();
@@ -1320,6 +1329,7 @@ mod tests {
             .unwrap();
         let mut request_headers = HashMap::new();
         request_headers.insert("x-request".to_string(), "request-e".to_string());
+
         let params = Query {
             symbol: "BTC/USDT",
             limit: 37,
@@ -1370,6 +1380,7 @@ mod tests {
             .build()
             .unwrap();
         let headers = HashMap::from([("x-request".to_string(), "request-g".to_string())]);
+
         let params = Query {
             auth: "token/42",
             market_id: 7,
@@ -1408,6 +1419,7 @@ mod tests {
             max_response_bytes,
             ..inner_client()
         };
+
         let response = http::Response::new(Full::new(Bytes::from_static(bytes)));
 
         let response = client.consume_response(response, None).await.unwrap();
@@ -1454,9 +1466,11 @@ mod tests {
             .await;
 
         let err = result.expect_err("oversized response body should be rejected");
+
         let HttpClientError::Error(message) = err else {
             panic!("expected HTTP error, was {err:?}");
         };
+
         assert_eq!(
             message,
             "HTTP response body of 1048576 bytes exceeds maximum of 16384 bytes"
@@ -1471,6 +1485,7 @@ mod tests {
         #[case] max_response_bytes: usize,
     ) {
         let (addr, server_task) = spawn_chunked_response_server().await;
+
         let client = InnerHttpClient {
             max_response_bytes,
             ..inner_client()
@@ -1498,6 +1513,7 @@ mod tests {
     async fn test_chunked_response_body_exceeding_cap_is_rejected() {
         let (addr, server_task) = spawn_chunked_response_server().await;
         let max_response_bytes = 8;
+
         let client = InnerHttpClient {
             max_response_bytes,
             ..inner_client()
@@ -1519,6 +1535,7 @@ mod tests {
         let HttpClientError::Error(message) = error else {
             panic!("expected HTTP error, was {error:?}");
         };
+
         assert_eq!(
             message,
             format!("HTTP response body exceeds maximum of {max_response_bytes} bytes")
@@ -2144,7 +2161,6 @@ mod tests {
         const PROXY_AUTH: &str = "Basic cHJveHl0ZXN0OmZpeHR1cmU0Mg==";
 
         let expected_initial_auth = initial_auth.unwrap_or(PROXY_AUTH);
-
         let expected_redirect_auth = if same_origin {
             expected_initial_auth
         } else {
@@ -2154,7 +2170,6 @@ mod tests {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         let (request_tx, mut request_rx) = tokio::sync::mpsc::channel(2);
-
         let router = Router::new().fallback(any(move |request: Request| {
             let request_tx = request_tx.clone();
 
@@ -2197,7 +2212,6 @@ mod tests {
             ),
         ]);
         let mut headers = origin_headers.clone();
-
         if let Some(initial_auth) = initial_auth {
             headers.insert("proxy-authorization".to_string(), initial_auth.to_string());
         }
@@ -2437,6 +2451,7 @@ mod rate_limit_tests {
         let quota = Quota::per_minute(NonZeroU32::MIN);
         let request_key = Ustr::from("scope:request");
         let order_key = Ustr::from("scope:order");
+
         let request_limiter = Arc::new(RateLimiter::new_with_quota(
             None,
             vec![(request_key, quota)],
@@ -2466,6 +2481,7 @@ mod rate_limit_tests {
     async fn test_http_client_reserves_multiple_rate_limits_together() {
         let global_key = Ustr::from("scope:global");
         let order_key = Ustr::from("scope:order");
+
         let global_limiter = Arc::new(RateLimiter::new_with_quota(
             None,
             vec![(
@@ -2473,6 +2489,7 @@ mod rate_limit_tests {
                 Quota::with_period(Duration::from_secs(1)).unwrap(),
             )],
         ));
+
         let order_limiter = Arc::new(RateLimiter::new_with_quota(
             None,
             vec![(
@@ -2495,6 +2512,7 @@ mod rate_limit_tests {
                 .await_rate_limits(Some(&[global_key, order_key]))
                 .await;
         });
+
         test_task::yield_now().await;
 
         global_limiter.check_key(&global_key).unwrap();

@@ -3295,10 +3295,12 @@ async fn test_request_funding_rates_emits_data_response_from_mock() {
     while rx.try_recv().is_ok() {}
 
     let perp_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
+    let start = jiff::Timestamp::from_millisecond(1_769_908_800_000).unwrap();
+    let end = jiff::Timestamp::from_millisecond(1_769_920_000_000).unwrap();
     let cmd = RequestFundingRates::new(
         perp_id,
-        None,
-        None,
+        Some(start),
+        Some(end),
         None,
         Some(*HYPERLIQUID_CLIENT_ID),
         UUID4::new(),

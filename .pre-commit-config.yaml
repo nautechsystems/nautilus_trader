@@ -472,7 +472,7 @@ repos:
   #  Python formatting and linting
   ##############################################################################
   - repo: https://github.com/asottile/pyupgrade
-    rev: v3.21.2
+    rev: v3.22.0
     hooks:
       - id: pyupgrade
         args: ["--py313-plus"]

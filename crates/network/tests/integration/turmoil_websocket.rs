@@ -100,8 +100,10 @@ async fn recv_text(rx: &mut tokio::sync::mpsc::UnboundedReceiver<Message>, expec
                 return true;
             }
         }
+
         tokio::time::sleep(POLL_STEP).await;
     }
+
     false
 }
 
@@ -116,8 +118,10 @@ async fn recv_application_text(
                 return Some(text.to_string());
             }
         }
+
         tokio::time::sleep(POLL_STEP).await;
     }
+
     None
 }
 
@@ -128,8 +132,10 @@ async fn recv_connection_message(
         if let Ok(message) = rx.try_recv() {
             return Some(message);
         }
+
         tokio::time::sleep(POLL_STEP).await;
     }
+
     None
 }
 
@@ -140,12 +146,15 @@ fn tracked_channel_message_handler(
     tokio::sync::mpsc::UnboundedReceiver<Message>,
 ) {
     let (handler, receiver) = channel_message_handler();
+
     let tracked_handler = Arc::new(move |message: NetworkMessage| {
         if matches!(&message, NetworkMessage::Text(text) if text == RECONNECTED) {
             reconnected.store(true, Ordering::SeqCst);
         }
+
         handler(message);
     });
+
     (tracked_handler, receiver)
 }
 
@@ -165,8 +174,10 @@ where
         if condition() {
             return true;
         }
+
         tokio::time::sleep(POLL_STEP).await;
     }
+
     false
 }
 
@@ -201,10 +212,8 @@ fn websocket_config_for_backend(backend: TransportBackend) -> WebSocketConfig {
 /// WebSocket echo server for testing.
 async fn ws_echo_server() -> Result<(), Box<dyn std::error::Error>> {
     let listener = net::TcpListener::bind("0.0.0.0:8080").await?;
-
     loop {
         let (stream, _) = listener.accept().await?;
-
         tokio::spawn(async move {
             if let Ok(mut ws_stream) = accept_async(stream).await {
                 while let Some(msg) = ws_stream.next().await {
@@ -214,6 +223,7 @@ async fn ws_echo_server() -> Result<(), Box<dyn std::error::Error>> {
                                 let _ = ws_stream.close(None).await;
                                 break;
                             }
+
                             let _ = ws_stream.send(Message::Text(text)).await;
                         }
                         Ok(Message::Binary(data)) => {
@@ -237,10 +247,8 @@ async fn ws_echo_server() -> Result<(), Box<dyn std::error::Error>> {
 
 async fn ws_echo_once_then_drop_server() -> Result<(), Box<dyn std::error::Error>> {
     let listener = net::TcpListener::bind("0.0.0.0:8080").await?;
-
     loop {
         let (stream, _) = listener.accept().await?;
-
         tokio::spawn(async move {
             if let Ok(mut ws_stream) = accept_async(stream).await
                 && let Some(Ok(msg)) = ws_stream.next().await
@@ -269,7 +277,6 @@ async fn ws_drop_each_connection_server(
     accepted: Arc<AtomicUsize>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let listener = net::TcpListener::bind("0.0.0.0:8080").await?;
-
     loop {
         let (stream, _) = listener.accept().await?;
         let mut websocket = accept_async(stream).await?;
@@ -282,7 +289,6 @@ async fn ws_drop_each_connection_timed_server(
     accept_times: Arc<Mutex<Vec<tokio::time::Instant>>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let listener = net::TcpListener::bind("0.0.0.0:8080").await?;
-
     loop {
         let (stream, _) = listener.accept().await?;
         let mut websocket = accept_async(stream).await?;
@@ -295,7 +301,6 @@ async fn ws_hold_stable_reconnect_server(
     accepted: Arc<AtomicUsize>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let listener = net::TcpListener::bind("0.0.0.0:8080").await?;
-
     loop {
         let (stream, _) = listener.accept().await?;
         let mut websocket = accept_async(stream).await?;
@@ -467,9 +472,11 @@ fn test_turmoil_connection_epoch_owns_messages_and_sends(mut websocket_config: W
         {
             while let Some(message) = ws.next().await {
                 let message = message?;
+
                 if matches!(message, Message::Close(_)) {
                     break;
                 }
+
                 let send_replacement_binary =
                     matches!(&message, Message::Text(text) if text.as_str() == "epoch-1");
                 ws.send(message).await?;
@@ -1373,7 +1380,6 @@ fn run_websocket_heartbeat_pings_reach_server(
     let mut sim = seeded_builder_with_duration(seed, Duration::from_secs(30)).build();
     let pings = Arc::new(AtomicUsize::new(0));
     let server_pings = Arc::clone(&pings);
-
     sim.host("server", move || {
         let server_pings = Arc::clone(&server_pings);
         async move { ws_ping_counting_server(server_pings).await }
@@ -1398,6 +1404,7 @@ fn run_websocket_heartbeat_pings_reach_server(
                 received_enough = true;
                 break;
             }
+
             tokio::time::sleep(POLL_STEP).await;
         }
 
@@ -1543,6 +1550,7 @@ fn run_websocket_missing_pong_reconnects(
                 recovered = true;
                 break;
             }
+
             tokio::time::sleep(POLL_STEP).await;
         }
 
@@ -1574,7 +1582,6 @@ fn run_websocket_unanswered_text_heartbeat_times_out(
     let mut sim = seeded_builder_with_duration(seed, Duration::from_secs(30)).build();
     let heartbeats = Arc::new(AtomicUsize::new(0));
     let server_heartbeats = Arc::clone(&heartbeats);
-
     sim.host("server", move || {
         let server_heartbeats = Arc::clone(&server_heartbeats);
         async move { ws_text_heartbeat_counting_server(server_heartbeats).await }
@@ -1597,6 +1604,7 @@ fn run_websocket_unanswered_text_heartbeat_times_out(
                 received_enough = true;
                 break;
             }
+
             tokio::time::sleep(POLL_STEP).await;
         }
 
@@ -1678,7 +1686,6 @@ fn run_websocket_server_ping_gets_pong(
     let mut sim = seeded_builder_with_duration(seed, Duration::from_secs(30)).build();
     let pong_received = Arc::new(AtomicBool::new(false));
     let server_pong_received = Arc::clone(&pong_received);
-
     sim.host("server", move || {
         let server_pong_received = Arc::clone(&server_pong_received);
         async move { ws_ping_until_pong_server(server_pong_received).await }
@@ -1843,7 +1850,6 @@ fn run_websocket_reconnect_active_drop_preserves_later_message_order(
     let mut sim = stressed_builder(seed, Duration::from_secs(20)).build();
     let drop_reconnected_connection = Arc::new(AtomicBool::new(false));
     let server_drop_reconnected_connection = Arc::clone(&drop_reconnected_connection);
-
     sim.host("server", move || {
         let server_drop_reconnected_connection = Arc::clone(&server_drop_reconnected_connection);
         async move {
@@ -1942,7 +1948,6 @@ fn run_websocket_handshake_drop_reaches_active_state(
     let mut sim = stressed_builder(seed, Duration::from_secs(20)).build();
     let handshake_dropped = Arc::new(AtomicBool::new(false));
     let server_handshake_dropped = Arc::clone(&handshake_dropped);
-
     sim.host("server", move || {
         let server_handshake_dropped = Arc::clone(&server_handshake_dropped);
         async move { ws_drop_reconnect_handshake_then_echo_server(server_handshake_dropped).await }
@@ -1994,7 +1999,6 @@ fn run_websocket_first_read_task_drop_reaches_active_state(
     let mut sim = stressed_builder(seed, Duration::from_secs(20)).build();
     let first_connection_dropped = Arc::new(AtomicBool::new(false));
     let server_first_connection_dropped = Arc::clone(&first_connection_dropped);
-
     sim.host("server", move || {
         let server_first_connection_dropped = Arc::clone(&server_first_connection_dropped);
         async move {
@@ -2233,7 +2237,6 @@ fn run_websocket_dark_until_derived_heartbeat_timeout_reconnects_to_active_state
     let mut sim = stressed_builder(seed, Duration::from_secs(30)).build();
     let first_connection_dark = Arc::new(AtomicBool::new(false));
     let server_first_connection_dark = Arc::clone(&first_connection_dark);
-
     sim.host("server", move || {
         let server_first_connection_dark = Arc::clone(&server_first_connection_dark);
         async move { ws_dark_first_connection_then_echo_server(server_first_connection_dark).await }
@@ -2287,7 +2290,6 @@ fn run_websocket_silent_until_liveness_timeout_reconnects_to_active_state(
     let mut sim = stressed_builder(seed, Duration::from_secs(20)).build();
     let first_connection_silent = Arc::new(AtomicBool::new(false));
     let server_first_connection_silent = Arc::clone(&first_connection_silent);
-
     sim.host("server", move || {
         let server_first_connection_silent = Arc::clone(&server_first_connection_silent);
         async move {
@@ -2548,7 +2550,6 @@ fn run_websocket_disconnect_while_waiting_for_auth_closes_client(
     let mut sim = stressed_builder(seed, Duration::from_secs(20)).build();
     let first_connection_dropped = Arc::new(AtomicBool::new(false));
     let server_first_connection_dropped = Arc::clone(&first_connection_dropped);
-
     sim.host("server", move || {
         let server_first_connection_dropped = Arc::clone(&server_first_connection_dropped);
         async move {
@@ -2817,7 +2818,6 @@ fn run_websocket_stream_dead_write_while_waiting_for_auth_closes_client(
     let mut sim = stressed_builder(seed, Duration::from_secs(20)).build();
     let first_connection_dropped = Arc::new(AtomicBool::new(false));
     let server_first_connection_dropped = Arc::clone(&first_connection_dropped);
-
     sim.host("server", move || {
         let server_first_connection_dropped = Arc::clone(&server_first_connection_dropped);
         async move {
@@ -2860,6 +2860,7 @@ fn run_websocket_stream_dead_write_while_waiting_for_auth_closes_client(
             if !client.is_active() || auth_wait.is_finished() {
                 break;
             }
+
             let _ = client
                 .send_text(format!("stream-dead-write-{attempt}"), None)
                 .await;
@@ -2914,7 +2915,6 @@ fn run_websocket_reconnectable_drop_while_waiting_for_auth_waits_for_reauth(
     let mut sim = stressed_builder(seed, Duration::from_secs(20)).build();
     let first_connection_silent = Arc::new(AtomicBool::new(false));
     let server_first_connection_silent = Arc::clone(&first_connection_silent);
-
     sim.host("server", move || {
         let server_first_connection_silent = Arc::clone(&server_first_connection_silent);
         async move {
@@ -3102,8 +3102,10 @@ async fn recv_application_message(
                 _ => {}
             }
         }
+
         tokio::time::sleep(POLL_STEP).await;
     }
+
     None
 }
 
@@ -3128,6 +3130,7 @@ fn repeated_text(pattern: &str, len: usize) -> String {
     while text.len() < len {
         text.push_str(pattern);
     }
+
     text.truncate(len);
     text
 }
@@ -3675,9 +3678,11 @@ async fn ws_drop_first_connection_then_hold_reconnect_handshake_until_release_se
                 }
                 _ => {
                     reconnect_attempt_waiting.store(true, Ordering::SeqCst);
+
                     while !release_reconnect_attempt.load(Ordering::SeqCst) {
                         tokio::time::sleep(POLL_STEP).await;
                     }
+
                     drop(stream);
                 }
             }
@@ -3748,7 +3753,6 @@ async fn ws_ping_counting_server(
     pings: Arc<AtomicUsize>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let listener = net::TcpListener::bind("0.0.0.0:8080").await?;
-
     loop {
         let (stream, _) = listener.accept().await?;
         let mut websocket = accept_async(stream).await?;
@@ -3772,7 +3776,6 @@ async fn ws_text_heartbeat_counting_server(
     heartbeats: Arc<AtomicUsize>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let listener = net::TcpListener::bind("0.0.0.0:8080").await?;
-
     loop {
         let (stream, _) = listener.accept().await?;
         let heartbeats = Arc::clone(&heartbeats);
@@ -3799,10 +3802,8 @@ async fn ws_text_heartbeat_counting_server(
 
 async fn ws_send_text_without_reading_server() -> Result<(), Box<dyn std::error::Error>> {
     let listener = net::TcpListener::bind("0.0.0.0:8080").await?;
-
     loop {
         let (stream, _) = listener.accept().await?;
-
         tokio::spawn(async move {
             if let Ok(mut websocket) = accept_async(stream).await {
                 loop {
@@ -3827,7 +3828,6 @@ async fn ws_ping_until_pong_server(
     let listener = net::TcpListener::bind("0.0.0.0:8080").await?;
     let (stream, _) = listener.accept().await?;
     let mut websocket = accept_async(stream).await?;
-
     loop {
         if websocket
             .send(Message::Ping(Vec::new().into()))
@@ -3861,6 +3861,7 @@ async fn ws_close_frame_then_echo_server() -> Result<(), Box<dyn std::error::Err
     let (stream, _) = listener.accept().await?;
     let mut websocket = accept_async(stream).await?;
     let _ = websocket.close(None).await;
+
     // Drive the close handshake to completion (bounded in case the peer drops)
     let _ = tokio::time::timeout(Duration::from_millis(500), async {
         while websocket.next().await.is_some() {}

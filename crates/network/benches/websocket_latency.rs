@@ -80,7 +80,7 @@ async fn main() -> BenchResult {
         print_row(payload_size, "sockudo_ws", &sockudo_summary);
         let nautilus_summary =
             nautilus_sockudo_roundtrip_text_latency(payload_size, message_count).await?;
-        print_row(payload_size, "nautilus_sockudo", &nautilus_summary);
+        print_row(payload_size, "nautilus_sockudo_native", &nautilus_summary);
     }
 
     println!();
@@ -95,7 +95,7 @@ async fn main() -> BenchResult {
         print_row(payload_size, "sockudo_ws", &sockudo_summary);
         let nautilus_summary =
             nautilus_sockudo_one_way_binary_latency(payload_size, message_count).await?;
-        print_row(payload_size, "nautilus_sockudo", &nautilus_summary);
+        print_row(payload_size, "nautilus_sockudo_native", &nautilus_summary);
     }
 
     Ok(())
@@ -375,14 +375,14 @@ fn payload_sizes() -> Vec<usize> {
 
 fn print_header() {
     println!(
-        "{:<8} {:<18} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10}",
+        "{:<8} {:<24} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10}",
         "payload", "library", "p50_us", "p95_us", "p99_us", "p99.9_us", "max_us", "mean_us"
     );
 }
 
 fn print_row(payload_size: usize, name: &str, summary: &LatencySummary) {
     println!(
-        "{:<8} {:<18} {:>10.3} {:>10.3} {:>10.3} {:>10.3} {:>10.3} {:>10.3}",
+        "{:<8} {:<24} {:>10.3} {:>10.3} {:>10.3} {:>10.3} {:>10.3} {:>10.3}",
         payload_size,
         name,
         ns_to_us(summary.p50_ns),

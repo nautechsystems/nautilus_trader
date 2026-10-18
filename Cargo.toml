@@ -133,7 +133,7 @@ arrow = { version = "59.3.0", default-features = false, features = [
 ] }
 async-stream = "0.3.6"
 async-trait = "0.1.92"
-aws-lc-rs = { version = "1.18.1", default-features = false, features = [
+aws-lc-rs = { version = "1.18.2", default-features = false, features = [
   "non-fips", # FIPS 140-3 mode blocked: aws-lc-fips-sys requires Go toolchain
 ] }
 base64 = { version = "0.23.1", default-features = false, features = ["std"] }
@@ -234,7 +234,7 @@ rand = { version = "0.10.3", default-features = false, features = [
   "std",
   "thread_rng",
 ] }
-redb = { version = "4.3.0", default-features = false }
+redb = { version = "4.4.0", default-features = false }
 redis = { version = "1.7.1", default-features = false, features = [
   "connection-manager",
   "sentinel",
@@ -291,7 +291,7 @@ sysinfo = { version = "0.39.6", default-features = false, features = [
 ] }
 tabled = { version = "0.22.0", default-features = false, features = ["std"] }
 thiserror = "2.0.21"
-tokio = { version = "1.53.2", default-features = false, features = [
+tokio = { version = "1.53.3", default-features = false, features = [
   "parking_lot",
   "rt-multi-thread",
   "sync",
@@ -420,7 +420,6 @@ days = 3
 trusted-base = "origin/develop"
 
 [workspace.metadata.cooldown.allow]
-ibapi = "5.0.0"
 rustls = "0.23.46"
 sockudo-ws = "3.1.0"
 

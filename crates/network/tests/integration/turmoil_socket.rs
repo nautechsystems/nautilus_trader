@@ -58,8 +58,10 @@ where
         if condition() {
             return true;
         }
+
         tokio::time::sleep(POLL_STEP).await;
     }
+
     false
 }
 
@@ -80,7 +82,6 @@ fn captured_messages(received: &ReceivedMessages) -> Vec<String> {
 
 async fn echo_once_then_drop_server() -> Result<(), Box<dyn std::error::Error>> {
     let listener = net::TcpListener::bind("0.0.0.0:8080").await?;
-
     loop {
         let (mut stream, _) = listener.accept().await?;
 
@@ -92,6 +93,7 @@ async fn echo_once_then_drop_server() -> Result<(), Box<dyn std::error::Error>> 
                 if !buffer.starts_with(b"close\r\n") {
                     let _ = stream.write_all(&buffer[..n]).await;
                 }
+
                 let _ = stream.shutdown().await;
             }
         });
@@ -102,7 +104,6 @@ async fn drop_each_connection_server(
     accepted: Arc<AtomicUsize>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let listener = net::TcpListener::bind("0.0.0.0:8080").await?;
-
     loop {
         let (stream, _) = listener.accept().await?;
         accepted.fetch_add(1, Ordering::SeqCst);
@@ -114,7 +115,6 @@ async fn drop_each_connection_timed_server(
     accept_times: Arc<Mutex<Vec<tokio::time::Instant>>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let listener = net::TcpListener::bind("0.0.0.0:8080").await?;
-
     loop {
         let (stream, _) = listener.accept().await?;
         accept_times.lock().push(tokio::time::Instant::now());
@@ -126,7 +126,6 @@ async fn hold_stable_reconnect_server(
     accepted: Arc<AtomicUsize>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let listener = net::TcpListener::bind("0.0.0.0:8080").await?;
-
     loop {
         let (stream, _) = listener.accept().await?;
         let connection = accepted.fetch_add(1, Ordering::SeqCst);
@@ -170,12 +169,10 @@ fn socket_config() -> SocketConfig {
 /// Echo server for testing.
 async fn echo_server() -> Result<(), Box<dyn std::error::Error>> {
     let listener = net::TcpListener::bind("0.0.0.0:8080").await?;
-
     loop {
         if let Ok((mut stream, _)) = listener.accept().await {
             tokio::spawn(async move {
                 let mut buffer = vec![0; 1024];
-
                 loop {
                     match stream.read(&mut buffer).await {
                         Ok(0) | Err(_) => break,
@@ -185,6 +182,7 @@ async fn echo_server() -> Result<(), Box<dyn std::error::Error>> {
                                 let _ = stream.shutdown().await;
                                 break;
                             }
+
                             // Echo back the data
                             if stream.write_all(&buffer[..n]).await.is_err() {
                                 break;
