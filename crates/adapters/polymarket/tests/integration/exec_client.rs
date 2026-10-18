@@ -8038,14 +8038,29 @@ async fn test_generate_order_status_report_recovers_canceled_when_no_trades() {
 }
 
 #[rstest]
+#[case::hash(Some(json!("0xabc123")))]
+#[case::missing(None)]
+#[case::null(Some(Value::Null))]
+#[case::empty(Some(json!("")))]
 #[tokio::test]
-async fn test_generate_order_status_report_keeps_terminal_recovery_for_valid_failed_trade() {
+async fn test_generate_order_status_report_keeps_terminal_recovery_for_valid_failed_trade(
+    #[case] hash: Option<Value>,
+) {
     let venue_order_id =
         VenueOrderId::from("0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12");
     let state = TestServerState::default();
     *state.single_order_response.lock().await = Some(Value::Null);
     let mut trades = recovery_trades_response(venue_order_id.as_str(), "10.0000", "0.5000");
     trades["data"][0]["status"] = json!("FAILED");
+    trades["data"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("transaction_hash");
+
+    if let Some(hash) = hash {
+        trades["data"][0]["transaction_hash"] = hash;
+    }
+
     *state.trades_response_override.lock().await = Some(trades);
     let addr = start_mock_server(state).await;
     let (mut client, _rx, cache) = create_test_execution_client(addr);

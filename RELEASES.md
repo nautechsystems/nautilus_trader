@@ -19,6 +19,7 @@ Released on TBD (UTC).
 - Changed Binance spot `BinanceAccountInfo::to_account_state` and `parse_spot_account_position` to return `Result`
 - Changed Hyperliquid `UpdateIsolatedMargin`: replace `delta` with `is_buy` and `ntli` (signed millionths)
 - Changed Lighter `LighterHttpError`: `Http` adds `retry_after`; `RateLimit` uses named `message` and `retry_after`
+- Changed Polymarket `PolymarketTradeReport.transaction_hash` from `String` to `Option<String>`
 
 ### Security
 
@@ -67,6 +68,7 @@ Released on TBD (UTC).
 - Fixed Polymarket market order reconciliation panics after delayed FOK status checks
 - Fixed Polymarket market data subscriptions stalling after transient initial WebSocket connection failures
 - Fixed Polymarket taker rates derived from CLOB `base_fee` when Gamma rates are missing or zero
+- Fixed Polymarket trade history and settlement recovery failing on missing or null transaction hashes
 
 ### Internal Improvements
 

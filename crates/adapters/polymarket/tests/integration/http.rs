@@ -44,7 +44,7 @@ use nautilus_network::{http::HttpClient, retry::RetryConfig};
 use nautilus_polymarket::{
     common::{
         credential::{Credential, EvmPrivateKey},
-        enums::{PolymarketOrderType, PolymarketSignatureType},
+        enums::{PolymarketOrderType, PolymarketSignatureType, PolymarketTradeStatus},
     },
     config::{PolymarketInstrumentProviderConfig, PolymarketUpDownEventSlugConfig},
     filters::{
@@ -57,7 +57,7 @@ use nautilus_polymarket::{
         data_api::PolymarketDataApiHttpClient,
         error::Error,
         gamma::{PolymarketGammaHttpClient, PolymarketGammaRawHttpClient},
-        models::PolymarketOrder,
+        models::{PolymarketOrder, PolymarketTradeReport},
         query::{
             AssetType, CancelMarketOrdersParams, ClobVersionResponse, GetBalanceAllowanceParams,
             GetGammaEventsParams, GetGammaMarketsParams, GetOrdersParams, GetSearchParams,
@@ -860,6 +860,51 @@ async fn test_get_trades_returns_trades() {
 
     assert_eq!(trades.len(), 1);
     assert_eq!(trades[0].id, "trade-0x001");
+}
+
+#[rstest]
+#[case::failed(PolymarketTradeStatus::Failed)]
+#[case::not_broadcast(PolymarketTradeStatus::MatchedNotBroadcasted)]
+#[tokio::test]
+async fn test_get_trades_preserves_mixed_pages_without_transaction_hashes(
+    #[case] status: PolymarketTradeStatus,
+    #[values(None, Some(Value::Null), Some(json!("")))] hash: Option<Value>,
+) {
+    let state = TestServerState::default();
+    let mut first = load_json("http_trades_page.json");
+    let confirmed: PolymarketTradeReport =
+        serde_json::from_value(first["data"][0].clone()).unwrap();
+    let mut hashless = first["data"][0].clone();
+    hashless["id"] = json!("trade-hashless");
+    hashless["status"] = json!(status);
+    hashless.as_object_mut().unwrap().remove("transaction_hash");
+    if let Some(hash) = hash {
+        hashless["transaction_hash"] = hash;
+    }
+
+    first["data"].as_array_mut().unwrap().push(hashless);
+    first["next_cursor"] = json!("page-2");
+    let mut second = load_json("http_trades_page.json");
+    second["data"][0]["id"] = json!("trade-0x002");
+    state.trades_pages.lock().await.extend([first, second]);
+    let mut expected_hashless = confirmed.clone();
+    expected_hashless.id = "trade-hashless".to_string();
+    expected_hashless.status = status;
+    expected_hashless.transaction_hash = None;
+    let mut expected_second = confirmed.clone();
+    expected_second.id = "trade-0x002".to_string();
+
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_clob_client(&addr);
+    let trades = client.get_trades(GetTradesParams::default()).await.unwrap();
+    let queries = state.trades_query_log.lock().await;
+    let cursors: Vec<_> = queries
+        .iter()
+        .map(|query| query.get("next_cursor").map(String::as_str))
+        .collect();
+
+    assert_eq!(trades, vec![confirmed, expected_hashless, expected_second]);
+    assert_eq!(cursors, vec![Some("MA=="), Some("page-2")]);
 }
 
 #[rstest]
