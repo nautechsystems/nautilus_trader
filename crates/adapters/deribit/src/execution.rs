@@ -352,7 +352,14 @@ impl DeribitExecutionClient {
         let order_side = order.order_side();
 
         log::debug!("OrderSubmitted client_order_id={client_order_id}");
-        self.emitter.emit_order_submitted(order);
+        if let Err(e) = self.emitter.try_emit_order_submitted(order) {
+            log::error!(
+                "Not submitting {client_order_id} to Deribit because OrderSubmitted was not sent: {e}"
+            );
+            self.emitter
+                .emit_order_denied(order, &format!("OrderSubmitted event was not sent: {e}"));
+            return;
+        }
 
         let ws_client = self.ws_client.clone();
 

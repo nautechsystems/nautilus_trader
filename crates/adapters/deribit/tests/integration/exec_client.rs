@@ -912,6 +912,25 @@ async fn test_local_submit_validation_failure_emits_order_rejected() {
 }
 
 #[rstest]
+#[tokio::test]
+async fn test_submit_does_not_reach_venue_when_order_submitted_event_is_not_sent() {
+    let (client, rx, cache, request_count) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    drop(rx);
+
+    let client_order_id = ClientOrderId::new("closed-submit-channel-001");
+    let order_any = add_limit_order_to_cache(&cache, client_order_id, TimeInForce::Gtc);
+
+    client
+        .submit_order(submit_order_command(&order_any))
+        .unwrap();
+
+    // A spawned submit reaches the local mock well inside this window.
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert_eq!(request_count.load(Ordering::Relaxed), 0);
+}
+
+#[rstest]
 #[case(OrderType::Market, "market")]
 #[case(OrderType::StopMarket, "stop_market")]
 #[case(OrderType::MarketIfTouched, "take_market")]
