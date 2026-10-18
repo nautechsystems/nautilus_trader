@@ -183,7 +183,10 @@ impl Position {
             size_precision: instrument.size_precision(),
             multiplier: instrument.multiplier(),
             is_inverse: instrument.is_inverse(),
-            is_currency_pair: matches!(instrument, InstrumentAny::CurrencyPair(_)),
+            is_currency_pair: matches!(
+                instrument,
+                InstrumentAny::CurrencyPair(_) | InstrumentAny::TokenizedAsset(_)
+            ),
             instrument_class: instrument.instrument_class(),
             base_currency: instrument.base_currency(),
             quote_currency: instrument.quote_currency(),
@@ -588,7 +591,7 @@ impl Position {
             }
         }
 
-        // For CurrencyPair instruments, create adjustment event when commission is in base currency
+        // For spot instruments, create adjustment event when commission is in base currency
         if self.is_currency_pair
             && let Some(commission) = fill.commission
             && let Some(base_currency) = self.base_currency
@@ -6804,6 +6807,72 @@ mod tests {
             adjustment.event_id,
             replayed_position.adjustments[0].event_id
         );
+    }
+
+    #[rstest]
+    fn test_tokenized_asset_base_commission_buy_then_close_net_holding() {
+        let instrument = InstrumentAny::TokenizedAsset(tokenized_asset_aaplx());
+        let base_currency = instrument.base_currency().unwrap();
+        let buy = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-BUY"))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.0000"))
+            .build();
+        let OrderEventAny::Filled(buy_fill) = TestOrderEventStubs::filled(
+            &buy,
+            &instrument,
+            Some(TradeId::new("1")),
+            None,
+            Some(Price::from("200.00")),
+            Some(Quantity::from("1.0000")),
+            None,
+            Some(Money::new(0.001, base_currency)),
+            None,
+            None,
+        ) else {
+            unreachable!()
+        };
+
+        let mut position = Position::new(&instrument, buy_fill);
+
+        assert_eq!(position.quantity, Quantity::from("0.9990"));
+        assert_eq!(position.adjustments.len(), 1);
+        assert_eq!(
+            position.adjustments[0].adjustment_type,
+            PositionAdjustmentType::Commission
+        );
+        assert_eq!(
+            position.adjustments[0].quantity_change,
+            Some(rust_decimal_macros::dec!(-0.001))
+        );
+
+        let sell = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-SELL"))
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("0.9990"))
+            .build();
+        let OrderEventAny::Filled(sell_fill) = TestOrderEventStubs::filled(
+            &sell,
+            &instrument,
+            Some(TradeId::new("2")),
+            None,
+            Some(Price::from("210.00")),
+            Some(Quantity::from("0.9990")),
+            None,
+            Some(Money::zero(instrument.quote_currency())),
+            None,
+            None,
+        ) else {
+            unreachable!()
+        };
+
+        position.apply(&sell_fill);
+
+        assert_eq!(position.side, PositionSide::Flat);
+        assert!(position.quantity.is_zero());
+        assert!(position.is_closed());
     }
 
     #[rstest]

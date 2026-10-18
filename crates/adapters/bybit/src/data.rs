@@ -668,7 +668,10 @@ fn handle_ws_message(
             };
 
             if sub_set.is_some_and(|s| s.contains("funding"))
-                && matches!(instrument, InstrumentAny::CryptoPerpetual(_))
+                && matches!(
+                    instrument,
+                    InstrumentAny::CryptoPerpetual(_) | InstrumentAny::PerpetualContract(_)
+                )
             {
                 let cache_entry = funding_cache
                     .entry(msg.data.symbol)
@@ -1421,7 +1424,10 @@ impl DataClient for BybitDataClient {
 
         let guard = self.instruments.load();
         if let Some(instrument) = guard.get(&instrument_id)
-            && !matches!(instrument, InstrumentAny::CryptoPerpetual(_))
+            && !matches!(
+                instrument,
+                InstrumentAny::CryptoPerpetual(_) | InstrumentAny::PerpetualContract(_)
+            )
         {
             anyhow::bail!("Funding rates only available for perpetuals, not {instrument_id}");
         }
@@ -2366,8 +2372,8 @@ pub(crate) mod tests {
         messages::{
             DataEvent,
             data::{
-                SubscribeBookDeltas, SubscribeCustomData, SubscribeQuotes, UnsubscribeBookDeltas,
-                UnsubscribeCustomData, UnsubscribeQuotes,
+                SubscribeBookDeltas, SubscribeCustomData, SubscribeFundingRates, SubscribeQuotes,
+                UnsubscribeBookDeltas, UnsubscribeCustomData, UnsubscribeQuotes,
             },
         },
         testing::wait_until_async,
@@ -2398,7 +2404,7 @@ pub(crate) mod tests {
         book::{BookSequenceOutcome, sync::BookSyncTracker},
         common::{
             consts::BYBIT_CLIENT_ID,
-            enums::BybitProductType,
+            enums::{BybitProductType, BybitSymbolType},
             parse::{parse_linear_instrument, parse_option_instrument},
             rate_limit::BYBIT_OPTION_SUBSCRIPTION_LIMIT,
             testing::load_test_json,
@@ -2421,6 +2427,15 @@ pub(crate) mod tests {
         let instrument = &response.result.list[0];
         let ts = UnixNanos::new(1_700_000_000_000_000_000);
         parse_linear_instrument(instrument, ts, ts).unwrap()
+    }
+
+    fn tradfi_linear_instrument() -> InstrumentAny {
+        let json = load_test_json("http_get_instruments_linear.json");
+        let response: BybitInstrumentLinearResponse = serde_json::from_str(&json).unwrap();
+        let mut instrument = response.result.list[0].clone();
+        instrument.symbol_type = Some(BybitSymbolType::Stock);
+        let ts = UnixNanos::new(1_700_000_000_000_000_000);
+        parse_linear_instrument(&instrument, ts, ts).unwrap()
     }
 
     fn linear_instruments() -> Vec<InstrumentAny> {
@@ -3508,8 +3523,9 @@ pub(crate) mod tests {
     }
 
     #[rstest]
-    fn test_handle_ticker_linear_funding_dedup() {
-        let instrument = linear_instrument();
+    #[case::crypto_perpetual(linear_instrument())]
+    #[case::perpetual_contract(tradfi_linear_instrument())]
+    fn test_handle_ticker_linear_funding_dedup(#[case] instrument: InstrumentAny) {
         let instrument_id = instrument.id();
         let instruments = build_instruments(&[instrument]);
         let (trade_subs, ticker_subs, quote_subs, book_depths, greeks_subs, bar_types) =
@@ -3579,6 +3595,39 @@ pub(crate) mod tests {
         );
 
         rx.try_recv().unwrap_err();
+    }
+
+    #[rstest]
+    #[case::crypto_perpetual(linear_instrument())]
+    #[case::perpetual_contract(tradfi_linear_instrument())]
+    #[tokio::test]
+    async fn test_subscribe_funding_rates_accepts_perpetuals(#[case] instrument: InstrumentAny) {
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        set_data_event_sender(tx);
+        let mut client = BybitDataClient::new(
+            *BYBIT_CLIENT_ID,
+            BybitDataClientConfig {
+                product_types: vec![BybitProductType::Linear],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let instrument_id = instrument.id();
+        client.instruments.insert(instrument_id, instrument);
+
+        let command = SubscribeFundingRates::new(
+            instrument_id,
+            Some(*BYBIT_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        );
+        client.subscribe_funding_rates(command).unwrap();
+
+        let subs = client.ticker_subs.get_cloned(&instrument_id).unwrap();
+        assert!(subs.contains("funding"));
     }
 
     #[rstest]
