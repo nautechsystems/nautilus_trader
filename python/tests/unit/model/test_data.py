@@ -17,6 +17,8 @@ Test data behavior.
 """
 
 import json
+import subprocess
+import sys
 
 import pytest
 
@@ -76,6 +78,68 @@ def test_data_type_identifier() -> None:
     dt = DataType("QuoteTick", identifier="alpha")
 
     assert dt.identifier == "alpha"
+
+
+@pytest.mark.parametrize(
+    "topic",
+    [
+        "Example.identifier=A.identifier=B",
+        "Example.value=1.identifier=A.identifier=B",
+        "Example.identifier=.identifier=B",
+    ],
+)
+def test_data_type_from_str_rejects_repeated_identifier_in_subprocess(topic: str) -> None:
+    """
+    Isolate invalid topic parsing so an abort cannot terminate pytest.
+    """
+    code = """
+import sys
+
+from nautilus_trader.model import DataType
+
+try:
+    DataType.from_str(sys.argv[1])
+except ValueError as e:
+    assert str(e) == "`identifier` is reserved for DataType catalog identity"
+else:
+    raise AssertionError("Expected ValueError for repeated identifier")
+print("rejected")
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", code, topic],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=30,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "rejected\n"
+
+
+@pytest.mark.parametrize(
+    ("metadata", "identifier"),
+    [
+        (None, None),
+        ({"instrument_id": "AUD/USD.SIM", "source": "external"}, "feed-a"),
+        ({"selector": "x.identifier=A"}, "feed-b"),
+    ],
+)
+def test_data_type_from_str_roundtrip(metadata: dict | None, identifier: str | None) -> None:
+    """
+    Preserve topic identity and metadata through the Python parser.
+    """
+    original = DataType("Example", metadata=metadata, identifier=identifier)
+
+    parsed = DataType.from_str(original.topic)
+
+    assert parsed.type_name == "Example"
+    assert parsed.metadata == metadata
+    assert parsed.identifier == identifier
+    assert parsed.topic == original.topic
+    assert parsed == original
+    assert hash(parsed) == hash(original)
 
 
 def test_custom_data_python_backend_and_json_bytes() -> None:

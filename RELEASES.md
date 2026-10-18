@@ -24,6 +24,7 @@ Released on TBD (UTC).
 
 ### Security
 
+- Fixed `DataType::from_str` panics on repeated identifier suffixes
 - Fixed JSON decimal deserialization panics on `i32::MIN` exponents in builds with overflow checks enabled
 - Fixed HTTP `Referer` headers exposing URL paths and query parameters on cross-origin redirects
 - Fixed Feather run recovery modifying files outside the catalog through path traversal or symlinks
