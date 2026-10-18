@@ -2891,7 +2891,7 @@ pub(crate) fn derive_market_order_price_ticks(
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
+    use std::{future::Future, str::FromStr};
 
     use nautilus_core::UUID4;
     use nautilus_model::{
@@ -4704,13 +4704,15 @@ mod tests {
 
     #[tokio::test]
     async fn account_streams_ready_await_all_wakes_when_streams_arrive() {
-        // Pins the Notify wiring: marks landing after await_all has parked
-        // must wake the waiter rather than wait for the next 5s tick.
         let ready = std::sync::Arc::new(AccountStreamsReady::new());
         let producer = std::sync::Arc::clone(&ready);
+        let (pending_tx, pending_rx) = tokio::sync::oneshot::channel();
+        let mut pending_tx = Some(pending_tx);
+        let wait = ready.await_all(Duration::from_secs(30));
+        tokio::pin!(wait);
 
-        let waker = tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(20)).await;
+        let producer = tokio::spawn(async move {
+            pending_rx.await.expect("readiness waiter parked");
             producer.mark_orders();
             producer.mark_trades();
             producer.mark_positions();
@@ -4718,11 +4720,26 @@ mod tests {
             producer.mark_user_stats();
         });
 
-        ready
-            .await_all(Duration::from_secs(2))
-            .await
-            .expect("await_all should observe the marks");
-        waker.await.unwrap();
+        // Await the waiter before the producer so its completion cannot supply the wakeup
+        tokio::time::timeout(
+            Duration::from_secs(2),
+            std::future::poll_fn(|cx| {
+                let result = wait.as_mut().poll(cx);
+                if result.is_pending()
+                    && let Some(tx) = pending_tx.take()
+                {
+                    tx.send(()).expect("readiness producer alive");
+                }
+
+                result
+            }),
+        )
+        .await
+        .expect("marks must wake the waiter before its deadline")
+        .expect("await_all should observe the marks");
+
+        assert!(pending_tx.is_none(), "waiter must initially be pending");
+        producer.await.unwrap();
     }
 
     #[tokio::test]

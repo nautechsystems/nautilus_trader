@@ -12696,11 +12696,10 @@ mod tests {
                 .await;
         });
 
-        let dispatched = tokio::time::timeout(Duration::from_secs(2), async {
-            while client.dispatch.pending_sendtx_len() == 0 {
-                tokio::task::yield_now().await;
-            }
-        })
+        wait_until_async(
+            || async { client.dispatch.pending_sendtx_len() != 0 },
+            Duration::from_secs(2),
+        )
         .await;
 
         let released = tokio::time::timeout(
@@ -12713,7 +12712,6 @@ mod tests {
         task.abort();
         let _ = task.await;
 
-        assert!(dispatched.is_ok());
         assert!(
             released,
             "unacknowledged group must not hold later nonce reservations"
@@ -13998,24 +13996,42 @@ mod tests {
 
     #[tokio::test]
     async fn await_account_streams_ready_returns_when_streams_arrive_mid_wait() {
-        // Pins that the Notify-based wait wakes promptly when frames land
-        // after the wait has started.
         let (client, _cache, _rx) = create_execution_client();
         let ready = Arc::clone(&client.dispatch.account_streams_ready);
+        let (pending_tx, pending_rx) = tokio::sync::oneshot::channel();
+        let mut pending_tx = Some(pending_tx);
+        let wait = client.await_account_streams_ready(30.0);
+        tokio::pin!(wait);
 
-        let wait = client.await_account_streams_ready(1.0);
-
-        let seed = async move {
-            tokio::time::sleep(Duration::from_millis(20)).await;
+        let producer = tokio::spawn(async move {
+            pending_rx.await.expect("readiness waiter parked");
             ready.mark_orders();
             ready.mark_trades();
             ready.mark_positions();
             ready.mark_assets();
             ready.mark_user_stats();
-        };
+        });
 
-        let (result, ()) = tokio::join!(wait, seed);
-        result.unwrap();
+        // Await the waiter before the producer so its completion cannot supply the wakeup
+        tokio::time::timeout(
+            Duration::from_secs(2),
+            std::future::poll_fn(|cx| {
+                let result = wait.as_mut().poll(cx);
+                if result.is_pending()
+                    && let Some(tx) = pending_tx.take()
+                {
+                    tx.send(()).expect("readiness producer alive");
+                }
+
+                result
+            }),
+        )
+        .await
+        .expect("marks must wake the waiter before its deadline")
+        .unwrap();
+
+        assert!(pending_tx.is_none(), "waiter must initially be pending");
+        producer.await.unwrap();
     }
 
     #[tokio::test]

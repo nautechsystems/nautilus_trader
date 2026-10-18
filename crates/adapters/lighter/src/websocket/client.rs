@@ -1387,6 +1387,7 @@ fn send_command(
 #[cfg(test)]
 mod tests {
     use futures_util::{SinkExt, StreamExt};
+    use nautilus_common::testing::wait_until_async;
     use nautilus_core::{UnixNanos, string::secret::REDACTED};
     use nautilus_model::{
         data::TradeTick,
@@ -1727,15 +1728,40 @@ mod tests {
         );
         let (started_tx, started_rx) = tokio::sync::oneshot::channel();
         let (drop_tx, mut drop_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+
         client.task_handle.insert(get_runtime().spawn(async move {
             let _notify = NotifyOnDrop { tx: Some(drop_tx) };
             let _ = started_tx.send(());
-            std::thread::sleep(DISCONNECT_TIMEOUT + Duration::from_millis(250));
+            let _ = release_rx.recv();
             std::future::pending::<()>().await;
         }));
-        started_rx.await.expect("handler task started");
 
-        client.disconnect().await.expect("disconnect");
+        tokio::time::timeout(Duration::from_secs(2), started_rx)
+            .await
+            .expect("handler startup deadline")
+            .expect("handler task started");
+
+        let disconnect = client.disconnect();
+        tokio::pin!(disconnect);
+        assert!(
+            tokio::time::timeout(
+                DISCONNECT_TIMEOUT + Duration::from_millis(250),
+                &mut disconnect,
+            )
+            .await
+            .is_err(),
+            "disconnect must await the blocked handler after aborting it",
+        );
+        assert_eq!(
+            drop_rx.try_recv(),
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty)
+        );
+        release_tx.send(()).expect("release blocked handler");
+        tokio::time::timeout(Duration::from_secs(2), disconnect)
+            .await
+            .expect("handler must finish after release")
+            .expect("disconnect");
 
         assert_eq!(drop_rx.try_recv(), Ok(()));
     }
@@ -1788,9 +1814,11 @@ mod tests {
 
         let disconnect = get_runtime().spawn(disconnect_future);
 
-        while !signal.load(Ordering::Acquire) {
-            tokio::task::yield_now().await;
-        }
+        wait_until_async(
+            || async { signal.load(Ordering::Acquire) },
+            Duration::from_secs(2),
+        )
+        .await;
         disconnect.abort();
         let _ = disconnect.await;
 
