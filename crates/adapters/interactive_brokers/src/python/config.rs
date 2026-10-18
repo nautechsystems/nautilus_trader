@@ -18,7 +18,7 @@
 use std::str::FromStr;
 
 use nautilus_core::{python::to_pyvalue_err, string::secret::SecretString};
-use nautilus_model::identifiers::InstrumentId;
+use nautilus_model::{identifiers::InstrumentId, types::Currency};
 use pyo3::prelude::*;
 
 use crate::{
@@ -192,7 +192,7 @@ impl InteractiveBrokersDataClientConfig {
 impl InteractiveBrokersExecutionClientConfig {
     /// Creates a new `InteractiveBrokersExecutionClientConfig` instance.
     #[new]
-    #[pyo3(signature = (host=None, port=None, client_id=None, account_id=None, connection_timeout=None, request_timeout=None, fetch_all_open_orders=None, track_option_exercise_from_position_update=None, instrument_provider=None, dockerized_gateway=None))]
+    #[pyo3(signature = (host=None, port=None, client_id=None, account_id=None, connection_timeout=None, request_timeout=None, fetch_all_open_orders=None, track_option_exercise_from_position_update=None, instrument_provider=None, dockerized_gateway=None, base_currency=None))]
     #[allow(clippy::too_many_arguments)]
     fn py_new(
         host: Option<String>,
@@ -205,6 +205,7 @@ impl InteractiveBrokersExecutionClientConfig {
         track_option_exercise_from_position_update: Option<bool>,
         instrument_provider: Option<InteractiveBrokersInstrumentProviderConfig>,
         dockerized_gateway: Option<&DockerizedIBGatewayConfig>,
+        base_currency: Option<Currency>,
     ) -> PyResult<Self> {
         if dockerized_gateway.is_some() {
             return Err(to_pyvalue_err(
@@ -223,6 +224,7 @@ impl InteractiveBrokersExecutionClientConfig {
             port,
             client_id,
             account_id,
+            base_currency,
             connection_timeout: connection_timeout.unwrap_or(300),
             request_timeout,
             fetch_all_open_orders: fetch_all_open_orders.unwrap_or(false),
@@ -254,6 +256,12 @@ impl InteractiveBrokersExecutionClientConfig {
     #[getter]
     fn account_id(&self) -> Option<String> {
         self.account_id.clone()
+    }
+
+    /// Returns the account base currency.
+    #[getter]
+    fn base_currency(&self) -> Option<Currency> {
+        self.base_currency
     }
 
     /// Returns the connection timeout in seconds.

@@ -44,7 +44,7 @@ use nautilus_model::{
     data::{Bar, BarType, BookOrder, Data, OrderBookDelta, QuoteTick, option_chain::OptionGreeks},
     enums::{BookAction, OrderSide},
     identifiers::{ClientId, InstrumentId},
-    types::{Price, Quantity},
+    types::Quantity,
 };
 use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
@@ -52,8 +52,11 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     config::InteractiveBrokersDataClientConfig,
     data::{
-        cache::{OptionGreeksCache, QuoteCache, is_sentinel_price},
-        convert::{bar_type_to_ib_bar_size, ib_bar_to_nautilus_bar, ib_timestamp_to_unix_nanos},
+        cache::{OptionGreeksCache, QuoteCache},
+        convert::{
+            IbPriceConverter, bar_type_to_ib_bar_size, ib_bar_to_nautilus_bar,
+            ib_timestamp_to_unix_nanos,
+        },
         parse::{
             log_tick_parse_error, parse_index_price, parse_market_depth_operation,
             parse_option_open_interest, parse_quote_tick, parse_trade_tick,
@@ -77,7 +80,7 @@ struct StreamContext {
     data_farm_state: Arc<DataFarmConnectionState>,
     recovery_scope: DataFarmRecoveryScope,
     instrument_id: InstrumentId,
-    price_precision: u8,
+    prices: IbPriceConverter,
     size_precision: u8,
 }
 
@@ -802,7 +805,7 @@ pub(super) async fn handle_historical_bars_subscription(
     contract: ibapi::contracts::Contract,
     bar_type: BarType,
     what_to_show: HistoricalWhatToShow,
-    price_precision: u8,
+    prices: IbPriceConverter,
     size_precision: u8,
     use_rth: bool,
     start_ns: Option<UnixNanos>,
@@ -833,7 +836,7 @@ pub(super) async fn handle_historical_bars_subscription(
         data_farm_state,
         recovery_scope: DataFarmRecoveryScope::HistoricalBars,
         instrument_id: bar_type.instrument_id(),
-        price_precision,
+        prices,
         size_precision,
     };
 
@@ -959,7 +962,7 @@ where
                             let bar = ib_bar_to_nautilus_bar(
                                 ib_bar,
                                 bar_type,
-                                context.price_precision,
+                                context.prices,
                                 context.size_precision,
                             )?;
 
@@ -982,7 +985,7 @@ where
                         let bar = ib_bar_to_nautilus_bar(
                             &ib_bar,
                             bar_type,
-                            context.price_precision,
+                            context.prices,
                             context.size_precision,
                         )?;
 
@@ -1194,7 +1197,7 @@ pub(super) async fn handle_quote_subscription(
     client: Arc<ibapi::Client>,
     contract: ibapi::contracts::Contract,
     instrument_id: InstrumentId,
-    price_precision: u8,
+    prices: IbPriceConverter,
     size_precision: u8,
     data_sender: EventSender<DataEvent>,
     quote_cache: Arc<tokio::sync::Mutex<QuoteCache>>,
@@ -1215,7 +1218,7 @@ pub(super) async fn handle_quote_subscription(
         data_farm_state,
         recovery_scope: DataFarmRecoveryScope::MarketData,
         instrument_id,
-        price_precision,
+        prices,
         size_precision,
     };
 
@@ -1246,7 +1249,7 @@ pub(super) async fn handle_quote_subscription(
                             process_quote_tick_result(
                                 tick_result,
                                 context.instrument_id,
-                                context.price_precision,
+                                context.prices,
                                 context.size_precision,
                                 &context.data_sender,
                                 &quote_cache,
@@ -1288,7 +1291,7 @@ pub(super) async fn handle_option_greeks_subscription(
         data_farm_state,
         recovery_scope: DataFarmRecoveryScope::MarketData,
         instrument_id,
-        price_precision: 0,
+        prices: IbPriceConverter::new(0),
         size_precision: 0,
     };
 
@@ -1341,8 +1344,7 @@ pub(super) async fn handle_index_price_subscription(
     client: Arc<ibapi::Client>,
     contract: ibapi::contracts::Contract,
     instrument_id: InstrumentId,
-    price_precision: u8,
-    price_magnifier: i32,
+    prices: IbPriceConverter,
     data_sender: EventSender<DataEvent>,
     clock: &'static AtomicTime,
     cancellation_token: CancellationToken,
@@ -1360,7 +1362,7 @@ pub(super) async fn handle_index_price_subscription(
         data_farm_state,
         recovery_scope: DataFarmRecoveryScope::MarketData,
         instrument_id,
-        price_precision,
+        prices,
         size_precision: 0,
     };
 
@@ -1388,8 +1390,7 @@ pub(super) async fn handle_index_price_subscription(
                         process_index_price_tick_result(
                             tick_result,
                             context.instrument_id,
-                            context.price_precision,
-                            price_magnifier,
+                            context.prices,
                             &context.data_sender,
                             context.clock,
                         )
@@ -1408,12 +1409,11 @@ pub(super) async fn handle_tick_by_tick_quote_subscription(
     client: Arc<ibapi::Client>,
     contract: ibapi::contracts::Contract,
     instrument_id: InstrumentId,
-    price_precision: u8,
+    prices: IbPriceConverter,
     size_precision: u8,
     data_sender: EventSender<DataEvent>,
     clock: &'static AtomicTime,
     cancellation_token: CancellationToken,
-    price_magnifier: f64,
     data_farm_state: Arc<DataFarmConnectionState>,
     stream_config: StreamConfig,
 ) -> anyhow::Result<()> {
@@ -1431,7 +1431,7 @@ pub(super) async fn handle_tick_by_tick_quote_subscription(
         data_farm_state,
         recovery_scope: DataFarmRecoveryScope::MarketData,
         instrument_id,
-        price_precision,
+        prices,
         size_precision,
     };
 
@@ -1451,9 +1451,14 @@ pub(super) async fn handle_tick_by_tick_quote_subscription(
         move |subscription, context, farm_generation| {
             Box::pin(process_tick_by_tick_quote_stream(
                 subscription,
-                context,
+                context.instrument_id,
+                context.prices,
+                context.size_precision,
+                &context.data_sender,
+                context.clock,
+                &context.cancellation_token,
+                &context.data_farm_state,
                 farm_generation,
-                price_magnifier,
                 context.monitor("quotes", farm_generation),
             ))
         },
@@ -1461,11 +1466,17 @@ pub(super) async fn handle_tick_by_tick_quote_subscription(
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn process_tick_by_tick_quote_stream<S>(
     subscription: &mut S,
-    context: &StreamContext,
+    instrument_id: InstrumentId,
+    prices: IbPriceConverter,
+    size_precision: u8,
+    data_sender: &EventSender<DataEvent>,
+    clock: &'static AtomicTime,
+    cancellation_token: &CancellationToken,
+    data_farm_state: &DataFarmConnectionState,
     farm_generation: u64,
-    price_magnifier: f64,
     mut monitor: SubscriptionMonitor,
 ) -> anyhow::Result<StreamAction>
 where
@@ -1476,8 +1487,8 @@ where
     loop {
         tokio::select! {
             biased;
-            () = context.cancellation_token.cancelled() => return Ok(StreamAction::Stop),
-            () = context.data_farm_state.wait_for_recovery_after(farm_generation) => {
+            () = cancellation_token.cancelled() => return Ok(StreamAction::Stop),
+            () = data_farm_state.wait_for_recovery_after(farm_generation) => {
                 return Ok(StreamAction::Resubscribe);
             }
             () = monitor.wait_for_idle() => {
@@ -1490,8 +1501,8 @@ where
                     Some(Ok(SubscriptionItem::Data(bid_ask))) => {
                         monitor.received_data();
 
-                        if is_sentinel_price(bid_ask.bid_price, Some(bid_ask.bid_size))
-                            || is_sentinel_price(bid_ask.ask_price, Some(bid_ask.ask_size))
+                        if prices.is_sentinel(bid_ask.bid_price, Some(bid_ask.bid_size))
+                            || prices.is_sentinel(bid_ask.ask_price, Some(bid_ask.ask_size))
                             || !bid_ask.bid_size.is_finite()
                             || bid_ask.bid_size <= 0.0
                             || !bid_ask.ask_size.is_finite()
@@ -1499,7 +1510,7 @@ where
                         {
                             tracing::debug!(
                                 "Ignoring incomplete IB quote for {}: bid={}@{}, ask={}@{}",
-                                context.instrument_id,
+                                instrument_id,
                                 bid_ask.bid_size,
                                 bid_ask.bid_price,
                                 bid_ask.ask_size,
@@ -1508,49 +1519,46 @@ where
                             continue;
                         }
                         let ts_event = ib_timestamp_to_unix_nanos(&bid_ask.time);
-                        let ts_init = context.clock.get_time_ns();
+                        let ts_init = clock.get_time_ns();
                         let quote_tick = parse_quote_tick(
-                            context.instrument_id,
-                            Some(bid_ask.bid_price * price_magnifier),
-                            Some(bid_ask.ask_price * price_magnifier),
+                            instrument_id,
+                            Some(bid_ask.bid_price),
+                            Some(bid_ask.ask_price),
                             Some(bid_ask.bid_size),
                             Some(bid_ask.ask_size),
-                            context.price_precision,
-                            context.size_precision,
+                            prices,
+                            size_precision,
                             ts_event,
                             ts_init,
                         );
 
                         match quote_tick {
                             Ok(quote_tick) => {
-                                if context
-                                    .data_sender
+                                if data_sender
                                     .send(DataEvent::Data(Data::Quote(quote_tick)))
                                     .is_err()
                                 {
                                     return Ok(StreamAction::Stop);
                                 }
                             }
-                            Err(e) => log_tick_parse_error("quote", context.instrument_id, &e),
+                            Err(e) => log_tick_parse_error("quote", instrument_id, &e),
                         }
                     }
                     Some(Ok(SubscriptionItem::Notice(notice))) => {
-                        context.data_farm_state.handle_notice(&notice, context.clock);
+                        data_farm_state.handle_notice(&notice, clock);
                         tracing::debug!(
                             "IB tick-by-tick quote notice for {}: {} - {}",
-                            context.instrument_id,
+                            instrument_id,
                             notice.code,
                             notice.message,
                         );
                     }
                     Some(Err(e)) if is_subscription_disconnected_error(&e) => {
-                        context
-                            .data_farm_state
-                            .mark_degraded(farm_generation, context.clock.get_time_ns());
+                        data_farm_state.mark_degraded(farm_generation, clock.get_time_ns());
                         if !wait_for_data_farm_recovery_or_cancel(
-                            &context.data_farm_state,
+                            data_farm_state,
                             farm_generation,
-                            &context.cancellation_token,
+                            cancellation_token,
                         )
                         .await
                         {
@@ -1562,7 +1570,7 @@ where
                     None => {
                         tracing::warn!(
                             "IB tick-by-tick quote stream ended unexpectedly for {}; resubscribing",
-                            context.instrument_id,
+                            instrument_id,
                         );
 
                         return Ok(StreamAction::Resubscribe);
@@ -1578,7 +1586,7 @@ pub(super) async fn handle_trade_subscription(
     client: Arc<ibapi::Client>,
     contract: ibapi::contracts::Contract,
     instrument_id: InstrumentId,
-    price_precision: u8,
+    prices: IbPriceConverter,
     size_precision: u8,
     data_sender: EventSender<DataEvent>,
     clock: &'static AtomicTime,
@@ -1597,7 +1605,7 @@ pub(super) async fn handle_trade_subscription(
         data_farm_state,
         recovery_scope: DataFarmRecoveryScope::MarketData,
         instrument_id,
-        price_precision,
+        prices,
         size_precision,
     };
 
@@ -1620,7 +1628,7 @@ pub(super) async fn handle_trade_subscription(
             Box::pin(process_trade_stream(
                 subscription,
                 context.instrument_id,
-                context.price_precision,
+                context.prices,
                 context.size_precision,
                 &context.data_sender,
                 context.clock,
@@ -1642,7 +1650,7 @@ pub(super) async fn handle_realtime_bars_subscription(
     bar_type_str: String,
     instrument_id: InstrumentId,
     what_to_show: RealtimeWhatToShow,
-    price_precision: u8,
+    prices: IbPriceConverter,
     size_precision: u8,
     data_sender: EventSender<DataEvent>,
     clock: &'static AtomicTime,
@@ -1671,7 +1679,7 @@ pub(super) async fn handle_realtime_bars_subscription(
         data_farm_state,
         recovery_scope: DataFarmRecoveryScope::MarketData,
         instrument_id,
-        price_precision,
+        prices,
         size_precision,
     };
 
@@ -1699,7 +1707,7 @@ pub(super) async fn handle_realtime_bars_subscription(
                     subscription,
                     bar_type,
                     &bar_type_str,
-                    context.price_precision,
+                    context.prices,
                     context.size_precision,
                     &context.data_sender,
                     &last_bars,
@@ -1735,7 +1743,7 @@ async fn update_revised_bar_tracking(
 async fn process_trade_stream<S>(
     subscription: &mut S,
     instrument_id: InstrumentId,
-    price_precision: u8,
+    prices: IbPriceConverter,
     size_precision: u8,
     data_sender: &EventSender<DataEvent>,
     clock: &'static AtomicTime,
@@ -1771,7 +1779,7 @@ where
                     Some(Ok(SubscriptionItem::Data(tick))) => {
                         monitor.received_data();
 
-                        if is_sentinel_price(tick.price, Some(tick.size))
+                        if prices.is_sentinel(tick.price, Some(tick.size))
                             || !tick.size.is_finite()
                             || tick.size <= 0.0
                         {
@@ -1790,7 +1798,7 @@ where
                             instrument_id,
                             tick.price,
                             tick.size,
-                            price_precision,
+                            prices,
                             size_precision,
                             ts_event,
                             ts_init,
@@ -1855,7 +1863,7 @@ async fn process_realtime_bar_stream<S>(
     subscription: &mut S,
     bar_type: BarType,
     bar_type_str: &str,
-    price_precision: u8,
+    prices: IbPriceConverter,
     size_precision: u8,
     data_sender: &EventSender<DataEvent>,
     last_bars: &Arc<tokio::sync::Mutex<AHashMap<String, RealtimeBar>>>,
@@ -1903,7 +1911,7 @@ where
                                 count: bar.count,
                             },
                             bar_type,
-                            price_precision,
+                            prices,
                             size_precision,
                         )?;
 
@@ -1971,7 +1979,7 @@ where
 async fn process_market_depth_stream<S>(
     subscription: &mut S,
     instrument_id: InstrumentId,
-    price_precision: u8,
+    prices: IbPriceConverter,
     size_precision: u8,
     data_sender: &EventSender<DataEvent>,
     clock: &'static AtomicTime,
@@ -2033,8 +2041,14 @@ where
                             );
                             continue;
                         };
+                        let price = match prices.price(depth.price) {
+                            Ok(price) => price,
+                            Err(e) => {
+                                tracing::warn!("Ignoring IB depth level for {instrument_id}: {e}");
+                                continue;
+                            }
+                        };
                         sequence += 1;
-                        let price = Price::new(depth.price, price_precision);
                         let size = Quantity::new(depth.size, size_precision);
                         let order_id = depth.position as u64;
                         let order = BookOrder::new(order_side, price, size, order_id);
@@ -2065,8 +2079,14 @@ where
                             );
                             continue;
                         };
+                        let price = match prices.price(depth.price) {
+                            Ok(price) => price,
+                            Err(e) => {
+                                tracing::warn!("Ignoring IB depth level for {instrument_id}: {e}");
+                                continue;
+                            }
+                        };
                         sequence += 1;
-                        let price = Price::new(depth.price, price_precision);
                         let size = Quantity::new(depth.size, size_precision);
                         let order_key = (depth.position, depth.market_maker.clone());
                         let order_id = *l2_order_ids.entry(order_key.clone()).or_insert_with(|| {
@@ -2155,7 +2175,7 @@ pub(super) async fn handle_market_depth_subscription(
     client: Arc<ibapi::Client>,
     contract: ibapi::contracts::Contract,
     instrument_id: InstrumentId,
-    price_precision: u8,
+    prices: IbPriceConverter,
     size_precision: u8,
     depth_rows: i32,
     is_smart_depth: bool,
@@ -2174,7 +2194,7 @@ pub(super) async fn handle_market_depth_subscription(
         data_farm_state,
         recovery_scope: DataFarmRecoveryScope::MarketData,
         instrument_id,
-        price_precision,
+        prices,
         size_precision,
     };
 
@@ -2208,7 +2228,7 @@ pub(super) async fn handle_market_depth_subscription(
             Box::pin(process_market_depth_stream(
                 subscription,
                 context.instrument_id,
-                context.price_precision,
+                context.prices,
                 context.size_precision,
                 &context.data_sender,
                 context.clock,
@@ -2226,7 +2246,7 @@ pub(super) async fn handle_market_depth_subscription(
 async fn process_quote_tick_result<I, E>(
     tick_result: Result<I, E>,
     instrument_id: InstrumentId,
-    price_precision: u8,
+    prices: IbPriceConverter,
     size_precision: u8,
     data_sender: &EventSender<DataEvent>,
     quote_cache: &Arc<tokio::sync::Mutex<QuoteCache>>,
@@ -2248,7 +2268,7 @@ where
                     &mut cache,
                     instrument_id,
                     &price,
-                    price_precision,
+                    prices,
                     size_precision,
                     ts_event,
                     ts_init,
@@ -2267,7 +2287,7 @@ where
                     &mut cache,
                     instrument_id,
                     &size,
-                    price_precision,
+                    prices,
                     size_precision,
                     ts_event,
                     ts_init,
@@ -2287,7 +2307,7 @@ where
                     &mut cache,
                     instrument_id,
                     &price_size,
-                    price_precision,
+                    prices,
                     size_precision,
                     ts_event,
                     ts_init,
@@ -2393,8 +2413,7 @@ where
 async fn process_index_price_tick_result<I, E>(
     tick_result: Result<I, E>,
     instrument_id: InstrumentId,
-    price_precision: u8,
-    price_magnifier: i32,
+    prices: IbPriceConverter,
     data_sender: &EventSender<DataEvent>,
     clock: &'static AtomicTime,
 ) -> anyhow::Result<StreamAction>
@@ -2406,7 +2425,7 @@ where
         Ok(SubscriptionItem::Data(TickTypes::Price(price)))
             if matches!(price.tick_type, TickType::Last) =>
         {
-            if is_sentinel_price(price.price, None) {
+            if prices.is_sentinel(price.price, None) {
                 tracing::debug!(
                     "Ignoring IB index price sentinel for {}: {}",
                     instrument_id,
@@ -2417,14 +2436,8 @@ where
 
             let ts_event = clock.get_time_ns();
             let ts_init = ts_event;
-            let index_price = parse_index_price(
-                instrument_id,
-                price.price,
-                price_precision,
-                price_magnifier,
-                ts_event,
-                ts_init,
-            )?;
+            let index_price =
+                parse_index_price(instrument_id, price.price, prices, ts_event, ts_init)?;
 
             if data_sender
                 .send(DataEvent::Data(Data::IndexPrice(index_price)))
@@ -2438,7 +2451,7 @@ where
         Ok(SubscriptionItem::Data(TickTypes::PriceSize(price_size)))
             if matches!(price_size.price_tick_type, TickType::Last) =>
         {
-            if is_sentinel_price(price_size.price, Some(price_size.size)) {
+            if prices.is_sentinel(price_size.price, Some(price_size.size)) {
                 tracing::debug!(
                     "Ignoring IB index price sentinel for {}: {}",
                     instrument_id,
@@ -2449,14 +2462,8 @@ where
 
             let ts_event = clock.get_time_ns();
             let ts_init = ts_event;
-            let index_price = parse_index_price(
-                instrument_id,
-                price_size.price,
-                price_precision,
-                price_magnifier,
-                ts_event,
-                ts_init,
-            )?;
+            let index_price =
+                parse_index_price(instrument_id, price_size.price, prices, ts_event, ts_init)?;
 
             if data_sender
                 .send(DataEvent::Data(Data::IndexPrice(index_price)))
@@ -2477,7 +2484,7 @@ fn update_quote_from_price_tick(
     cache: &mut QuoteCache,
     instrument_id: InstrumentId,
     price: &TickPrice,
-    price_precision: u8,
+    prices: IbPriceConverter,
     size_precision: u8,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
@@ -2487,7 +2494,7 @@ fn update_quote_from_price_tick(
             instrument_id,
             price.price,
             None,
-            price_precision,
+            prices,
             size_precision,
             ts_event,
             ts_init,
@@ -2496,7 +2503,7 @@ fn update_quote_from_price_tick(
             instrument_id,
             price.price,
             None,
-            price_precision,
+            prices,
             size_precision,
             ts_event,
             ts_init,
@@ -2511,7 +2518,7 @@ fn update_quote_from_size_tick(
     cache: &mut QuoteCache,
     instrument_id: InstrumentId,
     size: &TickSize,
-    price_precision: u8,
+    prices: IbPriceConverter,
     size_precision: u8,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
@@ -2521,7 +2528,7 @@ fn update_quote_from_size_tick(
         TickType::BidSize | TickType::DelayedBidSize => cache.update_bid_size_with_filter(
             instrument_id,
             size.size,
-            price_precision,
+            prices,
             size_precision,
             ts_event,
             ts_init,
@@ -2530,7 +2537,7 @@ fn update_quote_from_size_tick(
         TickType::AskSize | TickType::DelayedAskSize => cache.update_ask_size_with_filter(
             instrument_id,
             size.size,
-            price_precision,
+            prices,
             size_precision,
             ts_event,
             ts_init,
@@ -2545,7 +2552,7 @@ fn update_quote_from_price_size_tick(
     cache: &mut QuoteCache,
     instrument_id: InstrumentId,
     price_size: &TickPriceSize,
-    price_precision: u8,
+    prices: IbPriceConverter,
     size_precision: u8,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
@@ -2555,7 +2562,7 @@ fn update_quote_from_price_size_tick(
             instrument_id,
             price_size.price,
             Some(price_size.size),
-            price_precision,
+            prices,
             size_precision,
             ts_event,
             ts_init,
@@ -2564,7 +2571,7 @@ fn update_quote_from_price_size_tick(
             instrument_id,
             price_size.price,
             Some(price_size.size),
-            price_precision,
+            prices,
             size_precision,
             ts_event,
             ts_init,
@@ -2581,7 +2588,7 @@ fn update_quote_from_price_size_tick(
         TickType::Bid | TickType::DelayedBid => cache.update_bid_size(
             instrument_id,
             price_size.size,
-            price_precision,
+            prices,
             size_precision,
             ts_event,
             ts_init,
@@ -2589,7 +2596,7 @@ fn update_quote_from_price_size_tick(
         TickType::Ask | TickType::DelayedAsk => cache.update_ask_size(
             instrument_id,
             price_size.size,
-            price_precision,
+            prices,
             size_precision,
             ts_event,
             ts_init,
@@ -2679,7 +2686,7 @@ mod tests {
     use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime};
     use nautilus_live::task::TaskSlot;
     use nautilus_model::{
-        data::{Bar, BarType, Data},
+        data::{Bar, BarType, Data, QuoteTick},
         enums::BookAction,
         identifiers::{InstrumentId, Symbol, Venue},
         types::{Price, Quantity},
@@ -2694,10 +2701,13 @@ mod tests {
         QuoteCache, StreamAction, StreamConfig, SubscriptionMonitor,
         process_index_price_tick_result, process_market_depth_stream,
         process_option_greeks_tick_result, process_quote_tick_result, process_realtime_bar_stream,
-        process_trade_stream, send_quote_tick, update_quote_from_price_tick,
-        update_revised_bar_tracking,
+        process_tick_by_tick_quote_stream, process_trade_stream, send_quote_tick,
+        update_quote_from_price_tick, update_revised_bar_tracking,
     };
-    use crate::stubs::ChannelSubscription;
+    use crate::{
+        data::convert::IbPriceConverter,
+        stubs::{ChannelSubscription, currency_pair},
+    };
 
     impl<T: Send + 'static> CancellableStream for ChannelSubscription<T> {
         async fn cancel(&mut self) {
@@ -3179,8 +3189,7 @@ mod tests {
                 attributes: TickAttribute::default(),
             })),
             instrument_id,
-            2,
-            100,
+            IbPriceConverter::new(2).with_price_magnifier(100),
             &sender.clone().into(),
             clock,
         )
@@ -3211,7 +3220,7 @@ mod tests {
                 attributes: TickAttribute::default(),
             })),
             instrument_id,
-            2,
+            IbPriceConverter::new(2),
             0,
             &sender.clone().into(),
             &quote_cache,
@@ -3228,7 +3237,7 @@ mod tests {
                 attributes: TickAttribute::default(),
             })),
             instrument_id,
-            2,
+            IbPriceConverter::new(2),
             0,
             &sender.clone().into(),
             &quote_cache,
@@ -3258,7 +3267,7 @@ mod tests {
                 attributes: TickAttribute::default(),
             })),
             instrument_id,
-            2,
+            IbPriceConverter::new(2),
             0,
             &sender.clone().into(),
             &quote_cache,
@@ -3275,7 +3284,7 @@ mod tests {
                 attributes: TickAttribute::default(),
             })),
             instrument_id,
-            2,
+            IbPriceConverter::new(2),
             0,
             &sender.clone().into(),
             &quote_cache,
@@ -3321,7 +3330,7 @@ mod tests {
             process_quote_tick_result(
                 Ok::<_, &'static str>(tick),
                 instrument_id,
-                2,
+                IbPriceConverter::new(2),
                 0,
                 &sender.clone().into(),
                 &quote_cache,
@@ -3373,7 +3382,7 @@ mod tests {
             let action = process_quote_tick_result(
                 Ok::<_, &'static str>(TickTypes::PriceSize(tick)),
                 instrument_id,
-                2,
+                IbPriceConverter::new(2),
                 0,
                 &sender.clone().into(),
                 &quote_cache,
@@ -3413,7 +3422,7 @@ mod tests {
                 size: 7.0,
             })),
             instrument_id,
-            2,
+            IbPriceConverter::new(2),
             0,
             &sender.clone().into(),
             &quote_cache,
@@ -3432,7 +3441,7 @@ mod tests {
                 size: 9.0,
             })),
             instrument_id,
-            2,
+            IbPriceConverter::new(2),
             0,
             &sender.clone().into(),
             &quote_cache,
@@ -3473,7 +3482,7 @@ mod tests {
                     size,
                 })),
                 instrument_id,
-                2,
+                IbPriceConverter::new(2),
                 0,
                 &sender.clone().into(),
                 &quote_cache,
@@ -3496,7 +3505,7 @@ mod tests {
                 attributes: TickAttribute::default(),
             })),
             instrument_id,
-            2,
+            IbPriceConverter::new(2),
             0,
             &sender.clone().into(),
             &quote_cache,
@@ -3513,7 +3522,7 @@ mod tests {
                 attributes: TickAttribute::default(),
             })),
             instrument_id,
-            2,
+            IbPriceConverter::new(2),
             0,
             &sender.clone().into(),
             &quote_cache,
@@ -3540,7 +3549,7 @@ mod tests {
                 attributes: TickAttribute::default(),
             })),
             instrument_id,
-            2,
+            IbPriceConverter::new(2),
             0,
             &sender.clone().into(),
             &quote_cache,
@@ -3557,7 +3566,7 @@ mod tests {
                 attributes: TickAttribute::default(),
             })),
             instrument_id,
-            2,
+            IbPriceConverter::new(2),
             0,
             &sender.clone().into(),
             &quote_cache,
@@ -3575,7 +3584,7 @@ mod tests {
                 size: 12.0,
             })),
             instrument_id,
-            2,
+            IbPriceConverter::new(2),
             0,
             &sender.clone().into(),
             &quote_cache,
@@ -3591,7 +3600,7 @@ mod tests {
                 size: 13.0,
             })),
             instrument_id,
-            2,
+            IbPriceConverter::new(2),
             0,
             &sender.clone().into(),
             &quote_cache,
@@ -3615,7 +3624,7 @@ mod tests {
                 size: 14.0,
             })),
             instrument_id,
-            2,
+            IbPriceConverter::new(2),
             0,
             &sender.clone().into(),
             &quote_cache,
@@ -3645,7 +3654,7 @@ mod tests {
                 advanced_order_reject_json: String::new(),
             })),
             instrument_id,
-            2,
+            IbPriceConverter::new(2),
             0,
             &sender.clone().into(),
             &quote_cache,
@@ -3671,8 +3680,7 @@ mod tests {
                 attributes: TickAttribute::default(),
             })),
             instrument_id,
-            2,
-            1,
+            IbPriceConverter::new(2),
             &sender.clone().into(),
             clock,
         )
@@ -3693,7 +3701,7 @@ mod tests {
         let result = process_quote_tick_result(
             Err::<TickTypes, _>("boom"),
             instrument_id,
-            2,
+            IbPriceConverter::new(2),
             0,
             &sender.clone().into(),
             &quote_cache,
@@ -3893,7 +3901,7 @@ mod tests {
         process_trade_stream(
             &mut subscription,
             instrument_id,
-            2,
+            IbPriceConverter::new(2),
             0,
             &sender.clone().into(),
             clock,
@@ -3912,6 +3920,86 @@ mod tests {
             }
             other => panic!("unexpected event: {other:?}"),
         }
+    }
+
+    async fn quote_from_tick_by_tick_stream(
+        prices: IbPriceConverter,
+        bid_price: f64,
+        ask_price: f64,
+    ) -> QuoteTick {
+        let instrument_id = instrument_id();
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        let (quote_sender, quote_receiver) = tokio::sync::mpsc::unbounded_channel();
+        let mut subscription = ChannelSubscription::new(quote_receiver);
+        let cancellation_token = CancellationToken::new();
+        let clock = get_atomic_clock_realtime();
+        let data_farm_state = DataFarmConnectionState::default();
+
+        quote_sender
+            .send(Ok(ibapi::market_data::realtime::BidAsk {
+                time: time::OffsetDateTime::UNIX_EPOCH,
+                bid_price,
+                ask_price,
+                bid_size: 10.0,
+                ask_size: 20.0,
+                bid_ask_attribute: ibapi::market_data::realtime::BidAskAttribute {
+                    bid_past_low: false,
+                    ask_past_high: false,
+                },
+            }))
+            .unwrap();
+
+        drop(quote_sender);
+
+        process_tick_by_tick_quote_stream(
+            &mut subscription,
+            instrument_id,
+            prices,
+            0,
+            &sender.clone().into(),
+            clock,
+            &cancellation_token,
+            &data_farm_state,
+            data_farm_state.recovery_generation(),
+            disabled_monitor(),
+        )
+        .await
+        .unwrap();
+
+        match receiver.recv().await.unwrap() {
+            DataEvent::Data(Data::Quote(quote)) => quote,
+            other => panic!("unexpected event: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_process_tick_by_tick_quote_stream_divides_magnified_quote() {
+        let quote = quote_from_tick_by_tick_stream(
+            IbPriceConverter::new(4).with_price_magnifier(100),
+            486.25,
+            486.5,
+        )
+        .await;
+
+        assert_eq!(quote.bid_price, Price::from("4.8625"));
+        assert_eq!(quote.ask_price, Price::from("4.8650"));
+        assert_eq!(quote.bid_size.as_f64(), 10.0);
+        assert_eq!(quote.ask_size.as_f64(), 20.0);
+    }
+
+    #[tokio::test]
+    async fn test_process_tick_by_tick_quote_stream_rounds_fx_bid_down_and_ask_up() {
+        let instrument = currency_pair("EUR", "USD", 5, "0.00005");
+
+        let quote = quote_from_tick_by_tick_stream(
+            IbPriceConverter::for_instrument(&instrument, 1),
+            1.12098,
+            1.12099,
+        )
+        .await;
+
+        assert_eq!(quote.bid_price, Price::from("1.12095"));
+        assert_eq!(quote.ask_price, Price::from("1.12100"));
     }
 
     #[tokio::test]
@@ -3956,7 +4044,7 @@ mod tests {
         let action = process_trade_stream(
             &mut subscription,
             instrument_id,
-            2,
+            IbPriceConverter::new(2),
             0,
             &sender.clone().into(),
             clock,
@@ -4005,7 +4093,7 @@ mod tests {
             &mut subscription,
             bar_type,
             &bar_type_str,
-            2,
+            IbPriceConverter::new(2),
             0,
             &sender.clone().into(),
             &last_bars,
@@ -4080,7 +4168,7 @@ mod tests {
         process_market_depth_stream(
             &mut subscription,
             instrument_id,
-            2,
+            IbPriceConverter::new(2),
             0,
             &sender.clone().into(),
             clock,
@@ -4156,7 +4244,7 @@ mod tests {
             let action = process_market_depth_stream(
                 &mut subscription,
                 instrument_id,
-                2,
+                IbPriceConverter::new(2),
                 0,
                 &sender.clone().into(),
                 clock,
@@ -4225,7 +4313,7 @@ mod tests {
         let action = process_market_depth_stream(
             &mut subscription,
             instrument_id,
-            2,
+            IbPriceConverter::new(2),
             0,
             &sender.clone().into(),
             clock,
@@ -4293,7 +4381,7 @@ mod tests {
         process_trade_stream(
             &mut subscription,
             instrument_id,
-            2,
+            IbPriceConverter::new(2),
             0,
             &sender.clone().into(),
             clock,
@@ -4342,7 +4430,7 @@ mod tests {
                 price: 100.0,
                 attributes: TickAttribute::default(),
             },
-            2,
+            IbPriceConverter::new(2),
             0,
             nautilus_core::UnixNanos::new(1),
             nautilus_core::UnixNanos::new(1),
@@ -4518,7 +4606,7 @@ mod tests {
             process_trade_stream(
                 &mut subscription,
                 instrument_id(),
-                2,
+                IbPriceConverter::new(2),
                 0,
                 &sender,
                 clock,

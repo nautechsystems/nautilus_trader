@@ -14,7 +14,7 @@ use nautilus_common::live::sender::EventSender;
 use super::core::*;
 use crate::{
     common::{enums::IbAction, spreads::parse_spread_instrument_id_to_legs},
-    execution::parse,
+    execution::{parse, transform::from_ib_price},
 };
 
 const SPREAD_LEG_FILLS_TIMEOUT: Duration = Duration::from_secs(5);
@@ -239,8 +239,8 @@ impl InteractiveBrokersExecutionClient {
             .find(&leg_instrument_id)
             .context("Leg instrument not found")?;
 
-        let price_magnifier = instrument_provider.get_price_magnifier(&leg_instrument_id) as f64;
-        let execution_price = exec_data.execution.price * price_magnifier;
+        let price_magnifier = instrument_provider.get_price_magnifier(&leg_instrument_id);
+        let execution_price = from_ib_price(exec_data.execution.price, price_magnifier);
         let leg_price = Price::new(execution_price, leg_instrument.price_precision());
 
         let leg_quantity =
