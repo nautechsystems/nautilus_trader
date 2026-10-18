@@ -24,59 +24,85 @@ use nautilus_model::{
 
 use super::enums::HyperliquidProductType;
 
-/// Compares a new status snapshot against cached state, emitting [`InstrumentStatus`]
-/// events for changes and removals of subscribed instruments.
+/// Instrument status subscriptions and the last observed status of each instrument.
 ///
-/// A cached instrument absent from the new snapshot is removed, emitting
-/// `NotAvailableForTrading`, only when its product type is in `loaded`.
-/// Otherwise its absence may be a failed fetch, so it keeps its previous status.
-pub(crate) fn diff_and_emit_statuses(
-    new_statuses: &AHashMap<InstrumentId, MarketStatusAction>,
-    cached_statuses: &mut AHashMap<InstrumentId, MarketStatusAction>,
-    loaded: &AHashSet<HyperliquidProductType>,
-    subscriptions: &AHashSet<InstrumentId>,
-    sender: &EventSender<DataEvent>,
-    ts_event: UnixNanos,
-    ts_init: UnixNanos,
-) {
-    for (instrument_id, &new_action) in new_statuses {
-        let changed = cached_statuses
-            .get(instrument_id)
-            .is_none_or(|&prev| prev != new_action);
+/// Kept behind one lock so a subscription's cached replay is ordered with refresh
+/// publication.
+#[derive(Debug, Default)]
+pub(crate) struct InstrumentStatusState {
+    subscriptions: AHashSet<InstrumentId>,
+    statuses: AHashMap<InstrumentId, MarketStatusAction>,
+}
 
-        if changed {
-            cached_statuses.insert(*instrument_id, new_action);
-            if subscriptions.contains(instrument_id) {
-                emit_status(sender, *instrument_id, new_action, ts_event, ts_init);
-            }
+impl InstrumentStatusState {
+    /// Registers a subscription and emits the cached status, if any.
+    pub(crate) fn subscribe(
+        &mut self,
+        instrument_id: InstrumentId,
+        sender: &EventSender<DataEvent>,
+        ts: UnixNanos,
+    ) {
+        self.subscriptions.insert(instrument_id);
+
+        if let Some(&action) = self.statuses.get(&instrument_id) {
+            emit_status(sender, instrument_id, action, ts, ts);
         }
     }
 
-    let removed: Vec<InstrumentId> = cached_statuses
-        .keys()
-        .filter(|id| {
-            !new_statuses.contains_key(id)
-                && HyperliquidProductType::from_symbol(id.symbol.as_str())
-                    .is_ok_and(|product_type| loaded.contains(&product_type))
-        })
-        .copied()
-        .collect();
+    pub(crate) fn unsubscribe(&mut self, instrument_id: &InstrumentId) {
+        self.subscriptions.remove(instrument_id);
+    }
 
-    for instrument_id in removed {
-        cached_statuses.remove(&instrument_id);
-        if subscriptions.contains(&instrument_id) {
-            emit_status(
-                sender,
-                instrument_id,
-                MarketStatusAction::NotAvailableForTrading,
-                ts_event,
-                ts_init,
-            );
+    /// Replaces the cached statuses without emitting.
+    pub(crate) fn store(&mut self, statuses: AHashMap<InstrumentId, MarketStatusAction>) {
+        self.statuses = statuses;
+    }
+
+    /// Applies a new status snapshot, emitting [`InstrumentStatus`] events for changes
+    /// and removals of subscribed instruments.
+    ///
+    /// A cached instrument absent from the new snapshot is removed, emitting
+    /// `NotAvailableForTrading`, only when its product type is in `loaded`.
+    /// Otherwise its absence may be a failed fetch, so it keeps its previous status.
+    pub(crate) fn apply(
+        &mut self,
+        new_statuses: &AHashMap<InstrumentId, MarketStatusAction>,
+        loaded: &AHashSet<HyperliquidProductType>,
+        sender: &EventSender<DataEvent>,
+        ts: UnixNanos,
+    ) {
+        for (&instrument_id, &new_action) in new_statuses {
+            let changed = self.statuses.insert(instrument_id, new_action) != Some(new_action);
+            if changed && self.subscriptions.contains(&instrument_id) {
+                emit_status(sender, instrument_id, new_action, ts, ts);
+            }
         }
+
+        self.statuses.retain(|instrument_id, _| {
+            let removed = !new_statuses.contains_key(instrument_id)
+                && HyperliquidProductType::from_symbol(instrument_id.symbol.as_str())
+                    .is_ok_and(|product_type| loaded.contains(&product_type));
+
+            if removed && self.subscriptions.contains(instrument_id) {
+                emit_status(
+                    sender,
+                    *instrument_id,
+                    MarketStatusAction::NotAvailableForTrading,
+                    ts,
+                    ts,
+                );
+            }
+            !removed
+        });
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.subscriptions.clear();
+        self.statuses.clear();
     }
 }
 
-pub(crate) fn emit_status(
+fn emit_status(
     sender: &EventSender<DataEvent>,
     instrument_id: InstrumentId,
     action: MarketStatusAction,
@@ -114,20 +140,27 @@ mod tests {
         }
     }
 
+    fn status_state(
+        subscriptions: &[InstrumentId],
+        statuses: &[(InstrumentId, MarketStatusAction)],
+    ) -> InstrumentStatusState {
+        InstrumentStatusState {
+            subscriptions: subscriptions.iter().copied().collect(),
+            statuses: statuses.iter().copied().collect(),
+        }
+    }
+
     #[rstest]
-    fn test_diff_emits_on_change() {
+    fn test_apply_emits_on_change() {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
-        let mut cached = AHashMap::from([(id, MarketStatusAction::Trading)]);
+        let mut state = status_state(&[id], &[(id, MarketStatusAction::Trading)]);
         let new_statuses = AHashMap::from([(id, MarketStatusAction::Close)]);
 
-        diff_and_emit_statuses(
+        state.apply(
             &new_statuses,
-            &mut cached,
             &AHashSet::new(),
-            &AHashSet::from([id]),
             &tx.into(),
-            UnixNanos::default(),
             UnixNanos::default(),
         );
 
@@ -135,23 +168,20 @@ mod tests {
         assert_eq!(status.instrument_id, id);
         assert_eq!(status.action, MarketStatusAction::Close);
         assert_eq!(status.is_trading, Some(false));
-        assert_eq!(cached.get(&id), Some(&MarketStatusAction::Close));
+        assert_eq!(state.statuses.get(&id), Some(&MarketStatusAction::Close));
     }
 
     #[rstest]
-    fn test_diff_no_emit_when_unchanged() {
+    fn test_apply_no_emit_when_unchanged() {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
-        let mut cached = AHashMap::from([(id, MarketStatusAction::Trading)]);
+        let mut state = status_state(&[id], &[(id, MarketStatusAction::Trading)]);
         let new_statuses = AHashMap::from([(id, MarketStatusAction::Trading)]);
 
-        diff_and_emit_statuses(
+        state.apply(
             &new_statuses,
-            &mut cached,
             &AHashSet::new(),
-            &AHashSet::from([id]),
             &tx.into(),
-            UnixNanos::default(),
             UnixNanos::default(),
         );
 
@@ -159,19 +189,16 @@ mod tests {
     }
 
     #[rstest]
-    fn test_diff_emits_for_new_instrument() {
+    fn test_apply_emits_for_new_instrument() {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let id = InstrumentId::from("ETH-USD-PERP.HYPERLIQUID");
-        let mut cached = AHashMap::new();
+        let mut state = status_state(&[id], &[]);
         let new_statuses = AHashMap::from([(id, MarketStatusAction::Trading)]);
 
-        diff_and_emit_statuses(
+        state.apply(
             &new_statuses,
-            &mut cached,
             &AHashSet::new(),
-            &AHashSet::from([id]),
             &tx.into(),
-            UnixNanos::default(),
             UnixNanos::default(),
         );
 
@@ -185,22 +212,18 @@ mod tests {
     #[case::perp("BTC-USD-PERP.HYPERLIQUID", HyperliquidProductType::Perp)]
     #[case::spot("PURR-USDC-SPOT.HYPERLIQUID", HyperliquidProductType::Spot)]
     #[case::outcome("1-YES-OUTCOME.HYPERLIQUID", HyperliquidProductType::Outcome)]
-    fn test_diff_emits_not_available_for_removed_instrument(
+    fn test_apply_emits_not_available_for_removed_instrument(
         #[case] instrument_id: &str,
         #[case] product_type: HyperliquidProductType,
     ) {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let id = InstrumentId::from(instrument_id);
-        let mut cached = AHashMap::from([(id, MarketStatusAction::Trading)]);
-        let new_statuses = AHashMap::new();
+        let mut state = status_state(&[id], &[(id, MarketStatusAction::Trading)]);
 
-        diff_and_emit_statuses(
-            &new_statuses,
-            &mut cached,
+        state.apply(
+            &AHashMap::new(),
             &AHashSet::from([product_type]),
-            &AHashSet::from([id]),
             &tx.into(),
-            UnixNanos::default(),
             UnixNanos::default(),
         );
 
@@ -208,7 +231,7 @@ mod tests {
         assert_eq!(status.instrument_id, id);
         assert_eq!(status.action, MarketStatusAction::NotAvailableForTrading);
         assert_eq!(status.is_trading, Some(false));
-        assert!(!cached.contains_key(&id));
+        assert!(!state.statuses.contains_key(&id));
     }
 
     #[rstest]
@@ -217,50 +240,46 @@ mod tests {
         "BTC-USD-PERP.HYPERLIQUID",
         &[HyperliquidProductType::Spot, HyperliquidProductType::Outcome],
     )]
-    fn test_diff_keeps_status_when_absence_is_not_a_removal(
+    fn test_apply_keeps_status_when_absence_is_not_a_removal(
         #[case] instrument_id: &str,
         #[case] loaded: &[HyperliquidProductType],
     ) {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let id = InstrumentId::from(instrument_id);
-        let mut cached = AHashMap::from([(id, MarketStatusAction::Trading)]);
+        let mut state = status_state(&[id], &[(id, MarketStatusAction::Trading)]);
 
-        diff_and_emit_statuses(
+        state.apply(
             &AHashMap::new(),
-            &mut cached,
             &loaded.iter().copied().collect(),
-            &AHashSet::from([id]),
             &tx.into(),
-            UnixNanos::default(),
             UnixNanos::default(),
         );
 
         rx.try_recv().unwrap_err();
-        assert_eq!(cached.get(&id), Some(&MarketStatusAction::Trading));
+        assert_eq!(state.statuses.get(&id), Some(&MarketStatusAction::Trading));
     }
 
     #[rstest]
-    fn test_diff_only_emits_for_subscribed() {
+    fn test_apply_only_emits_for_subscribed() {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let subscribed_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
         let unsubscribed_id = InstrumentId::from("ETH-USD-PERP.HYPERLIQUID");
-        let subs = AHashSet::from([subscribed_id]);
-        let mut cached = AHashMap::from([
-            (subscribed_id, MarketStatusAction::Trading),
-            (unsubscribed_id, MarketStatusAction::Trading),
-        ]);
+        let mut state = status_state(
+            &[subscribed_id],
+            &[
+                (subscribed_id, MarketStatusAction::Trading),
+                (unsubscribed_id, MarketStatusAction::Trading),
+            ],
+        );
         let new_statuses = AHashMap::from([
             (subscribed_id, MarketStatusAction::Close),
             (unsubscribed_id, MarketStatusAction::Close),
         ]);
 
-        diff_and_emit_statuses(
+        state.apply(
             &new_statuses,
-            &mut cached,
             &AHashSet::new(),
-            &subs,
             &tx.into(),
-            UnixNanos::default(),
             UnixNanos::default(),
         );
 
@@ -268,32 +287,33 @@ mod tests {
         assert_eq!(status.instrument_id, subscribed_id);
         assert_eq!(status.action, MarketStatusAction::Close);
         rx.try_recv().unwrap_err();
-        assert_eq!(cached.get(&subscribed_id), Some(&MarketStatusAction::Close));
         assert_eq!(
-            cached.get(&unsubscribed_id),
+            state.statuses.get(&subscribed_id),
+            Some(&MarketStatusAction::Close)
+        );
+        assert_eq!(
+            state.statuses.get(&unsubscribed_id),
             Some(&MarketStatusAction::Close)
         );
     }
 
     #[rstest]
-    fn test_diff_removal_only_emits_for_subscribed() {
+    fn test_apply_removal_only_emits_for_subscribed() {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let subscribed_id = InstrumentId::from("PURR-USDC-SPOT.HYPERLIQUID");
         let unsubscribed_id = InstrumentId::from("HYPE-USDC-SPOT.HYPERLIQUID");
-        let subs = AHashSet::from([subscribed_id]);
-        let mut cached = AHashMap::from([
-            (subscribed_id, MarketStatusAction::Trading),
-            (unsubscribed_id, MarketStatusAction::Trading),
-        ]);
-        let new_statuses = AHashMap::new();
+        let mut state = status_state(
+            &[subscribed_id],
+            &[
+                (subscribed_id, MarketStatusAction::Trading),
+                (unsubscribed_id, MarketStatusAction::Trading),
+            ],
+        );
 
-        diff_and_emit_statuses(
-            &new_statuses,
-            &mut cached,
+        state.apply(
+            &AHashMap::new(),
             &AHashSet::from([HyperliquidProductType::Spot]),
-            &subs,
             &tx.into(),
-            UnixNanos::default(),
             UnixNanos::default(),
         );
 
@@ -301,6 +321,48 @@ mod tests {
         assert_eq!(status.instrument_id, subscribed_id);
         assert_eq!(status.action, MarketStatusAction::NotAvailableForTrading);
         rx.try_recv().unwrap_err();
-        assert!(cached.is_empty());
+        assert!(state.statuses.is_empty());
+    }
+
+    fn apply_close(
+        state: &mut InstrumentStatusState,
+        id: InstrumentId,
+        sender: &EventSender<DataEvent>,
+    ) {
+        state.apply(
+            &AHashMap::from([(id, MarketStatusAction::Close)]),
+            &AHashSet::from([HyperliquidProductType::Perp]),
+            sender,
+            UnixNanos::default(),
+        );
+    }
+
+    #[rstest]
+    fn test_state_subscribe_before_change_receives_replay_then_change() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let sender: EventSender<DataEvent> = tx.into();
+        let id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
+        let mut state = status_state(&[], &[(id, MarketStatusAction::Trading)]);
+
+        state.subscribe(id, &sender, UnixNanos::default());
+        apply_close(&mut state, id, &sender);
+
+        assert_eq!(recv_status(&mut rx).action, MarketStatusAction::Trading);
+        assert_eq!(recv_status(&mut rx).action, MarketStatusAction::Close);
+        rx.try_recv().unwrap_err();
+    }
+
+    #[rstest]
+    fn test_state_subscribe_after_change_receives_new_status() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let sender: EventSender<DataEvent> = tx.into();
+        let id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
+        let mut state = status_state(&[], &[(id, MarketStatusAction::Trading)]);
+
+        apply_close(&mut state, id, &sender);
+        state.subscribe(id, &sender, UnixNanos::default());
+
+        assert_eq!(recv_status(&mut rx).action, MarketStatusAction::Close);
+        rx.try_recv().unwrap_err();
     }
 }

@@ -2978,6 +2978,47 @@ async fn test_data_client_instrument_refresh_emits_status_change_for_subscribed(
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
+async fn test_data_client_instrument_refresh_keeps_status_on_partial_perp_load() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+
+    let config = create_data_client_config(addr);
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
+    client.connect().await.unwrap();
+
+    let btc_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
+    let tsla_id = InstrumentId::from("xyz:TSLA-USD-PERP.HYPERLIQUID");
+    for instrument_id in [btc_id, tsla_id] {
+        client
+            .subscribe_instrument_status(instrument_status_subscription(instrument_id))
+            .unwrap();
+    }
+
+    let events: Vec<DataEvent> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+    assert!(
+        instrument_statuses(&events)
+            .iter()
+            .any(|s| s.instrument_id == tsla_id && s.action == MarketStatusAction::Trading),
+        "events: {events:?}"
+    );
+
+    // the `meta` fallback only returns the standard dex, so perps are not fully loaded
+    *state.all_perp_metas_unavailable.lock().await = true;
+    *state.btc_delisted.lock().await = true;
+    client.request_instruments(instruments_request()).unwrap();
+    let events = recv_until_response(&mut rx).await;
+    let statuses = instrument_statuses(&events);
+    assert_eq!(statuses.len(), 1, "events: {events:?}");
+    assert_eq!(statuses[0].instrument_id, btc_id);
+    assert_eq!(statuses[0].action, MarketStatusAction::Close);
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_data_client_unsubscribe_instrument_status_stops_emitting() {
     let state = TestServerState::default();
     let addr = start_mock_server(state.clone()).await;
