@@ -152,8 +152,11 @@ pub fn backoff_full_jitter(attempt: u32, base: Duration, cap: Duration) -> Durat
 
     let max = (base.as_millis() as u64)
         .saturating_mul(1u64 << attempt.min(16))
-        .min(cap.as_millis() as u64)
-        .max(base.as_millis() as u64);
+        .min(cap.as_millis() as u64);
+
+    if max == 0 {
+        return Duration::ZERO;
+    }
 
     // Floor at 1ms to prevent zero-duration backoff
     Duration::from_millis((hash % max).max(1))
@@ -635,5 +638,23 @@ mod tests {
 
         let delay_high = backoff_full_jitter(10, base, cap);
         assert!(delay_high.as_millis() <= cap.as_millis());
+    }
+
+    #[rstest]
+    #[case::zero_initial(0, 5000, 0)]
+    #[case::zero_cap(100, 0, 0)]
+    #[case::cap_below_initial(100, 1, 1)]
+    fn test_backoff_full_jitter_config_boundaries(
+        #[case] initial_ms: u64,
+        #[case] cap_ms: u64,
+        #[case] expected_ms: u64,
+    ) {
+        let delay = backoff_full_jitter(
+            0,
+            Duration::from_millis(initial_ms),
+            Duration::from_millis(cap_ms),
+        );
+
+        assert_eq!(delay, Duration::from_millis(expected_ms));
     }
 }

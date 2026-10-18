@@ -69,7 +69,10 @@ use nautilus_hyperliquid::{
     },
     config::HyperliquidExecutionClientConfig,
     execution::HyperliquidExecutionClient,
-    http::models::{Cloid, HyperliquidFill},
+    http::{
+        error::Error,
+        models::{Cloid, HyperliquidFill},
+    },
 };
 use nautilus_live::{
     ExecutionClientCore, SocketReconnectRegistry, SocketReconnectRequestOutcome,
@@ -2353,6 +2356,57 @@ async fn test_exec_client_creation() {
     assert_eq!(client.venue(), *HYPERLIQUID_VENUE);
     assert_eq!(client.oms_type(), OmsType::Netting);
     assert!(!client.is_connected());
+}
+
+#[rstest]
+#[case::disabled(0, 1)]
+#[case::one_retry(1, 2)]
+#[case::two_retries(2, 3)]
+#[tokio::test]
+async fn test_execution_info_retry_configuration(
+    #[case] max_retries: u32,
+    #[case] expected_attempts: usize,
+) {
+    let state = TestServerState::default();
+    state
+        .fail_frontend_open_orders_count
+        .store(100, Ordering::Relaxed);
+    let addr = start_mock_server(state.clone()).await;
+    let mut config = create_test_exec_config(addr);
+    config.max_retries = max_retries;
+    config.retry_delay_initial_ms = 0;
+    config.retry_delay_max_ms = 0;
+    let (client, _rx, _cache) = create_test_execution_client_from_config(config);
+
+    let cmd = GenerateOrderStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        true,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+
+    let error = client
+        .generate_order_status_reports(&cmd)
+        .await
+        .unwrap_err();
+    let requests = state.info_requests.lock().await;
+    let attempts = requests
+        .iter()
+        .filter(|request| request["type"] == "frontendOpenOrders")
+        .count();
+
+    assert!(
+        matches!(
+            error.downcast_ref::<Error>(),
+            Some(Error::Http { status: 503, message }) if message == &json!({"error": "upstream unavailable"}).to_string(),
+        ),
+        "{error:?}"
+    );
+    assert_eq!(attempts, expected_attempts);
 }
 
 #[rstest]

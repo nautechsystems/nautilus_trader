@@ -1775,12 +1775,27 @@ number of returned items:
 
 Each HTTP attempt consumes its full request weight.
 
-| Request or response                         | Behavior                                |
-| ------------------------------------------- | --------------------------------------- |
-| HTTP 408, 429, or 5xx from `/info`          | Retry up to three times.                |
-| HTTP 429 with integer-seconds `Retry-After` | Use the header value as the delay.      |
-| Retryable response without a valid delay    | Use capped full-jitter backoff.         |
-| Response failure from `/exchange`           | No retry; venue outcome may be unknown. |
+| Request or response                     | Behavior                                          |
+| --------------------------------------- | ------------------------------------------------- |
+| Transport failure or timeout on `/info` | Retry within the info retry budget.               |
+| HTTP 408, 429, or 5xx from `/info`      | Retry within the info retry budget.               |
+| Retryable response with `Retry-After`   | Wait the header's seconds or until its HTTP date. |
+| Retryable failure without a valid delay | Use capped full-jitter backoff.                   |
+| Response failure from `/exchange`       | No retry; venue outcome may be unknown.           |
+
+The execution client's `max_retries` sets the number of retries after the initial attempt for read-only
+`/info` requests, including account queries and reconciliation. It defaults to `3`, for at most four
+attempts. Set it to `0` to disable retries. `retry_delay_initial_ms` (default `100`) and
+`retry_delay_max_ms` (default 5,000) set the exponential full-jitter backoff bounds. The maximum bound
+also caps the initial bound. Setting either delay to `0` disables backoff. A valid `Retry-After` takes
+precedence and can exceed the backoff cap. Data clients and standalone HTTP clients use three retries
+with a `125` ms initial bound and a 5,000 ms cap.
+
+These settings do not apply to submit, modify, cancel, or other exchange actions, or to WebSocket posts.
+Signing another exchange action allocates a fresh nonce, so the venue's
+[nonce replay protection](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/nonces-and-api-wallets)
+does not make resubmission safe after a timeout or lost response. The adapter returns the error without
+resubmitting the action. WebSocket posts retain their [pre-write retries](#post-deadlines-and-retries).
 
 ### WebSocket limits
 
@@ -1883,9 +1898,9 @@ separate weights and request limits therefore remain outside this adapter's limi
 | `base_url_ws`                  | `None`    | Override for the WebSocket base URL.                                                                                                             |
 | `base_url_http`                | `None`    | Override for the HTTP info base URL.                                                                                                             |
 | `base_url_exchange`            | `None`    | Override for the exchange API base URL.                                                                                                          |
-| `max_retries`                  | `3`       | Maximum retry attempts for submit, cancel, or modify order requests.                                                                             |
-| `retry_delay_initial_ms`       | `100`     | Initial delay (milliseconds) between retries.                                                                                                    |
-| `retry_delay_max_ms`           | `5,000`   | Maximum delay (milliseconds) between retries.                                                                                                    |
+| `max_retries`                  | `3`       | Maximum retries after the initial attempt for read-only `/info` requests. Set to `0` to disable retries.                                         |
+| `retry_delay_initial_ms`       | `100`     | Initial full-jitter backoff bound (milliseconds) for `/info` retries.                                                                            |
+| `retry_delay_max_ms`           | `5,000`   | Maximum full-jitter backoff bound (milliseconds) for `/info` retries; a valid `Retry-After` can exceed it.                                       |
 | `http_timeout_secs`            | `60`      | Timeout (seconds) applied to REST calls.                                                                                                         |
 | `ws_post_timeout_secs`         | `10`      | Timeout (seconds) applied to WebSocket post trading requests.                                                                                    |
 | `normalize_prices`             | `True`    | Normalize order prices to 5 significant figures before submission.                                                                               |
@@ -1899,10 +1914,8 @@ separate weights and request limits therefore remain outside this adapter's limi
 `outcome_settlement_poll_secs` is the only Rust-only option: it is not exposed on the
 `HyperliquidExecutionClientConfig` Python constructor and always uses its default. The
 `max_retries`, `retry_delay_initial_ms`, and `retry_delay_max_ms` fields are accepted on
-both the Rust and Python config but are not yet consumed by the execution client (its HTTP
-client is constructed with only the request timeout and proxy). These fields do not change the
-bounded read-only REST retries or the pre-write-only WebSocket post retries described in
-[Rate limiting](#rate-limiting).
+both the Rust and Python config and control read-only `/info` retries as described in
+[Retries](#retries). They do not apply to exchange actions or WebSocket posts.
 :::
 
 ### Live node configuration
