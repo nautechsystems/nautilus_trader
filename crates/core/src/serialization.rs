@@ -283,7 +283,9 @@ fn decimal_string_clamped_to_scale(value: &str, max_scale: usize) -> Option<Stri
     let (integer, fractional) = if point <= 0 {
         // Digits past the rounding position are leading zeros, so the cap
         // cannot change the result; bounds allocation for absurd exponents.
-        let zero_count = usize::try_from(-point).ok()?.min(max_scale + 1);
+        let zero_count = usize::try_from(point.checked_neg()?)
+            .ok()?
+            .min(max_scale + 1);
         (
             "0".to_string(),
             format!("{}{digits}", "0".repeat(zero_count)),
@@ -1771,6 +1773,38 @@ mod tests {
         assert_eq!(required.value.scale(), scale);
         assert_eq!(optional.value, Some(dec!(15)));
         assert_eq!(optional.value.unwrap().scale(), scale);
+    }
+
+    #[rstest]
+    #[case(".1e-2147483648")]
+    #[case("-.1E-2147483648")]
+    #[case("+.1e-2147483648")]
+    fn test_deserialize_decimal_rejects_min_exponent(
+        #[case] value: &str,
+        #[values("visitor", "token", "token_borrowed")] route: &str,
+        #[values(false, true)] optional: bool,
+    ) {
+        let json = serde_json::to_string(value).unwrap();
+        let mut deserializer = serde_json::Deserializer::from_str(&json);
+        let result = match (route, optional) {
+            ("visitor", false) => deserialize_decimal(&mut deserializer).map(Some),
+            ("visitor", true) => deserialize_optional_decimal(&mut deserializer),
+            ("token", false) => deserialize_decimal_token(&mut deserializer).map(Some),
+            ("token", true) => deserialize_optional_decimal_token(&mut deserializer),
+            ("token_borrowed", false) => {
+                deserialize_decimal_token_borrowed(&mut deserializer).map(Some)
+            }
+            ("token_borrowed", true) => {
+                deserialize_optional_decimal_token_borrowed(&mut deserializer)
+            }
+            _ => unreachable!(),
+        };
+
+        let error = result.unwrap_err();
+        let expected = "Scale exceeds the maximum precision allowed: 2147483648 > 28";
+
+        assert_eq!(error.classify(), serde_json::error::Category::Data);
+        assert_eq!(error.to_string().split(" at line ").next(), Some(expected));
     }
 
     #[rstest]
