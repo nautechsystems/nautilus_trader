@@ -80,8 +80,8 @@ def build_bars(df: pl.DataFrame, minutes: int) -> tuple[pl.DataFrame, int]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[1])
-    parser.add_argument("--data-dir", type=Path, default=Path("binance_data/klines_1m"))
-    parser.add_argument("--out-dir", type=Path, default=Path("binance_data/time_bars"))
+    parser.add_argument("--data-dir", type=Path, default=Path("data/binance/klines_1m"))
+    parser.add_argument("--out-dir", type=Path, default=Path("data/derived/time_bars"))
     parser.add_argument("--minutes", type=int, nargs="+", default=[10, 20])
     args = parser.parse_args()
 

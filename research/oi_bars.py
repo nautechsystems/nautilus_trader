@@ -182,9 +182,9 @@ def build_bars(steps: pl.DataFrame, bars_per_day: int) -> pl.DataFrame:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[1])
-    parser.add_argument("--klines-dir", type=Path, default=Path("binance_data/klines_1m"))
-    parser.add_argument("--metrics-dir", type=Path, default=Path("binance_data/futures_metrics"))
-    parser.add_argument("--out-dir", type=Path, default=Path("binance_data/oi_bars"))
+    parser.add_argument("--klines-dir", type=Path, default=Path("data/binance/klines_1m"))
+    parser.add_argument("--metrics-dir", type=Path, default=Path("data/binance/futures_metrics"))
+    parser.add_argument("--out-dir", type=Path, default=Path("data/derived/oi_bars"))
     parser.add_argument("--bars-per-day", type=int, nargs="+", default=[25])
     args = parser.parse_args()
 

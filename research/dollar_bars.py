@@ -164,8 +164,8 @@ def load_symbol(sym_dir: Path) -> pl.DataFrame:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[1])
-    parser.add_argument("--data-dir", type=Path, default=Path("binance_data/klines_1m"))
-    parser.add_argument("--out-dir", type=Path, default=Path("binance_data/dollar_bars"))
+    parser.add_argument("--data-dir", type=Path, default=Path("data/binance/klines_1m"))
+    parser.add_argument("--out-dir", type=Path, default=Path("data/derived/dollar_bars"))
     parser.add_argument("--bars-per-day", type=int, nargs="+", default=[12, 25])
     args = parser.parse_args()
 

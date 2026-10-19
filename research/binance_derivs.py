@@ -5,7 +5,7 @@ Dataset: metrics (daily files, 5-minute rows): open interest (contracts and valu
 and global long/short ratios, and the taker long/short volume ratio.
 
 Rules:
-- Symbols: the kept symbols of the kline manifest (`binance_data/manifest/symbols.csv`).
+- Symbols: the kept symbols of the kline manifest (`data/binance/manifest/symbols.csv`).
 - Months from --start to --end inclusive; months at or after SEAL_MONTH are refused, so sealed
   data never reaches the disk.
 - Every archive is checked against its published SHA-256 checksum before it is parsed; a
@@ -16,7 +16,7 @@ Rules:
   [t, t + 5 min) and holds the open interest at t + 5 min. Empty ratio fields (early 2022)
   become nulls.
 - A log of every written month (files, rows, missing days) is appended to
-  `binance_data/manifest/derivs_downloads.csv`.
+  `data/binance/manifest/derivs_downloads.csv`.
 
 Usage (from the repository root):
     python/.venv/Scripts/python research/binance_derivs.py
@@ -44,7 +44,7 @@ import polars as pl
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DATA_DIR = ROOT / "binance_data"
+DATA_DIR = ROOT / "data" / "binance"
 MANIFEST = DATA_DIR / "manifest" / "symbols.csv"
 LOG = DATA_DIR / "manifest" / "derivs_downloads.csv"
 OUT_DIR = DATA_DIR / "futures_metrics"

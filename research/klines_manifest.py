@@ -114,12 +114,12 @@ def find_gaps(symbol: str, times: pl.Series) -> list[dict]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[1])
-    parser.add_argument("--data-dir", type=Path, default=Path("binance_data/klines_1m"))
-    parser.add_argument("--manifest-dir", type=Path, default=Path("binance_data/manifest"))
+    parser.add_argument("--data-dir", type=Path, default=Path("data/binance/klines_1m"))
+    parser.add_argument("--manifest-dir", type=Path, default=Path("data/binance/manifest"))
     parser.add_argument(
         "--exchange-info",
         type=Path,
-        default=Path("binance_data/manifest/exchange_info_um_2026-10-08.json"),
+        default=Path("data/binance/manifest/exchange_info_um_2026-10-08.json"),
     )
     parser.add_argument("--apply", action="store_true", help="delete pruned files")
     parser.add_argument(
