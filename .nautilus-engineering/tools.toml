@@ -5,24 +5,28 @@
 # names its upstream release source in `releases` so `make outdated` can report newer releases.
 
 [prek]
+kind = "tool"
 version = "0.5.5"
 ci = true
 releases = "pypi:prek"
 
 [pre-commit-hooks]
+kind = "python"
 version = "6.0.0"
 releases = "github:pre-commit/pre-commit-hooks"
 pre-commit-repository = "https://github.com/pre-commit/pre-commit-hooks"
 pre-commit-revision = "v{version}"
 
 [ruff]
-version = "0.16.10"
+kind = "tool"
+version = "0.17.1"
 ci = true
 releases = "pypi:ruff"
 pre-commit-repository = "https://github.com/astral-sh/ruff-pre-commit"
 pre-commit-revision = "v{version}"
 
 [shfmt]
+kind = "tool"
 version = "3.14.1"
 ci = true
 releases = "github:mvdan/sh"
@@ -31,6 +35,7 @@ pre-commit-revision = "v{version}-1"
 pre-commit-fragment = "pre-commit/shell.yaml"
 
 [shellcheck]
+kind = "tool"
 version = "0.11.0.1"
 ci = true
 releases = "pypi:shellcheck-py"
@@ -39,6 +44,7 @@ pre-commit-revision = "v{version}-1"
 pre-commit-fragment = "pre-commit/shell.yaml"
 
 [yamllint]
+kind = "python"
 version = "1.38.0"
 ci = true
 releases = "pypi:yamllint"
@@ -47,6 +53,7 @@ pre-commit-revision = "v{version}"
 pre-commit-fragment = "pre-commit/yaml.yaml"
 
 [taplo]
+kind = "tool"
 version = "0.10.0"
 ci = true
 releases = "crates:taplo-cli"
@@ -55,6 +62,7 @@ pre-commit-hooks = ["taplo-format", "taplo-lint"]
 pre-commit-fragment = "pre-commit/toml.yaml"
 
 [markdownlint-cli2]
+kind = "tool"
 version = "0.23.3"
 ci = true
 releases = "npm:markdownlint-cli2"
@@ -63,53 +71,65 @@ pre-commit-revision = "v{version}"
 pre-commit-fragment = "pre-commit/markdown.yaml"
 
 [actionlint]
+kind = "tool"
 version = "1.7.12"
 releases = "github:rhysd/actionlint"
 pre-commit-repository = "https://github.com/rhysd/actionlint"
 pre-commit-revision = "v{version}"
 
 [cargo-audit]
+kind = "tool"
 version = "0.22.2"
 releases = "crates:cargo-audit"
 
 [cargo-deny]
+kind = "tool"
 version = "0.20.2"
 releases = "crates:cargo-deny"
 
 [cargo-edit]
+kind = "tool"
 version = "0.13.13"
 releases = "crates:cargo-edit"
 
 [cargo-llvm-cov]
+kind = "tool"
 version = "0.9.1"
 releases = "crates:cargo-llvm-cov"
 
 [cargo-nextest]
+kind = "tool"
 version = "0.9.148"
 releases = "crates:cargo-nextest"
 
 [cargo-vet]
+kind = "tool"
 version = "0.10.2"
 releases = "crates:cargo-vet"
 
 [uv]
-version = "0.13.0"
+kind = "tool"
+version = "0.13.1"
 releases = "pypi:uv"
 
 [pip-audit]
+kind = "python"
 version = "2.10.1"
 releases = "pypi:pip-audit"
 
 [osv-scanner]
+kind = "tool"
 version = "2.7.0"
 releases = "github:google/osv-scanner"
 
 [capnp]
+kind = "tool"
 version = "1.5.0"
 releases = "github-tags:capnproto/capnproto"
 
 [zizmor]
-version = "1.30.1"
+kind = "tool"
+version = "1.31.1"
 releases = "pypi:zizmor"
 pre-commit-repository = "https://github.com/zizmorcore/zizmor-pre-commit"
 pre-commit-revision = "v{version}"

@@ -147,7 +147,6 @@ skip = [
   { crate = "digest:<0.11" },
   { crate = "hmac:<0.13" },
   { crate = "md-5:<0.11" },
-  { crate = "sha1:<0.11" },
   { crate = "sha2:<0.11" },
 
   # RNG ecosystem - version-locked together, pulled by crypto and blockchain crates

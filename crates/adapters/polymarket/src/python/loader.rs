@@ -52,7 +52,7 @@ use crate::{
     providers::{build_gamma_event_params_from_hashmap, build_gamma_params_from_hashmap},
 };
 
-#[pyclass(name = "PolymarketDataLoader", skip_from_py_object)]
+#[pyclass(name = "PolymarketDataLoader")]
 #[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.polymarket")]
 #[derive(Clone, Debug)]
 pub struct PyPolymarketDataLoader {

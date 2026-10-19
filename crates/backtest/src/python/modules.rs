@@ -206,8 +206,7 @@ impl PySimulationModuleContext {
 #[pyclass(
     module = "nautilus_trader.backtest",
     name = "AccountAdjustmentOutcome",
-    frozen,
-    skip_from_py_object
+    frozen
 )]
 #[derive(Debug, Clone)]
 pub struct PyAccountAdjustmentOutcome {

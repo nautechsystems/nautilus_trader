@@ -308,7 +308,7 @@ sync:  #-- Sync Python dependencies without building the package
 	fi
 	@found="$$(uv --version 2>/dev/null | awk '{print $$2}' || true)"; \
 	if [ -z "$$found" ]; then \
-		printf "$(RED)ERROR: uv not found, $(UV_REQUIRED_SPEC) required; run \`make update-uv\` to install $(UV_VERSION).$(RESET)\n"; \
+		printf "$(RED)ERROR: uv not found, $(UV_REQUIRED_SPEC) required; run \`make install-uv\` to install $(UV_VERSION).$(RESET)\n"; \
 		exit 1; \
 	fi
 	$(info $(M) Syncing Python dependencies...)
@@ -578,12 +578,12 @@ outdated: check-edit-installed  #-- Check for outdated dependencies
 	[ $$outdated_count -eq 0 ] && printf "$(GREEN)  All tools up to date ✓$(RESET)\n"
 
 .PHONY: update
-update: cargo-update update-uv  #-- Update all dependencies (cargo and uv)
+update: cargo-update install-uv  #-- Update all dependencies (cargo and uv)
 	$Q cd python && VIRTUAL_ENV= uv lock --upgrade
 	$Q $(MAKE) --no-print-directory socket-scan
 
-.PHONY: update-uv
-update-uv:  #-- Install or upgrade uv to the version pinned in the shared tool catalog
+.PHONY: install-uv
+install-uv:  #-- Install or upgrade uv to the version pinned in the shared tool catalog
 	$(info $(M) Ensuring uv $(UV_VERSION) is installed...)
 	@if [ "$$(uv --version 2>/dev/null | awk '{print $$2}')" = "$(UV_VERSION)" ]; then \
 		printf "$(GREEN)uv $(UV_VERSION) already installed$(RESET)\n"; \
@@ -592,7 +592,7 @@ update-uv:  #-- Install or upgrade uv to the version pinned in the shared tool c
 	fi
 
 .PHONY: install-tools
-install-tools: check-binstall-installed update-uv  #-- Install required development tools at shared and local pinned versions
+install-tools: check-binstall-installed install-uv  #-- Install required development tools at shared and local pinned versions
 	bash scripts/install-security-tools.sh \
 	&& cargo install cargo-codspeed --version $(CARGO_CODSPEED_VERSION) --locked \
 	&& cargo install cargo-edit --version $(CARGO_EDIT_VERSION) --locked \

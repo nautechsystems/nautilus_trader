@@ -102,7 +102,6 @@ impl Debug for PyExecutionAlgorithmInner {
     name = "ExecutionAlgorithm",
     unsendable,
     subclass,
-    skip_from_py_object,
     weakref
 )]
 #[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.trading")]
