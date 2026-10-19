@@ -576,9 +576,9 @@ Deribit applies time in force to limit-style orders. The adapter omits `time_in_
 for `MARKET`, `STOP_MARKET`, and `MARKET_IF_TOUCHED` orders because Deribit rejects that
 parameter on market-style order types.
 
-The adapter emits `OrderSubmitted` before it sends the order. If that event cannot be delivered,
-because the execution-event channel is missing or closed, the order is not sent. The adapter emits
-`OrderDenied` instead, so a venue order is not left working without a submitted event in the engine.
+The adapter queues `OrderSubmitted` before it sends the order. If the execution-event channel is
+missing or closed, the adapter does not send the order to Deribit. It also attempts to emit
+`OrderDenied`, but that event cannot reach the engine through the same missing or closed channel.
 
 :::note
 **GTD on Deribit**: Unlike other exchanges where GTD accepts an arbitrary expiry time,
