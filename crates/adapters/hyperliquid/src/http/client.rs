@@ -27,7 +27,7 @@ use std::{
     time::Duration,
 };
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
 use nautilus_common::cache::InstrumentLookupError;
 use nautilus_core::{
@@ -39,8 +39,8 @@ use nautilus_core::{
 use nautilus_model::{
     data::{Bar, BarType, FundingRateUpdate},
     enums::{
-        AccountType, BarAggregation, CurrencyType, OrderSide, OrderStatus, OrderType, TimeInForce,
-        TriggerType,
+        AccountType, BarAggregation, CurrencyType, MarketStatusAction, OrderSide, OrderStatus,
+        OrderType, TimeInForce, TriggerType,
     },
     events::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, VenueOrderId},
@@ -1571,7 +1571,19 @@ impl HyperliquidHttpClient {
 
     /// Fetch and parse all instrument definitions, populating the asset indices cache.
     pub async fn request_instrument_defs(&self) -> Result<Vec<HyperliquidInstrumentDef>> {
+        Ok(self.load_instrument_defs().await?.0)
+    }
+
+    /// Loads all instrument definitions, together with the product types whose
+    /// metadata loaded in full.
+    async fn load_instrument_defs(
+        &self,
+    ) -> Result<(
+        Vec<HyperliquidInstrumentDef>,
+        AHashSet<HyperliquidProductType>,
+    )> {
         let mut defs: Vec<HyperliquidInstrumentDef> = Vec::new();
+        let mut loaded = AHashSet::new();
         let spot_meta = match self.inner.get_spot_meta().await {
             Ok(spot_meta) => Some(spot_meta),
             Err(e) => {
@@ -1608,6 +1620,7 @@ impl HyperliquidHttpClient {
                     );
                     defs.extend(perp_defs);
                 }
+                loaded.insert(HyperliquidProductType::Perp);
             }
             Err(e) => {
                 log::warn!("Failed to load allPerpMetas, falling back to meta: {e}");
@@ -1649,6 +1662,7 @@ impl HyperliquidHttpClient {
                         spot_defs.len(),
                     );
                     defs.extend(spot_defs);
+                    loaded.insert(HyperliquidProductType::Spot);
                 }
                 Err(e) => {
                     log::warn!("Failed to parse Hyperliquid spot instruments: {e}");
@@ -1667,6 +1681,7 @@ impl HyperliquidHttpClient {
                         outcome_defs.len(),
                     );
                     defs.extend(outcome_defs);
+                    loaded.insert(HyperliquidProductType::Outcome);
                 }
                 Err(e) => {
                     log::warn!("Failed to parse Hyperliquid outcome instruments: {e}");
@@ -1709,7 +1724,7 @@ impl HyperliquidHttpClient {
             self.asset_indices.len()
         );
 
-        Ok(defs)
+        Ok((defs, loaded))
     }
 
     /// Converts instrument definitions into Nautilus instruments.
@@ -1722,6 +1737,40 @@ impl HyperliquidHttpClient {
     pub async fn request_instruments(&self) -> Result<Vec<InstrumentAny>> {
         let defs = self.request_instrument_defs().await?;
         Ok(self.convert_defs(defs))
+    }
+
+    /// Fetch all available instruments together with the market status of each.
+    pub(crate) async fn request_instruments_with_statuses(&self) -> Result<InstrumentSnapshot> {
+        let (defs, loaded) = self.load_instrument_defs().await?;
+        let def_statuses: AHashMap<Ustr, MarketStatusAction> = defs
+            .iter()
+            .map(|def| {
+                let action = if def.active {
+                    MarketStatusAction::Trading
+                } else {
+                    MarketStatusAction::Close
+                };
+                (def.symbol, action)
+            })
+            .collect();
+        let instruments = self.convert_defs(defs);
+
+        // Defs that fail conversion yield no instrument, so they get no status
+        let statuses = instruments
+            .iter()
+            .filter_map(|instrument| {
+                let instrument_id = instrument.id();
+                def_statuses
+                    .get(&instrument_id.symbol.inner())
+                    .map(|&action| (instrument_id, action))
+            })
+            .collect();
+
+        Ok(InstrumentSnapshot {
+            instruments,
+            statuses,
+            loaded,
+        })
     }
 
     /// Builds the `allDexsAssetCtxs` normalization map from dex name to ordered instrument IDs.
@@ -4064,6 +4113,15 @@ impl HyperliquidHttpClient {
 pub(crate) struct ReportSweep<T> {
     pub reports: Vec<T>,
     pub complete: bool,
+}
+
+/// The instrument universe with the market status of each instrument.
+#[derive(Debug)]
+pub(crate) struct InstrumentSnapshot {
+    pub instruments: Vec<InstrumentAny>,
+    pub statuses: AHashMap<InstrumentId, MarketStatusAction>,
+    /// Product types whose metadata loaded in full.
+    pub loaded: AHashSet<HyperliquidProductType>,
 }
 
 fn reconciliation_dexes_from_builders(

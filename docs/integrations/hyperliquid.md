@@ -701,6 +701,16 @@ instruments = await client.load_instrument_definitions(
 )
 ```
 
+### Instrument status
+
+Hyperliquid has no market status stream, so the adapter derives `InstrumentStatus` from the instrument
+refresh, which polls at the interval set by `update_instruments_interval_mins`.
+
+- Active markets are `TRADING` and delisted markets are `CLOSE`.
+- A market removed from the venue becomes `NOT_AVAILABLE_FOR_TRADING`. A failed metadata fetch does not
+  count as a removal.
+- Subscribing emits the current status immediately.
+
 ## Data subscriptions
 
 The adapter supports the following data subscriptions. All perpetual data types
@@ -717,6 +727,7 @@ The adapter supports the following data subscriptions. All perpetual data types
 | Mark prices       | ✓    | -        | -     | `MarkPriceUpdate`             | Perpetual mark price ticks.                      |
 | Index prices      | ✓    | -        | -     | `IndexPriceUpdate`            | Underlying reference prices.                     |
 | Funding rates     | ✓    | -        | ✓     | `FundingRateUpdate`           | `fundingHistory` endpoint.                       |
+| Instrument status | ✓    | ✓        | -     | `InstrumentStatus`            | Polled with the instrument refresh.              |
 | Open interest     | ✓    | -        | -     | `HyperliquidOpenInterest`     | Custom data from `activeAssetCtx`.               |
 | All mids          | ✓    | -        | -     | `HyperliquidAllMids`          | Custom data from `allMids`.                      |
 | All dex contexts  | ✓    | -        | -     | `HyperliquidAllDexsAssetCtxs` | Custom data from `allDexsAssetCtxs`.             |
