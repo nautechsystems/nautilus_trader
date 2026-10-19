@@ -2016,6 +2016,8 @@ pub enum HyperliquidExchangeAction {
     },
 
     /// Transfer USD between spot and perp accounts.
+    ///
+    /// Unsupported by the typed signing and posting methods.
     #[serde(rename = "usdClassTransfer")]
     UsdClassTransfer {
         /// Source account type.

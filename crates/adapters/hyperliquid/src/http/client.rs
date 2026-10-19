@@ -829,11 +829,19 @@ impl HyperliquidRawHttpClient {
     }
 
     /// Build a signed exchange request using the typed HyperliquidExchangeAction enum.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the action is unsupported, credentials are missing, or signing fails.
     pub fn sign_action_exec_request(
         &self,
         action: &HyperliquidExchangeAction,
         expires_after: Option<u64>,
     ) -> Result<HyperliquidExchangeRequest<HyperliquidExchangeAction>> {
+        if matches!(action, HyperliquidExchangeAction::UsdClassTransfer { .. }) {
+            return Err(Error::bad_request("Unsupported action: usdClassTransfer"));
+        }
+
         let signer = self
             .signer
             .as_ref()
@@ -2082,6 +2090,10 @@ impl HyperliquidHttpClient {
     }
 
     /// Build the signed exchange request used by both HTTP and WebSocket post transports.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the action is unsupported, credentials are missing, or signing fails.
     pub fn sign_action_exec_request(
         &self,
         action: &HyperliquidExchangeAction,
@@ -4278,6 +4290,88 @@ mod tests {
 
     const TEST_PRIVATE_KEY: &str =
         "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
+
+    #[rstest]
+    fn test_usd_class_transfer_rejected_without_credentials(
+        #[values(HyperliquidEnvironment::Mainnet, HyperliquidEnvironment::Testnet)]
+        environment: HyperliquidEnvironment,
+    ) {
+        let client = HyperliquidRawHttpClient::new(environment, 5, None).unwrap();
+
+        let action = HyperliquidExchangeAction::UsdClassTransfer {
+            from: "spot".to_string(),
+            to: "perp".to_string(),
+            amount: dec!(1.25),
+        };
+
+        let error = client.sign_action_exec_request(&action, None).unwrap_err();
+
+        assert!(matches!(error, Error::BadRequest(_)));
+        assert_eq!(
+            error.to_string(),
+            "bad request: Unsupported action: usdClassTransfer"
+        );
+    }
+
+    #[rstest]
+    fn test_usd_class_transfer_rejected_before_nonce_allocation(
+        #[values(HyperliquidEnvironment::Mainnet, HyperliquidEnvironment::Testnet)]
+        environment: HyperliquidEnvironment,
+        #[values(None, Some("0x1234567890123456789012345678901234567890"))] vault: Option<&str>,
+        #[values(None, Some(1_900_000_000_000))] expires_after: Option<u64>,
+    ) {
+        let mut client =
+            HyperliquidHttpClient::from_credentials(TEST_PRIVATE_KEY, vault, environment, 5, None)
+                .unwrap();
+        Arc::get_mut(&mut client.inner).unwrap().nonce_manager = None;
+
+        let action = HyperliquidExchangeAction::UsdClassTransfer {
+            from: "perp".to_string(),
+            to: "spot".to_string(),
+            amount: dec!(2.75),
+        };
+
+        let error = client
+            .sign_action_exec_request(&action, expires_after)
+            .unwrap_err();
+
+        assert!(matches!(error, Error::BadRequest(_)));
+        assert_eq!(
+            error.to_string(),
+            "bad request: Unsupported action: usdClassTransfer"
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_usd_class_transfer_rejected_without_dispatch(
+        #[values(HyperliquidEnvironment::Mainnet, HyperliquidEnvironment::Testnet)]
+        environment: HyperliquidEnvironment,
+    ) {
+        let (addr, count, server) =
+            start_retry_server(RetryFailure::Response(400), usize::MAX, None).await;
+        let mut client =
+            HyperliquidHttpClient::from_credentials(TEST_PRIVATE_KEY, None, environment, 5, None)
+                .unwrap();
+        client.set_base_exchange_url(format!("http://{addr}/exchange"));
+
+        let action = HyperliquidExchangeAction::UsdClassTransfer {
+            from: "spot".to_string(),
+            to: "perp".to_string(),
+            amount: dec!(3.125),
+        };
+
+        let error = client.post_action_exec(&action).await.unwrap_err();
+
+        server.abort();
+
+        assert!(matches!(error, Error::BadRequest(_)));
+        assert_eq!(
+            error.to_string(),
+            "bad request: Unsupported action: usdClassTransfer"
+        );
+        assert_eq!(count.load(Ordering::Relaxed), 0);
+    }
 
     #[rstest]
     #[case(0)]
