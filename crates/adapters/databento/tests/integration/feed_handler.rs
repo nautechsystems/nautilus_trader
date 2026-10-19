@@ -409,6 +409,74 @@ async fn test_subscribe_quotes_with_trade() {
 
 #[rstest]
 #[tokio::test]
+async fn test_trades_and_mbp1_send_each_trade_once() {
+    let server = MockLsgServer::new(TEST_DATASET).await;
+    let (cmd_tx, mut msg_rx, mut handler) = create_test_handler(&server.addr(), TEST_DATASET);
+
+    server.authenticate();
+    server.expect_subscription();
+    server.expect_subscription();
+    server.start();
+    server.send_record(symbol_mapping_msg(INSTRUMENT_ID, RAW_SYMBOL));
+
+    // Delivers the instrument's first trade, so `trades` becomes its trade source
+    server.send_record(trade_msg(INSTRUMENT_ID, 100_000_000_000, 10));
+
+    // The same trade on `mbp-1`: the quote is sent and the trade is dropped
+    server.send_record(mbp1_msg(
+        INSTRUMENT_ID,
+        100_000_000_000,
+        101_000_000_000,
+        b'T',
+    ));
+
+    // Must arrive directly after the quote, proving the `mbp-1` trade was dropped
+    server.send_record(trade_msg(INSTRUMENT_ID, 100_000_000_000, 60));
+    server.disconnect();
+
+    let handle = tokio::spawn(async move { handler.run().await });
+
+    cmd_tx
+        .send(HandlerCommand::Subscribe(subscription(dbn::Schema::Trades)))
+        .unwrap();
+    cmd_tx
+        .send(HandlerCommand::Subscribe(subscription(dbn::Schema::Mbp1)))
+        .unwrap();
+    cmd_tx.send(HandlerCommand::Start).unwrap();
+
+    let msg = recv_msg(&mut msg_rx).await;
+    match msg {
+        DatabentoMessage::Data(Data::Trade(trade)) => {
+            assert_eq!(trade.price, Price::from("100.00"));
+            assert_eq!(trade.size, Quantity::from(10));
+        }
+        other => panic!("expected Data::Trade, was {other:?}"),
+    }
+
+    let msg = recv_msg(&mut msg_rx).await;
+    match msg {
+        DatabentoMessage::Data(Data::Quote(quote)) => {
+            assert_eq!(quote.bid_price, Price::from("100.00"));
+            assert_eq!(quote.ask_price, Price::from("101.00"));
+        }
+        other => panic!("expected Data::Quote, was {other:?}"),
+    }
+
+    let msg = recv_msg(&mut msg_rx).await;
+    match msg {
+        DatabentoMessage::Data(Data::Trade(trade)) => {
+            assert_eq!(trade.size, Quantity::from(60));
+        }
+        other => panic!("expected Data::Trade, was {other:?}"),
+    }
+
+    cmd_tx.send(HandlerCommand::Close).unwrap();
+    let _ = handle.await;
+    server.stop().await;
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_subscribe_bars_ohlcv() {
     let server = MockLsgServer::new(TEST_DATASET).await;
     let (cmd_tx, mut msg_rx, mut handler) = create_test_handler(&server.addr(), TEST_DATASET);
@@ -1096,6 +1164,169 @@ async fn test_mbo_trade_emitted_once_book_initialized() {
             assert_eq!(deltas.deltas[0].ts_event, 103_000_000_000u64);
         }
         other => panic!("expected Data::BookDeltas, was {other:?}"),
+    }
+
+    cmd_tx.send(HandlerCommand::Close).unwrap();
+    let _ = handle.await;
+    server.stop().await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_mbo_and_trades_send_each_trade_once() {
+    let server = MockLsgServer::new(TEST_DATASET).await;
+    let (cmd_tx, mut msg_rx, mut handler) = create_test_handler(&server.addr(), TEST_DATASET);
+
+    server.authenticate();
+    server.expect_subscription();
+    server.expect_subscription();
+    server.start();
+    server.send_record(symbol_mapping_msg(INSTRUMENT_ID, RAW_SYMBOL));
+    server.send_record(mbo_msg_with_ts(
+        INSTRUMENT_ID,
+        b'A',
+        b'B',
+        128,
+        100_000_000_000,
+        101_000_000_000,
+    ));
+
+    // Delivers the instrument's first trade, so `mbo` becomes its trade source
+    server.send_record(mbo_msg_with_ts(
+        INSTRUMENT_ID,
+        b'T',
+        b'A',
+        128,
+        99_000_000_000,
+        102_000_000_000,
+    ));
+
+    // The same trade on `trades` is dropped
+    server.send_record(trade_msg(INSTRUMENT_ID, 99_000_000_000, 10));
+
+    // Must arrive directly after the `mbo` trade, proving the `trades` copy was dropped
+    server.send_record(mbo_msg_with_ts(
+        INSTRUMENT_ID,
+        b'C',
+        b'B',
+        128,
+        100_000_000_000,
+        103_000_000_000,
+    ));
+    server.disconnect();
+
+    let handle = tokio::spawn(async move { handler.run().await });
+
+    cmd_tx
+        .send(HandlerCommand::Subscribe(subscription(dbn::Schema::Mbo)))
+        .unwrap();
+    cmd_tx
+        .send(HandlerCommand::Subscribe(subscription(dbn::Schema::Trades)))
+        .unwrap();
+    cmd_tx.send(HandlerCommand::Start).unwrap();
+
+    let msg = recv_msg(&mut msg_rx).await;
+    match msg {
+        DatabentoMessage::Data(Data::BookDeltas(deltas)) => {
+            assert_eq!(deltas.deltas[0].action, BookAction::Add);
+        }
+        other => panic!("expected Data::BookDeltas, was {other:?}"),
+    }
+
+    let msg = recv_msg(&mut msg_rx).await;
+    match msg {
+        DatabentoMessage::Data(Data::Trade(trade)) => {
+            assert_eq!(trade.price, Price::from("99.00"));
+            assert_eq!(trade.ts_event, 102_000_000_000u64);
+        }
+        other => panic!("expected Data::Trade, was {other:?}"),
+    }
+
+    let msg = recv_msg(&mut msg_rx).await;
+    match msg {
+        DatabentoMessage::Data(Data::BookDeltas(deltas)) => {
+            assert_eq!(deltas.deltas[0].action, BookAction::Delete);
+        }
+        other => panic!("expected Data::BookDeltas, was {other:?}"),
+    }
+
+    cmd_tx.send(HandlerCommand::Close).unwrap();
+    let _ = handle.await;
+    server.stop().await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_dropped_mbo_trade_still_flushes_its_event() {
+    let server = MockLsgServer::new(TEST_DATASET).await;
+    let (cmd_tx, mut msg_rx, mut handler) = create_test_handler(&server.addr(), TEST_DATASET);
+
+    server.authenticate();
+    server.expect_subscription();
+    server.expect_subscription();
+    server.start();
+    server.send_record(symbol_mapping_msg(INSTRUMENT_ID, RAW_SYMBOL));
+
+    // Delivers the instrument's first trade, so `trades` becomes its trade source
+    server.send_record(trade_msg(INSTRUMENT_ID, 99_000_000_000, 10));
+
+    // A non-terminal delta, then the event's trade carrying F_LAST: the trade is
+    // dropped but its F_LAST still flushes the buffered delta
+    server.send_record(mbo_msg_with_ts(
+        INSTRUMENT_ID,
+        b'C',
+        b'B',
+        0,
+        100_000_000_000,
+        101_000_000_000,
+    ));
+    server.send_record(mbo_msg_with_ts(
+        INSTRUMENT_ID,
+        b'T',
+        b'A',
+        128,
+        99_000_000_000,
+        102_000_000_000,
+    ));
+
+    // Must arrive directly after the flushed delta, proving the `mbo` trade was dropped
+    server.send_record(trade_msg(INSTRUMENT_ID, 99_000_000_000, 60));
+    server.disconnect();
+
+    let handle = tokio::spawn(async move { handler.run().await });
+
+    cmd_tx
+        .send(HandlerCommand::Subscribe(subscription(dbn::Schema::Trades)))
+        .unwrap();
+    cmd_tx
+        .send(HandlerCommand::Subscribe(subscription(dbn::Schema::Mbo)))
+        .unwrap();
+    cmd_tx.send(HandlerCommand::Start).unwrap();
+
+    let msg = recv_msg(&mut msg_rx).await;
+    match msg {
+        DatabentoMessage::Data(Data::Trade(trade)) => {
+            assert_eq!(trade.size, Quantity::from(10));
+        }
+        other => panic!("expected Data::Trade, was {other:?}"),
+    }
+
+    let msg = recv_msg(&mut msg_rx).await;
+    match msg {
+        DatabentoMessage::Data(Data::BookDeltas(deltas)) => {
+            assert_eq!(deltas.deltas.len(), 1);
+            assert_eq!(deltas.deltas[0].action, BookAction::Delete);
+            assert_eq!(deltas.deltas[0].ts_event, 101_000_000_000u64);
+        }
+        other => panic!("expected Data::BookDeltas, was {other:?}"),
+    }
+
+    let msg = recv_msg(&mut msg_rx).await;
+    match msg {
+        DatabentoMessage::Data(Data::Trade(trade)) => {
+            assert_eq!(trade.size, Quantity::from(60));
+        }
+        other => panic!("expected Data::Trade, was {other:?}"),
     }
 
     cmd_tx.send(HandlerCommand::Close).unwrap();
