@@ -104,6 +104,30 @@ impl IbReportContext {
             .context("Failed to resolve IBKR report contract to instrument ID")
     }
 
+    // Returns `None` for an order whose contract does not resolve, such as a BAG spread another
+    // node loaded at runtime, so the order is left out of the reports instead of failing them all.
+    // Connecting preloads the instruments of cached orders, so such an order is not one the node
+    // holds.
+    pub(super) fn resolve_order_report_instrument_id(
+        &self,
+        data: &ibapi::orders::OrderData,
+    ) -> Option<InstrumentId> {
+        match self.resolve_report_contract_instrument_id(&data.contract) {
+            Ok(instrument_id) => Some(instrument_id),
+            Err(e) => {
+                tracing::warn!(
+                    order_id = data.order_id,
+                    perm_id = data.order.perm_id,
+                    con_id = data.contract.contract_id,
+                    sec_type = ?data.contract.security_type,
+                    error = format!("{e:#}"),
+                    "Skipping IB order report for unresolved contract",
+                );
+                None
+            }
+        }
+    }
+
     /// IB's average cost is a price in the contract's currency times the multiplier.
     pub(super) fn position_avg_px_open(
         instrument: &InstrumentAny,
@@ -224,18 +248,11 @@ impl IbReportClient {
                         continue;
                     }
 
-                    // Convert IB contract to instrument ID
-                    let instrument_id = self
-                        .context
-                        .resolve_report_contract_instrument_id(&data.contract)
-                        .with_context(|| {
-                            format!(
-                                "Failed to resolve IB order {} contract ID {} ({:?})",
-                                data.order_id,
-                                data.contract.contract_id,
-                                data.contract.security_type
-                            )
-                        })?;
+                    let Some(instrument_id) =
+                        self.context.resolve_order_report_instrument_id(&data)
+                    else {
+                        continue;
+                    };
 
                     // Filter by instrument_id if specified
                     if let Some(filter_id) = cmd.instrument_id
@@ -311,15 +328,9 @@ impl IbReportClient {
                 continue;
             }
 
-            let instrument_id = self
-                .context
-                .resolve_report_contract_instrument_id(&data.contract)
-                .with_context(|| {
-                    format!(
-                        "Failed to resolve completed IB order contract ID {} ({:?})",
-                        data.contract.contract_id, data.contract.security_type
-                    )
-                })?;
+            let Some(instrument_id) = self.context.resolve_order_report_instrument_id(&data) else {
+                continue;
+            };
 
             if cmd
                 .instrument_id
