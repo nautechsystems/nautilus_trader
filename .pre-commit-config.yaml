@@ -34,7 +34,6 @@ repos:
       - id: debug-statements
       - id: detect-private-key
       - id: check-added-large-files
-        exclude: ^crates/serialization/generated/capnp/
       - id: check-case-conflict
       - id: check-executables-have-shebangs
       - id: check-illegal-windows-names
@@ -89,15 +88,17 @@ repos:
     hooks:
       - id: yamlfmt
 
-  - repo: https://github.com/hadolint/hadolint
+  - repo: https://github.com/AleksaC/hadolint-py
     rev: v2.15.1
     hooks:
-      - id: hadolint-docker
+      - id: hadolint
         name: dockerfile-lint
         description: Lint Dockerfiles for best practices and errors
+        types: [file]
+        files: (^|/)Dockerfile[^/]*$
 
   - repo: https://github.com/crate-ci/typos
-    rev: v1.50.3
+    rev: v1.51.1
     hooks:
       - id: typos
         description: Enforces American English spelling and checks for common typos
@@ -470,7 +471,7 @@ repos:
   #  Python formatting and linting
   ##############################################################################
   - repo: https://github.com/asottile/pyupgrade
-    rev: v3.21.2
+    rev: v3.22.0
     hooks:
       - id: pyupgrade
         args: ["--py313-plus"]
@@ -512,7 +513,7 @@ repos:
           - "--in-place"
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.12.22 # Must match [uv] in .nautilus-engineering/tools.toml
+    rev: 0.13.0 # Must match [uv] in .nautilus-engineering/tools.toml
     hooks:
       - id: uv-lock
         args: ["--project", "python"]

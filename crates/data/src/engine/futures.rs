@@ -405,6 +405,13 @@ impl DataEngine {
 
         self.ensure_continuous_future_target_instrument(&request);
 
+        self.create_bar_aggregator_for_key(
+            target_bar_type,
+            None,
+            None,
+            request.request_bar_aggregation.time_zone.clone(),
+        )?;
+
         if self
             .continuous_future_subscriptions
             .contains_key(&target_key)
@@ -423,7 +430,6 @@ impl DataEngine {
             return Ok(());
         }
 
-        self.create_bar_aggregator_for_key(target_bar_type, None, None)?;
         self.setup_bar_aggregator(target_bar_type, false, None)?;
 
         let now_ns = self.clock.borrow().timestamp_ns().as_u64();

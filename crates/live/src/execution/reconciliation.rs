@@ -435,8 +435,8 @@ pub(super) fn terminal_report_has_missing_fills(
 ///
 /// # Errors
 ///
-/// Returns an error for empty or inconsistent fills, mismatched instrument metadata,
-/// or unrepresentable aggregate quantities or prices.
+/// Returns an error if fills are empty or inconsistent, instrument metadata does not match, or
+/// aggregate quantities or prices cannot be represented.
 pub(super) fn create_orphan_fill_order_report(
     fills: &[&FillReport],
     instrument: &InstrumentAny,
@@ -560,10 +560,12 @@ pub(super) fn should_project_fill(
     retained_fill_state: &RetainedFillState,
     reported_fill_keys: &IndexSet<FillKey>,
     order_only_ids: &IndexSet<VenueOrderId>,
+    order_only_fill_keys: &IndexSet<FillKey>,
 ) -> bool {
     let fill_key = (fill.account_id, fill.instrument_id, fill.trade_id);
     if retained_fill_state.fill_keys.contains(&fill_key)
         || order_only_ids.contains(&fill.venue_order_id)
+        || order_only_fill_keys.contains(&fill_key)
     {
         return true;
     }

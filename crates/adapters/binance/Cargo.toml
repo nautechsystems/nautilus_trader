@@ -116,6 +116,11 @@ toml = { workspace = true }
 name = "encoder"
 harness = false
 
+# Run with `CARGO_BUILD_JOBS=8 cargo bench -p nautilus-binance --bench sbe_decoding`
+[[bench]]
+name = "sbe_decoding"
+harness = false
+
 [[bin]]
 name = "binance-spot-http-public"
 path = "bin/http_public.rs"

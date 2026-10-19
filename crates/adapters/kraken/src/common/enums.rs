@@ -430,7 +430,7 @@ pub enum KrakenFuturesOrderType {
 pub enum KrakenFuturesOrderEventType {
     /// Order was placed.
     Place,
-    /// Legacy history endpoint fill event.
+    /// Fill event, which the order history does not produce.
     Fill,
     /// Send-order execution event.
     Execution,
@@ -722,6 +722,16 @@ pub enum KrakenSendStatus {
     IocWouldNotExecute,
     /// Reduce-only order would increase position.
     ReduceOnlyWouldIncreasePosition,
+    /// Another order already carries the client order ID.
+    ClientOrderIdAlreadyExist,
+    /// The client order ID is longer than the venue accepts, as the send-order status enum spells
+    /// it.
+    ClientOrderIdTooBig,
+    /// The client order ID is longer than the venue accepts, as the batch-order status enum and the
+    /// send-order status descriptions spell it.
+    ClientOrderIdTooLong,
+    /// The venue does not accept the client order ID.
+    ClientOrderIdInvalid,
 }
 
 /// Kraken futures trigger side for conditional orders.
@@ -812,6 +822,75 @@ impl From<KrakenOrderStatus> for OrderStatus {
             KrakenOrderStatus::Closed => Self::Filled,
             KrakenOrderStatus::Canceled => Self::Canceled,
             KrakenOrderStatus::Expired => Self::Expired,
+        }
+    }
+}
+
+/// How Kraken Futures applies an edit's size: `Absolute` sets the order's total size, fills
+/// included, and `Relative`, the venue's default, sets its open size.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum KrakenFuturesQtyMode {
+    Absolute,
+    Relative,
+}
+
+/// Order direction as the Kraken Futures order history reports it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum KrakenFuturesHistoryDirection {
+    Buy,
+    Sell,
+    /// The venue could not decode the source value.
+    #[serde(other)]
+    Unknown,
+}
+
+/// Order type as the Kraken Futures order history reports it.
+///
+/// The venue-initiated kinds (liquidation, assignment, hedge assignment, unwind, block and RFQ)
+/// execute against the account at market, so they map to a market order; the hedge
+/// immediate-or-cancel kind keeps its limit price as an IOC order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum KrakenFuturesHistoryOrderType {
+    Limit,
+    #[serde(rename = "IoC")]
+    Ioc,
+    Post,
+    Market,
+    Stop,
+    FillOrKill,
+    Liquidation,
+    PartialLiquidation,
+    CoveredLiquidation,
+    Assignment,
+    HedgeAssignment,
+    HedgeImmediateOrCancel,
+    Unwind,
+    Block,
+    Rfq,
+    #[serde(other)]
+    Unknown,
+}
+
+impl From<KrakenFuturesHistoryOrderType> for KrakenFuturesOrderType {
+    fn from(value: KrakenFuturesHistoryOrderType) -> Self {
+        match value {
+            KrakenFuturesHistoryOrderType::Limit => Self::Limit,
+            KrakenFuturesHistoryOrderType::Ioc
+            | KrakenFuturesHistoryOrderType::FillOrKill
+            | KrakenFuturesHistoryOrderType::HedgeImmediateOrCancel => Self::Ioc,
+            KrakenFuturesHistoryOrderType::Post => Self::Post,
+            KrakenFuturesHistoryOrderType::Stop => Self::Stop,
+            KrakenFuturesHistoryOrderType::Market
+            | KrakenFuturesHistoryOrderType::Liquidation
+            | KrakenFuturesHistoryOrderType::PartialLiquidation
+            | KrakenFuturesHistoryOrderType::CoveredLiquidation
+            | KrakenFuturesHistoryOrderType::Assignment
+            | KrakenFuturesHistoryOrderType::HedgeAssignment
+            | KrakenFuturesHistoryOrderType::Unwind
+            | KrakenFuturesHistoryOrderType::Block
+            | KrakenFuturesHistoryOrderType::Rfq => Self::Market,
+            KrakenFuturesHistoryOrderType::Unknown => Self::Unknown,
         }
     }
 }

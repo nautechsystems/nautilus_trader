@@ -49,8 +49,7 @@ impl<T> WriterSender<T> {
     ///
     /// # Errors
     ///
-    /// Returns [`SendError::BufferFull`] if all slots are occupied, or
-    /// [`SendError::BrokenPipe`] if the writer has stopped.
+    /// Returns an error if all slots are occupied, or if the writer has stopped.
     pub fn send(&self, command: T) -> Result<(), SendError> {
         self.send_with_slots(command, &self.slots)
     }

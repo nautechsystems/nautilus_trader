@@ -93,8 +93,13 @@ release_verification_validate_positive_integer \
   PYPI_ATTESTATION_VERIFY_MAX_RETRY_DELAY_SECONDS \
   "$pypi_attestation_verify_max_retry_delay_seconds"
 
-work_dir="$(mktemp -d)"
-trap 'rm -rf "$work_dir"' EXIT
+if [[ -n "${RELEASE_VERIFICATION_DIAGNOSTICS_DIR:-}" ]]; then
+  mkdir -p "$RELEASE_VERIFICATION_DIAGNOSTICS_DIR"
+  work_dir="$(mktemp -d "${RELEASE_VERIFICATION_DIAGNOSTICS_DIR}/registries.XXXXXX")"
+else
+  work_dir="$(mktemp -d)"
+  trap 'rm -rf "$work_dir"' EXIT
+fi
 manual_crate_exceptions_file="${work_dir}/manual-crate-publish-exceptions.txt"
 manual_crate_exceptions_used_file="${work_dir}/manual-crate-publish-exceptions-used.txt"
 

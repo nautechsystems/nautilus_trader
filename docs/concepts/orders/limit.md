@@ -7,15 +7,15 @@ or better.
 
 ## Use cases
 
-Use a *Limit* order to control the execution price and, when appropriate, provide liquidity. Common
-uses include market making, scaling into or out of a position at chosen levels, and targeting maker
-fees with `post_only`. The order cannot fill worse than its limit price, but it may remain unfilled or
-fill only partially.
+Use a *Limit* order to control the execution price and, when appropriate, provide liquidity. Common uses
+include market making, scaling into or out of a position at chosen levels, and targeting maker fees with
+`post_only`. The order cannot fill worse than its limit price, but it may stay unfilled or fill only
+partially.
 
 ## Example
 
-In the following example we create a *Limit* order on the Binance Futures Crypto exchange to SELL
-20 ETHUSDT-PERP Perpetual Futures contracts at a limit price of 5000 USDT, as a market maker.
+**Example**: create a *Limit* order on the Binance Futures Crypto exchange to SELL 20 ETHUSDT-PERP Perpetual
+Futures contracts. Set a limit price of 5000 USDT to act as a market maker.
 
 ```rust tab="Rust"
 use nautilus_model::{

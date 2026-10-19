@@ -15,6 +15,7 @@
 
 use std::{cell::RefCell, collections::BTreeMap, sync::Arc, time::Duration};
 
+use jiff::{Span, Zoned};
 use nautilus_core::{DurationNanos, UnixNanos, datetime::NANOSECONDS_IN_SECOND};
 use parking_lot::Mutex;
 use proptest::{prelude::*, test_runner::TestCaseResult};
@@ -23,6 +24,7 @@ use ustr::Ustr;
 
 use super::*;
 use crate::{
+    calendar::CalendarSchedule,
     component::ComponentAccessError,
     timer::{TimeEvent, TimeEventCallback},
 };
@@ -1128,6 +1130,141 @@ fn test_set_timer_fire_immediately_default_impl(mut test_clock: VirtualClock) {
 }
 
 #[rstest]
+#[case::fall_back_keeps_local_time(
+    "2026-10-30T09:30:00[America/New_York]",
+    "1d",
+    ["2026-10-30T13:30:00Z", "2026-10-31T13:30:00Z", "2026-11-01T14:30:00Z", "2026-11-02T14:30:00Z"],
+)]
+#[case::spring_forward_keeps_local_time(
+    "2026-03-06T09:30:00[America/New_York]",
+    "1d",
+    ["2026-03-06T14:30:00Z", "2026-03-07T14:30:00Z", "2026-03-08T13:30:00Z", "2026-03-09T13:30:00Z"],
+)]
+#[case::spring_forward_gap_does_not_shift_later_days(
+    "2026-03-07T02:30:00[America/New_York]",
+    "1d",
+    ["2026-03-07T07:30:00Z", "2026-03-08T07:30:00Z", "2026-03-09T06:30:00Z", "2026-03-10T06:30:00Z"],
+)]
+#[case::month_end_clamp_does_not_shift_later_months(
+    "2026-01-31T00:00:00[UTC]",
+    "1mo",
+    ["2026-01-31T00:00:00Z", "2026-02-28T00:00:00Z", "2026-03-31T00:00:00Z", "2026-04-30T00:00:00Z"],
+)]
+#[case::hours_stay_exact_across_fall_back(
+    "2026-11-01T00:00:00[America/New_York]",
+    "12h",
+    ["2026-11-01T04:00:00Z", "2026-11-01T16:00:00Z", "2026-11-02T04:00:00Z", "2026-11-02T16:00:00Z"],
+)]
+fn test_set_timer_zoned_steps_in_start_time_zone(
+    mut test_clock: VirtualClock,
+    #[case] start_time: &str,
+    #[case] interval: &str,
+    #[case] expected: [&str; 4],
+) {
+    let start_time = start_time.parse::<Zoned>().unwrap();
+    let expected: Vec<UnixNanos> = expected
+        .iter()
+        .map(|time| UnixNanos::from(time.parse::<Timestamp>().unwrap()))
+        .collect();
+
+    test_clock
+        .set_timer_schedule(
+            "zoned",
+            Arc::new(
+                CalendarSchedule::new(&start_time, interval.parse::<Span>().unwrap()).unwrap(),
+            ),
+            None,
+            None,
+            None,
+            Some(true),
+        )
+        .unwrap();
+    let events = test_clock.advance_time(expected[3], true);
+
+    let ts_events: Vec<UnixNanos> = events.iter().map(|event| event.ts_event).collect();
+    assert_eq!(ts_events, expected);
+    assert_eq!(
+        test_clock.next_time_ns("zoned"),
+        Some(UnixNanos::from(
+            start_time
+                .checked_add(interval.parse::<Span>().unwrap().checked_mul(4).unwrap())
+                .unwrap()
+                .timestamp()
+        ))
+    );
+}
+
+#[rstest]
+fn test_set_timer_zoned_first_event_after_one_interval_and_inclusive_stop(
+    mut test_clock: VirtualClock,
+) {
+    let start_time = "2026-10-30T09:30:00[America/New_York]"
+        .parse::<Zoned>()
+        .unwrap();
+    let stop_time = "2026-11-01T14:30:00Z".parse::<Timestamp>().unwrap();
+
+    {
+        let cell = RefCell::new(test_clock);
+        let result = ClockApi::new(&cell).set_timer_zoned(
+            "zoned",
+            Span::new().days(1),
+            &start_time,
+            Some(stop_time),
+            None,
+            None,
+            None,
+        );
+        test_clock = cell.into_inner();
+        result
+    }
+    .unwrap();
+
+    let events = test_clock.advance_time(UnixNanos::from(stop_time) + DurationNanos::new(1), true);
+
+    let ts_events: Vec<UnixNanos> = events.iter().map(|event| event.ts_event).collect();
+    assert_eq!(
+        ts_events,
+        vec![
+            UnixNanos::from("2026-10-31T13:30:00Z".parse::<Timestamp>().unwrap()),
+            UnixNanos::from(stop_time),
+        ]
+    );
+    assert_eq!(test_clock.timer_count(), 0);
+}
+
+#[rstest]
+#[case::zero(Span::new(), "Calendar interval PT0S must be positive")]
+#[case::negative(Span::new().days(-1), "Calendar interval -P1D must be positive")]
+fn test_set_timer_zoned_rejects_non_positive_interval(
+    mut test_clock: VirtualClock,
+    #[case] interval: Span,
+    #[case] expected: &str,
+) {
+    let start_time = "2026-10-30T09:30:00[America/New_York]"
+        .parse::<Zoned>()
+        .unwrap();
+
+    let err = {
+        let cell = RefCell::new(test_clock);
+        let result = ClockApi::new(&cell).set_timer_zoned(
+            "zoned",
+            interval,
+            &start_time,
+            None,
+            None,
+            None,
+            None,
+        );
+        test_clock = cell.into_inner();
+        result
+    }
+    .unwrap_err();
+
+    assert_eq!(err.to_string(), expected);
+    assert_eq!(test_clock.timer_count(), 0);
+}
+
+#[rstest]
 fn test_set_time_alert_when_alert_time_equals_current_time(mut test_clock: VirtualClock) {
     let current_time = test_clock.timestamp_ns();
 
@@ -1437,6 +1574,21 @@ fn test_clock_api_handlers_reject_invalid_time_inputs() {
         .unwrap_err();
 
     assert_eq!(err.to_string(), "Interval exceeds u64 nanoseconds");
+    let error = clock
+        .set_timer_zoned(
+            "calendar",
+            Span::new().days(1),
+            &Timestamp::UNIX_EPOCH.to_zoned(jiff::tz::TimeZone::UTC),
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "Timer 'calendar' needs a native clock for a deadline schedule"
+    );
     assert!(calls.lock().is_empty());
 }
 
@@ -1919,4 +2071,299 @@ fn test_clock_api_write_borrow_conflict_panics_with_context(test_clock: VirtualC
     let api = ClockApi::new(&cell);
     let _guard = cell.borrow();
     api.cancel_timers();
+}
+
+#[rstest]
+fn test_set_timer_zoned_preserves_explicit_epoch(mut test_clock: VirtualClock) {
+    test_clock.set_time(UnixNanos::from(1_000_000_000));
+    let start = Timestamp::UNIX_EPOCH.to_zoned(jiff::tz::TimeZone::UTC);
+    {
+        let cell = RefCell::new(test_clock);
+        let result = ClockApi::new(&cell).set_timer_zoned(
+            "epoch",
+            Span::new().days(1),
+            &start,
+            None,
+            None,
+            None,
+            Some(true),
+        );
+        test_clock = cell.into_inner();
+        result
+    }
+    .unwrap();
+
+    let events = test_clock.advance_time(UnixNanos::from(172_800_000_000_000), true);
+    assert_eq!(
+        events
+            .iter()
+            .map(|event| event.ts_event.as_u64())
+            .collect::<Vec<_>>(),
+        vec![0, 86_400_000_000_000, 172_800_000_000_000]
+    );
+    assert_eq!(
+        test_clock.next_time_ns("epoch"),
+        Some(UnixNanos::from(259_200_000_000_000))
+    );
+}
+
+#[rstest]
+#[case::negative_start(Timestamp::from_nanosecond(-1).unwrap(), None, Span::new().days(1), "DateTime timestamp cannot be negative: -1")]
+#[case::negative_stop(Timestamp::UNIX_EPOCH, Some(Timestamp::from_nanosecond(-1).unwrap()), Span::new().days(1), "DateTime timestamp cannot be negative: -1")]
+#[case::overflow_first(UnixNanos::from(u64::MAX).to_datetime_utc(), None, Span::new().days(1), "Timer 'existing' first event time exceeds UnixNanos range")]
+#[case::zero_span(
+    Timestamp::UNIX_EPOCH,
+    None,
+    Span::new(),
+    "Calendar interval PT0S must be positive"
+)]
+fn test_set_timer_zoned_invalid_replacement_keeps_timer(
+    mut test_clock: VirtualClock,
+    #[case] start: Timestamp,
+    #[case] stop: Option<Timestamp>,
+    #[case] span: Span,
+    #[case] expected_error: &str,
+) {
+    test_clock
+        .set_timer_ns(
+            "existing",
+            DurationNanos::new(5000),
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+    let error = {
+        let cell = RefCell::new(test_clock);
+        let result = ClockApi::new(&cell).set_timer_zoned(
+            "existing",
+            span,
+            &start.to_zoned(jiff::tz::TimeZone::UTC),
+            stop,
+            None,
+            None,
+            None,
+        );
+        test_clock = cell.into_inner();
+        result
+    }
+    .unwrap_err();
+
+    assert_eq!(error.to_string(), expected_error);
+    assert_eq!(test_clock.timer_names(), vec!["existing".to_owned()]);
+    assert_eq!(
+        test_clock.next_time_ns("existing"),
+        Some(UnixNanos::from(5000))
+    );
+}
+
+#[derive(Debug)]
+struct DeadlineSchedule {
+    start: UnixNanos,
+    deadlines: Vec<UnixNanos>,
+}
+
+impl TimerSchedule for DeadlineSchedule {
+    fn start_time_ns(&self) -> UnixNanos {
+        self.start
+    }
+
+    fn next_after(&self, time_ns: UnixNanos, index: &mut u64) -> Option<UnixNanos> {
+        let position = self
+            .deadlines
+            .iter()
+            .position(|deadline| *deadline > time_ns)?;
+        *index = position as u64 + 1;
+        Some(self.deadlines[position])
+    }
+}
+
+#[rstest]
+fn test_timer_schedule_replays_irregular_utc_deadlines_with_inclusive_stop(
+    mut test_clock: VirtualClock,
+) {
+    let schedule = Arc::new(DeadlineSchedule {
+        start: UnixNanos::from(100),
+        deadlines: vec![110, 175, 260, 400]
+            .into_iter()
+            .map(UnixNanos::from)
+            .collect(),
+    });
+
+    test_clock.set_time(UnixNanos::from(200));
+    test_clock
+        .set_timer_schedule(
+            "irregular",
+            schedule,
+            Some(UnixNanos::from(260)),
+            None,
+            Some(true),
+            Some(true),
+        )
+        .unwrap();
+    let events = test_clock.advance_time(UnixNanos::from(500), true);
+    assert_eq!(
+        events
+            .iter()
+            .map(|event| event.ts_event.as_u64())
+            .collect::<Vec<_>>(),
+        vec![100, 110, 175, 260]
+    );
+    assert_eq!(test_clock.timer_count(), 0);
+    assert_eq!(test_clock.next_time_ns("irregular"), None);
+}
+
+#[rstest]
+fn test_timer_schedule_cancel_preserves_queued_callback_without_rearming(
+    mut test_clock: VirtualClock,
+) {
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let recorded = calls.clone();
+
+    let schedule = Arc::new(DeadlineSchedule {
+        start: UnixNanos::from(100),
+        deadlines: vec![110, 175, 260]
+            .into_iter()
+            .map(UnixNanos::from)
+            .collect(),
+    });
+
+    test_clock
+        .set_timer_schedule(
+            "irregular",
+            schedule,
+            None,
+            Some(TimeEventCallback::from(move |event: TimeEvent| {
+                recorded.lock().push(event.ts_event);
+            })),
+            None,
+            None,
+        )
+        .unwrap();
+
+    let events = test_clock.advance_time(UnixNanos::from(110), true);
+    let handlers = test_clock.match_handlers(events);
+    test_clock.cancel_timer("irregular");
+
+    for handler in handlers {
+        handler.callback.call(handler.event);
+    }
+
+    let subsequent = test_clock.advance_time(UnixNanos::from(500), true);
+    assert_eq!(*calls.lock(), vec![UnixNanos::from(110)]);
+    assert_eq!(subsequent, Vec::<TimeEvent>::new());
+    assert_eq!(test_clock.timer_count(), 0);
+    assert_eq!(test_clock.next_time_ns("irregular"), None);
+}
+
+#[rstest]
+fn test_timer_schedule_replacement_reuses_named_callback(mut test_clock: VirtualClock) {
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let recorded = calls.clone();
+    test_clock
+        .set_timer_ns(
+            "replace",
+            DurationNanos::new(50),
+            Some(UnixNanos::from(100)),
+            None,
+            Some(TimeEventCallback::from(move |event: TimeEvent| {
+                recorded.lock().push(event.ts_event);
+            })),
+            None,
+            None,
+        )
+        .unwrap();
+
+    let schedule = Arc::new(DeadlineSchedule {
+        start: UnixNanos::from(100),
+        deadlines: vec![110, 175].into_iter().map(UnixNanos::from).collect(),
+    });
+
+    test_clock
+        .set_timer_schedule("replace", schedule, None, None, None, None)
+        .unwrap();
+    let events = test_clock.advance_time(UnixNanos::from(200), true);
+    for handler in test_clock.match_handlers(events) {
+        handler.callback.call(handler.event);
+    }
+
+    assert_eq!(
+        *calls.lock(),
+        vec![UnixNanos::from(110), UnixNanos::from(175)]
+    );
+    assert_eq!(test_clock.timer_count(), 0);
+}
+
+#[rstest]
+fn test_timer_schedule_invalid_replacement_preserves_fixed_timer(mut test_clock: VirtualClock) {
+    test_clock
+        .set_timer_ns(
+            "replace",
+            DurationNanos::new(50),
+            Some(UnixNanos::from(100)),
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+    let schedule = Arc::new(DeadlineSchedule {
+        start: UnixNanos::from(100),
+        deadlines: Vec::new(),
+    });
+
+    let error = test_clock
+        .set_timer_schedule("replace", schedule, None, None, None, None)
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "Timer 'replace' first event time exceeds UnixNanos range"
+    );
+    assert_eq!(test_clock.timer_names(), vec!["replace"]);
+    assert_eq!(
+        test_clock.next_time_ns("replace"),
+        Some(UnixNanos::from(150))
+    );
+}
+
+#[rstest]
+fn test_timer_schedule_shared_source_has_independent_occurrence_indices(
+    mut test_clock: VirtualClock,
+) {
+    let schedule = Arc::new(
+        CalendarSchedule::new(
+            &"2026-01-31T00:00:00[UTC]".parse::<Zoned>().unwrap(),
+            Span::new().months(1),
+        )
+        .unwrap(),
+    );
+    test_clock
+        .set_timer_schedule("one", schedule.clone(), None, None, None, None)
+        .unwrap();
+    test_clock
+        .set_timer_schedule("two", schedule, None, None, None, Some(true))
+        .unwrap();
+    let boundary = UnixNanos::from("2026-02-28T00:00:00Z".parse::<Timestamp>().unwrap());
+    let events = test_clock.advance_time(boundary, true);
+    assert_eq!(
+        events
+            .iter()
+            .map(|event| (event.name.as_str(), event.ts_event))
+            .collect::<Vec<_>>(),
+        vec![
+            (
+                "two",
+                UnixNanos::from("2026-01-31T00:00:00Z".parse::<Timestamp>().unwrap())
+            ),
+            ("one", boundary),
+            ("two", boundary)
+        ]
+    );
+    let following = UnixNanos::from("2026-03-31T00:00:00Z".parse::<Timestamp>().unwrap());
+    assert_eq!(test_clock.next_time_ns("one"), Some(following));
+    assert_eq!(test_clock.next_time_ns("two"), Some(following));
 }

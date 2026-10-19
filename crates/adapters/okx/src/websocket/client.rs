@@ -756,8 +756,7 @@ impl OKXWebSocketClient {
             .connect()
             .await?;
 
-        // Replace connection state so all clones see the underlying WebSocketClient's state
-        self.connection_mode.store(client.connection_mode_atomic());
+        let connection_mode = client.connection_mode_atomic();
         let reconnect_handle = client.reconnect_handle();
 
         let (msg_tx, rx) = tokio::sync::mpsc::unbounded_channel::<OKXWsMessage>();
@@ -765,7 +764,16 @@ impl OKXWebSocketClient {
         self.out_rx = Some(Arc::new(rx));
 
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
+
+        // Queue initialization before clones can subscribe through the new sender
+        if let Err(e) = cmd_tx.send(HandlerCommand::SetClient(client)) {
+            anyhow::bail!("Failed to send WebSocket client to handler: {e}");
+        }
+
         *self.cmd_tx.write().await = cmd_tx.clone();
+
+        // Clones observing active must already see the initialized sender
+        self.connection_mode.store(connection_mode);
 
         let signal = self.signal.clone();
         let auth_tracker = self.auth_tracker.clone();
@@ -913,27 +921,6 @@ impl OKXWebSocketClient {
             anyhow::bail!("Failed to register WebSocket handler task: {e}");
         }
 
-        let set_client_result = {
-            let cmd_tx = self.cmd_tx.read().await;
-            cmd_tx.send(HandlerCommand::SetClient(client))
-        };
-
-        if let Err(e) = set_client_result {
-            self.handler_tasks.begin_shutdown();
-            self.signal.store(true, Ordering::Release);
-            let handler_abort = self.handler_abort.lock().clone();
-            handler_abort.cancel();
-            let shutdown_result = self.close_stream_task(Duration::from_secs(2)).await;
-            self.out_rx = None;
-            anyhow::bail!(match shutdown_result {
-                Ok(()) => format!("Failed to send WebSocket client to handler: {e}"),
-                Err(shutdown_error) => format!(
-                    "Failed to send WebSocket client to handler: {e}; handler shutdown failed: \
-                     {shutdown_error}"
-                ),
-            });
-        }
-
         if let Some(control) = &self.socket_control {
             control.register(move || reconnect_handle.request_reconnect());
         }
@@ -1002,7 +989,7 @@ impl OKXWebSocketClient {
     ///
     /// # Panics
     ///
-    /// This function panics if:
+    /// Panics if:
     /// - The websocket is not connected.
     /// - `stream_data` has already been called somewhere else (stream receiver is then taken).
     pub fn stream(&mut self) -> impl Stream<Item = OKXWsMessage> + 'static {
@@ -1502,8 +1489,8 @@ impl OKXWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - Subscription request fails
-    /// - depth is 50 but VIP level is below 4
+    /// - Subscription request fails.
+    /// - Depth is 50 but VIP level is below 4.
     pub async fn subscribe_book_with_depth(
         &self,
         instrument_id: InstrumentId,
@@ -3753,6 +3740,7 @@ fn log_receiver_dropped(signal: &AtomicBool, item: &str) {
 
 #[cfg(test)]
 mod tests {
+    use futures_util::StreamExt;
     use nautilus_core::time::get_atomic_clock_realtime;
     use nautilus_live::{SocketReconnectRegistry, SocketReconnectRequestOutcome};
     use nautilus_model::{identifiers::ClientId, instruments::stubs::crypto_perpetual_ethusdt};
@@ -3982,6 +3970,98 @@ mod tests {
         assert_eq!(
             client.request_id_counter.load(Ordering::SeqCst),
             initial_counter + 2
+        );
+    }
+
+    #[tokio::test]
+    async fn subscribe_during_connect_reaches_initialized_handler() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (received_tx, received_rx) = tokio::sync::oneshot::channel();
+
+        let server = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let mut socket = tokio_tungstenite::accept_async(socket).await.unwrap();
+            if let Some(Ok(message)) = socket.next().await {
+                let _ = received_tx.send(message);
+
+                while matches!(socket.next().await, Some(Ok(_))) {}
+            }
+        });
+
+        let mut ws_client = OKXWebSocketClient::new(
+            Some(format!("ws://{addr}")),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            TransportBackend::default(),
+            None,
+        )
+        .unwrap();
+        let observer = ws_client.clone();
+        let sender = Arc::clone(&ws_client.cmd_tx);
+        let publication = sender.read().await;
+        let mut connect = Box::pin(ws_client.connect());
+
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                assert!(futures_util::poll!(connect.as_mut()).is_pending());
+
+                if sender.try_read().is_err() {
+                    break;
+                }
+
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("connect must wait to publish its sender");
+
+        let active_before_publication = observer.is_active();
+        let mut subscribe =
+            Box::pin(observer.subscribe_inst_id(OKXWsChannel::Trades, Ustr::from("BTC-USDT")));
+        assert!(futures_util::poll!(subscribe.as_mut()).is_pending());
+
+        // Queue a writer behind Subscribe to hold any later SetClient read lock
+        let mut barrier = Box::pin(sender.write());
+        assert!(futures_util::poll!(barrier.as_mut()).is_pending());
+        drop(publication);
+        let connect_result = futures_util::poll!(connect.as_mut());
+        subscribe.await.expect("concurrent subscribe command");
+        let barrier = barrier.await;
+        let received = tokio::time::timeout(Duration::from_secs(2), received_rx).await;
+        drop(barrier);
+
+        if let std::task::Poll::Ready(result) = connect_result {
+            result.expect("connect failed");
+        } else {
+            connect.as_mut().await.expect("connect failed");
+        }
+
+        drop(connect);
+        ws_client.close().await.expect("close failed");
+        server.await.expect("server task failed");
+
+        assert!(
+            !active_before_publication,
+            "active before sender publication"
+        );
+        let message = received.expect("subscription must reach server").unwrap();
+
+        let Message::Text(text) = message else {
+            panic!("expected text subscription")
+        };
+
+        let payload: serde_json::Value = serde_json::from_str(text.as_str()).unwrap();
+        assert_eq!(
+            payload,
+            serde_json::json!({
+                "op": "subscribe",
+                "args": [{ "channel": "trades", "instId": "BTC-USDT" }],
+            })
         );
     }
 

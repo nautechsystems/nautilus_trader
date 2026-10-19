@@ -6,6 +6,7 @@ from . import betfair
 from . import binance
 from . import blockchain
 from . import bybit
+from . import coinapi
 from . import coinbase
 from . import databento
 from . import deribit
@@ -26,6 +27,7 @@ __all__ = [
     "binance",
     "blockchain",
     "bybit",
+    "coinapi",
     "coinbase",
     "databento",
     "deribit",

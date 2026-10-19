@@ -99,8 +99,8 @@ printf '%s\n' \
   '[workspace.dependencies]' \
   'zeta = "1.0"' \
   'alpha = "1.0"' \
-  'capnp = "1.0"' \
-  'capnpc = "2.0"' \
+  'arrow = "1.0"' \
+  'parquet = "2.0"' \
   'unused = "1.0"' \
   '' \
   '# Adapter dependencies' \

@@ -114,7 +114,7 @@ impl DeribitHttpClient {
 
     /// # Errors
     ///
-    /// Returns a Python exception if adding the instrument to the cache fails.
+    /// Returns an error if adding the instrument to the cache fails.
     #[pyo3(name = "cache_instrument")]
     pub fn py_cache_instrument(&self, py: Python<'_>, instrument: Py<PyAny>) -> PyResult<()> {
         let inst = pyobject_to_instrument_any(py, instrument)?;
@@ -188,9 +188,9 @@ impl DeribitHttpClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The instrument name format is invalid (error code `-32602`)
-    /// - The instrument doesn't exist (error code `13020`)
-    /// - Network or API errors occur
+    /// - The instrument name format is invalid (error code `-32602`).
+    /// - The instrument doesn't exist (error code `13020`).
+    /// - Network or API errors occur.
     #[pyo3(name = "request_instrument")]
     fn py_request_instrument<'py>(
         &self,
@@ -217,8 +217,8 @@ impl DeribitHttpClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The request fails
-    /// - Currency conversion fails
+    /// - The request fails.
+    /// - Currency conversion fails.
     #[pyo3(name = "request_account_state")]
     fn py_request_account_state<'py>(
         &self,
@@ -251,9 +251,9 @@ impl DeribitHttpClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The instrument is not found in cache
-    /// - The request fails
-    /// - Trade parsing fails
+    /// - The instrument is not found in cache.
+    /// - The request fails.
+    /// - Trade parsing fails.
     ///
     /// # Pagination
     ///
@@ -296,10 +296,10 @@ impl DeribitHttpClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - Aggregation source is not EXTERNAL
-    /// - Bar aggregation type is not supported by Deribit
-    /// - The instrument is not found in cache
-    /// - The request fails or response cannot be parsed
+    /// - Aggregation source is not EXTERNAL.
+    /// - Bar aggregation type is not supported by Deribit.
+    /// - The instrument is not found in cache.
+    /// - The request fails or response cannot be parsed.
     ///
     /// # Supported Resolutions
     ///
@@ -345,9 +345,9 @@ impl DeribitHttpClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The instrument is not found in cache
-    /// - The request fails
-    /// - Order book parsing fails
+    /// - The instrument is not found in cache.
+    /// - The request fails.
+    /// - Order book parsing fails.
     #[pyo3(name = "request_book_snapshot")]
     #[pyo3(signature = (instrument_id, depth=None))]
     fn py_request_book_snapshot<'py>(

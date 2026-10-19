@@ -1,20 +1,86 @@
 {
-    "serverTime": "2026-05-18T00:00:00.000Z",
-    "orderEvents": [
-        {
-            "type": "PLACE",
-            "order": {
-                "orderId": "abc",
-                "type": "unknown",
-                "symbol": "PF_XBTUSD",
-                "side": "buy",
-                "quantity": 1.0,
-                "filled": 0.0,
-                "limitPrice": 70000.0,
-                "timestamp": "2026-05-18T00:00:00.000Z",
-                "lastUpdateTimestamp": "2026-05-18T00:00:00.000Z",
-                "reduceOnly": false
-            }
+  "accountUid": "f7d5571c-6d10-4cf1-944a-048d25682ed0",
+  "len": 4,
+  "elements": [
+    {
+      "uid": "4e7c5e8f-9d6b-4a0c-8f4d-5b1a8c9d0e04",
+      "timestamp": 1779062400000,
+      "event": {
+        "OrderPlaced": {
+          "order": {
+            "uid": "abc",
+            "accountUid": "f7d5571c-6d10-4cf1-944a-048d25682ed0",
+            "tradeable": "PF_XBTUSD",
+            "direction": "Buy",
+            "quantity": "1.0",
+            "filled": "0.0",
+            "timestamp": 1779062400000,
+            "limitPrice": "70000.0",
+            "orderType": "Unknown",
+            "clientId": "",
+            "reduceOnly": false,
+            "lastUpdateTimestamp": 1779062400000
+          },
+          "reason": "new_user_order",
+          "reducedQuantity": ""
         }
-    ]
+      }
+    },
+    {
+      "uid": "5f8d6f9a-0e7c-4b1d-9a5e-6c2b9d0e1f05",
+      "timestamp": 1779062401000,
+      "event": {
+        "OrderEditRejected": {
+          "oldOrder": {
+            "uid": "abc",
+            "accountUid": "f7d5571c-6d10-4cf1-944a-048d25682ed0",
+            "tradeable": "PF_XBTUSD",
+            "direction": "Buy",
+            "quantity": "1.0",
+            "filled": "0.5",
+            "timestamp": 1779062400000,
+            "limitPrice": "70000.0",
+            "orderType": "Limit",
+            "clientId": "",
+            "reduceOnly": false,
+            "lastUpdateTimestamp": 1779062401000
+          },
+          "reason": "post_would_execute"
+        }
+      }
+    },
+    {
+      "uid": "6a9e7a0b-1f8d-4c2e-8b6f-7d3c0e1f2a06",
+      "timestamp": 1779062402000,
+      "event": {
+        "OrderNotFound": {
+          "accountUid": "f7d5571c-6d10-4cf1-944a-048d25682ed0",
+          "orderId": "missing"
+        }
+      }
+    },
+    {
+      "uid": "7b0f8b1c-2a9e-4d3f-9c7a-8e4d1f2a3b07",
+      "timestamp": 1779062403000,
+      "event": {
+        "OrderSomethingNew": {
+          "order": {
+            "uid": "abc",
+            "accountUid": "f7d5571c-6d10-4cf1-944a-048d25682ed0",
+            "tradeable": "PF_XBTUSD",
+            "direction": "Buy",
+            "quantity": "1.0",
+            "filled": "0.5",
+            "timestamp": 1779062400000,
+            "limitPrice": "70000.0",
+            "orderType": "Limit",
+            "clientId": "",
+            "reduceOnly": false,
+            "lastUpdateTimestamp": 1779062403000
+          }
+        }
+      }
+    }
+  ],
+  "serverTime": "2026-05-18T00:00:03.000Z"
 }

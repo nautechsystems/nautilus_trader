@@ -375,9 +375,9 @@ impl EventStoreSession {
     ///
     /// # Errors
     ///
-    /// Returns [`EventStoreError`] if the writer fails to commit the final batch, the
-    /// seal step fails, or the writer Arc has outstanding clones (the bus tap must be
-    /// cleared before close to release the adapter's writer reference).
+    /// Returns an error if the writer fails to commit the final batch, the seal step fails, or the
+    /// writer Arc has outstanding clones (the bus tap must be cleared before close to release the
+    /// adapter's writer reference).
     pub fn close(&mut self, ts_init: UnixNanos) -> Result<(), EventStoreError> {
         // Drop the adapter first so the writer Arc has no other strong owners on
         // try_unwrap. The kernel clears the bus tap before this site, so dropping the
@@ -471,8 +471,8 @@ impl EventStoreLifecycle {
     ///
     /// # Errors
     ///
-    /// Returns the underlying [`EventStoreError`] when the recovery sweep fails for a
-    /// reason other than the expected `CrashedPredecessor` handshake.
+    /// Returns an error if the recovery sweep fails for a reason other than the expected handshake
+    /// with a crashed predecessor.
     pub fn boot(
         config: Option<EventStoreConfig>,
         instance_id: UUID4,
@@ -493,8 +493,8 @@ impl EventStoreLifecycle {
     ///
     /// # Errors
     ///
-    /// Returns the underlying [`EventStoreError`] when the recovery sweep fails for a
-    /// reason other than the expected `CrashedPredecessor` handshake.
+    /// Returns an error if the recovery sweep fails for a reason other than the expected handshake
+    /// with a crashed predecessor.
     pub fn boot_with_options(
         config: Option<EventStoreConfig>,
         instance_id: UUID4,
@@ -537,8 +537,8 @@ impl EventStoreLifecycle {
     ///
     /// # Errors
     ///
-    /// Returns [`KernelError::EventStoreBoot`] when opening the new run, spawning the
-    /// writer, or blocking on the `RunStarted` ack fails.
+    /// Returns an error if opening the new run, spawning the writer, or blocking on the
+    /// `RunStarted` ack fails.
     pub fn open(
         &mut self,
         instance_id: UUID4,
@@ -606,8 +606,7 @@ impl EventStoreLifecycle {
     ///
     /// # Errors
     ///
-    /// Returns [`KernelError::CacheReplay`] when the source reader, snapshot restore, decode,
-    /// or cache apply step fails.
+    /// Returns an error if the source reader, snapshot restore, decode, or cache apply step fails.
     pub fn restore_parent_cache(
         &self,
         instance_id: UUID4,
@@ -780,10 +779,8 @@ impl Drop for EventStoreLifecycle {
 ///
 /// # Errors
 ///
-/// Returns [`EventStoreError`] when the directory enumeration fails, or when a
-/// predecessor unexpectedly reopens without the
-/// [`EventStoreError::CrashedPredecessor`] handshake the backend uses to surface
-/// unsealed runs.
+/// Returns an error if directory enumeration fails or a predecessor unexpectedly reopens without
+/// the handshake the backend uses to report an unsealed run.
 pub fn recover_predecessors(
     base_dir: &Path,
     instance_id: &str,
@@ -892,10 +889,9 @@ pub fn build_run_id(start_ts_init: UnixNanos) -> RunId {
 ///
 /// # Errors
 ///
-/// Returns [`BootError::EventStore`] when the backend rejects open, [`BootError::RunStartedSubmit`]
-/// when the writer rejects the submit, [`BootError::RunStartedTimeout`] when the
-/// commit does not happen inside the configured ceiling, and [`BootError::HaltedDuringBoot`]
-/// when the writer fail-stops while waiting for the commit.
+/// Returns an error if the backend rejects open, if the writer rejects the submit, if the commit
+/// does not happen inside the configured ceiling, or if the writer fail-stops while waiting for the
+/// commit.
 #[expect(
     clippy::too_many_arguments,
     reason = "run opening requires the boot context and event-store handles"
@@ -930,10 +926,9 @@ pub fn open_run(
 ///
 /// # Errors
 ///
-/// Returns [`BootError::EventStore`] when the backend rejects open, [`BootError::RunStartedSubmit`]
-/// when the writer rejects the submit, [`BootError::RunStartedTimeout`] when the
-/// commit does not happen inside the configured ceiling, and [`BootError::HaltedDuringBoot`]
-/// when the writer fail-stops while waiting for the commit.
+/// Returns an error if the backend rejects open, if the writer rejects the submit, if the commit
+/// does not happen inside the configured ceiling, or if the writer fail-stops while waiting for the
+/// commit.
 #[expect(
     clippy::too_many_arguments,
     reason = "run opening with options requires the boot context and lifecycle handles"
@@ -1153,9 +1148,8 @@ fn writer_config_from(config: &EventStoreConfig) -> WriterConfig {
 ///
 /// # Errors
 ///
-/// Returns [`BootError::RunStartedSubmit`] when the writer rejects the submit,
-/// [`BootError::HaltedDuringBoot`] when the writer fail-stops during the wait, and
-/// [`BootError::RunStartedTimeout`] when the writer does not commit within `timeout`.
+/// Returns an error if the writer rejects the submit, if the writer fail-stops during the wait, or
+/// if the writer does not commit within `timeout`.
 pub(crate) fn submit_run_started_blocking(
     writer: &EventStoreWriter,
     components: &RegisteredComponents,
@@ -3463,7 +3457,7 @@ mod tests {
 
         let correlation_id = UUID4::new();
         let handler_called = Rc::new(RefCell::new(false));
-        let handler_called_clone = handler_called.clone();
+        let handler_called_clone = Rc::clone(&handler_called);
         msgbus::register_response_handler(
             &correlation_id,
             msgbus::ShareableMessageHandler::from_typed(move |_resp: &QuotesResponse| {

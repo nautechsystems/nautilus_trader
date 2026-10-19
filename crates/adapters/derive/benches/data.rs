@@ -53,12 +53,14 @@ fn bench_book_deltas(c: &mut Criterion) {
             else {
                 unreachable!()
             };
+
             let msg = parse_orderbook_msg(&payload).unwrap();
             let deltas =
                 parse_orderbook_deltas(&msg, PRICE_PRECISION, SIZE_PRECISION, ts_init).unwrap();
             black_box(deltas);
         });
     });
+
     group.finish();
 }
 
@@ -75,11 +77,13 @@ fn bench_quotes(c: &mut Criterion) {
             else {
                 unreachable!()
             };
+
             let msg = parse_ticker_msg(&payload).unwrap();
             let quote = parse_ticker_quote(&msg, PRICE_PRECISION, SIZE_PRECISION, ts_init).unwrap();
             black_box(quote);
         });
     });
+
     group.finish();
 }
 
@@ -96,12 +100,14 @@ fn bench_trades(c: &mut Criterion) {
             else {
                 unreachable!()
             };
+
             let msg = parse_trades_msg(&payload).unwrap();
             let tick =
                 parse_trade_tick(&msg.trades[0], PRICE_PRECISION, SIZE_PRECISION, ts_init).unwrap();
             black_box(tick);
         });
     });
+
     group.finish();
 }
 
@@ -118,11 +124,13 @@ fn bench_mark_price(c: &mut Criterion) {
             else {
                 unreachable!()
             };
+
             let msg = parse_ticker_msg(&payload).unwrap();
             let mark = parse_mark_price(&msg, PRICE_PRECISION, ts_init).unwrap();
             black_box(mark);
         });
     });
+
     group.finish();
 }
 
@@ -139,11 +147,13 @@ fn bench_index_price(c: &mut Criterion) {
             else {
                 unreachable!()
             };
+
             let msg = parse_ticker_msg(&payload).unwrap();
             let index = parse_index_price(&msg, PRICE_PRECISION, ts_init).unwrap();
             black_box(index);
         });
     });
+
     group.finish();
 }
 
@@ -160,11 +170,13 @@ fn bench_funding_rate(c: &mut Criterion) {
             else {
                 unreachable!()
             };
+
             let msg = parse_ticker_msg(&payload).unwrap();
             let funding = parse_funding_rate(&msg, ts_init).unwrap();
             black_box(funding);
         });
     });
+
     group.finish();
 }
 
@@ -189,6 +201,7 @@ fn bench_bars(c: &mut Criterion) {
             black_box(bar);
         });
     });
+
     group.finish();
 }
 
@@ -205,11 +218,13 @@ fn bench_option_greeks(c: &mut Criterion) {
             else {
                 unreachable!()
             };
+
             let msg = parse_ticker_msg(&payload).unwrap();
             let greeks = parse_option_greeks(&msg, ts_init).unwrap();
             black_box(greeks);
         });
     });
+
     group.finish();
 }
 

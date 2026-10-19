@@ -84,7 +84,7 @@ impl WeightedMovingAverage {
     ///
     /// # Panics
     ///
-    /// This function panics if:
+    /// Panics if:
     /// - `period` is zero.
     /// - `weights.len()` does not equal `period`.
     /// - `weights` sum is effectively zero.
@@ -97,10 +97,11 @@ impl WeightedMovingAverage {
     ///
     /// # Errors
     ///
-    /// Returns an error if **any** of the validation rules fails:
-    /// - `period` must be **positive**.
-    /// - `weights` must be **exactly** `period` elements long.
-    /// - `weights` must contain at least one non-zero value (∑wᵢ > ε).
+    /// Returns an error if:
+    /// - `period` is not **positive** or exceeds `MAX_PERIOD`.
+    /// - `weights` does not contain **exactly** `period` elements.
+    /// - Any weight is not finite.
+    /// - The sum of `weights` is not finite or does not exceed `f64::EPSILON`.
     pub fn with_weights_checked(
         period: usize,
         weights: Vec<f64>,
@@ -134,7 +135,7 @@ impl WeightedMovingAverage {
         })
     }
 
-    fn check_period(period: usize) -> anyhow::Result<()> {
+    pub(crate) fn check_period(period: usize) -> anyhow::Result<()> {
         check_predicate_true(period > 0, "`period` must be positive")?;
         check_predicate_true(
             period <= MAX_PERIOD,

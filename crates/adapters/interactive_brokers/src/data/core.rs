@@ -63,10 +63,9 @@ use tokio_util::sync::CancellationToken;
 use super::{
     cache::{OptionGreeksCache, QuoteCache},
     convert::{
-        apply_bar_price_magnifier, apply_price_magnifier, bar_request_segments,
-        bar_type_to_ib_bar_size, calculate_duration_segments, extend_historical_tick_batch,
-        ib_bar_to_nautilus_bar, jiff_to_ib_datetime,
-        price_type_to_ib_realtime_what_to_show_for_security,
+        IbPriceConverter, bar_request_segments, bar_type_to_ib_bar_size,
+        calculate_duration_segments, extend_historical_tick_batch, ib_bar_to_nautilus_bar,
+        jiff_to_ib_datetime, price_type_to_ib_realtime_what_to_show_for_security,
         price_type_to_ib_what_to_show_for_security, retain_historical_ticks_in_range,
         should_continue_historical_tick_pagination,
     },
@@ -267,13 +266,16 @@ impl InteractiveBrokersDataClient {
             for subscription in subscriptions.values() {
                 subscription.cancellation_token.cancel();
             }
+
             subscriptions.clear();
         }
+
         {
             let mut subscriptions = lock(&self.option_greeks_subscriptions)?;
             for cancellation_token in subscriptions.values() {
                 cancellation_token.cancel();
             }
+
             subscriptions.clear();
         }
 
@@ -315,13 +317,13 @@ impl InteractiveBrokersDataClient {
                 .context("failed to start IB data command task generation")?;
             self.cancellation_token = self.session_tasks.cancellation_token();
         }
+
         Ok(())
     }
 
     async fn finish_bar_timeout_tasks(&self) {
         let mut tasks = self.bar_timeout_tasks.lock().await;
         let bar_types = tasks.keys().cloned().collect::<Vec<_>>();
-
         for bar_type in bar_types {
             let handle = tasks
                 .get_mut(&bar_type)
@@ -364,8 +366,8 @@ impl InteractiveBrokersDataClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The client is not connected
-    /// - The provider batch_load fails
+    /// - The client is not connected.
+    /// - The provider batch_load fails.
     pub async fn batch_load_instruments(
         &self,
         instrument_ids: Vec<InstrumentId>,
@@ -394,8 +396,8 @@ impl InteractiveBrokersDataClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The client is not connected
-    /// - The provider method fails
+    /// - The client is not connected.
+    /// - The provider method fails.
     pub async fn fetch_option_chain_by_range(
         &self,
         underlying_symbol: &str,
@@ -451,8 +453,8 @@ impl InteractiveBrokersDataClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The client is not connected
-    /// - The provider method fails
+    /// - The client is not connected.
+    /// - The provider method fails.
     pub async fn fetch_futures_chain(
         &self,
         symbol: &str,
@@ -493,8 +495,8 @@ impl InteractiveBrokersDataClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The client is not connected
-    /// - The provider method fails
+    /// - The client is not connected.
+    /// - The provider method fails.
     pub async fn fetch_bag_contract(
         &self,
         bag_contract: &ibapi::contracts::Contract,
@@ -670,8 +672,10 @@ impl DataClient for InteractiveBrokersDataClient {
                 return Err(anyhow::Error::new(e)
                     .context(format!("IB data startup teardown failed: {teardown_error}")));
             }
+
             return Err(anyhow::Error::new(e).context("failed to register IB data farm monitor"));
         }
+
         self.is_connected.store(true, Ordering::Relaxed);
 
         let instrument_count = self.instrument_provider.count();
@@ -717,6 +721,7 @@ impl DataClient for InteractiveBrokersDataClient {
     // Subscription handlers
     fn subscribe_quotes(&mut self, cmd: SubscribeQuotes) -> anyhow::Result<()> {
         tracing::debug!("Subscribing to quotes for {}", cmd.instrument_id);
+
         if self.has_subscription(cmd.instrument_id, SubscriptionType::Quotes)? {
             tracing::debug!(
                 "Quote subscription already active for {}",
@@ -739,7 +744,11 @@ impl DataClient for InteractiveBrokersDataClient {
                 cmd.instrument_id
             ))?;
 
-        let price_precision = instrument.price_precision();
+        let prices = IbPriceConverter::for_instrument(
+            &instrument,
+            self.instrument_provider
+                .get_price_magnifier(&cmd.instrument_id),
+        );
         let size_precision = instrument.size_precision();
 
         // Convert instrument_id to IB contract
@@ -767,9 +776,6 @@ impl DataClient for InteractiveBrokersDataClient {
         let quote_cache = Arc::clone(&self.quote_cache);
         let clock = self.clock;
 
-        // Get price magnifier from instrument provider
-        let price_magnifier = self.instrument_provider.get_price_magnifier(&instrument_id) as f64;
-
         let subscription_token = self.cancellation_token.child_token();
 
         // Record the subscription before spawning so a fast-failing task cannot
@@ -782,6 +788,7 @@ impl DataClient for InteractiveBrokersDataClient {
                 id: subscription_id,
             },
         );
+
         let guard = SubscriptionGuard {
             subscriptions: Arc::clone(&self.subscriptions),
             key: (cmd.instrument_id, SubscriptionType::Quotes),
@@ -808,7 +815,7 @@ impl DataClient for InteractiveBrokersDataClient {
                     client_clone,
                     contract,
                     instrument_id,
-                    price_precision,
+                    prices,
                     size_precision,
                     data_sender,
                     quote_cache,
@@ -834,12 +841,11 @@ impl DataClient for InteractiveBrokersDataClient {
                     client_clone.clone(),
                     contract.clone(),
                     instrument_id,
-                    price_precision,
+                    prices,
                     size_precision,
                     data_sender.clone(),
                     clock,
                     subscription_token.clone(),
-                    price_magnifier,
                     Arc::clone(&data_farm_state),
                     stream_config,
                 )
@@ -854,12 +860,13 @@ impl DataClient for InteractiveBrokersDataClient {
                             instrument_id,
                             e
                         );
+
                         // Fallback to market_data (reqMktData) - works for BAG contracts
                         if let Err(fallback_err) = handle_quote_subscription(
                             client_clone,
                             contract,
                             instrument_id,
-                            price_precision,
+                            prices,
                             size_precision,
                             data_sender,
                             quote_cache,
@@ -885,6 +892,7 @@ impl DataClient for InteractiveBrokersDataClient {
                     }
                 }
             }
+
             guard.release();
         };
 
@@ -942,10 +950,11 @@ impl DataClient for InteractiveBrokersDataClient {
             return Ok(());
         }
 
-        let price_precision = instrument.price_precision();
-        let price_magnifier = self
-            .instrument_provider
-            .get_price_magnifier(&cmd.instrument_id);
+        let prices = IbPriceConverter::for_instrument(
+            &instrument,
+            self.instrument_provider
+                .get_price_magnifier(&cmd.instrument_id),
+        );
         let instrument_id = cmd.instrument_id;
         let data_sender = self.data_sender.clone();
         let clock = self.clock;
@@ -960,6 +969,7 @@ impl DataClient for InteractiveBrokersDataClient {
                 id: subscription_id,
             },
         );
+
         let guard = SubscriptionGuard {
             subscriptions: Arc::clone(&self.subscriptions),
             key: (cmd.instrument_id, SubscriptionType::IndexPrices),
@@ -975,8 +985,7 @@ impl DataClient for InteractiveBrokersDataClient {
                 client_clone,
                 contract,
                 instrument_id,
-                price_precision,
-                price_magnifier,
+                prices,
                 data_sender,
                 clock,
                 subscription_token,
@@ -991,6 +1000,7 @@ impl DataClient for InteractiveBrokersDataClient {
                     e
                 );
             }
+
             guard.release();
         };
 
@@ -1123,6 +1133,7 @@ impl DataClient for InteractiveBrokersDataClient {
         tracing::debug!("Unsubscribing from index prices for {}", cmd.instrument_id);
 
         let mut subscriptions = lock(&self.subscriptions)?;
+
         if let Some(sub_info) =
             subscriptions.remove(&(cmd.instrument_id, SubscriptionType::IndexPrices))
         {
@@ -1157,6 +1168,7 @@ impl DataClient for InteractiveBrokersDataClient {
 
     fn subscribe_trades(&mut self, cmd: SubscribeTrades) -> anyhow::Result<()> {
         tracing::debug!("Subscribing to trades for {}", cmd.instrument_id);
+
         if self.has_subscription(cmd.instrument_id, SubscriptionType::Trades)? {
             tracing::debug!(
                 "Trade subscription already active for {}",
@@ -1188,7 +1200,11 @@ impl DataClient for InteractiveBrokersDataClient {
             return Ok(());
         }
 
-        let price_precision = instrument.price_precision();
+        let prices = IbPriceConverter::for_instrument(
+            &instrument,
+            self.instrument_provider
+                .get_price_magnifier(&cmd.instrument_id),
+        );
         let size_precision = instrument.size_precision();
 
         // Convert instrument_id to IB contract
@@ -1212,6 +1228,7 @@ impl DataClient for InteractiveBrokersDataClient {
                 id: subscription_id,
             },
         );
+
         let guard = SubscriptionGuard {
             subscriptions: Arc::clone(&self.subscriptions),
             key: (cmd.instrument_id, SubscriptionType::Trades),
@@ -1228,7 +1245,7 @@ impl DataClient for InteractiveBrokersDataClient {
                 client_clone,
                 contract,
                 instrument_id,
-                price_precision,
+                prices,
                 size_precision,
                 data_sender,
                 clock,
@@ -1240,6 +1257,7 @@ impl DataClient for InteractiveBrokersDataClient {
             {
                 tracing::error!("Trade subscription error for {}: {:?}", instrument_id, e);
             }
+
             guard.release();
         };
 
@@ -1283,12 +1301,16 @@ impl DataClient for InteractiveBrokersDataClient {
             tracing::debug!("Bar subscription already active for {}", cmd.bar_type);
             return Ok(());
         }
+
         let instrument = self
             .instrument_provider
             .find(&instrument_id)
             .context(format!("Instrument {instrument_id} not found in provider"))?;
 
-        let price_precision = instrument.price_precision();
+        let prices = IbPriceConverter::for_instrument(
+            &instrument,
+            self.instrument_provider.get_price_magnifier(&instrument_id),
+        );
         let size_precision = instrument.size_precision();
 
         // Convert instrument_id to IB contract
@@ -1324,6 +1346,7 @@ impl DataClient for InteractiveBrokersDataClient {
                 id: subscription_id,
             },
         );
+
         let guard = SubscriptionGuard {
             subscriptions: Arc::clone(&self.subscriptions),
             key: (instrument_id, SubscriptionType::Bars(bar_type)),
@@ -1347,7 +1370,7 @@ impl DataClient for InteractiveBrokersDataClient {
                         bar_type.spec().price_type,
                         is_crypto,
                     ),
-                    price_precision,
+                    prices,
                     size_precision,
                     data_sender,
                     clock,
@@ -1369,7 +1392,7 @@ impl DataClient for InteractiveBrokersDataClient {
                         bar_type.spec().price_type,
                         is_crypto,
                     ),
-                    price_precision,
+                    prices,
                     size_precision,
                     use_rth,
                     start_ns,
@@ -1386,6 +1409,7 @@ impl DataClient for InteractiveBrokersDataClient {
             if let Err(e) = result {
                 tracing::error!("Bars subscription error for {}: {:?}", bar_type, e);
             }
+
             guard.release();
         };
 
@@ -1402,6 +1426,7 @@ impl DataClient for InteractiveBrokersDataClient {
 
         let instrument_id = cmd.bar_type.instrument_id();
         let mut subscriptions = lock(&self.subscriptions)?;
+
         if let Some(sub_info) =
             subscriptions.remove(&(instrument_id, SubscriptionType::Bars(cmd.bar_type)))
         {
@@ -1447,7 +1472,11 @@ impl DataClient for InteractiveBrokersDataClient {
                 cmd.instrument_id
             ))?;
 
-        let price_precision = instrument.price_precision();
+        // Book levels are not rounded to the increment: two IB levels could round to one price
+        let prices = IbPriceConverter::new(instrument.price_precision()).with_price_magnifier(
+            self.instrument_provider
+                .get_price_magnifier(&cmd.instrument_id),
+        );
         let size_precision = instrument.size_precision();
 
         // Convert instrument_id to IB contract
@@ -1481,6 +1510,7 @@ impl DataClient for InteractiveBrokersDataClient {
                 id: subscription_id,
             },
         );
+
         let guard = SubscriptionGuard {
             subscriptions: Arc::clone(&self.subscriptions),
             key: (cmd.instrument_id, SubscriptionType::BookDeltas),
@@ -1497,7 +1527,7 @@ impl DataClient for InteractiveBrokersDataClient {
                 client_clone,
                 contract,
                 instrument_id,
-                price_precision,
+                prices,
                 size_precision,
                 depth_rows,
                 is_smart_depth,
@@ -1515,6 +1545,7 @@ impl DataClient for InteractiveBrokersDataClient {
                     e
                 );
             }
+
             guard.release();
         };
 
@@ -1533,6 +1564,7 @@ impl DataClient for InteractiveBrokersDataClient {
         tracing::debug!("Unsubscribing from book deltas for {}", cmd.instrument_id);
 
         let mut subscriptions = lock(&self.subscriptions)?;
+
         if let Some(sub_info) =
             subscriptions.remove(&(cmd.instrument_id, SubscriptionType::BookDeltas))
         {
@@ -1551,6 +1583,7 @@ impl DataClient for InteractiveBrokersDataClient {
     // Request handlers
     fn request_instrument(&self, cmd: RequestInstrument) -> anyhow::Result<()> {
         tracing::debug!("Requesting instrument: {}", cmd.instrument_id);
+
         if cmd.start.is_some() {
             tracing::warn!(
                 "Requesting instrument {} with specified `start` which has no effect",
@@ -1594,6 +1627,7 @@ impl DataClient for InteractiveBrokersDataClient {
 
                 self.spawn_command(async move {
                     let filters = params_to_string_filters(params.as_ref());
+
                     if let Err(e) = instrument_provider
                         .fetch_contract_details(&client_clone, instrument_id, force_update, filters)
                         .await
@@ -1805,6 +1839,7 @@ impl DataClient for InteractiveBrokersDataClient {
                 } else {
                     Vec::new()
                 };
+
                 let instruments_count = instruments.len();
 
                 let response = DataResponse::Instruments(InstrumentsResponse::new(
@@ -1867,7 +1902,11 @@ impl DataClient for InteractiveBrokersDataClient {
                 cmd.instrument_id
             ))?;
 
-        let price_precision = instrument.price_precision();
+        let prices = IbPriceConverter::for_instrument(
+            &instrument,
+            self.instrument_provider
+                .get_price_magnifier(&cmd.instrument_id),
+        );
         let size_precision = instrument.size_precision();
 
         // Convert instrument_id to IB contract
@@ -1898,7 +1937,6 @@ impl DataClient for InteractiveBrokersDataClient {
         let cmd_start = cmd.start;
         let cmd_end = cmd.end;
         let trading_hours = request_trading_hours(self.config.use_regular_trading_hours);
-        let price_magnifier = self.instrument_provider.get_price_magnifier(&instrument_id);
 
         self.spawn_command(async move {
             let mut all_quotes = Vec::new();
@@ -1907,6 +1945,7 @@ impl DataClient for InteractiveBrokersDataClient {
             if current_end_date.is_none() {
                 current_end_date = Some(jiff::Timestamp::now());
             }
+
             let current_start_date = cmd_start;
 
             loop {
@@ -1945,17 +1984,18 @@ impl DataClient for InteractiveBrokersDataClient {
                                     continue;
                                 }
                             };
+
                             let ts_event =
                                 super::convert::ib_timestamp_to_unix_nanos(&tick.timestamp);
                             let ts_init = clock.get_time_ns();
 
                             match super::parse::parse_quote_tick(
                                 instrument_id,
-                                Some(apply_price_magnifier(tick.price_bid, price_magnifier)),
-                                Some(apply_price_magnifier(tick.price_ask, price_magnifier)),
+                                Some(tick.price_bid),
+                                Some(tick.price_ask),
                                 tick.size_bid,
                                 tick.size_ask,
-                                price_precision,
+                                prices,
                                 size_precision,
                                 ts_event,
                                 ts_init,
@@ -2057,7 +2097,11 @@ impl DataClient for InteractiveBrokersDataClient {
             return Ok(());
         }
 
-        let price_precision = instrument.price_precision();
+        let prices = IbPriceConverter::for_instrument(
+            &instrument,
+            self.instrument_provider
+                .get_price_magnifier(&cmd.instrument_id),
+        );
         let size_precision = instrument.size_precision();
 
         // Convert instrument_id to IB contract
@@ -2088,7 +2132,6 @@ impl DataClient for InteractiveBrokersDataClient {
         let cmd_start = cmd.start;
         let cmd_end = cmd.end;
         let trading_hours = request_trading_hours(self.config.use_regular_trading_hours);
-        let price_magnifier = self.instrument_provider.get_price_magnifier(&instrument_id);
 
         self.spawn_command(async move {
             let mut all_trades = Vec::new();
@@ -2097,6 +2140,7 @@ impl DataClient for InteractiveBrokersDataClient {
             if current_end_date.is_none() {
                 current_end_date = Some(jiff::Timestamp::now());
             }
+
             let current_start_date = cmd_start;
 
             loop {
@@ -2135,6 +2179,7 @@ impl DataClient for InteractiveBrokersDataClient {
                                     continue;
                                 }
                             };
+
                             let ts_event =
                                 super::convert::ib_timestamp_to_unix_nanos(&tick.timestamp);
                             let ts_init = clock.get_time_ns();
@@ -2152,9 +2197,9 @@ impl DataClient for InteractiveBrokersDataClient {
 
                             match super::parse::parse_trade_tick(
                                 instrument_id,
-                                apply_price_magnifier(tick.price, price_magnifier),
+                                tick.price,
                                 size,
-                                price_precision,
+                                prices,
                                 size_precision,
                                 ts_event,
                                 ts_init,
@@ -2255,7 +2300,10 @@ impl DataClient for InteractiveBrokersDataClient {
             .find(&instrument_id)
             .context(format!("Instrument {instrument_id} not found in provider"))?;
 
-        let price_precision = instrument.price_precision();
+        let prices = IbPriceConverter::for_instrument(
+            &instrument,
+            self.instrument_provider.get_price_magnifier(&instrument_id),
+        );
         let size_precision = instrument.size_precision();
 
         // Convert instrument_id to IB contract
@@ -2288,7 +2336,6 @@ impl DataClient for InteractiveBrokersDataClient {
         let start_nanos = cmd.start.map(datetime_to_unix_nanos);
         let end_nanos = cmd.end.map(datetime_to_unix_nanos);
         let limit = cmd.limit.map(|limit| limit.get());
-        let price_magnifier = self.instrument_provider.get_price_magnifier(&instrument_id);
 
         // Spawn async task to handle the request with segmentation
         let client_clone = client.as_arc().clone();
@@ -2312,11 +2359,10 @@ impl DataClient for InteractiveBrokersDataClient {
                     Ok(historical_data) => {
                         // Convert IB bars to Nautilus bars
                         for ib_bar in &historical_data.bars {
-                            let ib_bar = apply_bar_price_magnifier(ib_bar, price_magnifier);
                             match ib_bar_to_nautilus_bar(
-                                &ib_bar,
+                                ib_bar,
                                 bar_type,
-                                price_precision,
+                                prices,
                                 size_precision,
                             ) {
                                 Ok(bar) => all_bars.push(bar),
@@ -2346,12 +2392,12 @@ impl DataClient for InteractiveBrokersDataClient {
             // Sort and deduplicate bars as segments might overlap or be out of order from IB.
             all_bars.sort_by_key(|b| b.ts_event);
             all_bars.dedup();
-
             if let Some(limit) = limit
                 && all_bars.len() > limit
             {
                 all_bars = all_bars.split_off(all_bars.len() - limit);
             }
+
             let bars_count = all_bars.len();
 
             let response = DataResponse::Bars(BarsResponse::new(
@@ -2462,6 +2508,7 @@ mod tests {
                 id: next_subscription_id(),
             },
         );
+
         subscriptions.insert(
             (instrument_id, SubscriptionType::Trades),
             SubscriptionInfo {
@@ -2496,6 +2543,7 @@ mod tests {
                 id: next_subscription_id(),
             },
         );
+
         subscriptions.insert(
             (instrument_id, SubscriptionType::Bars(five_minute)),
             SubscriptionInfo {
@@ -2529,6 +2577,7 @@ mod tests {
                 id: first_id,
             },
         );
+
         let stale_guard = SubscriptionGuard {
             subscriptions: Arc::clone(&subscriptions),
             key,
@@ -2544,6 +2593,7 @@ mod tests {
                 id: second_id,
             },
         );
+
         stale_guard.release();
         assert!(subscriptions.lock().unwrap().contains_key(&key));
 
@@ -2552,6 +2602,7 @@ mod tests {
             key,
             id: second_id,
         };
+
         current_guard.release();
         assert!(!subscriptions.lock().unwrap().contains_key(&key));
     }
@@ -2570,6 +2621,7 @@ mod tests {
                 id,
             },
         );
+
         {
             let _guard = SubscriptionGuard {
                 subscriptions: Arc::clone(&subscriptions),
@@ -2578,6 +2630,7 @@ mod tests {
             };
             // Dropped without release(), as when a stream task panics.
         }
+
         assert!(!subscriptions.lock().unwrap().contains_key(&key));
     }
 
@@ -2590,6 +2643,7 @@ mod tests {
         nautilus_common::live::runner::replace_data_event_sender(sender);
 
         let config = InteractiveBrokersDataClientConfig::default();
+
         let provider = Arc::new(InteractiveBrokersInstrumentProvider::new(
             config.instrument_provider.clone(),
         ));
@@ -2604,6 +2658,7 @@ mod tests {
         nautilus_common::live::runner::replace_data_event_sender(sender);
 
         let config = InteractiveBrokersDataClientConfig::default();
+
         let provider = Arc::new(InteractiveBrokersInstrumentProvider::new(
             config.instrument_provider.clone(),
         ));
@@ -2638,6 +2693,7 @@ mod tests {
         nautilus_common::live::runner::replace_data_event_sender(sender);
 
         let config = InteractiveBrokersDataClientConfig::default();
+
         let provider = Arc::new(InteractiveBrokersInstrumentProvider::new(
             config.instrument_provider.clone(),
         ));

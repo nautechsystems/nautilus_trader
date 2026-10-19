@@ -16,15 +16,14 @@
 //! Data serialization and format conversion for [NautilusTrader](https://nautilustrader.io).
 //!
 //! The `nautilus-serialization` crate provides data serialization capabilities for converting
-//! trading data between different formats including Apache Arrow and Cap'n Proto.
+//! trading data between different formats including Apache Arrow, JSON, MessagePack, and SBE.
 //! This enables efficient data storage, retrieval, and interoperability across different systems:
 //!
 //! - **Apache Arrow integration**: Schema definitions and encoding/decoding for market data types.
 //! - **Parquet file operations**: High-performance columnar storage for historical data analysis.
 //! - **Record batch processing**: Efficient batch operations for time-series data.
 //! - **Schema management**: Type-safe schema definitions with metadata preservation.
-//! - **Cross-format conversion**: Data interchange between Arrow, Cap'n Proto, and native types.
-//! - **Cap'n Proto serialization**: Zero-copy, schema-based serialization for efficient data interchange (requires `capnp` feature).
+//! - **Cross-format conversion**: Data interchange between Arrow and native types.
 //! - **SBE decode utilities**: Zero-copy cursor and shared decode errors for SBE parsers (requires `sbe` feature).
 //!
 //! # NautilusTrader
@@ -44,7 +43,6 @@
 //!
 //! - `arrow`: Enables Apache Arrow schema definitions and RecordBatch encoding/decoding.
 //! - `arrow-display`: Enables display-friendly Arrow encoders for market data and requires `arrow`.
-//! - `capnp`: Enables [Cap'n Proto](https://capnproto.org) serialization support.
 //! - `extension-module`: Builds as a Python extension module.
 //! - `high-precision`: Enables
 //!   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
@@ -52,7 +50,7 @@
 //! - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 //! - `sbe`: Enables generic SBE (Simple Binary Encoding) decode utilities.
 //!
-//! **Warning:** SBE and Cap'n Proto schemas are not yet stable and may break between releases.
+//! **Warning:** SBE schemas are not yet stable and may break between releases.
 
 #![warn(rustc::all)]
 #![warn(clippy::pedantic)]
@@ -109,72 +107,11 @@ pub use arrow::custom::ensure_custom_data_registered;
 /// Re-exports MsgPack codecs for consumers configuring serialization through this crate.
 pub use nautilus_core::serialization::msgpack;
 
-#[cfg(feature = "capnp")]
-pub mod capnp;
-
 #[cfg(feature = "sbe")]
 pub mod sbe;
 
-#[cfg(any(feature = "capnp", feature = "sbe"))]
+#[cfg(feature = "sbe")]
 mod numeric;
-
-#[cfg(feature = "capnp")]
-macro_rules! include_capnp_module {
-    ($name:ident, $path:expr) => {
-        #[cfg(all(feature = "capnp", not(docsrs)))]
-        #[allow(
-            clippy::all,
-            clippy::missing_errors_doc,
-            clippy::missing_panics_doc,
-            warnings,
-            dead_code,
-            missing_debug_implementations
-        )]
-        pub mod $name {
-            include!(concat!(env!("OUT_DIR"), $path));
-        }
-
-        #[cfg(all(feature = "capnp", docsrs))]
-        #[allow(
-            clippy::all,
-            clippy::missing_errors_doc,
-            clippy::missing_panics_doc,
-            warnings,
-            dead_code,
-            missing_debug_implementations
-        )]
-        pub mod $name {
-            include!(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/generated/capnp",
-                $path
-            ));
-        }
-    };
-}
-
-#[cfg(feature = "capnp")]
-include_capnp_module!(base_capnp, "/common/base_capnp.rs");
-#[cfg(feature = "capnp")]
-include_capnp_module!(identifiers_capnp, "/common/identifiers_capnp.rs");
-#[cfg(feature = "capnp")]
-include_capnp_module!(types_capnp, "/common/types_capnp.rs");
-#[cfg(feature = "capnp")]
-include_capnp_module!(enums_capnp, "/common/enums_capnp.rs");
-#[cfg(feature = "capnp")]
-include_capnp_module!(trading_capnp, "/commands/trading_capnp.rs");
-#[cfg(feature = "capnp")]
-include_capnp_module!(data_capnp, "/commands/data_capnp.rs");
-#[cfg(feature = "capnp")]
-include_capnp_module!(order_capnp, "/events/order_capnp.rs");
-#[cfg(feature = "capnp")]
-include_capnp_module!(position_capnp, "/events/position_capnp.rs");
-#[cfg(feature = "capnp")]
-include_capnp_module!(account_capnp, "/events/account_capnp.rs");
-#[cfg(feature = "capnp")]
-include_capnp_module!(market_capnp, "/data/market_capnp.rs");
-#[cfg(feature = "capnp")]
-include_capnp_module!(instruments_capnp, "/data/instruments_capnp.rs");
 
 #[cfg(feature = "python")]
 pub mod python;

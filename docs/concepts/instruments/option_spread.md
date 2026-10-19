@@ -36,7 +36,7 @@ Examples include listed vertical spreads, calendar spreads, and other option str
 | `ts_event`        | `UnixNanos`        | `int`              | Required         | Event timestamp in nanoseconds.          |
 | `ts_init`         | `UnixNanos`        | `int`              | Required         | Initialization timestamp in nanoseconds. |
 
-*Note: Python constructors use `instrument_id`; Rust stores the same value as `id`.*
+**Note**: Python constructors use `instrument_id`. Rust stores the same value as `id`.
 
 ## Behavior
 
@@ -115,7 +115,7 @@ sr3_spread = OptionSpread(
 
 ## Adapters
 
-Representative adapters that create or consume `OptionSpread` instruments include:
+**Adapters that create or consume `OptionSpread` instruments include**:
 
 - [Databento](../../integrations/databento.md) for listed option spread markets.
 - [Interactive Brokers](../../integrations/interactive_brokers.md) for exchange-defined option strategies.

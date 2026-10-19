@@ -27,6 +27,8 @@ pub mod futures;
 pub mod models;
 pub mod spot;
 
+pub(crate) mod coverage;
+
 /// Applies a count `limit` to `items` returned oldest-first by Kraken.
 ///
 /// Kraken's historical endpoints return their page in ascending (oldest-first)

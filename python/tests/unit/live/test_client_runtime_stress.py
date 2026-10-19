@@ -32,16 +32,24 @@ from nautilus_trader._libnautilus.live import _ClientRuntime as ClientRuntime
 @pytest.mark.parametrize("seed", range(4))
 @pytest.mark.parametrize("loop_kind", ["asyncio", "uvloop"])
 @pytest.mark.parametrize("eager", [False, True])
-def test_seeded_runtime_lifetimes(seed, loop_kind, eager, native_log, request) -> None:
+def test_seeded_runtime_lifetimes(
+    seed,
+    loop_kind,
+    eager,
+    eager_task_factory,
+    native_log,
+    request,
+) -> None:
     """
     Release every owner after varied cancellation schedules on the supported loops.
     """
     runner = asyncio.run if loop_kind == "asyncio" else pytest.importorskip("uvloop").run
     repetitions = 8 if request.config.getoption("--client-runtime-stress") else 2
-    runner(exercise_lifetimes(seed, eager, repetitions))
+    factory = eager_task_factory if eager else None
+    runner(exercise_lifetimes(seed, factory, repetitions))
 
 
-async def exercise_lifetimes(seed: int, eager: bool, repetitions: int) -> None:
+async def exercise_lifetimes(seed: int, factory, repetitions: int) -> None:
     """
     Check repeated lifetimes and loop diagnostics under aggressive collection.
     """
@@ -55,8 +63,7 @@ async def exercise_lifetimes(seed: int, eager: bool, repetitions: int) -> None:
     loop.set_debug(True)
     gc.set_threshold(5, 1, 1)
 
-    if eager:
-        loop.set_task_factory(asyncio.eager_task_factory)
+    loop.set_task_factory(factory)
     try:
         for iteration in range(repetitions):
             async with asyncio.timeout(5):
@@ -190,9 +197,11 @@ async def exercise_lifetime(seed: int) -> list[weakref.ReferenceType]:  # noqa: 
                 if task.get_name().startswith(f"{client.client_id}:")
             },
         )
-        _, pending = await asyncio.wait(tasks, timeout=2)
-        assert pending == set(), seed
-        await asyncio.gather(*tasks, return_exceptions=True)
+
+        if tasks:
+            _, pending = await asyncio.wait(tasks, timeout=2)
+            assert pending == set(), seed
+            await asyncio.gather(*tasks, return_exceptions=True)
         await asyncio.sleep(0)
         runtime.dispose()
 
@@ -201,6 +210,25 @@ async def exercise_lifetime(seed: int) -> list[weakref.ReferenceType]:  # noqa: 
     assert finished == [seed], seed
     assert runtime.complete is True, seed
     return [weakref.ref(client), weakref.ref(runtime), *[weakref.ref(task) for task in tasks]]
+
+
+@pytest.mark.asyncio
+async def test_lifetime_preserves_task_creation_failure(native_log) -> None:
+    """
+    Cleanup preserves a task factory failure before the runtime owns any task.
+    """
+    loop = asyncio.get_running_loop()
+    previous_factory = loop.get_task_factory()
+
+    def reject_task(loop, coroutine, **kwargs: object):
+        raise RuntimeError("Task factory rejected work")
+
+    loop.set_task_factory(reject_task)
+    try:
+        with pytest.raises(RuntimeError, match="Task factory rejected work"):
+            await exercise_lifetime(0)
+    finally:
+        loop.set_task_factory(previous_factory)
 
 
 @pytest.mark.asyncio

@@ -48,6 +48,7 @@ use nautilus_model::{
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
 use nautilus_network::{
+    ConnectionUrl,
     http::{
         HttpClient, HttpRedirectPolicy, HttpResponse, Method, create_standard_nautilus_headers,
     },
@@ -70,7 +71,7 @@ use crate::{
         credential::KrakenCredential,
         enums::{
             KrakenAssetClass, KrakenEnvironment, KrakenOrderSide, KrakenOrderType,
-            KrakenProductType,
+            KrakenProductType, product_type_from_symbol,
         },
         parse::{
             bar_type_to_spot_interval, normalize_currency_code, normalize_spot_symbol, parse_bar,
@@ -81,6 +82,7 @@ use crate::{
     },
     http::{
         apply_count_limit,
+        coverage::ReportCoverage,
         error::{
             KrakenBatchOrderError, KrakenHttpError, KrakenModifyOrderError, KrakenSubmitOrderError,
             kraken_http_should_retry,
@@ -111,7 +113,7 @@ const BATCH_SUBMIT_LIMIT: usize = 15;
 /// This client handles request/response operations with the Kraken Spot API,
 /// returning venue-specific response types. It does not parse to Nautilus domain types.
 pub struct KrakenSpotRawHttpClient {
-    base_url: String,
+    base_url: ConnectionUrl,
     client: HttpClient,
     credential: Option<KrakenCredential>,
     retry_manager: RetryManager<KrakenHttpError>,
@@ -176,7 +178,7 @@ impl KrakenSpotRawHttpClient {
         });
 
         Ok(Self {
-            base_url,
+            base_url: base_url.into(),
             client: HttpClient::builder()
                 .headers(Self::default_headers())
                 .keyed_quotas(Self::rate_limiter_quotas(max_requests_per_second)?)
@@ -224,7 +226,7 @@ impl KrakenSpotRawHttpClient {
         });
 
         Ok(Self {
-            base_url,
+            base_url: base_url.into(),
             client: HttpClient::builder()
                 .redirect_policy(HttpRedirectPolicy::Reject)
                 .headers(Self::default_headers())
@@ -252,7 +254,7 @@ impl KrakenSpotRawHttpClient {
 
     /// Returns the base URL for this client.
     pub fn base_url(&self) -> &str {
-        &self.base_url
+        self.base_url.expose()
     }
 
     /// Returns the credential for this client, if set.
@@ -523,7 +525,7 @@ impl KrakenSpotRawHttpClient {
             self.send_order_request(method, endpoint, headers, final_body, cancellation_token)
                 .await?
         } else {
-            let url = format!("{}{endpoint}", self.base_url);
+            let url = format!("{}{endpoint}", self.base_url.expose());
             let rate_limit_keys = Self::rate_limit_keys(endpoint);
             self.client
                 .request(
@@ -536,7 +538,12 @@ impl KrakenSpotRawHttpClient {
                     Some(rate_limit_keys),
                 )
                 .await
-                .map_err(|e| KrakenHttpError::NetworkError(e.to_string()))?
+                .map_err(|e| {
+                    KrakenHttpError::NetworkError(format!(
+                        "Request to {} failed: {e}",
+                        self.base_url.origin()
+                    ))
+                })?
         };
 
         let status = response.status.as_u16();
@@ -580,7 +587,7 @@ impl KrakenSpotRawHttpClient {
         }
 
         let request_started = AtomicBool::new(false);
-        let url = format!("{}{endpoint}", self.base_url);
+        let url = format!("{}{endpoint}", self.base_url.expose());
         let rate_limit_keys = Self::rate_limit_keys(endpoint);
         let request = async {
             request_started.store(true, Ordering::Relaxed);
@@ -612,7 +619,7 @@ impl KrakenSpotRawHttpClient {
                 }
             }
             response = &mut request => response
-                .map_err(|e| KrakenHttpError::NetworkError(e.to_string())),
+                .map_err(|e| KrakenHttpError::NetworkError(format!("Request to {} failed: {e}", self.base_url.origin()))),
         }
     }
 
@@ -1101,7 +1108,7 @@ impl KrakenSpotRawHttpClient {
         headers.insert("API-Sign".to_string(), signature);
         headers.insert("Content-Type".to_string(), "application/json".to_string());
 
-        let url = format!("{}{endpoint}", self.base_url);
+        let url = format!("{}{endpoint}", self.base_url.expose());
         let rate_limit_keys = Self::rate_limit_keys(endpoint);
 
         let response = self
@@ -1116,7 +1123,12 @@ impl KrakenSpotRawHttpClient {
                 Some(rate_limit_keys),
             )
             .await
-            .map_err(|e| KrakenHttpError::NetworkError(e.to_string()))?;
+            .map_err(|e| {
+                KrakenHttpError::NetworkError(format!(
+                    "Request to {} failed: {e}",
+                    self.base_url.origin()
+                ))
+            })?;
 
         if response.status.as_u16() >= 400 {
             let status = response.status.as_u16();
@@ -2215,10 +2227,16 @@ impl KrakenSpotHttpClient {
             .map(|(reports, _)| reports)
     }
 
-    /// Requests order status reports, also reporting whether the set is complete.
+    /// Requests order status reports, also reporting what the read covered.
     ///
-    /// The flag is `false` when a historical record was skipped because its instrument could not
-    /// be resolved, which `ExecutionMassStatus::set_report_window` records for bounded history.
+    /// An in-scope open order whose pair cannot be resolved, or that cannot be parsed, fails the
+    /// read, except that a read scoped to one instrument skips an order whose pair it cannot
+    /// resolve, since that order may be on another instrument. The coverage records each such
+    /// skip, each closed order that cannot be resolved, each in-scope one that cannot be parsed,
+    /// and a closed-order read that stops at its page cap, which it cannot place in time. A read
+    /// scoped to an unheld spot instrument reads nothing and rules out no order.
+    /// `ExecutionMassStatus::set_report_window` records whether it is complete for bounded history,
+    /// and the single-order lookup whether it rules out an order it did not return.
     pub(crate) async fn request_order_status_reports_checked(
         &self,
         account_id: AccountId,
@@ -2226,21 +2244,26 @@ impl KrakenSpotHttpClient {
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         open_only: bool,
-    ) -> anyhow::Result<(Vec<OrderStatusReport>, bool)> {
+    ) -> anyhow::Result<(Vec<OrderStatusReport>, ReportCoverage)> {
         const PAGE_SIZE: i32 = 50;
 
         let ts_init = self.generate_ts_init();
         let mut all_reports = Vec::new();
-        let mut complete = true;
+        let mut coverage = ReportCoverage::default();
 
         // A scoped read for an instrument this client does not hold can match nothing, so return
         // before the request rather than falling through and reporting every instrument's rows.
+        // A futures instrument names none of this client's orders, so that read is complete; a
+        // spot one the listing lacks read nothing, so it rules out none of its orders.
         if let Some(ref target_id) = instrument_id
             && self
                 .get_cached_instrument(&target_id.symbol.inner())
                 .is_none()
         {
-            return Ok((all_reports, complete));
+            if product_type_from_symbol(target_id.symbol.as_str()) == KrakenProductType::Spot {
+                coverage.truncate(None);
+            }
+            return Ok((all_reports, coverage));
         }
 
         let open_orders = self.inner.get_open_orders(Some(true), None).await?;
@@ -2249,10 +2272,16 @@ impl KrakenSpotHttpClient {
             // Kraken spells a pair two ways, so resolve the row and compare instrument ids rather
             // than the row's spelling against the cached `raw_symbol`.
             let resolved = self.get_instrument_by_raw_symbol(order.descr.pair.as_str());
-            if let Some(ref target_id) = instrument_id
-                && resolved.as_ref().is_none_or(|inst| inst.id() != *target_id)
-            {
-                continue;
+            if let Some(ref target_id) = instrument_id {
+                match &resolved {
+                    Some(inst) if inst.id() != *target_id => continue,
+                    // Unresolved, the row may be the scoped instrument's own
+                    None => {
+                        coverage.skip(order_id);
+                        continue;
+                    }
+                    Some(_) => {}
+                }
             }
 
             let instrument = resolved.ok_or_else(|| {
@@ -2262,17 +2291,18 @@ impl KrakenSpotHttpClient {
                 )
             })?;
 
-            match parse_order_status_report(order_id, order, &instrument, account_id, ts_init) {
-                Ok(report) => all_reports.push(report),
-                Err(e) => {
-                    log::warn!("Failed to parse order {order_id}: {e}");
-                    complete = false;
-                }
-            }
+            // An in-scope open order the client cannot parse fails the read: dropped, it reads to
+            // reconciliation as an order the venue does not have.
+            let report =
+                parse_order_status_report(order_id, order, &instrument, account_id, ts_init)
+                    .map_err(|e| {
+                        anyhow::anyhow!("OpenOrders: failed to parse order {order_id}: {e}")
+                    })?;
+            all_reports.push(report);
         }
 
         if open_only {
-            return Ok((all_reports, complete));
+            return Ok((all_reports, coverage));
         }
 
         // Kraken API expects Unix timestamps in seconds
@@ -2285,9 +2315,9 @@ impl KrakenSpotHttpClient {
         loop {
             if pages >= MAX_REPORT_PAGES {
                 log::warn!(
-                    "ClosedOrders pagination hit the cap of {MAX_REPORT_PAGES} pages; returning a truncated set and marking it incomplete, which only mass status surfaces"
+                    "ClosedOrders pagination hit the cap of {MAX_REPORT_PAGES} pages; returning a truncated set and marking it incomplete"
                 );
-                complete = false;
+                coverage.truncate(None);
                 break;
             }
 
@@ -2304,10 +2334,16 @@ impl KrakenSpotHttpClient {
 
             for (order_id, order) in &closed_orders {
                 let resolved = self.get_instrument_by_raw_symbol(order.descr.pair.as_str());
-                if let Some(ref target_id) = instrument_id
-                    && resolved.as_ref().is_none_or(|inst| inst.id() != *target_id)
-                {
-                    continue;
+                if let Some(ref target_id) = instrument_id {
+                    match &resolved {
+                        Some(inst) if inst.id() != *target_id => continue,
+                        // Unresolved, the row may be the scoped instrument's own
+                        None => {
+                            coverage.skip(order_id);
+                            continue;
+                        }
+                        Some(_) => {}
+                    }
                 }
 
                 // A historical record can reference an instrument absent from the current
@@ -2317,7 +2353,7 @@ impl KrakenSpotHttpClient {
                         "ClosedOrders: instrument not in cache for pair {}, skipping order {order_id}",
                         order.descr.pair
                     );
-                    complete = false;
+                    coverage.skip(order_id);
                     continue;
                 };
 
@@ -2325,7 +2361,7 @@ impl KrakenSpotHttpClient {
                     Ok(report) => all_reports.push(report),
                     Err(e) => {
                         log::warn!("Failed to parse order {order_id}: {e}");
-                        complete = false;
+                        coverage.skip(order_id);
                     }
                 }
             }
@@ -2333,7 +2369,7 @@ impl KrakenSpotHttpClient {
             offset += PAGE_SIZE;
         }
 
-        Ok((all_reports, complete))
+        Ok((all_reports, coverage))
     }
 
     /// Requests fill/trade reports from Kraken.
@@ -2351,7 +2387,8 @@ impl KrakenSpotHttpClient {
 
     /// Requests fill reports, also reporting whether the set is complete.
     ///
-    /// See [`Self::request_order_status_reports_checked`] for what the flag means.
+    /// The flag is `false` when an in-scope trade cannot be resolved or parsed, or the read stops
+    /// at its page cap, which `ExecutionMassStatus::set_report_window` records for bounded history.
     pub(crate) async fn request_fill_reports_checked(
         &self,
         account_id: AccountId,

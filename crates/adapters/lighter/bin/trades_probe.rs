@@ -480,7 +480,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut url = url::Url::parse(base)?;
         url.set_query(Some(&serde_urlencoded::to_string(params)?));
         let resp = raw
-            .request_with_params_url_redacted(
+            .request_with_params(
                 Method::GET,
                 base.to_owned(),
                 Some(params),

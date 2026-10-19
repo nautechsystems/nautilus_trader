@@ -37,7 +37,7 @@ Examples include dated BTC or ETH futures on crypto derivatives venues.
 | `ts_event`            | `UnixNanos`        | `int`              | Required         | Event timestamp in nanoseconds.          |
 | `ts_init`             | `UnixNanos`        | `int`              | Required         | Initialization timestamp in nanoseconds. |
 
-*Note: Python constructors use `instrument_id`; Rust stores the same value as `id`.*
+**Note**: Python constructors use `instrument_id`. Rust stores the same value as `id`.
 
 ## Behavior
 
@@ -45,7 +45,7 @@ Examples include dated BTC or ETH futures on crypto derivatives venues.
 - Prices can be zero or negative, except for inverse futures.
 - Use `CryptoPerpetual` for crypto derivatives with no expiration.
 
-The currency set determines the settlement style:
+**Settlement style**: the currency set determines the settlement style.
 
 - **Linear**: typically sets `is_inverse=False` and settles in the quote currency.
 - **Inverse**: sets `is_inverse=True` and typically settles in the underlying currency.
@@ -128,7 +128,7 @@ btcusdt_future = CryptoFuture(
 
 ## Adapters
 
-Representative adapters that create or consume `CryptoFuture` instruments include:
+**Adapters that create or consume `CryptoFuture` instruments include**:
 
 - [Bybit](../../integrations/bybit.md) for crypto futures markets.
 - [Deribit](../../integrations/deribit.md) for dated crypto futures.

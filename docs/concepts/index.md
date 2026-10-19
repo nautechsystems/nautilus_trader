@@ -29,9 +29,8 @@ User-defined instruments whose prices are computed by evaluating a numeric expre
 
 ## Continuous Futures
 
-Splicing consecutive futures contracts into one adjusted bar series via an explicit roll
-table, including the four adjustment modes, request and subscription flow, and the mid-bar
-roll boundary policy.
+Consecutive futures contracts form one adjusted bar series through an explicit roll table. The guide covers
+the four adjustment modes, request and subscription flow, and the mid-bar roll boundary policy.
 
 ## Value Types
 
@@ -60,9 +59,9 @@ with strike range filtering, and snapshot aggregation.
 
 ## Greeks
 
-Option Greeks (delta, gamma, vega, theta) from two paths: venue-provided real-time
-Greeks via the Rust/PyO3 `OptionGreeks` type, and the local `GreeksCalculator` for
-Black-Scholes computation with shock scenarios, beta weighting, and portfolio aggregation.
+Option Greeks (delta, gamma, vega, theta) from two paths: venue-provided real-time Greeks through the
+Rust/PyO3 `OptionGreeks` type and local Black-Scholes computation through `GreeksCalculator`. Local
+computation supports shock scenarios, beta weighting, and portfolio aggregation.
 
 ## Custom Data
 
@@ -100,9 +99,9 @@ publish/subscribe, and request/response patterns.
 
 ## Accounting
 
-Account types (cash, margin, betting, and wallet), the `AccountBalance` and `MarginBalance`
-data model, the per-instrument vs account-wide margin scopes, the strategy query
-API, built-in margin models, and the adapter convention across live venues.
+Account types (cash, margin, betting, and wallet), the `AccountBalance` and `MarginBalance` data model, and
+per-instrument versus account-wide margin scopes. The guide also covers the strategy query API, built-in
+margin models, and the adapter convention across live venues.
 
 ## Portfolio
 
@@ -129,8 +128,8 @@ the runtime.
 
 ## Visualization
 
-Interactive tearsheets for analyzing backtest results, including charts, themes,
-customization options, and custom visualizations via the extensible chart registry.
+Interactive tearsheets for analyzing backtest results, including charts, themes, customization options, and
+custom visualizations through the extensible chart registry.
 
 ## Configuration
 
@@ -163,9 +162,10 @@ including ownership, async execution, and public API boundaries.
 
 ## DST
 
-Deterministic simulation testing (DST): the contract for seed-replayable execution, the source-level
-seams that implement it, the pre-commit hook that enforces it, and the known scope boundaries.
+Deterministic simulation testing (DST): the contract for seed-replayable execution and the source-level seams
+that implement it. The guide also covers the pre-commit hook that enforces the contract and the known scope
+boundaries.
 
 :::note
-If there are discrepancies between these guides and the API reference, the API reference is correct.
+If these guides and the API reference disagree, the API reference is correct.
 :::

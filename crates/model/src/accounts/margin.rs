@@ -473,6 +473,16 @@ impl MarginAccount {
             return;
         };
 
+        let new_balance = self.balance_locking_margins(current_balance.total);
+        self.balances.insert(currency, new_balance);
+    }
+
+    /// Returns a balance of `total` that locks the margins reserved in its currency, capped at
+    /// the total so the free balance is never negative while the total is positive.
+    #[must_use]
+    pub fn balance_locking_margins(&self, total: Money) -> AccountBalance {
+        let currency = total.currency;
+
         // An untotalable margin set is venue-reported data, not a local invariant, so the
         // balance degrades to fully reserved rather than taking the trading node down.
         let total_margin_raw = self
@@ -496,14 +506,13 @@ impl MarginAccount {
         // This can occur transiently when venue and client state are out of sync.
         // Locked margin must never be negative (even if total balance is negative).
         let mut total_margin = Money::from_raw(total_margin, currency);
-        if total_margin > current_balance.total {
-            total_margin = current_balance.total.max(Money::zero(currency));
+        if total_margin > total {
+            total_margin = total.max(Money::zero(currency));
         }
 
-        let total_free = current_balance.total - total_margin;
+        let total_free = total - total_margin;
 
-        let new_balance = AccountBalance::new(current_balance.total, total_margin, total_free);
-        self.balances.insert(currency, new_balance);
+        AccountBalance::new(total, total_margin, total_free)
     }
 }
 

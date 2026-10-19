@@ -1470,8 +1470,9 @@ async fn seed_price_precision_if_needed(
         return;
     }
 
+    let query_start = start_of_utc_day(start_nanos);
     let query_params =
-        instrument_query_params(dataset.to_string(), instrument_id, start_nanos, end_nanos);
+        instrument_query_params(dataset.to_string(), instrument_id, query_start, end_nanos);
 
     if let Err(e) = historical_client.get_range_instruments(query_params).await {
         log::warn!("Failed to seed price precision for {instrument_id}: {e}");
@@ -1642,6 +1643,11 @@ fn send_subscription_commands(
 mod tests {
     use std::{num::NonZeroUsize, path::PathBuf};
 
+    use databento::dbn::{
+        MappingInterval, SymbolMapping,
+        decode::{DbnMetadata, DecodeRecord, dbn::Decoder},
+        encode::EncodeRecord,
+    };
     use nautilus_common::{
         live::runner::replace_data_event_sender,
         msgbus::{self, switchboard::get_custom_topic},
@@ -1656,6 +1662,11 @@ mod tests {
     };
     use rstest::rstest;
     use serde_json::json;
+    use time::macros::date;
+    use tokio::{
+        io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
+        net::TcpListener,
+    };
 
     use super::*;
     use crate::enums::{DatabentoStatisticType, DatabentoStatisticUpdateAction};
@@ -1866,6 +1877,161 @@ mod tests {
         assert_eq!(params.end, Some(end));
         assert_eq!(params.limit, None);
         assert_eq!(params.price_precision, None);
+    }
+
+    #[rstest]
+    #[case::intraday(1_782_302_400_000_000_001)]
+    #[case::midnight(1_782_259_200_000_000_000)]
+    #[case::day_end(1_782_345_599_999_999_999)]
+    #[tokio::test]
+    async fn test_seed_price_precision_includes_midnight(#[case] start: u64) {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("test_data/test_data.definition.futures_contract.dbn.zst");
+        let mut decoder = Decoder::from_zstd_file(path).unwrap();
+        let mut metadata = decoder.metadata().clone();
+        let record = decoder
+            .decode_record::<dbn::InstrumentDefMsg>()
+            .unwrap()
+            .unwrap();
+        metadata.symbols = vec!["ESU6".to_string()];
+
+        metadata.mappings = vec![SymbolMapping {
+            raw_symbol: "ESU6".to_string(),
+            intervals: vec![MappingInterval {
+                start_date: date!(2026 - 06 - 24),
+                end_date: date!(2026 - 06 - 25),
+                symbol: record.hd.instrument_id.to_string(),
+            }],
+        }];
+
+        let mut body = Vec::new();
+        {
+            let mut encoder = dbn::encode::dbn::Encoder::with_zstd(&mut body, &metadata).unwrap();
+            encoder.encode_record(record).unwrap();
+            encoder.flush().unwrap();
+        }
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base_url = format!("http://{}/", listener.local_addr().unwrap());
+
+        let server = tokio::spawn(serve_historical_response(listener, body));
+
+        let client = DatabentoHistoricalClient::new_with_base_url(
+            Credential::new("32-character-with-lots-of-filler"),
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("publishers.json"),
+            get_atomic_clock_realtime(),
+            false,
+            &base_url,
+        )
+        .unwrap();
+        let instrument_id = InstrumentId::from("ESU6.GLBX");
+        let end = UnixNanos::from(1_782_345_600_000_000_123);
+
+        tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            seed_price_precision_if_needed(
+                &client,
+                "GLBX.MDP3",
+                instrument_id,
+                start.into(),
+                Some(end),
+                None,
+            ),
+        )
+        .await
+        .unwrap();
+        let request = server.await.unwrap();
+        let fields: AHashMap<_, _> = request
+            .split('&')
+            .map(|field| field.split_once('=').unwrap())
+            .collect();
+
+        assert_eq!(fields["dataset"], "GLBX.MDP3");
+        assert_eq!(fields["schema"], "definition");
+        assert_eq!(fields["symbols"], "ESU6");
+        assert_eq!(fields["start"], "1782259200000000000");
+        assert_eq!(fields["end"], end.to_string());
+        assert_eq!(client.price_precision(instrument_id.symbol), Some(2));
+    }
+
+    async fn serve_historical_response(listener: TcpListener, body: Vec<u8>) -> String {
+        let (stream, _) = listener.accept().await.unwrap();
+        let mut stream = BufReader::new(stream);
+        let mut line = String::new();
+        stream.read_line(&mut line).await.unwrap();
+        assert_eq!(line, "POST /v0/timeseries.get_range HTTP/1.1\r\n");
+        let mut content_length = None;
+
+        loop {
+            line.clear();
+            stream.read_line(&mut line).await.unwrap();
+
+            if line == "\r\n" {
+                break;
+            }
+
+            if let Some((name, value)) = line.split_once(':')
+                && name.eq_ignore_ascii_case("content-length")
+            {
+                content_length = Some(value.trim().parse::<usize>().unwrap());
+            }
+        }
+
+        let mut request = vec![0; content_length.unwrap()];
+        stream.read_exact(&mut request).await.unwrap();
+        let headers = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            body.len(),
+        );
+        stream.write_all(headers.as_bytes()).await.unwrap();
+        stream.write_all(&body).await.unwrap();
+        stream.shutdown().await.unwrap();
+        String::from_utf8(request).unwrap()
+    }
+
+    #[rstest]
+    #[case::explicit(Some(5), None)]
+    #[case::cached(None, Some(3))]
+    #[tokio::test]
+    async fn test_seed_price_precision_skips_known_precision(
+        #[case] price_precision: Option<u8>,
+        #[case] cached_precision: Option<u8>,
+    ) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base_url = format!("http://{}/", listener.local_addr().unwrap());
+
+        let client = DatabentoHistoricalClient::new_with_base_url(
+            Credential::new("32-character-with-lots-of-filler"),
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("publishers.json"),
+            get_atomic_clock_realtime(),
+            false,
+            &base_url,
+        )
+        .unwrap();
+        let instrument_id = InstrumentId::from("ESU6.GLBX");
+        if let Some(precision) = cached_precision {
+            client.set_price_precision(instrument_id.symbol, precision);
+        }
+
+        tokio::select! {
+            () = seed_price_precision_if_needed(
+                &client,
+                "GLBX.MDP3",
+                instrument_id,
+                1_706_443_200_000_000_001.into(),
+                Some(1_706_486_400_000_000_123.into()),
+                price_precision,
+            ) => {}
+            result = listener.accept() => panic!("Unexpected definition request: {result:?}"),
+            () = tokio::time::sleep(std::time::Duration::from_secs(5)) => {
+                panic!("Precision seeding did not finish");
+            }
+        }
+
+        assert_eq!(
+            client.price_precision(instrument_id.symbol),
+            cached_precision
+        );
     }
 
     #[rstest]

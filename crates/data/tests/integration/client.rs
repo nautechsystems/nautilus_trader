@@ -176,7 +176,7 @@ fn test_custom_data_subscription_retries_after_client_failure(
             cache,
             client_id,
             Some(venue),
-            Some(recorder.clone()),
+            Some(Rc::clone(&recorder)),
         )
         .with_custom_subscribe_failure(),
     );
@@ -234,7 +234,7 @@ fn test_custom_data_unsubscription_retries_after_client_failure(
             cache,
             client_id,
             Some(venue),
-            Some(recorder.clone()),
+            Some(Rc::clone(&recorder)),
         )
         .with_custom_unsubscribe_failure(),
     );
@@ -884,7 +884,7 @@ fn test_custom_data_unsubscribe_keeps_client_subscription_when_subscribers_remai
         cache,
         client_id,
         Some(venue),
-        Some(recorder.clone()),
+        Some(Rc::clone(&recorder)),
     ));
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
     let data_type = DataType::new("SharedType", None, None);
@@ -1678,7 +1678,7 @@ fn test_request_data(
         cache,
         client_id,
         Some(venue),
-        Some(recorder.clone()),
+        Some(Rc::clone(&recorder)),
     ));
     let adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 
@@ -1713,7 +1713,7 @@ fn test_request_instrument(
         cache,
         client_id,
         Some(venue),
-        Some(recorder.clone()),
+        Some(Rc::clone(&recorder)),
     ));
     let adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 
@@ -1751,7 +1751,7 @@ fn test_request_instruments(
         cache,
         client_id,
         Some(venue),
-        Some(recorder.clone()),
+        Some(Rc::clone(&recorder)),
     ));
     let adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 
@@ -1787,7 +1787,7 @@ fn test_request_book_snapshot(
         cache,
         client_id,
         Some(venue),
-        Some(recorder.clone()),
+        Some(Rc::clone(&recorder)),
     ));
     let adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 
@@ -1823,7 +1823,7 @@ fn test_request_quotes(
         cache,
         client_id,
         Some(venue),
-        Some(recorder.clone()),
+        Some(Rc::clone(&recorder)),
     ));
     let adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 
@@ -1858,7 +1858,7 @@ fn test_request_trades(
         cache,
         client_id,
         Some(venue),
-        Some(recorder.clone()),
+        Some(Rc::clone(&recorder)),
     ));
     let adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 
@@ -1893,7 +1893,7 @@ fn test_request_funding_rates(
         cache,
         client_id,
         Some(venue),
-        Some(recorder.clone()),
+        Some(Rc::clone(&recorder)),
     ));
     let adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 
@@ -1931,7 +1931,7 @@ fn test_request_bars(
         cache,
         client_id,
         Some(venue),
-        Some(recorder.clone()),
+        Some(Rc::clone(&recorder)),
     ));
     let adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 
@@ -1966,7 +1966,7 @@ fn test_request_order_book_depth(
         cache,
         client_id,
         Some(venue),
-        Some(recorder.clone()),
+        Some(Rc::clone(&recorder)),
     ));
     let adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
 
@@ -2045,7 +2045,7 @@ fn test_defi_pool_subscription(
         cache,
         client_id,
         Some(venue),
-        Some(recorder.clone()),
+        Some(Rc::clone(&recorder)),
     ));
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
     let instrument_id =
@@ -2092,7 +2092,7 @@ fn test_defi_blocks_release_after_final_owner(
         cache,
         client_id,
         Some(venue),
-        Some(recorder.clone()),
+        Some(Rc::clone(&recorder)),
     ));
     let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
     let chain = Blockchain::Arbitrum;
@@ -2158,7 +2158,7 @@ fn test_defi_blocks_subscription_retries_after_client_failure(
             cache,
             client_id,
             Some(venue),
-            Some(recorder.clone()),
+            Some(Rc::clone(&recorder)),
         )
         .with_blocks_subscribe_failure(),
     );
@@ -2213,7 +2213,7 @@ fn test_defi_blocks_unsubscription_retries_after_client_failure(
             cache,
             client_id,
             Some(venue),
-            Some(recorder.clone()),
+            Some(Rc::clone(&recorder)),
         )
         .with_blocks_unsubscribe_failure(),
     );

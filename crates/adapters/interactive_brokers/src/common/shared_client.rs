@@ -74,6 +74,7 @@ impl<T> InFlight<T> {
             if let Some(result) = self.result.lock().clone() {
                 return result.map_err(anyhow::Error::msg);
             }
+
             notified.await;
         }
     }
@@ -123,6 +124,7 @@ impl<T> SharedRegistry<T> {
                             ref_count: 1,
                         },
                     );
+
                     (flight, true)
                 }
             }
@@ -151,6 +153,7 @@ impl<T> SharedRegistry<T> {
                 }
                 _ => anyhow::bail!("Shared IB client was replaced while acquisition was waiting"),
             }
+
             return Ok(client);
         }
 
@@ -160,9 +163,11 @@ impl<T> SharedRegistry<T> {
             flight: Arc::clone(&flight),
             armed: true,
         };
+
         let result = connect().await.map(Arc::new).map_err(|e| format!("{e:#}"));
         {
             let mut entries = self.entries.lock();
+
             let ref_count = match entries.get(&key) {
                 Some(RegistryEntry::Connecting {
                     flight: current,
@@ -186,6 +191,7 @@ impl<T> SharedRegistry<T> {
                 }
             }
         }
+
         flight.complete(result.clone());
         guard.armed = false;
         result.map_err(anyhow::Error::msg)
@@ -193,6 +199,7 @@ impl<T> SharedRegistry<T> {
 
     fn release(&self, key: &ConnectionKey, client: &Arc<T>) {
         let mut entries = self.entries.lock();
+
         let Some(RegistryEntry::Connected {
             client: registered,
             ref_count,
@@ -243,6 +250,7 @@ impl<T> Drop for ConnectGuard<'_, T> {
         {
             entries.remove(&self.key);
         }
+
         drop(entries);
         self.flight
             .complete(Err(String::from("Shared IB client connect was cancelled")));
@@ -320,6 +328,7 @@ pub async fn get_or_connect(
 
     let address = format!("{host}:{port}");
     let connect_timeout = Duration::from_secs(connection_timeout_secs);
+
     let client = registry
         .acquire(key.clone(), Client::is_connected, || async move {
             log::debug!(
@@ -410,6 +419,7 @@ mod tests {
                 anyhow::bail!("second connector must not run")
             },
         );
+
         tokio::pin!(second);
         assert!(
             second
@@ -513,6 +523,7 @@ mod tests {
         let registry = SharedRegistry::default();
         let key = ConnectionKey(String::from("127.0.0.1"), 7_497, 44);
         let release_connect = tokio::sync::Notify::new();
+
         let winner = registry.acquire(
             key.clone(),
             |_| true,
@@ -521,6 +532,7 @@ mod tests {
                 Ok(TestClient)
             },
         );
+
         tokio::pin!(winner);
         assert!(
             winner
@@ -528,6 +540,7 @@ mod tests {
                 .poll(&mut TaskContext::from_waker(Waker::noop()))
                 .is_pending()
         );
+
         let mut waiters = (0..waiter_count)
             .map(|_| {
                 Box::pin(registry.acquire(
@@ -550,6 +563,7 @@ mod tests {
         if !cancel_after_connect {
             waiters.clear();
         }
+
         release_connect.notify_one();
         let client = winner.await.unwrap();
         waiters.clear();
@@ -628,6 +642,7 @@ mod tests {
                 );
             }
         });
+
         let mut errors = Vec::new();
         for _ in 0..2 {
             errors.push(
@@ -637,6 +652,7 @@ mod tests {
                     .to_string(),
             );
         }
+
         server.await.unwrap();
         let expected = format!(
             "Failed to connect to IB Gateway/TWS: TWS/IB Gateway server protocol {server_version} is unsupported; server protocol 213 or newer is required. Upgrade TWS/IB Gateway"

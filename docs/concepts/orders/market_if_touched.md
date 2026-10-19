@@ -2,21 +2,22 @@
 
 `FIX OrdType <40>=J` (Market If Touched)
 
-A *Market-If-Touched* order releases a *Market* order when its trigger price is reached. Traders
-often use it to enter on a pullback or take profit: a SELL order against a LONG position or a BUY
-order against a SHORT position.
+A *Market-If-Touched* order releases a *Market* order when its trigger price is reached. Traders often use it
+to enter on a pullback or take profit. A take-profit order sells against a LONG position or buys against a
+SHORT position.
 
 ## Use cases
 
-Use a *Market-If-Touched* order to prioritize execution when a target price is touched. It triggers
-in the opposite market direction from a stop order, such as buying below or selling above the
-current market. The touch price is not a guaranteed fill price, and the released *Market* order can
-slip, be rejected, or remain unfilled.
+Use a *Market-If-Touched* order to prioritize execution when a target price is touched. It triggers in the
+opposite market direction from a stop order, such as buying below or selling above the current market. The
+touch price is not a guaranteed fill price, and the released *Market* order can slip, be rejected, or stay
+unfilled.
 
 ## Example
 
-In the following example we create a *Market-If-Touched* order on the Binance Futures exchange
-to SELL 10 ETHUSDT-PERP Perpetual Futures contracts at a trigger price of 10,000 USDT, active until further notice:
+**Example**: create a *Market-If-Touched* order on the Binance Futures exchange to SELL 10 ETHUSDT-PERP
+Perpetual Futures contracts. Set a trigger price of 10,000 USDT and keep the order active until further
+notice.
 
 ```rust tab="Rust"
 use nautilus_model::{

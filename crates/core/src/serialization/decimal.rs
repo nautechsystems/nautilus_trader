@@ -90,7 +90,7 @@ pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Decimal
 ///
 /// # Errors
 ///
-/// Returns an error for any non-null value rejected by [`deserialize`].
+/// Returns an error if [`deserialize`] rejects a non-null value.
 pub fn deserialize_optional<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Option<Decimal>, D::Error> {
@@ -118,7 +118,7 @@ pub fn deserialize_json<'de, D: Deserializer<'de>>(deserializer: D) -> Result<De
 ///
 /// # Errors
 ///
-/// Returns an error for any non-null value rejected by [`deserialize_json`].
+/// Returns an error if [`deserialize_json`] rejects a non-null value.
 pub fn deserialize_optional_json<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Option<Decimal>, D::Error> {
@@ -160,7 +160,7 @@ pub fn serialize<S: Serializer>(value: &Decimal, serializer: S) -> Result<S::Ok,
 ///
 /// # Errors
 ///
-/// Returns the errors described by [`serialize`], or an error serializing null.
+/// Returns an error if [`serialize`] fails, or if serializing null fails.
 pub fn serialize_optional<S: Serializer>(
     value: &Option<Decimal>,
     serializer: S,

@@ -338,9 +338,46 @@ def test_option_series_id_construction() -> None:
 
     assert series_id.venue == Venue("DERIBIT")
     assert series_id.underlying == "ETH"
+    assert series_id.underlying_instrument_id == InstrumentId.from_str("ETH.DERIBIT")
     assert series_id.settlement_currency == "USDC"
     assert series_id.expiration_ns == 1_700_000_000_000_000_000
     assert series_id.value == "DERIBIT:ETH:USDC:2023-11-14T22:13:20Z"
+
+
+@pytest.mark.parametrize("reference", ["ETHUSDT.BINANCE", "xyz:ETH.HYPERLIQUID"])
+@pytest.mark.parametrize("settlement", ["USDC", "USDC.e"])
+def test_option_series_id_reference_roundtrip(reference: str, settlement: str) -> None:
+    """
+    Preserve typed reference identity and nanoseconds through the Python boundary.
+    """
+    reference_id = InstrumentId.from_str(reference)
+    expiry = 1_700_000_000_123_456_789
+    series_id = OptionSeriesId("DERIBIT", "ETH", settlement, expiry, reference_id)
+    value = f"DERIBIT:ETH:{reference}:{settlement}:2023-11-14T22:13:20.123456789Z"
+    restored = OptionSeriesId.from_str(value)
+
+    assert series_id.venue == Venue("DERIBIT")
+    assert series_id.underlying == "ETH"
+    assert series_id.underlying_instrument_id == reference_id
+    assert series_id.settlement_currency == settlement
+    assert series_id.expiration_ns == expiry
+    assert series_id.value == value
+    assert restored == series_id
+    assert restored.underlying_instrument_id == reference_id
+    assert restored.expiration_ns == expiry
+    assert len({series_id, restored, OptionSeriesId("DERIBIT", "ETH", settlement, expiry)}) == 2
+    assert (
+        OptionSeriesId.from_expiry("DERIBIT", "ETH", settlement, str(expiry), reference_id)
+        == series_id
+    )
+
+
+def test_option_series_id_reference_requires_instrument_id() -> None:
+    """
+    Reject a string where the constructor requires a typed reference instrument.
+    """
+    with pytest.raises(TypeError):
+        OptionSeriesId("DERIBIT", "ETH", "USDC", 1_700_000_000_000_000_000, "ETHUSDT.BINANCE")
 
 
 @pytest.mark.parametrize(

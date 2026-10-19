@@ -131,9 +131,9 @@ pub fn schema_fingerprint(schema: &Schema) -> SchemaFingerprint {
 ///
 /// # Errors
 ///
-/// Returns [`LegacyArrowError::UnknownSchema`] when a registered Nautilus type matches neither its
-/// current schema nor a known v1 schema. Returns [`LegacyArrowError::Transcode`] when a known v1
-/// batch contains values that cannot be converted without loss.
+/// Returns an error if a registered Nautilus type matches neither its current schema nor a known v1
+/// schema. Returns an error if a known v1 batch contains values that cannot be converted without
+/// loss.
 pub fn transcode_legacy_record_batch(
     type_name: &str,
     file_path: &str,
@@ -151,9 +151,9 @@ pub fn transcode_legacy_record_batch(
 ///
 /// # Errors
 ///
-/// Returns [`LegacyArrowError::UnknownSchema`] when a registered Nautilus type matches neither its
-/// current schema nor a known v1 schema. Returns [`LegacyArrowError::Transcode`] when a known v1
-/// batch contains values that cannot be converted without loss.
+/// Returns an error if a registered Nautilus type matches neither its current schema nor a known v1
+/// schema. Returns an error if a known v1 batch contains values that cannot be converted without
+/// loss.
 pub fn transcode_legacy_record_batch_with_state(
     type_name: &str,
     file_path: &str,
@@ -189,7 +189,7 @@ pub fn transcode_legacy_record_batch_with_state(
 ///
 /// # Errors
 ///
-/// Returns [`LegacyArrowError::UnknownSchema`] for an unregistered schema of a built-in type.
+/// Returns an error if the schema of a built-in type is unregistered.
 pub fn resolve_legacy_schema(
     type_name: &str,
     file_path: &str,
@@ -722,7 +722,7 @@ pub fn normalized_legacy_data_type(name: &str, data_type: &DataType) -> DataType
 ///
 /// # Errors
 ///
-/// Returns an [`ArrowError`] if a column has an invalid physical array or value.
+/// Returns an error if a column has an invalid physical array or value.
 pub fn normalize_legacy_fixed_columns(batch: &RecordBatch) -> Result<RecordBatch, ArrowError> {
     let mut changed = false;
     let mut fields = Vec::with_capacity(batch.num_columns());

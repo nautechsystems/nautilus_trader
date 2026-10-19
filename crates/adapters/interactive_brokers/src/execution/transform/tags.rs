@@ -76,6 +76,10 @@ fn apply_ib_order_tag_overlay(
             continue;
         }
 
+        if is_adapter_owned_field(&field) {
+            anyhow::bail!("IBOrderTags cannot set {field}, which the adapter sets from the order");
+        }
+
         if field == "non_guaranteed" {
             apply_non_guaranteed_combo_tag(ib_order, value)?;
             sync_order_field(&mut order_value, "smart_combo_routing_params", ib_order)?;
@@ -126,6 +130,7 @@ fn apply_order_field_update(
                 Some(previous) => order_obj.insert(field.to_string(), previous),
                 None => order_obj.remove(field),
             };
+
             Err(anyhow::anyhow!("Invalid IBOrderTags field {field}: {e}"))
         }
     }
@@ -147,6 +152,7 @@ fn sync_order_field(
     if let Some(order_obj) = order_value.as_object_mut() {
         order_obj.insert(field.to_string(), updated_field_value);
     }
+
     Ok(())
 }
 
@@ -381,6 +387,7 @@ fn apply_ib_order_conditions(ib_order: &mut IBOrder, tags_obj: &Value) -> anyhow
             {
                 ib_order.conditions_cancel_order = conditions_cancel_order;
             }
+
             Ok(())
         }
         Err(e) => Err(anyhow::anyhow!("Invalid IBOrderTags conditions: {e}")),
@@ -447,6 +454,20 @@ fn should_skip_generic_overlay(field: &str) -> bool {
     matches!(field, "conditions")
 }
 
+fn is_adapter_owned_field(field: &str) -> bool {
+    matches!(
+        field,
+        "order_id"
+            | "client_id"
+            | "perm_id"
+            | "order_ref"
+            | "total_quantity"
+            | "cash_qty"
+            | "parent_id"
+            | "transmit"
+    )
+}
+
 fn canonical_order_tag_key(key: &str) -> String {
     match key {
         "timeInForce" | "time_in_force" => "tif".to_string(),
@@ -470,6 +491,7 @@ fn lower_camel_or_pascal_to_snake(value: &str) -> String {
         if ch.is_ascii_uppercase() {
             let prev = index.checked_sub(1).and_then(|prev| chars.get(prev));
             let next = chars.get(index + 1);
+
             let needs_separator = prev.is_some_and(|prev| {
                 (prev.is_ascii_lowercase() || prev.is_ascii_digit())
                     || (prev.is_ascii_uppercase()
@@ -479,6 +501,7 @@ fn lower_camel_or_pascal_to_snake(value: &str) -> String {
             if needs_separator {
                 result.push('_');
             }
+
             result.push(ch.to_ascii_lowercase());
         } else {
             result.push(*ch);

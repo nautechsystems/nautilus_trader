@@ -36,7 +36,7 @@ Examples include prediction market outcomes and binary event contracts.
 | `ts_event`        | `UnixNanos`        | `int`              | Required         | Event timestamp in nanoseconds.           |
 | `ts_init`         | `UnixNanos`        | `int`              | Required         | Initialization timestamp in nanoseconds.  |
 
-*Note: Python constructors use `instrument_id`; Rust stores the same value as `id`.*
+**Note**: Python constructors use `instrument_id`. Rust stores the same value as `id`.
 
 ## Behavior
 
@@ -126,7 +126,7 @@ yes_outcome = BinaryOption(
 
 ## Adapters
 
-Representative adapters that create or consume `BinaryOption` instruments include:
+**Adapters that create or consume `BinaryOption` instruments include**:
 
 - [Hyperliquid](../../integrations/hyperliquid.md) for binary and prediction-style markets.
 - [OKX](../../integrations/okx.md) for venue-defined binary outcome products.

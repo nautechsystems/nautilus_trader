@@ -18,10 +18,10 @@ and aborts the process before unwinding crosses the C boundary.
 
 ## `CVec` ownership
 
-`CVec` is a C-compatible representation of Rust vector allocation metadata. A `CVec` created from
-`Vec<T>` transfers unique ownership of the allocation to the foreign caller. It is intentionally
-neither `Copy` nor `Clone` in Rust, but C can still copy its fields, so callers must enforce the
-same exactly-once ownership rule.
+`CVec` represents Rust vector allocation metadata in a C-compatible form. A `CVec` created from `Vec<T>`
+transfers unique ownership of the allocation to the foreign caller. In Rust, it is intentionally neither
+`Copy` nor `Clone`. But C can still copy its fields. Thus, callers must enforce the same exactly-once
+ownership rule.
 
 | Step | Owner   | Action                                                                                        |
 | ---- | ------- | --------------------------------------------------------------------------------------------- |
@@ -64,9 +64,13 @@ ownership and must release the original buffer with the allocator that created i
 ## Opaque pointers
 
 Model objects whose layout is not `repr(C)` cross the ABI as opaque owning pointers. The generated
-header forward-declares the type, so foreign callers handle it only through exported functions.
-Constructors return an owning `*mut T` from `Box::into_raw`, pure accessors take `&T` or `&mut T`
-references, and every constructor must have a matching drop function:
+header forward-declares the type, so foreign callers handle it only through exported functions:
+
+- Constructors return an owning `*mut T` from `Box::into_raw`.
+- Pure accessors take `&T` or `&mut T` references.
+- Every constructor must have a matching drop function.
+
+For example:
 
 ```rust
 #[unsafe(no_mangle)]

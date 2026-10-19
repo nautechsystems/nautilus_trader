@@ -383,7 +383,7 @@ fn nearest_series(
         .iter()
         .map(|metadata| metadata.instrument_id)
         .collect();
-    let series_id = OptionSeriesId::new(
+    let series_id = OptionSeriesId::new_derived(
         venue,
         first.underlying,
         settlement_currency,

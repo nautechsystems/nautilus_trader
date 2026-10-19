@@ -56,6 +56,7 @@ use ustr::Ustr;
 
 #[derive(Clone, Debug, Deserialize)]
 pub(crate) struct CapturedOrdersQuery {
+    pub order_id: Option<String>,
     pub start_timestamp_ns: Option<i64>,
     pub end_timestamp_ns: Option<i64>,
     pub limit: Option<i32>,
@@ -84,6 +85,8 @@ pub(crate) struct TestServerState {
     pub cancel_all_fail: Arc<AtomicBool>,
     pub whoami_count: Arc<AtomicUsize>,
     pub whoami_fail: Arc<AtomicBool>,
+    pub whoami_payload: Arc<tokio::sync::Mutex<Option<serde_json::Value>>>,
+    pub order_fill_payload: Arc<tokio::sync::Mutex<Option<serde_json::Value>>>,
     pub instrument_queries: Arc<tokio::sync::Mutex<Vec<GetInstrumentParams>>>,
     pub instrument_payload: Arc<tokio::sync::Mutex<Option<serde_json::Value>>>,
     pub instrument_fail: Arc<AtomicBool>,
@@ -98,10 +101,15 @@ pub(crate) struct TestServerState {
     pub replace_order_fail: Arc<AtomicBool>,
     pub replace_order_count: Arc<AtomicUsize>,
     pub replace_order_oid: Arc<tokio::sync::Mutex<Option<String>>>,
+    pub order_status_response: Arc<tokio::sync::Mutex<Option<(u16, serde_json::Value)>>>,
     pub order_status_queries: Arc<tokio::sync::Mutex<Vec<GetOrderStatusParams>>>,
     pub open_orders_queries: Arc<tokio::sync::Mutex<Vec<GetOpenOrdersParams>>>,
     pub open_orders_payload: Arc<tokio::sync::Mutex<Option<serde_json::Value>>>,
+    pub order_report_response_delay: Arc<AtomicBool>,
+    pub order_report_response_entered: Arc<tokio::sync::Notify>,
+    pub order_report_response_release: Arc<tokio::sync::Notify>,
     pub orders_queries: Arc<tokio::sync::Mutex<Vec<CapturedOrdersQuery>>>,
+    pub fills_queries: Arc<tokio::sync::Mutex<Vec<GetFillsParams>>>,
     pub orders_payload: Arc<tokio::sync::Mutex<Option<serde_json::Value>>>,
     pub orders_page_size: Arc<tokio::sync::Mutex<Option<usize>>>,
     pub orders_repeated_cursor: Arc<tokio::sync::Mutex<Option<String>>>,
@@ -129,6 +137,8 @@ impl Default for TestServerState {
             cancel_all_fail: Arc::new(AtomicBool::new(false)),
             whoami_count: Arc::new(AtomicUsize::new(0)),
             whoami_fail: Arc::new(AtomicBool::new(false)),
+            whoami_payload: Arc::new(tokio::sync::Mutex::new(None)),
+            order_fill_payload: Arc::new(tokio::sync::Mutex::new(None)),
             instrument_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             instrument_payload: Arc::new(tokio::sync::Mutex::new(None)),
             instrument_fail: Arc::new(AtomicBool::new(false)),
@@ -143,10 +153,15 @@ impl Default for TestServerState {
             replace_order_fail: Arc::new(AtomicBool::new(false)),
             replace_order_count: Arc::new(AtomicUsize::new(0)),
             replace_order_oid: Arc::new(tokio::sync::Mutex::new(None)),
+            order_status_response: Arc::new(tokio::sync::Mutex::new(None)),
             order_status_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             open_orders_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             open_orders_payload: Arc::new(tokio::sync::Mutex::new(None)),
+            order_report_response_delay: Arc::new(AtomicBool::new(false)),
+            order_report_response_entered: Arc::new(tokio::sync::Notify::new()),
+            order_report_response_release: Arc::new(tokio::sync::Notify::new()),
             orders_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            fills_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             orders_payload: Arc::new(tokio::sync::Mutex::new(None)),
             orders_page_size: Arc::new(tokio::sync::Mutex::new(None)),
             orders_repeated_cursor: Arc::new(tokio::sync::Mutex::new(None)),
@@ -177,6 +192,7 @@ impl TestServerState {
         self.instrument_queries.lock().await.clear();
         self.open_orders_queries.lock().await.clear();
         self.orders_queries.lock().await.clear();
+        self.fills_queries.lock().await.clear();
         *self.orders_page_size.lock().await = None;
         *self.orders_repeated_cursor.lock().await = None;
     }
@@ -537,16 +553,7 @@ async fn handle_orders_socket(mut socket: WebSocket, state: TestServerState) {
 
                 match msg_type {
                     Some("p") => {
-                        let rid = value.get("rid").and_then(|v| v.as_i64()).unwrap_or(0);
-                        let ack = json!({
-                            "rid": rid,
-                            "res": {
-                                "oid": format!("order-{rid}"),
-                            },
-                        });
-
-                        if socket
-                            .send(Message::Text(ack.to_string().into()))
+                        if send_place_order_response(&mut socket, &state, &value)
                             .await
                             .is_err()
                         {
@@ -608,6 +615,28 @@ async fn handle_orders_socket(mut socket: WebSocket, state: TestServerState) {
 
     let mut count = state.connection_count.lock().await;
     *count = count.saturating_sub(1);
+}
+
+async fn send_place_order_response(
+    socket: &mut WebSocket,
+    state: &TestServerState,
+    request: &serde_json::Value,
+) -> Result<(), axum::Error> {
+    let rid = request.get("rid").and_then(|v| v.as_i64()).unwrap_or(0);
+    let ack = json!({
+        "rid": rid,
+        "res": {"oid": format!("order-{rid}")},
+    });
+    socket.send(Message::Text(ack.to_string().into())).await?;
+    let fill = state.order_fill_payload.lock().await.clone();
+
+    if let Some(mut fill) = fill {
+        fill["o"]["oid"] = json!(format!("order-{rid}"));
+        fill["o"]["cid"] = request["cid"].clone();
+        socket.send(Message::Text(fill.to_string().into())).await?;
+    }
+
+    Ok(())
 }
 
 pub(crate) fn load_test_data(filename: &str) -> serde_json::Value {
@@ -695,7 +724,8 @@ async fn handle_get_whoami(State(state): State<TestServerState>) -> axum::respon
         )
             .into_response()
     } else {
-        Json(load_test_data("http_get_whoami.json")).into_response()
+        let payload = state.whoami_payload.lock().await.clone();
+        Json(payload.unwrap_or_else(|| load_test_data("http_get_whoami.json"))).into_response()
     }
 }
 
@@ -788,9 +818,19 @@ async fn handle_replace_order(
 async fn handle_order_status(
     State(state): State<TestServerState>,
     Query(params): Query<GetOrderStatusParams>,
-) -> Json<serde_json::Value> {
+) -> Response {
     state.order_status_queries.lock().await.push(params);
-    Json(load_test_data("http_get_order_status.json"))
+    let (status, body) = state
+        .order_status_response
+        .lock()
+        .await
+        .clone()
+        .unwrap_or_else(|| (200, load_test_data("http_get_order_status.json")));
+    (
+        axum::http::StatusCode::from_u16(status).unwrap(),
+        Json(body),
+    )
+        .into_response()
 }
 
 async fn handle_open_orders(
@@ -798,6 +838,14 @@ async fn handle_open_orders(
     Query(params): Query<GetOpenOrdersParams>,
 ) -> Json<serde_json::Value> {
     state.open_orders_queries.lock().await.push(params.clone());
+    if state
+        .order_report_response_delay
+        .swap(false, Ordering::Relaxed)
+    {
+        state.order_report_response_entered.notify_one();
+        state.order_report_response_release.notified().await;
+    }
+
     let guard = state.open_orders_payload.lock().await;
     let payload = guard
         .as_ref()
@@ -830,6 +878,14 @@ async fn handle_orders(
     Query(params): Query<CapturedOrdersQuery>,
 ) -> Json<serde_json::Value> {
     state.orders_queries.lock().await.push(params.clone());
+    if state
+        .order_report_response_delay
+        .swap(false, Ordering::Relaxed)
+    {
+        state.order_report_response_entered.notify_one();
+        state.order_report_response_release.notified().await;
+    }
+
     let guard = state.orders_payload.lock().await;
     let payload = guard
         .as_ref()
@@ -840,6 +896,23 @@ async fn handle_orders(
         .and_then(serde_json::Value::as_array)
         .cloned()
         .unwrap_or_default();
+
+    let orders = orders
+        .into_iter()
+        .filter(|order| {
+            let timestamp =
+                order["ts"].as_i64().unwrap() * 1_000_000_000 + order["tn"].as_i64().unwrap();
+            params
+                .order_id
+                .as_ref()
+                .is_none_or(|id| order["oid"].as_str() == Some(id.as_str()))
+                && params
+                    .start_timestamp_ns
+                    .is_none_or(|start| timestamp >= start)
+                && params.end_timestamp_ns.is_none_or(|end| timestamp <= end)
+        })
+        .collect::<Vec<_>>();
+
     let total_count = orders.len();
     let repeated_cursor = state.orders_repeated_cursor.lock().await.clone();
     let offset = match params.cursor.as_deref() {
@@ -870,6 +943,7 @@ async fn handle_fills(
     State(state): State<TestServerState>,
     Query(params): Query<GetFillsParams>,
 ) -> Json<serde_json::Value> {
+    state.fills_queries.lock().await.push(params.clone());
     let guard = state.fills_payload.lock().await;
     let payload = guard
         .as_ref()

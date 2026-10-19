@@ -1,9 +1,8 @@
 # OrderAccepted
 
-`OrderAccepted` represents an order having been accepted by the trading venue. The
-`ExecutionEngine` applies it to the order, updates the `Cache`, and publishes it on the
-`MessageBus`. It fires when the venue acknowledges the order as received and valid (often
-a FIX `NEW` OrdStatus).
+`OrderAccepted` records the trading venue's acknowledgement that an order is received and valid
+(often a FIX `NEW` OrdStatus). The `ExecutionEngine` applies it to the order, updates the `Cache`,
+and publishes it on the `MessageBus`.
 
 Typical transition: `SUBMITTED` -> `ACCEPTED`. Handler: `on_order_accepted`.
 

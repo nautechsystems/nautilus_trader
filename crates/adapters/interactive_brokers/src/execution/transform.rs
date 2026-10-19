@@ -15,6 +15,8 @@
 
 //! Order transformation utilities for converting Nautilus orders to IB orders.
 
+use std::str::FromStr;
+
 use ibapi::orders::{Action, Order as IBOrder, TimeInForce};
 use nautilus_core::UnixNanos;
 use nautilus_model::{
@@ -24,9 +26,10 @@ use nautilus_model::{
     orders::{Order as NautilusOrder, any::OrderAny},
     types::Price,
 };
+use rust_decimal::Decimal;
 
 use crate::{
-    common::enums::{IbOrderType, IbTimeInForce, IbTriggerMethod},
+    common::enums::{IbAction, IbOrderType, IbTimeInForce, IbTriggerMethod},
     providers::instruments::InteractiveBrokersInstrumentProvider,
 };
 
@@ -58,7 +61,7 @@ pub fn nautilus_order_to_ib_order(
     };
 
     let quantity = order.quantity().as_f64();
-    let price_magnifier = instrument_provider.get_price_magnifier(&order.instrument_id()) as f64;
+    let price_magnifier = instrument_provider.get_price_magnifier(&order.instrument_id());
 
     let (order_type, limit_price, aux_price) = transform_order_type(
         order.order_type(),
@@ -83,11 +86,23 @@ pub fn nautilus_order_to_ib_order(
     };
 
     apply_expire_time_policy(&mut ib_order, order);
-    apply_quantity_policy(&mut ib_order, order, instrument_provider)?;
     apply_trailing_order_policy(&mut ib_order, order, price_magnifier)?;
     apply_display_quantity_policy(&mut ib_order, order);
 
     apply_ib_order_tags(&mut ib_order, order.tags())?;
+
+    // Tracking checks each execution against the Nautilus side, so a tag may change the IB
+    // action only within that side (for example SELL to SSHORT)
+    let tagged_action = IbAction::from(ib_order.action);
+    if tagged_action.order_side() != order.order_side() {
+        anyhow::bail!(
+            "IBOrderTags action {tagged_action} conflicts with the {} order side",
+            order.order_side(),
+        );
+    }
+
+    // Runs after the tags so it validates the order type IB receives
+    apply_quantity_policy(&mut ib_order, order, instrument_provider)?;
 
     Ok(ib_order)
 }
@@ -98,9 +113,10 @@ fn transform_order_type(
     time_in_force: NautilusTimeInForce,
     price: Option<Price>,
     trigger_price: Option<Price>,
-    price_magnifier: f64,
+    price_magnifier: i32,
 ) -> (&'static str, Option<f64>, Option<f64>) {
     let ib_order_type = IbOrderType::from_nautilus(order_type, time_in_force);
+
     let (limit_price, aux_price) = match order_type {
         NautilusOrderType::Market | NautilusOrderType::MarketToLimit => (None, None),
         NautilusOrderType::Limit => (convert_price_opt(price, price_magnifier), None),
@@ -130,11 +146,50 @@ pub(super) fn format_ib_datetime(value: UnixNanos) -> String {
         .to_string()
 }
 
-pub(super) fn convert_price(price: Price, magnifier: f64) -> f64 {
-    price.as_f64() / magnifier
+/// Converts a Nautilus price into the price IB expects for the contract.
+///
+/// IB takes order prices in the same unit as its market data (the contract's currency times the
+/// price magnifier), so the price is multiplied by the magnifier. The product is computed in
+/// decimal so a price such as 4.2525 reaches IB as exactly 425.25.
+pub(super) fn convert_price(price: Price, magnifier: i32) -> f64 {
+    if magnifier <= 1 {
+        return price.as_f64();
+    }
+
+    convert_decimal(price.as_decimal(), magnifier)
+        .unwrap_or_else(|_| price.as_f64() * f64::from(magnifier))
 }
 
-fn convert_price_opt(price: Option<Price>, magnifier: f64) -> Option<f64> {
+/// Converts a price amount, such as a trailing amount, into the amount IB expects.
+pub(super) fn convert_decimal(amount: Decimal, magnifier: i32) -> anyhow::Result<f64> {
+    let scaled = amount
+        .checked_mul(Decimal::from(magnifier.max(1)))
+        .ok_or_else(|| anyhow::anyhow!("Price amount {amount} times {magnifier} overflows"))?;
+    scaled
+        .to_string()
+        .parse::<f64>()
+        .map_err(|e| anyhow::anyhow!("Failed to convert {scaled} to f64: {e}"))
+}
+
+/// Converts an `f64` price amount into the amount IB expects, computing the product in decimal.
+pub(super) fn convert_f64(amount: f64, magnifier: i32) -> f64 {
+    if magnifier <= 1 {
+        return amount;
+    }
+
+    Decimal::from_str(&amount.to_string())
+        .map_err(anyhow::Error::from)
+        .and_then(|amount| convert_decimal(amount, magnifier))
+        .unwrap_or_else(|_| amount * f64::from(magnifier))
+}
+
+/// Converts a price IB reports for the contract into the Nautilus price, the inverse of
+/// [`convert_price`].
+pub(super) fn from_ib_price(price: f64, magnifier: i32) -> f64 {
+    price / f64::from(magnifier.max(1))
+}
+
+fn convert_price_opt(price: Option<Price>, magnifier: i32) -> Option<f64> {
     price.map(|p| convert_price(p, magnifier))
 }
 
@@ -176,6 +231,10 @@ mod tests {
     use nautilus_model::{
         enums::{OrderSide, OrderType, TimeInForce as NautilusTimeInForce, TrailingOffsetType},
         identifiers::{InstrumentId, OrderListId, Symbol as NautilusSymbol, Venue},
+        instruments::{
+            InstrumentAny,
+            stubs::{btcusd_inverse_perp, equity_aapl},
+        },
         orders::OrderTestBuilder,
         types::{Price, Quantity},
     };
@@ -185,6 +244,236 @@ mod tests {
 
     use super::*;
     use crate::config::InteractiveBrokersInstrumentProviderConfig;
+
+    fn create_quote_quantity_order(
+        side: OrderSide,
+        order_type: OrderType,
+        time_in_force: NautilusTimeInForce,
+        tags_json: Option<&str>,
+    ) -> (OrderAny, InteractiveBrokersInstrumentProvider) {
+        let instrument = btcusd_inverse_perp(1, 0, Price::from("0.5"), Quantity::from("1"));
+        let instrument_id = instrument.id;
+        let provider = InteractiveBrokersInstrumentProvider::new(
+            InteractiveBrokersInstrumentProviderConfig::default(),
+        );
+        provider.insert_test_instrument(InstrumentAny::CryptoPerpetual(instrument), 4242, 1);
+
+        let mut builder = OrderTestBuilder::new(order_type);
+        builder
+            .instrument_id(instrument_id)
+            .side(side)
+            .quantity(Quantity::from("20"))
+            .time_in_force(time_in_force)
+            .quote_quantity(true);
+
+        if order_type == OrderType::Limit {
+            builder.price(Price::from("87306.5"));
+        }
+
+        if let Some(tags_json) = tags_json {
+            builder.tags(vec![Ustr::from(&format!("IBOrderTags:{tags_json}"))]);
+        }
+
+        (builder.build(), provider)
+    }
+
+    #[rstest]
+    fn test_quote_quantity_inverse_market_buy_maps_to_cash_qty() {
+        let (order, provider) = create_quote_quantity_order(
+            OrderSide::Buy,
+            OrderType::Market,
+            NautilusTimeInForce::Gtc,
+            None,
+        );
+
+        let ib_order = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
+            .expect("cash quantity is valid for an inverse MARKET BUY");
+
+        assert_eq!(ib_order.cash_qty, Some(20.0));
+        assert_eq!(ib_order.total_quantity, 0.0);
+    }
+
+    #[rstest]
+    // IB rejects `cashQty` on non-MKT orders with error 10244, so these are denied locally
+    #[case::limit(
+        OrderSide::Buy,
+        OrderType::Limit,
+        NautilusTimeInForce::Gtc,
+        None,
+        "(IB error 10244 for LIMIT sent as LMT)"
+    )]
+    #[case::market_at_the_close(
+        OrderSide::Buy,
+        OrderType::Market,
+        NautilusTimeInForce::AtTheClose,
+        None,
+        "(IB error 10244 for MARKET sent as MOC)"
+    )]
+    #[case::market_tagged_limit(
+        OrderSide::Buy,
+        OrderType::Market,
+        NautilusTimeInForce::Gtc,
+        Some(r#"{"orderType":"LMT"}"#),
+        "(IB error 10244 for MARKET sent as LMT)"
+    )]
+    #[case::sell(
+        OrderSide::Sell,
+        OrderType::Market,
+        NautilusTimeInForce::Gtc,
+        None,
+        "only accepts a quote quantity (`cash_qty`) for BUY orders"
+    )]
+    #[case::sell_tagged_buy(
+        OrderSide::Sell,
+        OrderType::Market,
+        NautilusTimeInForce::Gtc,
+        Some(r#"{"action":"BUY"}"#),
+        "IBOrderTags action BUY conflicts with the SELL order side"
+    )]
+    #[case::buy_tagged_sell(
+        OrderSide::Buy,
+        OrderType::Market,
+        NautilusTimeInForce::Gtc,
+        Some(r#"{"action":"SELL"}"#),
+        "IBOrderTags action SELL conflicts with the BUY order side"
+    )]
+    #[case::tagged_cash_qty(
+        OrderSide::Buy,
+        OrderType::Market,
+        NautilusTimeInForce::Gtc,
+        Some(r#"{"cashQty":5.0}"#),
+        "IBOrderTags cannot set cash_qty"
+    )]
+    fn test_quote_quantity_order_is_denied_before_submission(
+        #[case] side: OrderSide,
+        #[case] order_type: OrderType,
+        #[case] time_in_force: NautilusTimeInForce,
+        #[case] tags_json: Option<&str>,
+        #[case] expected: &str,
+    ) {
+        let (order, provider) =
+            create_quote_quantity_order(side, order_type, time_in_force, tags_json);
+
+        let err = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
+            .expect_err("the quote quantity order must be denied");
+
+        let message = format!("{err:#}");
+        assert!(message.contains(expected), "unexpected reason: {message}");
+    }
+
+    #[rstest]
+    fn test_quote_quantity_without_inverse_instrument_is_rejected() {
+        let instrument_id = InstrumentId::new(NautilusSymbol::from("AAPL"), Venue::from("NASDAQ"));
+        let provider = InteractiveBrokersInstrumentProvider::new(
+            InteractiveBrokersInstrumentProviderConfig::default(),
+        );
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument_id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1000"))
+            .quote_quantity(true)
+            .build();
+
+        let err = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
+            .expect_err("quote quantity needs an inverse instrument");
+
+        assert_eq!(
+            format!("{err:#}"),
+            "Interactive Brokers only accepts a quote quantity (`cash_qty`) for inverse \
+             instruments; AAPL.NASDAQ must use the base quantity"
+        );
+    }
+
+    #[rstest]
+    #[case::sell_short(OrderSide::Sell, r#"{"action":"SSHORT"}"#, Action::SellShort)]
+    #[case::sell_long(OrderSide::Sell, r#"{"action":"SLONG"}"#, Action::SellLong)]
+    #[case::same_side(OrderSide::Buy, r#"{"action":"BUY"}"#, Action::Buy)]
+    fn test_tagged_action_within_order_side_is_applied(
+        #[case] side: OrderSide,
+        #[case] tags_json: &str,
+        #[case] expected: Action,
+    ) {
+        let order = create_test_order_with_side_and_tags(side, tags_json);
+        let provider = InteractiveBrokersInstrumentProvider::new(
+            InteractiveBrokersInstrumentProviderConfig::default(),
+        );
+
+        let ib_order = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
+            .expect("an action within the order side is valid");
+
+        assert_eq!(ib_order.action, expected);
+    }
+
+    #[rstest]
+    #[case::sell_tagged_buy(
+        OrderSide::Sell,
+        r#"{"action":"BUY"}"#,
+        "IBOrderTags action BUY conflicts with the SELL order side"
+    )]
+    #[case::buy_tagged_sell_short(
+        OrderSide::Buy,
+        r#"{"action":"SSHORT"}"#,
+        "IBOrderTags action SSHORT conflicts with the BUY order side"
+    )]
+    #[case::order_id(OrderSide::Buy, r#"{"orderId":99}"#, "IBOrderTags cannot set order_id")]
+    #[case::client_id(
+        OrderSide::Buy,
+        r#"{"clientId":7}"#,
+        "IBOrderTags cannot set client_id"
+    )]
+    #[case::perm_id(
+        OrderSide::Buy,
+        r#"{"permId":12345}"#,
+        "IBOrderTags cannot set perm_id"
+    )]
+    #[case::order_ref(
+        OrderSide::Buy,
+        r#"{"orderRef":"OTHER"}"#,
+        "IBOrderTags cannot set order_ref"
+    )]
+    #[case::total_quantity(
+        OrderSide::Buy,
+        r#"{"totalQuantity":500}"#,
+        "IBOrderTags cannot set total_quantity"
+    )]
+    #[case::parent_id(
+        OrderSide::Buy,
+        r#"{"parentId":3}"#,
+        "IBOrderTags cannot set parent_id"
+    )]
+    #[case::transmit(
+        OrderSide::Buy,
+        r#"{"transmit":false}"#,
+        "IBOrderTags cannot set transmit"
+    )]
+    fn test_tags_that_break_order_tracking_are_rejected(
+        #[case] side: OrderSide,
+        #[case] tags_json: &str,
+        #[case] expected: &str,
+    ) {
+        let order = create_test_order_with_side_and_tags(side, tags_json);
+        let provider = InteractiveBrokersInstrumentProvider::new(
+            InteractiveBrokersInstrumentProviderConfig::default(),
+        );
+
+        let err = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
+            .expect_err("the tag must be rejected");
+
+        let message = format!("{err:#}");
+        assert!(message.contains(expected), "unexpected reason: {message}");
+    }
+
+    fn create_test_order_with_side_and_tags(side: OrderSide, tags_json: &str) -> OrderAny {
+        let instrument_id = InstrumentId::new(NautilusSymbol::from("AAPL"), Venue::from("NASDAQ"));
+
+        OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_id)
+            .side(side)
+            .quantity(Quantity::from(100))
+            .price(Price::from("150.00"))
+            .tags(vec![Ustr::from(&format!("IBOrderTags:{tags_json}"))])
+            .build()
+    }
 
     fn create_test_order_with_tags(tags_json: &str) -> OrderAny {
         let instrument_id = InstrumentId::new(NautilusSymbol::from("AAPL"), Venue::from("NASDAQ"));
@@ -253,6 +542,7 @@ mod tests {
             .quantity(Quantity::from(100))
             .time_in_force(NautilusTimeInForce::AtTheOpen)
             .build();
+
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
         );
@@ -267,6 +557,7 @@ mod tests {
     fn test_tags_apply_market_on_open_alias() {
         let tags_json = r#"{"orderType":"MarketOnOpen"}"#;
         let order = create_test_order_with_tags(tags_json);
+
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
         );
@@ -284,6 +575,7 @@ mod tests {
     #[case::snake_key(r#"{"time_in_force":"DTC"}"#, TimeInForce::DayTillCanceled)]
     fn test_tags_apply_time_in_force(#[case] tags_json: &str, #[case] expected: TimeInForce) {
         let order = create_test_order_with_tags(tags_json);
+
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
         );
@@ -298,6 +590,7 @@ mod tests {
     fn test_tags_apply_at_auction_alias() {
         let tags_json = r#"{"orderType":"AtAuction","limitPrice":150.0}"#;
         let order = create_test_order_with_tags(tags_json);
+
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
         );
@@ -321,6 +614,7 @@ mod tests {
             "stockRangeUpper": 155.0
         }"#;
         let order = create_test_order_with_tags(tags_json);
+
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
         );
@@ -340,6 +634,7 @@ mod tests {
     fn test_tags_apply_auction_relative_fields() {
         let tags_json = r#"{"orderType":"AuctionRelative","auxPrice":0.01}"#;
         let order = create_test_order_with_tags(tags_json);
+
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
         );
@@ -377,7 +672,6 @@ mod tests {
             "algoStrategy": "Adaptive",
             "algoParams": [{"tag": "adaptivePriority", "value": "Normal"}],
             "notHeld": true,
-            "cashQty": 1000.0,
             "mifid2DecisionMaker": "maker",
             "autoCancelParent": true,
             "minTradeQty": 5,
@@ -399,6 +693,7 @@ mod tests {
             "softDollarTier": {"name": "tier", "value": "val", "display_name": "display"}
         }"#;
         let order = create_test_order_with_tags(tags_json);
+
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
         );
@@ -445,7 +740,6 @@ mod tests {
         assert_eq!(ib_order.algo_params[0].tag, "adaptivePriority");
         assert_eq!(ib_order.algo_params[0].value, "Normal");
         assert!(ib_order.not_held);
-        assert_eq!(ib_order.cash_qty, Some(1000.0));
         assert_eq!(ib_order.mifid2_decision_maker, "maker");
         assert!(ib_order.auto_cancel_parent);
         assert_eq!(ib_order.min_trade_qty, Some(5));
@@ -478,6 +772,7 @@ mod tests {
     fn test_invalid_tag_set_rejects_order_transform() {
         let tags_json = r#"{"whatIf": true, "displaySize": "invalid"}"#;
         let order = create_test_order_with_tags(tags_json);
+
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
         );
@@ -497,6 +792,7 @@ mod tests {
     fn test_non_utc_datetime_tag_rejects_order_transform() {
         let tags_json = r#"{"activeStartTime": "20250101 09:30:00 EST"}"#;
         let order = create_test_order_with_tags(tags_json);
+
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
         );
@@ -530,6 +826,7 @@ mod tests {
             .time_in_force(NautilusTimeInForce::Gtd)
             .expire_time(expire_time)
             .build();
+
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
         );
@@ -554,6 +851,7 @@ mod tests {
             .trailing_offset(dec!(0.5))
             .trailing_offset_type(TrailingOffsetType::Price)
             .build();
+
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
         );
@@ -579,6 +877,7 @@ mod tests {
             .trailing_offset(dec!(25))
             .trailing_offset_type(TrailingOffsetType::BasisPoints)
             .build();
+
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
         );
@@ -604,6 +903,7 @@ mod tests {
             .trailing_offset(dec!(5))
             .trailing_offset_type(TrailingOffsetType::Ticks)
             .build();
+
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
         );
@@ -642,6 +942,7 @@ mod tests {
             ]
         }"#;
         let order = create_test_order_with_tags(tags_json);
+
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
         );
@@ -653,6 +954,7 @@ mod tests {
         assert!(ib_order.what_if);
         assert!(ib_order.conditions_cancel_order);
         assert_eq!(ib_order.conditions.len(), 2);
+
         match &ib_order.conditions[0] {
             OrderCondition::Price(condition) => {
                 assert_eq!(condition.contract_id, 265598);
@@ -686,6 +988,7 @@ mod tests {
             .price(Price::from("150.00"))
             .order_list_id(OrderListId::from("OL-001"))
             .build();
+
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
         );
@@ -711,6 +1014,7 @@ mod tests {
                 r#"IBOrderTags:{"ocaGroup":"CUSTOM-GROUP","ocaType":1}"#,
             )])
             .build();
+
         let provider = InteractiveBrokersInstrumentProvider::new(
             InteractiveBrokersInstrumentProviderConfig::default(),
         );
@@ -720,5 +1024,130 @@ mod tests {
 
         assert_eq!(ib_order.oca_group, "CUSTOM-GROUP");
         assert_eq!(ib_order.oca_type, ibapi::orders::OcaType::from(1));
+    }
+
+    fn magnified_provider(price_magnifier: i32) -> InteractiveBrokersInstrumentProvider {
+        let provider = InteractiveBrokersInstrumentProvider::new(
+            InteractiveBrokersInstrumentProviderConfig::default(),
+        );
+        provider.insert_test_instrument(
+            InstrumentAny::Equity(equity_aapl()),
+            4242,
+            price_magnifier,
+        );
+        provider
+    }
+
+    #[rstest]
+    #[case::magnified(100, "4.2525", 425.25)]
+    #[case::on_grid(100, "4.8625", 486.25)]
+    #[case::unmagnified(1, "4.2525", 4.2525)]
+    fn test_convert_price_multiplies_by_magnifier_exactly(
+        #[case] magnifier: i32,
+        #[case] price: &str,
+        #[case] expected: f64,
+    ) {
+        assert_eq!(convert_price(Price::from(price), magnifier), expected);
+    }
+
+    #[rstest]
+    fn test_convert_price_avoids_binary_float_product_error() {
+        // The float product of 4.2525 and 100 is 425.25000000000006
+        assert_ne!(4.2525_f64 * 100.0, 425.25);
+        assert_eq!(convert_price(Price::from("4.2525"), 100), 425.25);
+    }
+
+    #[rstest]
+    fn test_convert_decimal_returns_error_on_overflow() {
+        assert!(convert_decimal(Decimal::MAX, 100).is_err());
+        assert!(convert_decimal(Decimal::MAX, 1).is_ok());
+    }
+
+    #[rstest]
+    fn test_from_ib_price_divides_by_magnifier() {
+        assert_eq!(from_ib_price(425.25, 100), 4.2525);
+        assert_eq!(from_ib_price(425.25, 1), 425.25);
+        assert_eq!(from_ib_price(425.25, 0), 425.25);
+    }
+
+    #[rstest]
+    fn test_magnified_limit_order_sends_ib_unit_price() {
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(InstrumentId::from("AAPL.XNAS"))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(1))
+            .price(Price::from("4.2525"))
+            .build();
+
+        let ib_order = nautilus_order_to_ib_order(&order, &magnified_provider(100), 1, "TEST-001")
+            .expect("order transform should succeed");
+
+        assert_eq!(ib_order.limit_price, Some(425.25));
+    }
+
+    #[rstest]
+    fn test_magnified_stop_limit_order_sends_ib_unit_prices() {
+        let order = OrderTestBuilder::new(OrderType::StopLimit)
+            .instrument_id(InstrumentId::from("AAPL.XNAS"))
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from(1))
+            .price(Price::from("4.2525"))
+            .trigger_price(Price::from("4.3025"))
+            .build();
+
+        let ib_order = nautilus_order_to_ib_order(&order, &magnified_provider(100), 1, "TEST-001")
+            .expect("order transform should succeed");
+
+        assert_eq!(ib_order.limit_price, Some(425.25));
+        assert_eq!(ib_order.aux_price, Some(430.25));
+    }
+
+    #[rstest]
+    #[case::price_amount(TrailingOffsetType::Price, dec!(0.0525), Some(5.25), None)]
+    #[case::basis_points(TrailingOffsetType::BasisPoints, dec!(50), None, Some(0.5))]
+    fn test_magnified_trailing_stop_scales_price_amounts_only(
+        #[case] offset_type: TrailingOffsetType,
+        #[case] offset: rust_decimal::Decimal,
+        #[case] expected_aux: Option<f64>,
+        #[case] expected_percent: Option<f64>,
+    ) {
+        let order = OrderTestBuilder::new(OrderType::TrailingStopMarket)
+            .instrument_id(InstrumentId::from("AAPL.XNAS"))
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from(1))
+            .trigger_price(Price::from("4.8125"))
+            .trailing_offset(offset)
+            .trailing_offset_type(offset_type)
+            .build();
+
+        let ib_order = nautilus_order_to_ib_order(&order, &magnified_provider(100), 1, "TEST-001")
+            .expect("order transform should succeed");
+
+        assert_eq!(ib_order.aux_price, expected_aux);
+        assert_eq!(ib_order.trailing_percent, expected_percent);
+        assert_eq!(ib_order.trail_stop_price, Some(481.25));
+    }
+
+    #[rstest]
+    fn test_ib_bar_close_round_trips_through_a_limit_order() {
+        let provider = magnified_provider(100);
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let prices = crate::data::convert::IbPriceConverter::new(4)
+            .with_price_magnifier(provider.get_price_magnifier(&instrument_id));
+
+        // IB reports the bar and takes the order in the same unit
+        let bar_close = prices.price(425.25).unwrap();
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(1))
+            .price(bar_close)
+            .build();
+
+        let ib_order = nautilus_order_to_ib_order(&order, &provider, 1, "TEST-001")
+            .expect("order transform should succeed");
+
+        assert_eq!(bar_close, Price::from("4.2525"));
+        assert_eq!(ib_order.limit_price, Some(425.25));
     }
 }

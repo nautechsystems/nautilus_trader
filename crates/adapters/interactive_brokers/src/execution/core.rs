@@ -120,6 +120,7 @@ pub(super) use crate::{
 pub(super) const MODIFY_TRAILING_OFFSET_PARAM: &str = "trailing_offset";
 
 pub(super) const DENIAL_CLIENT_NOT_READY: &str = "IB_CLIENT_NOT_READY";
+pub(super) const DENIAL_ORDER_INVALID: &str = "ORDER_INVALID";
 pub(super) const DENIAL_ORDER_LIST_INVALID: &str = "ORDER_LIST_INVALID";
 pub(super) const DENIAL_ORDER_LIST_SIBLING_SUBMIT_FAILED: &str = "ORDER_LIST_SIBLING_SUBMIT_FAILED";
 pub(super) const DENIAL_POST_ONLY_UNSUPPORTED: &str = "UNSUPPORTED_POST_ONLY";
@@ -193,6 +194,9 @@ pub(super) struct OrderTrackerState {
     /// Fills held for untracked orders while their details resolve; a key marks a resolution
     /// in flight.
     pub(super) fills_held: AHashMap<IbOrderSelector, Vec<FillReport>>,
+    /// Orders whose submission is under way but not yet tracked (while their price magnifier
+    /// loads, say). A cancel takes an order from here, and its submission then stops before IB.
+    pub(super) awaiting_submission: AHashMap<ClientOrderId, AwaitingSubmission>,
 }
 
 impl OrderTrackerState {
@@ -214,6 +218,7 @@ impl OrderTrackerState {
         if let Some(order) = self.auxiliary_orders.get(&client_order_id) {
             return Some(order);
         }
+
         self.order_id_map
             .get(&client_order_id)
             .and_then(|order_id| self.order(*order_id))
@@ -226,6 +231,7 @@ impl OrderTrackerState {
         if self.auxiliary_orders.contains_key(&client_order_id) {
             return self.auxiliary_orders.get_mut(&client_order_id);
         }
+
         let order_id = self.order_id_map.get(&client_order_id).copied()?;
         self.order_mut(order_id)
     }
@@ -268,6 +274,7 @@ impl OrderTracker {
                 active_orders: AHashMap::new(),
                 terminal_orders: FifoCacheMap::new(),
                 fills_held: AHashMap::new(),
+                awaiting_submission: AHashMap::new(),
             })),
         }
     }
@@ -304,6 +311,15 @@ pub(super) enum OrderCorrelation {
     Untracked {
         client_order_id: Option<ClientOrderId>,
     },
+}
+
+/// An order submitted to the client that has not yet reached IB order tracking.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct AwaitingSubmission {
+    pub(super) trader_id: TraderId,
+    pub(super) strategy_id: StrategyId,
+    pub(super) instrument_id: InstrumentId,
+    pub(super) order_side: OrderSide,
 }
 
 #[derive(Clone, Debug)]
@@ -351,11 +367,13 @@ impl PendingModifyValues {
     pub(super) fn matches(&self, order: &ibapi::orders::Order) -> bool {
         const EPS: f64 = 1e-9;
         let approx = |a: f64, b: f64| (a - b).abs() <= EPS;
+
         let approx_opt = |a: Option<f64>, b: Option<f64>| match (a, b) {
             (Some(a), Some(b)) => approx(a, b),
             (None, None) => true,
             _ => false,
         };
+
         approx(self.total_quantity, order.total_quantity)
             && approx_opt(self.limit_price, order.limit_price)
             && approx_opt(self.aux_price, order.aux_price)
@@ -477,6 +495,7 @@ impl InteractiveBrokersExecutionClient {
             } else {
                 client.all_open_orders().await?
             };
+
             let mut subscription = subscription.filter_data();
             while let Some(item) = subscription.next().await {
                 let Orders::OrderData(data) = item? else {
@@ -496,6 +515,7 @@ impl InteractiveBrokersExecutionClient {
                         "IB API order ID identifies multiple permanent IDs"
                     );
                 }
+
                 found_completed = completed;
                 found = Some(data);
             }
@@ -504,9 +524,11 @@ impl InteractiveBrokersExecutionClient {
                 break;
             }
         }
+
         let Some(data) = found else {
             return Ok(None);
         };
+
         let resolved = provider.resolve_instrument_id_for_contract(&data.contract)?;
         anyhow::ensure!(
             resolved == instrument_id,
@@ -541,6 +563,7 @@ impl InteractiveBrokersExecutionClient {
                 _ => {}
             }
         }
+
         let mut fills = Vec::with_capacity(executions.len());
         for (id, data) in executions {
             let (commission, currency) = commissions
@@ -558,16 +581,20 @@ impl InteractiveBrokersExecutionClient {
                 None,
             )?);
         }
+
         fills.sort_by_key(|fill| (fill.ts_event, fill.trade_id));
+
         let filled = fills.iter().try_fold(Decimal::ZERO, |sum, fill| {
             sum.checked_add(fill.last_qty.as_decimal())
                 .context("IB execution quantity overflow")
         })?;
+
         let filled = Quantity::from_decimal_dp(filled, report.quantity.precision)?;
         report.filled_qty = report.filled_qty.max(filled);
         if report.quantity.is_positive() && report.filled_qty >= report.quantity {
             report.order_status = OrderStatus::Filled;
         }
+
         Ok(Some((report, fills)))
     }
 
@@ -576,7 +603,23 @@ impl InteractiveBrokersExecutionClient {
         cmd: SubmitOrderList,
         orders: Vec<OrderAny>,
     ) -> anyhow::Result<()> {
+        self.seed_instruments_from_cache(orders.iter().map(|order| order.instrument_id()));
         let client = self.ib_client.as_ref().context("IB client not connected")?;
+        self.seed_price_magnifiers_from_cache(orders.iter().map(OrderAny::instrument_id));
+
+        for order in &orders {
+            Self::register_awaiting_submission(
+                order.client_order_id(),
+                AwaitingSubmission {
+                    trader_id: order.trader_id(),
+                    strategy_id: cmd.strategy_id,
+                    instrument_id: order.instrument_id(),
+                    order_side: order.order_side(),
+                },
+                &self.orders,
+            )?;
+        }
+        let client_order_ids: Vec<_> = orders.iter().map(OrderAny::client_order_id).collect();
 
         let order_tracker = self.orders.clone();
         let next_order_id = Arc::clone(&self.next_order_id);
@@ -588,6 +631,7 @@ impl InteractiveBrokersExecutionClient {
         let strategy_id = cmd.strategy_id;
         let client_clone = client.as_arc().clone();
         let order_submit_lock = Arc::clone(&self.order_submit_lock);
+        let request_timeout_secs = self.config.request_timeout;
 
         let future = async move {
             if let Err(e) = Self::handle_submit_order_list_async(
@@ -603,6 +647,7 @@ impl InteractiveBrokersExecutionClient {
                 ib_account,
                 strategy_id,
                 &order_submit_lock,
+                request_timeout_secs,
             )
             .await
             {
@@ -610,11 +655,30 @@ impl InteractiveBrokersExecutionClient {
             }
         };
 
-        self.pending_tasks
-            .spawn(future)
-            .context("failed to register IB execution command task")?;
+        if let Err(e) = self.pending_tasks.spawn(future) {
+            let mut state = self.orders.lock()?;
+            for client_order_id in client_order_ids {
+                state.take_awaiting_submission(client_order_id);
+            }
+            return Err(e).context("failed to register IB execution command task");
+        }
 
         Ok(())
+    }
+
+    // The provider is seeded from the cache when the client is created, so an instrument loaded
+    // later (by a data client, say) reaches the cache with its price magnifier but not the
+    // provider. The command handlers request any magnifier still missing from IB.
+    pub(super) fn seed_price_magnifiers_from_cache(
+        &self,
+        instrument_ids: impl IntoIterator<Item = InstrumentId>,
+    ) {
+        let cache = self.core.cache();
+
+        for instrument_id in instrument_ids {
+            self.instrument_provider
+                .seed_price_magnifier_from_cache(&cache, &instrument_id);
+        }
     }
 
     pub(super) fn reserve_next_local_order_id(
@@ -630,18 +694,27 @@ impl InteractiveBrokersExecutionClient {
         Ok(order_id)
     }
 
-    fn apply_client_order_id_floor(next_id: i32, client_id: i32) -> i32 {
+    // IB refuses every order ID below the client's next valid ID (error 103). When that ID lies
+    // above the client's partition no ID in it can be used, so this fails instead of mapping
+    fn apply_client_order_id_floor(next_id: i32, client_id: i32) -> anyhow::Result<i32> {
         let client_slot = client_id.unsigned_abs() % 1000;
         if client_slot == 0 {
-            return next_id;
+            return Ok(next_id);
         }
 
         let order_id_floor = (client_slot as i32) * ORDER_ID_PARTITION_SIZE;
         let order_id_ceiling = order_id_floor + ORDER_ID_PARTITION_SIZE;
-        if next_id > order_id_floor && next_id < order_id_ceiling {
-            next_id
+        anyhow::ensure!(
+            next_id < order_id_ceiling,
+            "IB next valid order ID {next_id} for client_id {client_id} is above its partition ({} to {}), so IB would refuse every order with error 103; use another client_id",
+            order_id_floor + 1,
+            order_id_ceiling - 1,
+        );
+
+        if next_id > order_id_floor {
+            Ok(next_id)
         } else {
-            order_id_floor + next_id.rem_euclid(ORDER_ID_PARTITION_SIZE).max(1)
+            Ok(order_id_floor + next_id.rem_euclid(ORDER_ID_PARTITION_SIZE).max(1))
         }
     }
 
@@ -653,6 +726,22 @@ impl InteractiveBrokersExecutionClient {
 
         let order_id_floor = (client_slot as i32) * ORDER_ID_PARTITION_SIZE;
         order_id > order_id_floor && order_id < order_id_floor + ORDER_ID_PARTITION_SIZE
+    }
+
+    // IB refuses an order ID at or below one the same client already used (error 103). A next
+    // valid ID below the client's partition says nothing about this client's IDs, so the start
+    // also clears the highest ID this client has in orders IB lists
+    fn initial_order_id(
+        next_id: i32,
+        client_id: i32,
+        highest_used_order_id: Option<i32>,
+    ) -> anyhow::Result<i32> {
+        let client_scoped_next_id = Self::apply_client_order_id_floor(next_id, client_id)?;
+        Ok(
+            highest_used_order_id.map_or(client_scoped_next_id, |order_id| {
+                client_scoped_next_id.max(order_id.saturating_add(1))
+            }),
+        )
     }
 
     /// Gets the next valid order ID from IB.
@@ -694,6 +783,7 @@ impl InteractiveBrokersExecutionClient {
                     {
                         continue;
                     }
+
                     highest_order_id = Some(
                         highest_order_id
                             .map_or(data.order_id, |current: i32| current.max(data.order_id)),
@@ -714,9 +804,11 @@ impl InteractiveBrokersExecutionClient {
 
             for data in &snapshots {
                 let venue_id = parse::ib_venue_order_id(data.order_id, data.order.perm_id);
+
                 let Some(id) = cache.client_order_id(&venue_id) else {
                     continue;
                 };
+
                 let Some(order) = cache.order(id) else {
                     continue;
                 };
@@ -733,6 +825,7 @@ impl InteractiveBrokersExecutionClient {
                         continue;
                     }
                 }
+
                 state.order_id_map.insert(*id, data.order_id);
                 state.venue_order_id_map.insert(data.order_id, *id);
                 state
@@ -760,7 +853,65 @@ impl InteractiveBrokersExecutionClient {
                 state.observe_order_data(data, self.core.account_id, false)?;
             }
         }
+
         Ok(highest_order_id)
+    }
+
+    async fn get_highest_completed_order_id(&self, client: &Client) -> anyhow::Result<Option<i32>> {
+        let deadline =
+            tokio::time::Instant::now() + Duration::from_secs(self.config.request_timeout);
+        let subscription = tokio::time::timeout_at(deadline, client.completed_orders(false))
+            .await
+            .context("Timeout requesting completed orders for next order ID initialization")??;
+
+        Self::highest_completed_order_id(subscription, self.config.client_id, deadline).await
+    }
+
+    // IB lists completed orders for a limited period only. A completed order's API order ID is on
+    // the order itself because its top-level order ID is unset. A snapshot that fails, drops
+    // records, or does not reach IB's end marker by the deadline is an error, since a missing
+    // order could hold the highest ID
+    pub(super) async fn highest_completed_order_id<S>(
+        mut subscription: S,
+        client_id: i32,
+        deadline: tokio::time::Instant,
+    ) -> anyhow::Result<Option<i32>>
+    where
+        S: futures_util::Stream<Item = Result<SubscriptionItem<Orders>, ibapi::Error>> + Unpin,
+    {
+        let read_snapshot = async {
+            let mut highest_order_id = None;
+
+            while let Some(item) = subscription.next().await {
+                let data = match item? {
+                    SubscriptionItem::Data(Orders::OrderData(data)) => data,
+                    SubscriptionItem::Data(_) => continue,
+                    SubscriptionItem::Notice(notice)
+                        if notice.code == ibapi::SUBSCRIPTION_LAG_CODE =>
+                    {
+                        anyhow::bail!("Completed orders snapshot dropped records: {notice}");
+                    }
+                    SubscriptionItem::Notice(notice) => {
+                        tracing::warn!("IB notice on completed orders snapshot: {notice}");
+                        continue;
+                    }
+                };
+
+                let order_id = data.order.order_id;
+                if data.order.client_id == client_id
+                    && Self::is_order_id_in_client_partition(order_id, client_id)
+                {
+                    highest_order_id = highest_order_id.max(Some(order_id));
+                }
+            }
+
+            Ok(highest_order_id)
+        };
+
+        tokio::time::timeout_at(deadline, read_snapshot)
+            .await
+            .context("Timeout reading completed orders for next order ID initialization")?
+            .context("Failed to read completed orders for next order ID initialization")
     }
 
     fn begin_task_shutdown(&self) {
@@ -794,6 +945,7 @@ impl InteractiveBrokersExecutionClient {
                 .start_generation()
                 .context("failed to start IB execution command task generation")?;
         }
+
         Ok(())
     }
 
@@ -896,7 +1048,21 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
             return Ok(());
         }
 
+        self.seed_instruments_from_cache([cmd.instrument_id]);
+        self.seed_price_magnifiers_from_cache([cmd.instrument_id]);
+
         let client = self.ib_client.as_ref().context("IB client not connected")?;
+        let client_order_id = cmd.order_init.client_order_id;
+        Self::register_awaiting_submission(
+            client_order_id,
+            AwaitingSubmission {
+                trader_id: cmd.order_init.trader_id,
+                strategy_id: cmd.strategy_id,
+                instrument_id: cmd.instrument_id,
+                order_side: cmd.order_init.order_side,
+            },
+            &self.orders,
+        )?;
 
         let orders = self.orders.clone();
         let next_order_id = Arc::clone(&self.next_order_id);
@@ -909,6 +1075,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
 
         let account_id = self.core.account_id;
         let ib_account = self.ib_account;
+        let request_timeout_secs = self.config.request_timeout;
 
         let future = async move {
             if let Err(e) = Self::handle_submit_order_async(
@@ -922,6 +1089,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
                 account_id,
                 ib_account,
                 &order_submit_lock,
+                request_timeout_secs,
             )
             .await
             {
@@ -929,9 +1097,12 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
             }
         };
 
-        self.pending_tasks
-            .spawn(future)
-            .context("failed to register IB execution command task")?;
+        if let Err(e) = self.pending_tasks.spawn(future) {
+            self.orders
+                .lock()?
+                .take_awaiting_submission(client_order_id);
+            return Err(e).context("failed to register IB execution command task");
+        }
 
         Ok(())
     }
@@ -1009,11 +1180,15 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
         let next_id = self.get_next_order_id().await?;
         log::debug!("Requesting highest open IB order ID");
         let highest_open_order_id = self.get_highest_open_order_id(client.as_ref()).await?;
-        let client_scoped_next_id =
-            Self::apply_client_order_id_floor(next_id, self.config.client_id);
-        let starting_order_id = highest_open_order_id.map_or(client_scoped_next_id, |order_id| {
-            client_scoped_next_id.max(order_id.saturating_add(1))
-        });
+        log::debug!("Requesting highest completed IB order ID");
+        let highest_completed_order_id =
+            self.get_highest_completed_order_id(client.as_ref()).await?;
+
+        let starting_order_id = Self::initial_order_id(
+            next_id,
+            self.config.client_id,
+            highest_open_order_id.max(highest_completed_order_id),
+        )?;
 
         if starting_order_id == next_id {
             tracing::debug!(
@@ -1022,11 +1197,12 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
             );
         } else {
             tracing::debug!(
-                "Adjusted next Interactive Brokers order ID from {} to {} based on client ID/open orders",
+                "Adjusted next Interactive Brokers order ID from {} to {} based on client ID/open and completed orders",
                 next_id,
                 starting_order_id
             );
         }
+
         {
             let mut id = self
                 .next_order_id
@@ -1126,6 +1302,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
                     "IB execution startup teardown failed: {teardown_error}"
                 )));
             }
+
             return Err(e);
         }
 
@@ -1163,7 +1340,6 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
     ) -> Option<ExecutionReportTask<Option<OrderStatusReport>>> {
         let report_client = self.report_client().ok()?;
         let command = cmd.clone();
-
         Some(ExecutionReportTask::new(
             async move { report_client.generate_order_status_report(&command).await },
             Ok,
@@ -1185,7 +1361,6 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
     ) -> Option<ExecutionReportTask<Vec<OrderStatusReport>>> {
         let report_client = self.report_client().ok()?;
         let command = cmd.clone();
-
         Some(ExecutionReportTask::new(
             async move { report_client.generate_order_status_reports(&command).await },
             Ok,
@@ -1207,7 +1382,6 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
     ) -> Option<ExecutionReportTask<Vec<FillReport>>> {
         let report_client = self.report_client().ok()?;
         let command = cmd.clone();
-
         Some(ExecutionReportTask::new(
             async move { report_client.generate_fill_reports(command).await },
             Ok,
@@ -1276,16 +1450,17 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
             .build()
             .map_err(|e| anyhow::anyhow!("{e}"))?;
 
-        let (mut order_reports, fill_reports, mut position_reports) = tokio::try_join!(
+        let report_client = self.report_client()?;
+        let (mut order_reports, fill_evidence, mut position_reports) = tokio::try_join!(
             self.generate_order_status_reports(&order_cmd),
-            self.generate_fill_reports(fill_cmd),
+            report_client.generate_fill_evidence(fill_cmd),
             self.generate_position_status_reports(&position_cmd),
         )?;
 
         tracing::info!(
             "generate_mass_status: {} order reports, {} fill reports, {} position reports",
             order_reports.len(),
-            fill_reports.len(),
+            fill_evidence.reports.len(),
             position_reports.len()
         );
 
@@ -1301,8 +1476,13 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
         // cannot be claimed complete.
         mass_status.set_report_window(start, start.is_some());
 
-        parse::fill_missing_avg_px(&mut order_reports, &fill_reports);
-        parse::fill_position_avg_px_from_fills(&mut position_reports, &fill_reports);
+        parse::fill_missing_avg_px(&mut order_reports, &fill_evidence.reports);
+        parse::fill_position_avg_px_from_fills(
+            &mut position_reports,
+            &fill_evidence,
+            &self.instrument_provider,
+        );
+        let fill_reports = fill_evidence.reports;
         mass_status.add_order_reports(order_reports);
         mass_status.add_fill_reports(fill_reports);
         mass_status.add_position_reports(position_reports);
@@ -1380,6 +1560,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
 
         let future = async move {
             let timeout_dur = Duration::from_secs(request_timeout_secs);
+
             let subscription =
                 match tokio::time::timeout(timeout_dur, client_clone.all_open_orders()).await {
                     Ok(Ok(s)) => s,
@@ -1392,6 +1573,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
                         return;
                     }
                 };
+
             let mut subscription = subscription.filter_data();
 
             while let Some(order_result) = subscription.next().await {
@@ -1408,6 +1590,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
                         Ok(state) => state.order(data.order_id).map(|order| order.instrument_id),
                         Err(_) => None,
                     };
+
                     let instrument_id = match instrument_id {
                         Some(id) => id,
                         None => match instrument_provider
@@ -1443,6 +1626,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
                     {
                         tracing::error!("query_order: failed to send order status report");
                     }
+
                     return;
                 }
             }
@@ -1455,6 +1639,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
 
             if is_pending_cancel {
                 let filter = Self::execution_filter(ib_account, None);
+
                 let executions = match tokio::time::timeout(
                     timeout_dur,
                     client_clone.executions(filter),
@@ -1475,6 +1660,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
                         return;
                     }
                 };
+
                 let mut executions = executions.filter_data();
                 let mut execution_data = AHashMap::new();
                 let mut commissions = AHashMap::new();
@@ -1516,6 +1702,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
                             );
                             return;
                         };
+
                         let report = match parse_execution_to_fill_report(
                             &data.execution,
                             &data.contract,
@@ -1535,16 +1722,19 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
                                 return;
                             }
                         };
+
                         let context =
                             Self::get_tracked_order_context(data.execution.order_id, &orders)
                                 .ok()
                                 .flatten();
+
                         let event = if let Some(context) = context {
                             let quote_currency = instrument_provider
                                 .find(&context.instrument_id)
                                 .map_or(report.commission.currency, |instrument| {
                                     instrument.quote_currency()
                                 });
+
                             ExecutionEvent::Order(OrderEventAny::Filled(OrderFilled::new(
                                 context.trader_id,
                                 context.strategy_id,
@@ -1592,6 +1782,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
                     let size_precision = instrument_provider
                         .find(&instrument_id)
                         .map(|instrument| u32::from(instrument.size_precision()));
+
                     let remainder = order_quantity.and_then(|total| {
                         Decimal::from_f64_retain(cumulative_filled).map(|filled| {
                             let remainder = total - filled;
@@ -1621,6 +1812,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
                             );
                         }
                     }
+
                     return;
                 }
             }
@@ -1703,6 +1895,9 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
             return Ok(());
         }
 
+        self.seed_instruments_from_cache([cmd.instrument_id]);
+        self.seed_price_magnifiers_from_cache([cmd.instrument_id]);
+
         let client = self.ib_client.as_ref().context("IB client not connected")?;
 
         let orders = self.orders.clone();
@@ -1713,6 +1908,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
         let ib_account = self.ib_account;
         let client_clone = client.as_arc().clone();
         let request_timeout_secs = self.config.request_timeout;
+
         let future = async move {
             if let Err(e) = Self::handle_modify_order_async(
                 &cmd,
@@ -1761,6 +1957,23 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
                 account_id,
             )?;
             return Ok(());
+        }
+
+        // An order still awaiting submission (its price magnifier loading, say) has not reached
+        // IB, so the cancel completes here and its submission stops before IB
+        let awaiting = self
+            .orders
+            .lock()?
+            .take_awaiting_submission(cmd.client_order_id);
+
+        if let Some(submission) = awaiting {
+            return Self::send_awaiting_order_canceled(
+                cmd.client_order_id,
+                submission,
+                account_id,
+                &exec_sender,
+                clock.get_time_ns(),
+            );
         }
 
         if let Err(reason) = self.ensure_client_ready_for_order_request("cancel order") {
@@ -1822,12 +2035,35 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
     }
 
     fn cancel_all_orders(&self, cmd: CancelAllOrders) -> anyhow::Result<()> {
+        // Orders still awaiting submission have not reached IB, so they are canceled here and
+        // their submissions stop before IB
+        let awaiting = self
+            .orders
+            .lock()?
+            .take_awaiting_submissions(cmd.instrument_id, cmd.order_side);
+
+        if !awaiting.is_empty() {
+            let exec_sender = get_exec_event_sender();
+            let ts_event = get_atomic_clock_realtime().get_time_ns();
+
+            for (client_order_id, submission) in awaiting {
+                Self::send_awaiting_order_canceled(
+                    client_order_id,
+                    submission,
+                    self.core.account_id,
+                    &exec_sender,
+                    ts_event,
+                )?;
+            }
+        }
+
         if self
             .ensure_client_ready_for_order_request("cancel orders")
             .is_err()
         {
             return Ok(());
         }
+
         let client = self.ib_client.as_ref().context("IB client not connected")?;
         let orders_to_cancel = self.cancel_all_targets(&cmd)?;
 
@@ -1851,6 +2087,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
         let request_timeout_secs = self.config.request_timeout;
 
         let provider = Arc::clone(&self.instrument_provider);
+
         let future = async move {
             if let Err(e) = Self::handle_cancel_all_orders_async(
                 &client_clone,
@@ -1882,6 +2119,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
         for cancel_cmd in cmd.cancels {
             self.cancel_order(cancel_cmd)?;
         }
+
         Ok(())
     }
 
@@ -1903,6 +2141,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
                 return;
             }
         };
+
         let order_selector = match IbOrderSelector::from_venue_order_id(&venue_order_id) {
             Ok(order_selector) => order_selector,
             Err(e) => {
@@ -1910,6 +2149,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
                 return;
             }
         };
+
         let Some(client) = self.ib_client.as_ref() else {
             tracing::warn!(
                 "Cannot track external IB order {client_order_id}: IB client not connected"
@@ -1965,10 +2205,24 @@ impl InteractiveBrokersExecutionClient {
             self.core.account_type,
             self.core.base_currency,
         );
+        let base_currency = self.core.base_currency;
+        let mismatch_logged = AtomicBool::new(false);
         let exec_sender = get_exec_event_sender();
         let clock = get_atomic_clock_realtime();
-
         move |(balances, margins, info)| {
+            // IB reports the summary tags in the account's base currency, so a balance in
+            // another currency means the configured base currency is not the account's
+            if let Some(base_currency) = base_currency
+                && let Some(balance) = balances.iter().find(|b| b.currency != base_currency)
+                && !mismatch_logged.swap(true, Ordering::Relaxed)
+            {
+                tracing::error!(
+                    "IB account summary reports a balance in {}, but the configured \
+                     `base_currency` is {base_currency}",
+                    balance.currency,
+                );
+            }
+
             let ts_now = clock.get_time_ns();
             let state =
                 factory.generate_account_state(balances, margins, true, ts_now, ts_now, info);
@@ -2056,6 +2310,7 @@ impl InteractiveBrokersExecutionClient {
                 Some(parse::ib_venue_order_id(*order_id, order.perm_id)),
             ))
         }));
+
         selected.extend(
             state
                 .group_cancel_candidates(cmd.instrument_id, self.core.account_id, cmd.order_side)
@@ -2305,6 +2560,7 @@ impl InteractiveBrokersExecutionClient {
             )
             .await;
         }
+
         let order_selector = if let Some(venue_order_id) = &cmd.venue_order_id {
             IbOrderSelector::from_venue_order_id(venue_order_id)?
         } else {
@@ -2316,6 +2572,7 @@ impl InteractiveBrokersExecutionClient {
                     .context("No IB order ID mapping found for client order ID")?,
             )
         };
+
         let ib_order_id =
             Self::resolve_ib_order_id(client, order_selector, ib_account, request_timeout_secs)
                 .await?;
@@ -2325,6 +2582,7 @@ impl InteractiveBrokersExecutionClient {
             .unwrap_or_else(|| VenueOrderId::from(ib_order_id.to_string()));
 
         let timeout_dur = Duration::from_secs(request_timeout_secs);
+
         let send_error =
             match tokio::time::timeout(timeout_dur, client.cancel_order(ib_order_id, "")).await {
                 Ok(Ok(_subscription)) => None,
@@ -2407,6 +2665,7 @@ impl InteractiveBrokersExecutionClient {
         ts_init: UnixNanos,
     ) -> anyhow::Result<()> {
         let timeout_dur = Duration::from_secs(request_timeout_secs);
+
         let remains_open = tokio::time::timeout(timeout_dur, async {
             let mut subscription = client.all_open_orders().await?.filter_data();
             while let Some(result) = subscription.next().await {
@@ -2422,6 +2681,7 @@ impl InteractiveBrokersExecutionClient {
                     return Ok::<bool, ibapi::Error>(true);
                 }
             }
+
             Ok(false)
         })
         .await
@@ -2450,6 +2710,7 @@ impl InteractiveBrokersExecutionClient {
                 if !data.order.account.is_empty() && data.order.account != ib_account {
                     continue;
                 }
+
                 let matches_order = order_selector.matches(data.order_id, data.order.perm_id);
                 if matches_order {
                     return Ok::<Option<OrderStatusKind>, ibapi::Error>(Some(
@@ -2457,6 +2718,7 @@ impl InteractiveBrokersExecutionClient {
                     ));
                 }
             }
+
             Ok(None)
         })
         .await
@@ -2486,6 +2748,7 @@ impl InteractiveBrokersExecutionClient {
                 .map_err(|e| {
                     anyhow::anyhow!("Failed to send resolved order canceled event: {e}")
                 })?;
+
             return Ok(());
         }
 
@@ -2502,6 +2765,7 @@ impl InteractiveBrokersExecutionClient {
                 )
             },
         );
+
         Self::send_order_cancel_rejected(target_order, &reason, exec_sender, ts_init, account_id)
     }
 
@@ -2529,6 +2793,7 @@ impl InteractiveBrokersExecutionClient {
                 routes.entry(route).or_default().insert(data.order.perm_id);
                 if data.order.perm_id == target_perm_id { target_routes.insert(route); }
             }
+
             anyhow::ensure!(target_routes.len() == 1,
                 "Cannot resolve PERM-{target_perm_id}: expected one broker route, found {}", target_routes.len());
             let route = *target_routes.iter().next().expect("one route was checked");
@@ -2553,7 +2818,6 @@ impl InteractiveBrokersExecutionClient {
 
     pub(super) fn classify_order_submit_error(error: &ibapi::Error) -> CommandFailure {
         let reason = error.to_string();
-
         if Self::is_definitive_order_submit_error(error) {
             CommandFailure::not_sent(reason)
         } else if matches!(
@@ -2605,11 +2869,12 @@ impl InteractiveBrokersExecutionClient {
                 individual.push((id, venue_id));
             }
         }
+
         let orders_to_cancel = individual;
+
         // Get all IB order selectors first, then drop the guard before awaiting
         let order_selectors: Vec<(ClientOrderId, IbOrderSelector, Option<VenueOrderId>)> = {
             let state = orders.lock()?;
-
             orders_to_cancel
                 .into_iter()
                 .filter_map(|(client_order_id, venue_order_id)| {
@@ -2645,6 +2910,7 @@ impl InteractiveBrokersExecutionClient {
                     continue;
                 }
             };
+
             let venue_order_id =
                 venue_order_id.unwrap_or_else(|| VenueOrderId::from(ib_order_id.to_string()));
 
@@ -2670,6 +2936,7 @@ impl InteractiveBrokersExecutionClient {
                         ib_order_id
                     );
                 }
+
                 tracing::debug!(
                     "Canceled order {} (IB order ID: {})",
                     client_order_id,
@@ -2727,9 +2994,11 @@ impl InteractiveBrokersExecutionClient {
         let order = state
             .order_by_client_mut(client_order_id)
             .context("Tracked state not found for pending cancel order")?;
+
         if order.pending_cancel {
             return Ok(None);
         }
+
         order.pending_cancel = true;
         Ok(Some((
             order.trader_id,

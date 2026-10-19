@@ -516,7 +516,7 @@ impl BinanceRawFuturesHttpClient {
 
         let response = self
             .client
-            .request_with_url_redacted(
+            .request(
                 method,
                 url,
                 None::<&HashMap<String, Vec<String>>>,
@@ -658,7 +658,7 @@ impl BinanceRawFuturesHttpClient {
 
         let response = self
             .client
-            .request_with_url_redacted(
+            .request(
                 method,
                 url,
                 None::<&HashMap<String, Vec<String>>>,
@@ -3420,7 +3420,8 @@ impl BinanceFuturesHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns an error for an invalid depth, missing instrument, request failure, or invalid level.
+    /// Returns an error if the depth is invalid, the instrument is missing, the request fails, or a
+    /// level is invalid.
     pub async fn request_book_snapshot(
         &self,
         instrument_id: InstrumentId,

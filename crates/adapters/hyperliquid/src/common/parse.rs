@@ -1225,6 +1225,11 @@ pub(crate) fn determine_order_list_grouping(orders: &[OrderAny]) -> HyperliquidE
     }
 }
 
+pub(crate) fn is_false_or_none(value: &Option<bool>) -> bool {
+    // Hyperliquid rejects cancel actions hashed with an explicit false fast flag
+    *value != Some(true)
+}
+
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
@@ -2759,6 +2764,58 @@ mod tests {
             order_to_hyperliquid_request_with_asset(&limit_order(price), 0, decimals, false, 50)
                 .unwrap();
         assert_eq!(request.price, Decimal::from_str(price).unwrap());
+    }
+
+    #[rstest]
+    #[case("limit")]
+    #[case("trigger")]
+    fn test_order_conversion_matches_normalized_decimal_fixture(
+        #[case] case_name: &str,
+        #[values(false, true)] normalize_prices: bool,
+    ) {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../test_data/order_decimal_signing.json"))
+                .unwrap();
+        let case = fixture["cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|case| case["name"] == case_name)
+            .unwrap();
+        let input = &case["input"]["orders"][0];
+        let order = if case_name == "limit" {
+            limit_order(input["p"].as_str().unwrap())
+        } else {
+            stop_market_order(
+                OrderSide::Buy,
+                input["t"]["trigger"]["triggerPx"].as_str().unwrap(),
+            )
+        };
+
+        let converted = order_to_hyperliquid_request_with_asset_and_cloid(
+            &order,
+            0,
+            0,
+            normalize_prices,
+            50,
+            None,
+        )
+        .unwrap();
+        let direct: HyperliquidExchangePlaceOrderRequest =
+            serde_json::from_value(input.clone()).unwrap();
+
+        assert_eq!(
+            serde_json::to_value(&converted).unwrap(),
+            case["action"]["orders"][0]
+        );
+        assert_eq!(
+            serde_json::to_value(&direct).unwrap(),
+            serde_json::to_value(&converted).unwrap()
+        );
+        assert_eq!(
+            rmp_serde::to_vec_named(&direct).unwrap(),
+            rmp_serde::to_vec_named(&converted).unwrap()
+        );
     }
 
     #[rstest]

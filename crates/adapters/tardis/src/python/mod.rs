@@ -42,7 +42,7 @@ use crate::{
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if the `exchange` or `instrument_type` cannot be parsed.
+/// Returns an error if the `exchange` or `instrument_type` cannot be parsed.
 #[pyfunction(name = "tardis_normalize_symbol_str")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.tardis")]
 #[pyo3(signature = (symbol, exchange, instrument_type, is_inverse=None))]
@@ -90,7 +90,7 @@ fn extract_tardis_data_config(
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if registering any module components fails.
+/// Returns an error if registering any module components fails.
 #[pymodule]
 pub fn tardis(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<csv::TardisBatchedDeltasStreamIterator>()?;

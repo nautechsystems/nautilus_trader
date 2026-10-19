@@ -24,9 +24,9 @@ account has a different base currency.
 
 ### Single account behavior
 
-With `PortfolioConfig.convert_to_account_base_currency=true` (the default), a query for one account
-without `target_currency` converts values to the account's base currency when it has one. Otherwise,
-the result remains in its native cost currency.
+With `PortfolioConfig.convert_to_account_base_currency=true` (the default), a query for one account without
+`target_currency` converts values to the account's base currency when it has one. Otherwise, the result stays
+in its native cost currency.
 
 ```python
 # Returns exposure in the account's base currency (e.g., USD)
@@ -83,19 +83,18 @@ aggregation.
 
 ### Conversion price types
 
-Position valuation prefers a current `MARK` price when `use_mark_prices` is enabled. Otherwise, it
-uses `BID` for a long position and `ASK` for a short position before trying the remaining price
-fallbacks. Currency conversion uses a current `MID` xrate from the cache. If `use_mark_xrates` is
-enabled, a current `MARK` xrate takes precedence and `MID` remains the fallback. Explicit
-target-currency queries do not reuse a carried stale xrate.
+- **Position valuation**: prefers a current `MARK` price when `use_mark_prices` is enabled. Otherwise, it uses
+  `BID` for a long position and `ASK` for a short position before trying the remaining price fallbacks.
+- **Currency conversion**: uses a current `MID` xrate from the cache. If `use_mark_xrates` is enabled, a
+  current `MARK` xrate takes precedence and `MID` stays the fallback. Explicit target-currency queries do not
+  reuse a carried stale xrate.
 
 ### Exposure aggregation
 
-`net_exposure()` values each open position for one instrument before adding long notional and
-subtracting short notional. It returns the magnitude of that net valued notional, so the result does
-not retain direction. A caller-supplied `price` values every selected position at the same price.
-Without an override or common mark price, side-specific bid and ask prices can leave a valuation
-residual for equal opposing quantities.
+`net_exposure()` values each open position for one instrument before adding long notional and subtracting
+short notional. It returns the magnitude of that net valued notional, so the result does not keep direction. A
+caller-supplied `price` values each selected position at the same price. Without an override or common mark
+price, side-specific bid and ask prices can leave a valuation residual for equal opposing quantities.
 
 `net_exposures()` groups and sums nonzero per-instrument magnitudes by output currency. It does not
 net directional exposure between different instruments.
@@ -119,7 +118,7 @@ or native cost currency.
 | `equity(venue, account_id)`                    | Total equity combining balance and position valuation. |
 | `build_snapshot(account_id)`                   | Account-wide MTM totals and valuation metadata.        |
 | `snapshots(account_id)`                        | Recorded account snapshots in emission order.          |
-| `missing_price_instruments(venue, account_id)` | Instruments currently flagged as unpriceable.          |
+| `missing_price_instruments(venue, account_id)` | Instruments flagged as unpriceable.                    |
 
 Longs contribute their notional and shorts its negation. Flat positions are skipped.
 
@@ -129,21 +128,41 @@ equity.
 
 ### Equity formula
 
-Equity combines the account balance with open-position valuation, using a different
-second term depending on account type:
+Equity starts with `balances_total` and adds open-position values per currency:
 
-- **Cash accounts without a base currency and Wallet accounts**: Start with `balances_total`. For
-  positions owned by that account, do not add a base-asset mark value when the balance already holds
-  that asset and the instrument's cost currency differs from its base currency. Add mark values for
-  inverse instruments and positions not represented by a credited balance asset.
-- **Cash accounts with a base currency and betting accounts**:
-  `balances_total + Σ mark_value(open positions)`.
-- **Margin accounts**: `balances_total + Σ unrealized_pnl(open positions)`.
+| Account type                            | Values added to the balance                              |
+| --------------------------------------- | -------------------------------------------------------- |
+| Cash without a base currency, or Wallet | Position marks, with balance exceptions below            |
+| Cash with a base currency, or betting   | All open-position marks                                  |
+| Calculated margin                       | Signed premium marks + unrealized PnL of other positions |
+| Reported margin                         | Unrealized PnL of all open positions                     |
 
-`mark_values()` always returns gross open-position values, including assets already present in a
-multi-currency Cash or Wallet balance. The value-once rule means `equity()` and equity snapshots
-count each non-inverse base asset either as a balance or a mark value, not both. The margin path uses
-the same cached unrealized PnL pipeline that powers `unrealized_pnls()`.
+#### Cash and Wallet valuation
+
+For positions owned by Cash accounts without a base currency or Wallet accounts, exclude a non-inverse base
+asset's mark under two conditions. The balance must already hold that asset, and the instrument's cost
+currency must differ from its base currency. Inverse instruments and uncredited assets keep their marks.
+
+`mark_values()` always returns gross open-position values, including credited assets. `equity()` and
+snapshots count each non-inverse base asset once, through its balance or its mark.
+
+#### Margin valuation
+
+Calculated margin accounts (`calculate_account_state=true`) update cash from fills. Reported accounts use
+venue balances. Venue-scoped margin queries apply each position owner's rule. See [accounting](accounting.md)
+for balance updates.
+
+Premium-based instruments, including options and binary options, exchange notional cash on fill.
+Their signed marks represent assets or liabilities. Futures and perpetuals exchange no notional cash
+and use the unrealized PnL pipeline.
+
+:::note
+Venue totals may represent cash or include position value. Portfolio uses them without normalization,
+so reported-account equity may differ from venue equity.
+:::
+
+- Snapshots report unrealized PnL separately for all positions, including options.
+- Spread combos create no portfolio positions and do not update calculated balances. Legs carry their value.
 
 ### Price fallback
 
@@ -156,11 +175,11 @@ Valuation asks `Cache` for a price in this order, stopping at the first match:
 
 Set `use_mark_prices=false` to skip the mark tier and begin with the side-appropriate quote.
 
-A price at or below zero counts as a current price only for instruments that allow negative prices
-(futures, option, futures spread and option spread instruments, and spot commodities), except inverse
-instruments whose notional divides by price because they are not premium based. A quote side at or
-below zero also needs a non-zero size, since an empty side can arrive as a zero price with zero
-size. Otherwise the Portfolio skips the price and moves to the next source.
+A price at or below zero counts as a current price only for instruments that allow negative prices (futures,
+option, futures spread and option spread instruments, and spot commodities). This excludes non-premium inverse
+instruments because their notional divides by price. A quote side at or below zero also needs a non-zero size,
+since an empty side can arrive as a zero price with zero size. Otherwise the Portfolio skips the price and
+moves to the next source.
 
 If none of the four yield a current price, the Portfolio carries the last valid price
 for that instrument and position side. The next snapshot lists the instrument in
@@ -179,10 +198,9 @@ When `convert_to_account_base_currency=false`, or the account has no `base_curre
 results are keyed by each position's native cost currency and no xrate
 conversion is applied.
 
-If no current xrate is available for a required conversion, the Portfolio carries the
-last valid rate and lists its source currency in `stale_currencies`. If no valid rate
-has ever been available, the position is treated as unpriceable and flagged through
-the missing-price tracker rather than silently valued at a 1.0 rate.
+If no current xrate is available for a required conversion, the Portfolio carries the last valid rate and
+lists its source currency in `stale_currencies`. If no valid rate has ever been available, the position is
+unpriceable and flagged through the missing-price tracker. It is not silently valued at a 1.0 rate.
 
 ### Snapshot valuation metadata
 
@@ -200,39 +218,42 @@ the cause:
 - `unpriced_instruments`: Instruments excluded because no complete valid valuation has
   ever been available.
 
-Call `build_snapshot(account_id)` for an on-demand sample. Call `snapshots(account_id)`
-to read the bounded recorded sequence. The methods are available from the Rust
-Portfolio and Strategy API and from the Python Portfolio binding. Building a snapshot does
-not add it to the recorded sequence; only the configured lifecycle emission records snapshots.
+Call `build_snapshot(account_id)` for an on-demand sample. Call `snapshots(account_id)` to read the bounded
+recorded sequence. The methods are available from the Rust Portfolio and Strategy API and from the Python
+Portfolio binding. Building a snapshot does not add it to the recorded sequence. Only the configured lifecycle
+emission records snapshots.
 
 ### Automatic equity curve
 
-`PortfolioConfig.equity_curve=true` (the default) records and publishes a
-mark-to-market snapshot when each account registers, at every UTC midnight even while
-the account is flat, and when the backtest or live node shuts down. Set
-`equity_curve=false` for workloads such as optimizer runs that do not consume an equity
-curve. On-demand `equity()` and `build_snapshot()` calculations remain available.
+`PortfolioConfig.equity_curve=true` (the default) records and publishes a mark-to-market snapshot:
 
-The separate `snapshot_interval_ms` setting remains opt-in. When set, it adds
-fine-grained snapshots only while the account has an open position.
+- When each account registers.
+- At each UTC midnight, even while the account is flat.
+- When the backtest or live node shuts down.
+
+Set `equity_curve=false` for workloads such as optimizer runs that do not consume an equity curve. On-demand
+`equity()` and `build_snapshot()` calculations stay available.
+
+The separate `snapshot_interval_ms` setting stays opt-in. When set, it adds fine-grained snapshots only while
+the account has an open position.
 
 ### Missing-price tracking
 
-The tracker keeps the latest missing set for each account-filtered query scope
-and the unfiltered venue scope. `missing_price_instruments(venue)` returns their
-venue-wide union. Pass `account_id` to return only that account's current set. Each observation
-remains authoritative until the same scope runs again; a filtered result does not declare an
-earlier unfiltered result resolved. It has two observable behaviors:
+The tracker keeps the latest missing set for each account-filtered query scope and the unfiltered venue scope.
+`missing_price_instruments(venue)` returns their venue-wide union. Pass `account_id` to return only that
+account's current set.
 
-- A warning log fires once per instrument on the transition from no scope reporting
-  it to at least one scope reporting it, not on every subsequent call. Once every
-  reporting scope observes recovery, a future drop re-warns.
-- When a venue goes flat (no open positions), its tracker entry is cleared so stale
-  instruments do not remain flagged.
+Each observation stays authoritative until the same scope runs again. A filtered result does not declare an
+earlier unfiltered result resolved. The tracker has two observable behaviors:
 
-`build_snapshot(account_id)` updates that account's scope. Snapshots recorded by the equity
-curve or `snapshot_interval_ms` do not update the tracker; they report unpriced positions in
-`unpriced_instruments`.
+- A warning log fires once per instrument when at least one scope first reports it after no scope reported it.
+  The warning does not repeat on each subsequent call. Once each reporting scope observes recovery, a future
+  drop re-warns.
+- When a venue goes flat (no open positions), its tracker entry is cleared so stale instruments do not stay
+  flagged.
+
+`build_snapshot(account_id)` updates that account's scope. Snapshots recorded by the equity curve or
+`snapshot_interval_ms` do not update the tracker. They report unpriced positions in `unpriced_instruments`.
 
 Call `missing_price_instruments(venue)` to inspect the current set.
 
@@ -244,9 +265,9 @@ price is excluded from the total and appears in the missing-price tracker.
 
 ### Venue and account scope
 
-Python collection queries accept optional `venue` and `account_id` scopes. If both are provided,
-the account must be issued under the venue or hold a position there, or the query raises
-`ValueError`. With `account_id=None`, a venue query aggregates across every account on that venue.
+Python collection queries accept optional `venue` and `account_id` scopes. If both are provided, the account
+must be issued under the venue or hold a position there, or the query raises `ValueError`. With
+`account_id=None`, a venue query aggregates across each account on that venue.
 
 `balances_locked`, `instrument_initial_margins`, and `instrument_maintenance_margins` read a single
 account instead. Without `account_id`, they resolve only when exactly one account is issued under
@@ -257,19 +278,19 @@ flags raised by other accounts on the same venue survive.
 
 ### Python query boundary
 
-The Python Portfolio is a read-only query facade for portfolio state. It does not expose
-initialization, reset, or update commands; the Rust engine remains responsible for authoritative
-mutation. Statistic registration is the exception, because it configures analysis rather than
-portfolio state. The facade also does not expose the internal recorded realized-PnL cache.
-`account()` returns a detached, point-in-time copy. The copy **does not reflect later account
-updates**, and changing it does not affect the Portfolio. Call `account()` again to obtain the
-latest account state.
+The Python Portfolio is a read-only query facade for portfolio state. It does not expose initialization,
+reset, or update commands. The Rust engine stays responsible for authoritative mutation. Statistic
+registration is the exception, because it configures analysis rather than portfolio state. The facade also
+does not expose the internal recorded realized-PnL cache.
+
+`account()` returns a detached, point-in-time copy. The copy **does not reflect later account updates**, and
+changing it does not affect the Portfolio. Call `account()` again to get the latest account state.
 
 ## Portfolio statistics
 
-`Portfolio.statistics()` computes a new `PortfolioStatistics` value from all accounts, cached
-positions, position snapshots, recorded close-time PnLs, and portfolio snapshots. It recomputes the
-statistics on every call, so invoke it sparingly on hot paths.
+`Portfolio.statistics()` computes a new `PortfolioStatistics` value from all accounts, cached positions,
+position snapshots, recorded close-time PnLs, and portfolio snapshots. It recomputes the statistics on each
+call, so invoke it sparingly on hot paths.
 
 The result contains:
 
@@ -277,11 +298,12 @@ The result contains:
 - Return statistics from the preferred return series described below.
 - General statistics derived from positions.
 
-The default set includes `WinRate`, `ProfitFactor`, `SharpeRatio`, and `LongRatio`. See the
-[Analysis API Reference](/docs/python-api-latest/analysis.html) for all built-in statistic types.
+The default set includes `WinRate`, `ProfitFactor`, `SharpeRatio`, and `LongRatio`. See the [Analysis API
+Reference](/docs/python-api-latest/analysis.html) for all built-in statistic types.
+
 Pass another built-in type, such as `MaxDrawdown`, to `Portfolio.register_statistic()` to add it to
-`Portfolio.statistics()`, backtest results, and post-run logs. A standalone `PortfolioAnalyzer`
-keeps its own registrations, which do not reach the Portfolio.
+`Portfolio.statistics()`, backtest results, and post-run logs. A standalone `PortfolioAnalyzer` keeps its own
+registrations, which do not reach the Portfolio.
 
 After a backtest, `engine.get_result()` exposes these categories through `stats_pnls`,
 `stats_returns`, and `stats_general`, plus the selected `returns_series`. When `run_analysis=true`,
@@ -289,12 +311,11 @@ the engine also logs the three statistic categories under `PORTFOLIO PERFORMANCE
 
 ### Custom statistics
 
-Subclass `PortfolioStatistic` and override the calculation methods for the input categories the
-statistic supports. Each category receives the same data the built-in statistics use, and a
-statistic contributes a value only where it overrides the matching method.
-`Portfolio.statistics()` feeds the first three categories; benchmark-relative results come from
-`PortfolioAnalyzer.get_performance_stats_returns_vs_benchmark()`, which takes the benchmark
-series from the caller.
+Subclass `PortfolioStatistic` and override the calculation methods for the input categories the statistic
+supports. Each category receives the same data the built-in statistics use, and a statistic contributes a
+value only where it overrides the matching method. `Portfolio.statistics()` feeds the first three categories.
+Benchmark-relative results come from `PortfolioAnalyzer.get_performance_stats_returns_vs_benchmark()`, which
+takes the benchmark series from the caller.
 
 | Method                                  | Input                                        | Result category          |
 | --------------------------------------- | -------------------------------------------- | ------------------------ |
@@ -320,17 +341,16 @@ The name defaults to the class name split on word boundaries, so `TradeCount` re
 whose name matches an existing one replaces it, and `Portfolio.deregister_statistic()` removes one
 by name.
 
-A registration persists across `Portfolio.statistics()` calls and analyzer state resets, so it
-reaches backtest results and post-run logs for the whole run. Register before the run to cover
-every query.
+A registration persists across `Portfolio.statistics()` calls and analyzer state resets, so it reaches
+backtest results and post-run logs for the whole run. Register before the run to cover each query.
 
-Return a `float`, or `None` when the metric is undefined for the given data. Define the result for
-empty or insufficient data: return `None` when the metric is unknown, or use a domain-appropriate
-default such as `0.0`. A statistic that raises, or that returns a non-numeric value, logs an error
-and contributes no value for that category; the remaining statistics still calculate.
+Return a `float`, or `None` when the metric is undefined for the given data. Define the result for empty or
+insufficient data: return `None` when the metric is unknown, or use a domain-appropriate default such as
+`0.0`. A statistic that raises, or that returns a non-numeric value, logs an error and contributes no value
+for that category. The remaining statistics still calculate.
 
-Every category is called for a registered statistic, including on a run that closed no trades,
-where the PnL category receives an empty list.
+Each category is called for a registered statistic, including on a run that closed no trades, where the PnL
+category receives an empty list.
 
 :::warning
 A calculation method runs while the Portfolio holds its internal state borrowed, so calling a
@@ -350,30 +370,34 @@ The analyzer tracks two distinct return series:
   mark-to-market account equity. A $900 gain on a $100,000 account reports roughly 0.9%
   for that day.
 
-When complete portfolio snapshots span at least two distinct UTC dates, the analyzer
-uses the final snapshot from each date and computes portfolio returns automatically.
-It uses them as the primary series for statistics, tearsheets, and the monthly returns
-heatmap. A snapshot emitted exactly at UTC midnight closes the preceding date, keeping
-the daily tier consistent with fine-grained samples. The first valid registration sample
-anchors the opening value for a partial first date. Missing or unpriced account dates are
-forward-filled after every account has an initial valid sample. Multiple snapshots on the
-same date count as one date, so intra-day trading alone does not produce portfolio returns.
-When portfolio returns are unavailable, the analyzer falls back to position returns;
-Python tearsheets can also fall back to account reports.
+When complete portfolio snapshots span **at least two distinct UTC dates**, the analyzer uses the final
+snapshot from each date and computes portfolio returns automatically. It uses them as the primary series for
+statistics, tearsheets, and the monthly returns heatmap.
+
+Daily sampling follows these rules:
+
+- A snapshot emitted exactly at UTC midnight closes the preceding date, keeping the daily tier consistent with
+  fine-grained samples.
+- The first valid registration sample anchors the opening value for a partial first date.
+- Missing or unpriced account dates are forward-filled after each account has an initial valid sample.
+- Multiple snapshots on the same date count as one date, so intra-day trading alone does not produce portfolio
+  returns.
+
+When portfolio returns are unavailable, the analyzer falls back to position returns. Python tearsheets can
+also fall back to account reports.
 
 The convenience accessor `analyzer.returns()` resolves this preference: portfolio returns
 when present, position returns otherwise.
 
 ### Multi-currency accounts
 
-Portfolio returns require every account's snapshot equity to resolve to one common
-currency. Base-currency conversion normally provides that scalar. When snapshots expose
-multiple currencies or accounts resolve to different currencies, the analyzer falls back
-to position returns. An explicit tearsheet currency can select matching per-currency
-equity where available.
+Portfolio returns require each account's snapshot equity to resolve to one common currency. Base-currency
+conversion normally provides that scalar. When snapshots expose multiple currencies or accounts resolve to
+different currencies, the analyzer falls back to position returns. An explicit tearsheet currency can select
+matching per-currency equity where available.
 
-If you need portfolio-level returns for a multi-currency account, compute them externally
-by converting balances to a common currency before calculating percentage changes.
+For multi-currency portfolio returns, convert balances to a common currency first. Then calculate percentage
+changes externally.
 
 ### Multi-account calculation
 

@@ -17,13 +17,12 @@ Review the [Actors](actors.md) guide before developing a strategy. It covers the
 request, and callback behavior a strategy inherits.
 :::
 
-Add strategies to a Nautilus system in any
-[environment context](architecture.md#environment-contexts). They start sending commands and
-receiving events based on their logic as soon as the system starts. These building blocks of data
-ingest, event handling, and order management (discussed below) support any strategy type, including
-directional, momentum, re-balancing, pairs, and market making.
+Add strategies to a Nautilus system in any [environment context](architecture.md#environment-contexts). They
+start sending commands and receiving events based on their logic as soon as the system starts. Data ingest,
+event handling, and order management support any strategy type, including directional, momentum, re-balancing,
+pairs, and market making.
 
-There are two main parts of a Nautilus trading strategy:
+A Nautilus trading strategy has two main parts:
 
 - The strategy implementation itself, defined by inheriting the `Strategy` class.
 - The *optional* strategy configuration, defined by inheriting the `StrategyConfig` class.
@@ -38,13 +37,13 @@ simulation may not reproduce. See
 See the [`Strategy` API Reference](/docs/python-api-latest/trading.html) for all available methods.
 
 :::info Rust implementation
-Rust strategy authors implement the `DataActor` callbacks they need and use
-`nautilus_strategy!` to generate the `Strategy` implementation, then call facade
-methods such as `clock()`, `cache()`, `order()`, and `portfolio()` on `self`.
-`DataActorNative` is native-only access to runtime wiring and actor-core state;
-`StrategyNative` exposes borrowed strategy state such as order factory, order
-manager, and portfolio access. Import them only for same-binary performance
-paths or internal runtime wiring.
+Rust strategy authors implement the `DataActor` callbacks they need and use `nautilus_strategy!` to generate
+the `Strategy` implementation. They then call facade methods such as `clock()`, `cache()`, `order()`, and
+`portfolio()` on `self`.
+
+`DataActorNative` is native-only access to runtime wiring and actor-core state. `StrategyNative` exposes
+borrowed strategy state such as order factory, order manager, and portfolio access. Import them only for
+same-binary performance paths or internal runtime wiring.
 :::
 
 ## Strategy implementation
@@ -89,8 +88,9 @@ after the strategy stops.
 
 Lifecycle state changes trigger these handlers. Recommendations:
 
-- Use the `on_start` method to initialize your strategy (e.g., fetch instruments, subscribe to data).
-- Use the `on_stop` method for cleanup tasks (e.g., cancel open orders, close open positions, unsubscribe from data).
+- Use the `on_start` method to initialize your strategy (for example, fetch instruments, subscribe to data).
+- Use the `on_stop` method for cleanup tasks (for example, cancel open orders, close open positions,
+  unsubscribe from data).
 
 ```python
 def on_start(self) -> None:
@@ -164,7 +164,7 @@ Subscribed updates and request responses reach different handlers. See
 These handlers receive events related to orders.
 `OrderEvent` type messages are passed to handlers in the following sequence:
 
-1. Specific handler (e.g., `on_order_accepted`, `on_order_rejected`, etc.)
+1. Specific handler (for example, `on_order_accepted`, `on_order_rejected`, etc.)
 2. `on_order_event(...)`
 
 ```python
@@ -218,7 +218,7 @@ concrete event object the specific handler received, such as an `OrderAccepted`.
 These handlers receive events related to positions.
 `PositionEvent` type messages are passed to handlers in the following sequence:
 
-1. Specific handler (e.g., `on_position_opened`, `on_position_changed`, etc.)
+1. Specific handler (for example, `on_position_opened`, `on_position_changed`, etc.)
 2. `on_position_event(...)`
 
 ```python
@@ -243,8 +243,7 @@ Use `on_time_event()` for timer events, `on_order_event()` for aggregate order e
 
 #### Handler example
 
-The following example shows a typical `on_start` handler method implementation (taken from the example EMA cross strategy).
-Here we can see the following:
+This `on_start` implementation from the example EMA cross strategy shows:
 
 - Indicators being registered to receive bar updates.
 - Historical data being requested (to hydrate the indicators).
@@ -279,14 +278,13 @@ so a request hydrates them. Check `indicators_initialized()` before acting on in
 
 ### Clock and timers
 
-Strategies have access to a `Clock` which provides a number of methods for creating
-different timestamps, as well as setting time alerts or timers to trigger `TimeEvent`s.
+Strategies use a `Clock` to create timestamps and schedule time alerts or timers that trigger `TimeEvent`s.
 
 See the [`Clock` API Reference](/docs/python-api-latest/common.html) for all available methods.
 
 #### Current timestamps
 
-While there are multiple ways to obtain current timestamps, here are two commonly used methods as examples:
+Two common ways to get current timestamps are shown below.
 
 To get the current UTC timestamp as a tz-aware `datetime`:
 
@@ -305,9 +303,8 @@ unix_nanos: int = self.clock.timestamp_ns()
 
 #### Time alerts
 
-Time alerts can be set which will result in a `TimeEvent` being dispatched to the `on_time_event` handler at the
-specified alert time. In live trading, scheduling and queued work can delay delivery; the alert time
-is not a latency guarantee.
+Time alerts dispatch a `TimeEvent` to the `on_time_event` handler at the specified alert time. In live
+trading, scheduling and queued work can delay delivery. The alert time is not a latency guarantee.
 
 This example sets a time alert to trigger one minute from the current time:
 
@@ -323,11 +320,10 @@ self.clock.set_time_alert(
 
 #### Timers
 
-Continuous timers can be set up which will generate a `TimeEvent` at regular intervals until the timer expires
-or is canceled.
+Continuous timers generate a `TimeEvent` at regular intervals until they expire or are canceled.
 
-This example sets a timer to fire once per minute. The timer starts immediately and its first event
-fires one interval later; pass `fire_immediately=True` to fire at the start time instead:
+This example sets a timer to fire once per minute. The timer starts immediately and its first event fires one
+interval later. Pass `fire_immediately=True` to fire at the start time instead:
 
 ```python
 from datetime import timedelta
@@ -339,9 +335,56 @@ self.clock.set_timer(
 )
 ```
 
+Live fixed-duration timers move an overdue first event to the current time, except at an inclusive stop
+boundary. They then catch up ticks delayed by the runtime.
+
 Pass a `callback` to route `TimeEvent` objects to your own method rather than `on_time_event`. Timer
 names share the clock namespace, so use names unique to the component. See
 [Actors: timers and alerts](actors.md#timers-and-alerts).
+
+#### Calendar timers
+
+Use `set_timer_zoned()` for recurring local times. Pass a positive span string, such as `"1d"` or `"P1M"`, and
+a timezone-aware start datetime. `zoneinfo.ZoneInfo` follows DST changes. `datetime.timezone` keeps a fixed
+offset. This example fires at 09:30 in New York, starting tomorrow:
+
+```python
+from datetime import timedelta
+from zoneinfo import ZoneInfo
+
+start = self.clock.utc_now().astimezone(ZoneInfo("America/New_York"))
+start = start.replace(hour=9, minute=30, second=0, microsecond=0) + timedelta(days=1)
+
+self.clock.set_timer_zoned(
+    name="NewYorkMorning",
+    interval="1d",
+    start_time=start,
+    allow_past=False,
+    fire_immediately=True,
+)
+```
+
+The first event defaults to one interval after `start_time`. `fire_immediately=True` includes the start. With
+`allow_past=False`, the first event must not be in the past. Stop times are inclusive. Cancellation stops
+subsequent events.
+
+Days, weeks, months, and years follow the local calendar. Hour and shorter units measure elapsed time. At
+09:30 in New York, `"1d"` events are 23 hours apart when DST starts and 25 hours apart when it ends. With
+`"24h"`, events stay 24 hours apart and their local time changes by an hour.
+
+Choose an existing local start. DST gaps at the start are not validated. For an ambiguous start, `fold`
+selects the occurrence. Recurrence stays anchored to that start, so month-end clamping and DST adjustments do
+not shift later deadlines. Later gaps shift forward by the gap. Folds use the first occurrence.
+
+In live trading, `set_timer_zoned()` fires the next pending occurrence immediately if overdue, using its
+scheduled timestamp, then resumes at the first deadline after now. Virtual clocks emit each due occurrence
+during advancement. Event timestamps stay UTC UNIX nanoseconds.
+
+:::info Rust implementation
+Use `ClockApi::set_timer_zoned()` in Rust strategies. With a raw `Clock`, pass
+`Arc::new(CalendarSchedule::new(&start_time, span)?)` to `set_timer_schedule()`. The schedule implements
+`TimerSchedule` and supplies UTC deadlines. Clocks and timers own delivery and cancellation.
+:::
 
 ### Cache access
 
@@ -473,9 +516,9 @@ def is_net_flat(self, instrument_id: InstrumentId, account_id: AccountId | None 
 def is_completely_net_flat(self, account_id: AccountId | None = None) -> bool
 ```
 
-If both `venue` and `account_id` are supplied, they must resolve to the same account, otherwise the
-query raises `ValueError`. The Portfolio exposes queries to strategies; engine commands remain
-internal to the Rust runtime.
+If both `venue` and `account_id` are supplied, they must resolve to the same account, otherwise the query
+raises `ValueError`. The Portfolio exposes queries to strategies. Engine commands stay internal to the Rust
+runtime.
 
 See the [`Portfolio` API Reference](/docs/python-api-latest/portfolio.html) for all available methods.
 
@@ -494,11 +537,10 @@ See also the [Execution](execution/) guide for the full flow through the system.
 
 #### Submitting orders
 
-An `OrderFactory` is provided on the base class for every `Strategy` as a convenience, reducing
-the amount of boilerplate required to create different `Order` objects (although these objects
-can still be initialized directly with the `Order.__init__(...)` constructor if the trader prefers).
+Each `Strategy` provides an `OrderFactory` on its base class to reduce boilerplate when creating `Order`
+objects. You can also initialize orders directly with `Order.__init__(...)`.
 
-The component a `SubmitOrder` or `SubmitOrderList` command will flow to for execution depends on the following:
+A `SubmitOrder` or `SubmitOrderList` command is first routed as follows:
 
 - If an `emulation_trigger` is specified, the command will *firstly* be sent to the `OrderEmulator`.
 - If an `exec_algorithm_id` is specified (with no `emulation_trigger`), the command will *firstly* be sent to the relevant `ExecutionAlgorithm`.
@@ -566,13 +608,13 @@ Orders can be canceled individually, as a batch, or all orders for an instrument
 
 If the order is already *closed* or already pending cancel, then a warning will be logged.
 
-If the order is currently *open* then the status will become `PENDING_CANCEL`.
+If the order is *open*, its status becomes `PENDING_CANCEL`.
 
 Routing depends on the command and on the state of each order:
 
-- `cancel_order(...)` goes *firstly* to the `OrderEmulator` when the order is emulated, to the
-  relevant `ExecutionAlgorithm` when the order has an `exec_algorithm_id` and is still active within
-  the local system, and to the `ExecutionEngine` otherwise.
+- For emulated orders, `cancel_order(...)` goes to the `OrderEmulator` first. For non-emulated orders, it goes
+  to the relevant `ExecutionAlgorithm` if the order has an `exec_algorithm_id` and is still active within the
+  local system. Otherwise, it goes to the `ExecutionEngine`.
 - `cancel_all_orders(...)` cancels each matching order associated with the strategy by default. Each
   order follows the same routing as `cancel_order(...)`. If individual cancellations fail, the method
   attempts the remaining orders, then raises `RuntimeError` containing all cancellation errors.
@@ -588,8 +630,8 @@ The following shows how to cancel an individual order:
 self.cancel_order(order.client_order_id)
 ```
 
-The following shows how to cancel a batch of orders. Every order in the batch must be for the same
-instrument, and the batch must not include emulated or local orders:
+The following shows how to cancel a batch of orders. Each order in the batch must be for the same instrument,
+and the batch must not include emulated or local orders:
 
 ```python
 from nautilus_trader.model import ClientOrderId
@@ -610,22 +652,21 @@ self.cancel_all_orders(self.instrument_id)
 ```
 
 :::warning
-Pass `strategy_only=False` to use the broad cancellation path. The strategy sends one
-`CancelAllOrders` command even when its cache has no matching order. The execution engine resolves
-one execution client and account, then routes venue, emulated, and execution-algorithm cancellation
-within that boundary. Matching orders associated with other strategies may be canceled, but orders
-assigned to other execution clients remain untouched. Use broad mode only when that cross-strategy
-scope is intended. See
-[Cancel-all routing](execution/index.md#cancel-all-routing) for the complete flow and client-selection
-rules.
+Pass `strategy_only=False` to use the broad cancellation path. The strategy sends one `CancelAllOrders`
+command even when its cache has no matching order. The execution engine resolves one execution client and
+account, then routes venue, emulated, and execution-algorithm cancellation within that boundary.
+
+Matching orders associated with other strategies may be canceled, but orders assigned to other execution
+clients stay untouched. Use broad mode only when that cross-strategy scope is intended. See
+[Cancel-all routing](execution/index.md#cancel-all-routing) for the complete flow and client-selection rules.
 :::
 
 #### Modifying orders
 
 Orders can be modified individually when emulated, or *open* on a venue (if supported).
 
-For a valid modification, an order that is already *closed* or pending cancel logs a warning.
-If the order is currently *open* then the status will become `PENDING_UPDATE`.
+For a valid modification, an order that is already *closed* or pending cancel logs a warning. If the order is
+*open*, its status becomes `PENDING_UPDATE`.
 
 :::warning
 `modify_order(...)` raises `RuntimeError` when all supplied values are absent or unchanged.
@@ -633,21 +674,20 @@ A strategy can resend the same quantity while the order is `PENDING_UPDATE`.
 These checks run before the closed-order and pending-cancel checks.
 :::
 
-The component a `ModifyOrder` command will flow to for execution depends on the following:
+A `ModifyOrder` command is first routed as follows:
 
-- If the order is currently emulated, the command will *firstly* be sent to the `OrderEmulator`.
+- If the order is emulated, the strategy sends the command to the `OrderEmulator` first.
 - Otherwise, if the order has an `exec_algorithm_id` and is still active within the local system, the
   command will be sent to the relevant `ExecutionAlgorithm`.
 - Otherwise, the order will *firstly* be sent to the `RiskEngine`.
 
 :::info
-An `ExecutionAlgorithm` refuses a `ModifyOrder` for a primary order that is still active locally, and
-logs a warning without emitting an event. The algorithm's schedule is keyed to the quantity it
-computed, so applying the modification in place would break that state; the primary order is left
-unchanged.
+An `ExecutionAlgorithm` refuses a `ModifyOrder` for a primary order that is still active locally, and logs a
+warning without emitting an event. The algorithm's schedule is keyed to the quantity it computed, so applying
+the modification in place would break that state. The primary order is left unchanged.
 :::
 
-The following shows how to modify the size of `LIMIT` BUY order currently *open* on a venue:
+This example modifies the size of a `LIMIT` BUY order that is *open* on a venue:
 
 ```python
 from nautilus_trader.model import Quantity
@@ -661,15 +701,14 @@ self.modify_order(order.client_order_id, quantity=new_quantity)
 The price and trigger price can also be modified (when emulated or supported by a venue).
 :::
 
-Use `modify_orders(...)` to send several modifications as a single `BatchModifyOrders` command to
-the `RiskEngine`. As with a batch cancel, every order must be for the same instrument, and the batch
-must not include emulated or local orders.
+Use `modify_orders(...)` to send several modifications as a single `BatchModifyOrders` command to the
+`RiskEngine`. As with a batch cancel, each order must be for the same instrument, and the batch must not
+include emulated or local orders.
 
 #### Market exit
 
-The `market_exit()` method provides a graceful way to exit all positions and cancel all orders
-for a strategy. The strategy remains running after the exit completes, allowing you to re-enter
-positions later if desired.
+The `market_exit()` method provides a graceful way to exit all positions and cancel all orders for a strategy.
+The strategy stays running after the exit completes, allowing you to re-enter positions later if desired.
 
 ```python
 self.market_exit()
@@ -683,8 +722,8 @@ The market exit process:
 1. Calls `on_market_exit()`.
 2. Cancels all open and in-flight orders for the strategy.
 3. Closes all open positions with market orders tagged `MARKET_EXIT`.
-4. Periodically checks (at `market_exit_interval_ms`) until all orders resolve and positions close,
-   re-submitting a closing order for any position still open once no orders remain working.
+1. Periodically checks (at `market_exit_interval_ms`) until all orders resolve and positions close. When the
+   number of working orders is zero, it re-submits a closing order for any position still open.
 5. Calls `post_market_exit()` once flat, or after `market_exit_max_attempts` is reached, logging the
    orders and positions still outstanding.
 
@@ -703,11 +742,11 @@ class MyStrategy(Strategy):
 ```
 
 During a market exit, non-reduce-only orders are automatically denied with the reason
-`MARKET_EXIT_IN_PROGRESS`. The exit's own closing orders pass through because they carry the
-`MARKET_EXIT` tag. For order lists, if any order in the list is non-reduce-only, the entire list is
-denied to preserve list semantics (e.g., bracket orders with interdependencies).
+`MARKET_EXIT_IN_PROGRESS`. The exit's own closing orders pass through because they carry the `MARKET_EXIT`
+tag. For order lists, if any order in the list is non-reduce-only, the entire list is denied to preserve list
+semantics (for example, bracket orders with interdependencies).
 
-To check if an exit is in progress (e.g., to skip order submission logic), use `is_exiting()`:
+To check if an exit is in progress (for example, to skip order submission logic), use `is_exiting()`:
 
 ```python
 def on_quote(self, tick: QuoteTick) -> None:
@@ -716,7 +755,7 @@ def on_quote(self, tick: QuoteTick) -> None:
     # ... normal order logic
 ```
 
-To automatically perform a market exit when the strategy is stopped, set `manage_stop=True`:
+To enable a market exit when the strategy stops, set `manage_stop=True`:
 
 ```python
 config = StrategyConfig(manage_stop=True)
@@ -727,11 +766,11 @@ once flat or once `market_exit_max_attempts` is reached. Reaching the attempt li
 orders or positions outstanding.
 
 :::warning
-In a backtest, a managed stop requested at the end of the run cannot complete. `market_exit()`
-schedules its first completion check `market_exit_interval_ms` after the current time, which falls
-beyond the requested end, and the engine has already performed its final timer flush by then. No
-callback runs to observe that the exit is done, so the strategy ends the run still `RUNNING` and is
-reported at `ERROR` even when it is already flat.
+In a backtest, a managed stop requested at the end of the run cannot complete. `market_exit()` schedules its
+first completion check `market_exit_interval_ms` after the current time. This falls beyond the requested end,
+and the engine has already performed its final timer flush by then. No callback runs to observe that the exit
+is done. Thus, the strategy ends the run still `RUNNING` and is reported at `ERROR` even when it is already
+flat.
 :::
 
 Configuration options in `StrategyConfig`:
@@ -758,19 +797,19 @@ This is opt-in. You can skip configuration and pass parameters directly to your
 strategy constructor. If you want distributed backtests or remote live trading,
 define a configuration.
 
-`StrategyConfig` is implemented in Rust. Its `__new__` reads the base fields (`strategy_id`,
-`order_id_tag`, `oms_type`, and the rest) out of the constructor call and validates them, ignoring
-any keyword it does not recognize. There is no base `__init__`.
+`StrategyConfig` is implemented in Rust. Its `__new__` reads the base fields (`strategy_id`, `order_id_tag`,
+`oms_type`, and the rest) out of the constructor call and validates them, ignoring any keyword it does not
+recognize. The base class has no `__init__`.
 
-A subclass therefore needs only three things:
+A subclass thus needs only three things:
 
 - Declare its own fields as keyword-only arguments, so no positional argument is matched against a
   base field.
 - Accept `**_kwargs` so the base fields pass through the subclass signature.
 - Call `super().__init__()` with no arguments, then assign its own fields.
 
-Do not give a custom field the same name as a base field: both constructors would read it, and
-`__new__` raises a `TypeError` when the value does not match the base field's type.
+Do not give a custom field the same name as a base field. Both constructors would read it. `__new__` raises a
+`TypeError` when the value does not match the base field's type.
 
 Here is an example configuration:
 
@@ -841,10 +880,9 @@ config = MyStrategyConfig(
 strategy = MyStrategy(config=config)
 ```
 
-Access configuration values through `self.config`.
-This provides clear separation between:
+Read configuration through `self.config`, and keep runtime state in direct strategy attributes:
 
-- Configuration data (accessed via `self.config`):
+- Configuration data (accessed through `self.config`):
   - Contains initial settings, that define how the strategy works.
   - Example: `self.config.trade_size`, `self.config.instrument_id`
 
@@ -852,11 +890,11 @@ This provides clear separation between:
   - Track any custom state of the strategy.
   - Example: `self.time_started`, `self.count_of_processed_bars`
 
-This separation makes code easier to understand and maintain.
+This separates initial settings from changing state, making code easier to understand and maintain.
 
 :::note
-Even though it often makes sense to define a strategy which will trade a single
-instrument. The number of instruments a single strategy can work with is only limited by machine resources.
+A strategy often trades a single instrument, but machine resources are the only limit on how many instruments
+it can work with.
 :::
 
 ### Claiming external orders
@@ -880,24 +918,35 @@ config = StrategyConfig(
 )
 ```
 
-`external_order_instrument_ids` is serializable configuration intent. When a live node registers the
-strategy, the runtime materializes that intent as active external order claims in the shared cache.
-Each claim assigns one `InstrumentId` to one `StrategyId`. Registration fails without changing the
-active claims if the shared cache is already borrowed, the list repeats an instrument, or any listed
-instrument already has a claim, including a claim for the same strategy.
+`external_order_instrument_ids` is serializable configuration intent. When a live node registers the strategy,
+the runtime materializes that intent as active external order claims in the shared cache. Each claim assigns
+one `InstrumentId` to one `StrategyId`.
 
-After registration, call `set_external_order_instrument_ids(...)` to replace the strategy's complete
-active claim set. The method retains listed claims already owned by the strategy, releases omitted
-claims, and acquires listed instruments that have no owner. Passing an empty list releases every
-claim owned by the strategy. If an instrument appears more than once or belongs to another strategy,
-the call fails and leaves the active claim set unchanged. A change affects ownership decisions made
-after the update; it does not reassign external orders already held in the cache.
+Registration fails without changing the active claims if:
 
-The strategy must be registered before it can update active claims, and the update fails if the
-shared cache is already borrowed. For Python strategies, this method changes active routing state;
-the original `strategy.config` object continues to show the construction intent. Stopping a strategy
-retains its active claims so routing remains stable if it restarts. Removing the strategy from its
-trader releases the claims. A cache reset also preserves them.
+- The shared cache is already borrowed.
+- The list repeats an instrument.
+- Any listed instrument already has a claim, including a claim for the same strategy.
+
+After registration, call `set_external_order_instrument_ids(...)` to replace the strategy's complete active
+claim set. The method:
+
+- Keeps listed claims already owned by the strategy.
+- Releases omitted claims.
+- Acquires listed instruments that have no owner.
+
+Passing an empty list releases each claim owned by the strategy. If an instrument appears more than once or
+belongs to another strategy, the call fails and leaves the active claim set unchanged.
+
+A change affects ownership decisions made after the update. It does not reassign external orders already held
+in the cache.
+
+The strategy must be registered before it can update active claims, and the update fails if the shared cache
+is already borrowed. For Python strategies, this method changes active routing state. The original
+`strategy.config` object continues to show the construction intent.
+
+Stopping a strategy keeps its active claims so routing stays stable if it restarts. Removing the strategy from
+its trader releases the claims. A cache reset also preserves them.
 
 :::warning
 Transferring an instrument between strategies requires two calls: the existing owner releases the
@@ -910,48 +959,48 @@ reconciliation use active claims.
 
 ### Managed GTD expiry
 
-It's possible for the strategy to manage expiry for orders with a time in force of GTD (*Good 'till Date*).
-This may be desirable if the exchange/broker does not support this time in force option, or for any
-reason you prefer the strategy to manage this.
+A strategy can manage expiry for GTD (*Good 'till Date*) orders. Use local management when the exchange or
+broker does not support that time in force. You can also use it when you prefer local expiry management.
 
-To use this option, pass `manage_gtd_expiry=True` to your `StrategyConfig`. When an order is submitted with
-a time in force of GTD, the strategy will automatically start an internal time alert.
-Once the internal GTD time alert is reached, the order will be canceled (if not already *closed*).
+To use this option, pass `manage_gtd_expiry=True` to your `StrategyConfig`. When you submit an order with a
+GTD time in force, the strategy starts an internal time alert. When that alert fires, the strategy cancels the
+order if it is not already *closed*.
 
 On start, the strategy also reinstates alerts for its open GTD orders held in the cache, and cancels
 any whose expiry has already passed.
 
-When a cancel request is rejected, a running strategy restores a missing expiry alert for an open
-or inflight GTD order. If expiry has already passed, it immediately retries the cancel instead.
-Existing alerts are preserved. This runs before `on_order_cancel_rejected`, so an immediate retry
-can return the order to `PENDING_CANCEL` before the callback runs. A stopped strategy does not
-restore alerts or retry cancels on rejection.
+When a cancel request is rejected, a running strategy preserves existing alerts. For an open or inflight GTD
+order with a missing expiry alert:
+
+- If expiry has already passed, it immediately retries the cancel.
+- Otherwise, it restores the expiry alert.
+
+This runs before `on_order_cancel_rejected`, so an immediate retry can return the order to `PENDING_CANCEL`
+before the callback runs. A stopped strategy does not restore alerts or retry cancels on rejection.
 
 Some venues (such as Binance Futures) support the GTD time in force, so to avoid conflicts when using
 `manage_gtd_expiry` you should set `use_gtd=False` for your execution client config.
 
 ### Multiple strategies
 
-If you intend running multiple instances of the same strategy, with different
-configurations (such as trading different instruments), then each instance needs a
-**unique strategy ID and order ID tag**.
+For multiple instances of the same strategy with different configurations (such as trading different
+instruments), give each a **unique strategy ID and order ID tag**.
 
-The system must be able to identify which strategy various commands and events belong to. The order
-ID tag also keeps generated client order IDs unique across strategies for the same trader.
+The system must be able to identify which strategy owns each command and event. The order ID tag also keeps
+generated client order IDs unique across strategies for the same trader.
 
 #### Order ID tag
 
-Set `strategy_id` on each config. The runtime takes the order ID tag from the final
-hyphen-separated part of the strategy ID, so `MyStrategy-001` and `MyStrategy-002` produce the tags
-`001` and `002`.
+Set `strategy_id` on each config. The runtime takes the order ID tag from the final hyphen-separated part of
+the strategy ID. Thus, `MyStrategy-001` and `MyStrategy-002` produce the tags `001` and `002`.
 
 Supplying `order_id_tag` as well appends the tag to the runtime strategy ID, unless the ID already
 ends with that tag. For example, `strategy_id=StrategyId("MyStrategy-PRIMARY")` with
 `order_id_tag="ABC"` registers as `MyStrategy-PRIMARY-ABC`.
 
-A strategy registered without `strategy_id` takes its base ID from the strategy type name. An
-`order_id_tag` becomes the suffix, so `MyStrategy` with `order_id_tag="ABC"` registers as
-`MyStrategy-ABC`; without a tag, registration assigns the next numeric tag, starting with `000`.
+A strategy registered without `strategy_id` takes its base ID from the strategy type name. An `order_id_tag`
+becomes the suffix, so `MyStrategy` with `order_id_tag="ABC"` registers as `MyStrategy-ABC`. Without a tag,
+registration assigns the next numeric tag, starting with `000`.
 
 Because the runtime reads the tag back from the final hyphen-separated part of the strategy ID, an
 `order_id_tag` cannot contain a hyphen. `StrategyConfig(order_id_tag="A-B")` raises a `ValueError`,
@@ -963,9 +1012,9 @@ generated IDs. See [Configure a live trading node](../how_to/configure_live_trad
 requirement that it stays unique across nodes.
 
 :::note
-The platform has built-in safety measures. Registering a duplicated strategy ID raises a
-`RuntimeError` indicating the strategy ID is already registered, and two different strategy IDs that
-share an order ID tag raise a `RuntimeError` reporting the tag conflict.
+The platform has built-in safety measures. A duplicated strategy ID raises a `RuntimeError` that indicates the
+strategy ID is already registered. Two different strategy IDs that share an order ID tag raise a
+`RuntimeError` that reports the tag conflict.
 :::
 
 :::info Rust implementation

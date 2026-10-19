@@ -46,7 +46,6 @@ use nautilus_model::{
     identifiers::{ClientId, InstrumentId, TraderId},
 };
 
-// Requires capnp installed on the machine
 // Run with `cargo run -p nautilus-blockchain --bin node_test --features hypersync`
 // To enable debug logging: `export NAUTILUS_LOG=debug`
 

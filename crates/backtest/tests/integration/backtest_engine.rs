@@ -37,7 +37,8 @@ use nautilus_common::{
     },
     component::Component,
     enums::ComponentState,
-    msgbus, nautilus_actor,
+    msgbus::{self, TypedHandler},
+    nautilus_actor,
     timer::{TimeEvent, TimeEventCallback},
 };
 use nautilus_core::{DurationNanos, UUID4, UnixNanos};
@@ -59,11 +60,13 @@ use nautilus_model::{
     },
     enums::{
         AccountType, AggregationSource, AggressorSide, AssetClass, BarAggregation, BookAction,
-        BookType, ContingencyType, InstrumentCloseType, OmsType, OptionKind, OrderSide,
-        OrderStatus, PositionAdjustmentType, PriceType, TimeInForce, TrailingOffsetType,
+        BookType, ContingencyType, InstrumentCloseType, LiquiditySide, OmsType, OptionKind,
+        OrderSide, OrderStatus, PositionAdjustmentType, PriceType, TimeInForce, TrailingOffsetType,
         TriggerType,
     },
-    events::{OrderEventAny, OrderFilled},
+    events::{
+        AccountState, OrderEventAny, OrderEventType, OrderFilled, OrderModifyRejected, OrderUpdated,
+    },
     identifiers::{
         AccountId, ActorId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, PositionId,
         StrategyId, Symbol, TradeId, Venue,
@@ -1906,6 +1909,102 @@ fn test_run_processes_scheduled_funding_settlement(crypto_perpetual_ethusdt: Cry
         result.summary["account.BINANCE.balance.USDT.locked"],
         balance.locked.to_string(),
     );
+}
+
+#[rstest]
+fn test_funding_settlement_generates_one_account_state(crypto_perpetual_ethusdt: CryptoPerpetual) {
+    // Same setup as `test_run_processes_scheduled_funding_settlement`, so the balance after the
+    // funding payment matches the one asserted there
+    let mut engine = create_engine_with_fee_model(
+        FeeModelAny::MakerTaker(MakerTakerFeeModel::new(dec!(0.0002), dec!(0.0004))).into(),
+    );
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    engine.add_instrument(&instrument).unwrap();
+    engine
+        .add_strategy(SnapshotNettingFlip::new(
+            instrument_id,
+            Quantity::from("1.000"),
+        ))
+        .unwrap();
+
+    let settlement_ns = UnixNanos::from(4_000_000_000);
+    let data = vec![
+        quote(instrument_id, "1000.00", "1001.00", 1_000_000_000),
+        quote(instrument_id, "1000.00", "1001.00", 2_000_000_000),
+        Data::MarkPrice(MarkPriceUpdate::new(
+            instrument_id,
+            Price::from("1000.00"),
+            UnixNanos::from(2_500_000_000),
+            UnixNanos::from(2_500_000_000),
+        )),
+        Data::FundingRate(FundingRateUpdate::new(
+            instrument_id,
+            "0.001".parse().unwrap(),
+            Some(480),
+            Some(settlement_ns),
+            UnixNanos::from(3_000_000_000),
+            UnixNanos::from(3_000_000_000),
+        )),
+        quote(instrument_id, "1000.00", "1001.00", 5_000_000_000),
+    ];
+    engine.add_data(data, None, true, true).unwrap();
+    let published = Rc::new(RefCell::new(Vec::<AccountState>::new()));
+    let handler = TypedHandler::from({
+        let published = Rc::clone(&published);
+        move |state: &AccountState| published.borrow_mut().push(state.clone())
+    });
+    msgbus::subscribe_account_state("events.account.*".into(), handler, None);
+    engine.run(None, None, None, false).unwrap();
+
+    let cache = engine.kernel().cache.borrow();
+    let positions = cache.positions_open(None, Some(&instrument_id), None, None, None);
+    let [position] = positions.as_slice() else {
+        panic!("expected one open position");
+    };
+    let [adjustment] = position.adjustments.as_slice() else {
+        panic!("expected one position adjustment");
+    };
+    assert_eq!(adjustment.adjustment_type, PositionAdjustmentType::Funding);
+
+    let account = cache.account(&position.account_id).unwrap();
+    let settlement_states: Vec<_> = account
+        .events()
+        .into_iter()
+        .filter(|state| state.ts_event == settlement_ns)
+        .collect();
+
+    // The funding payment changes the balance once and leaves the margins unchanged
+    assert_eq!(
+        settlement_states.len(),
+        1,
+        "funding settlement generated {} account states; identical balances and margins: {}",
+        settlement_states.len(),
+        settlement_states
+            .windows(2)
+            .all(|pair| pair[0].balances == pair[1].balances && pair[0].margins == pair[1].margins),
+    );
+
+    let state = &settlement_states[0];
+    let prior_state = account
+        .events()
+        .into_iter()
+        .rfind(|state| state.ts_event < settlement_ns)
+        .expect("expected an account state before the funding settlement");
+    let [balance] = state.balances.as_slice() else {
+        panic!("expected one balance");
+    };
+    assert_eq!(balance.total, Money::from("999998.5996 USDT"));
+    assert_eq!(state.margins, prior_state.margins);
+
+    // Account state subscribers see the settlement's state once
+    let published_ids: Vec<_> = published
+        .borrow()
+        .iter()
+        .filter(|published| published.ts_event == settlement_ns)
+        .map(|published| published.event_id)
+        .collect();
+    assert_eq!(published_ids, vec![state.event_id]);
 }
 
 #[rstest]
@@ -4453,6 +4552,241 @@ fn test_cascading_stop_loss_on_fill_settled_same_tick(crypto_perpetual_ethusdt: 
         "Expected 2 orders (entry + cascading stop-loss), was {}",
         bt_result.total_orders
     );
+}
+
+#[rstest]
+#[case::venue_update(true, false, 20, OrderStatus::Accepted)]
+#[case::control(false, false, 10, OrderStatus::Accepted)]
+#[case::pending_cancel(true, true, 20, OrderStatus::Canceled)]
+fn test_stop_modify_rejection_reaches_strategy(
+    #[case] add_entry: bool,
+    #[case] cancel_on_update: bool,
+    #[case] expected_quantity: u64,
+    #[case] expected_status: OrderStatus,
+) {
+    let instrument = option_underlying_equity(Venue::from("SIM"));
+    let instrument_id = instrument.id();
+
+    let bar_type = BarType::new(
+        instrument_id,
+        BarSpecification::new(1, BarAggregation::Hour, PriceType::Last),
+        AggregationSource::External,
+    );
+    let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
+    engine
+        .add_venue(
+            SimulatedVenueConfig::builder()
+                .venue(instrument_id.venue)
+                .oms_type(OmsType::Netting)
+                .account_type(AccountType::Cash)
+                .book_type(BookType::L1_MBP)
+                .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
+                .starting_balances(vec![Money::from("100_000 USD")])
+                .use_reduce_only(true)
+                .latency_model(LatencyModelHandle::new(StaticLatencyModel::new(
+                    DurationNanos::from_secs(1),
+                    DurationNanos::default(),
+                    DurationNanos::default(),
+                    DurationNanos::default(),
+                )))
+                .build()
+                .unwrap(),
+        )
+        .unwrap();
+    engine.add_instrument(&instrument).unwrap();
+    let rejections = Rc::new(RefCell::new(Vec::new()));
+    let stop_id = ClientOrderId::from("STOP-001");
+    engine
+        .add_strategy(StopModifyRejection {
+            core: StrategyCore::new(StrategyConfig {
+                strategy_id: Some(StrategyId::from("STOP-MODIFY-001")),
+                order_id_tag: Some("001".to_string()),
+                ..Default::default()
+            }),
+            bar_type,
+            bar_count: 0,
+            stop_id,
+            add_entry,
+            cancel_on_update,
+            rejections: Rc::clone(&rejections),
+        })
+        .unwrap();
+
+    let bars = (1..=8)
+        .map(|i| {
+            let ts = UnixNanos::new(i * 3_600_000_000_000);
+            Data::Bar(Bar::new(
+                bar_type,
+                Price::from("103.00"),
+                Price::from("104.00"),
+                Price::from("102.00"),
+                Price::from("103.00"),
+                Quantity::from(1_000_000),
+                ts,
+                ts,
+            ))
+        })
+        .collect();
+
+    engine.add_data(bars, None, true, true).unwrap();
+    engine.run(None, None, None, false).unwrap();
+
+    let cache = engine.kernel().cache.borrow();
+    let stop = cache.order(&stop_id).unwrap();
+    let events = stop.events();
+
+    let request_events: Vec<_> = events
+        .iter()
+        .filter(|event| {
+            matches!(
+                event,
+                OrderEventAny::PendingUpdate(_)
+                    | OrderEventAny::Updated(_)
+                    | OrderEventAny::PendingCancel(_)
+                    | OrderEventAny::ModifyRejected(_)
+                    | OrderEventAny::Canceled(_)
+            )
+        })
+        .collect();
+
+    let expected_kinds = match (add_entry, cancel_on_update) {
+        (false, _) => vec![
+            OrderEventType::PendingUpdate,
+            OrderEventType::ModifyRejected,
+        ],
+        (true, false) => vec![
+            OrderEventType::PendingUpdate,
+            OrderEventType::Updated,
+            OrderEventType::ModifyRejected,
+        ],
+        (true, true) => vec![
+            OrderEventType::PendingUpdate,
+            OrderEventType::Updated,
+            OrderEventType::PendingCancel,
+            OrderEventType::ModifyRejected,
+            OrderEventType::Canceled,
+        ],
+    };
+
+    let actual_kinds: Vec<_> = request_events
+        .iter()
+        .map(|event| event.event_type())
+        .collect();
+    assert_eq!(actual_kinds, expected_kinds);
+    assert_eq!(stop.status(), expected_status);
+    assert_eq!(stop.quantity(), Quantity::from(expected_quantity));
+    assert_eq!(stop.trigger_price(), Some(Price::from("99.00")));
+    let rejections = rejections.borrow();
+    assert_eq!(rejections.len(), 1);
+    assert_eq!(rejections[0].0.client_order_id, stop_id);
+    assert_eq!(
+        rejections[0].0.reason,
+        Ustr::from(
+            "STOP_MARKET SELL order new stop px of 110.00 was in the market: bid=103.00, ask=103.00"
+        ),
+    );
+    assert_eq!(
+        rejections[0].1,
+        if cancel_on_update {
+            OrderStatus::PendingCancel
+        } else {
+            OrderStatus::Accepted
+        },
+    );
+    assert_eq!(
+        request_events.iter().find_map(|event| match event {
+            OrderEventAny::ModifyRejected(rejection) => Some(rejection),
+            _ => None,
+        }),
+        Some(&rejections[0].0),
+    );
+}
+
+#[derive(Debug)]
+struct StopModifyRejection {
+    core: StrategyCore,
+    bar_type: BarType,
+    bar_count: usize,
+    stop_id: ClientOrderId,
+    add_entry: bool,
+    cancel_on_update: bool,
+    rejections: Rc<RefCell<Vec<(OrderModifyRejected, OrderStatus)>>>,
+}
+
+nautilus_strategy!(StopModifyRejection, {
+    fn on_order_updated(&mut self, event: OrderUpdated) {
+        if self.cancel_on_update && event.client_order_id == self.stop_id {
+            self.cancel_order(self.stop_id, None, None).unwrap();
+        }
+    }
+
+    fn on_order_modify_rejected(&mut self, event: OrderModifyRejected) {
+        let status = self.cache().order(&self.stop_id).unwrap().status();
+        self.rejections.borrow_mut().push((event, status));
+    }
+});
+
+impl DataActor for StopModifyRejection {
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_bars(self.bar_type, None, None);
+        Ok(())
+    }
+
+    fn on_bar(&mut self, _bar: &Bar) -> anyhow::Result<()> {
+        self.bar_count += 1;
+
+        match self.bar_count {
+            1 | 4 if self.bar_count == 1 || self.add_entry => {
+                let order = self.order().market(
+                    self.bar_type.instrument_id(),
+                    OrderSide::Buy,
+                    Quantity::from(10),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                );
+                self.submit_order(order, None, None, None)?;
+            }
+            3 => {
+                let order = self.order().stop_market(
+                    self.bar_type.instrument_id(),
+                    OrderSide::Sell,
+                    Quantity::from(10),
+                    Price::from("99.00"),
+                    None,
+                    None,
+                    None,
+                    Some(true),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    Some(self.stop_id),
+                );
+                self.submit_order(order, None, None, None)?;
+            }
+            5 => {
+                self.modify_order(
+                    self.stop_id,
+                    Some(Quantity::from(10)),
+                    None,
+                    Some(Price::from("110.00")),
+                    None,
+                    None,
+                )?;
+            }
+            _ => {}
+        }
+
+        Ok(())
+    }
 }
 
 struct EmulatedStopEntryOnQuote {
@@ -7551,5 +7885,281 @@ mod serial_tests {
         assert_eq!(first_iterations, 3);
         assert_eq!(second_iterations, 3);
         assert!(!engine.kernel().is_shutdown_requested());
+    }
+}
+
+#[rstest]
+#[case::buy_through(OrderSide::Buy, "49500.00", "49995.00", "49400.00")]
+#[case::buy_touch(OrderSide::Buy, "49500.00", "49995.00", "49500.00")]
+#[case::sell_through(OrderSide::Sell, "50500.00", "50005.00", "50600.00")]
+#[case::sell_touch(OrderSide::Sell, "50500.00", "50005.00", "50500.00")]
+fn test_trade_budget_survives_callback_settlement(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+    #[case] side: OrderSide,
+    #[case] entry_price: &str,
+    #[case] child_price: &str,
+    #[case] final_price: &str,
+    #[values(0, 50_000_000)] latency: u64,
+    #[values(false, true)] use_message_queue: bool,
+) {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
+    engine
+        .add_venue(
+            SimulatedVenueConfig::builder()
+                .venue(instrument_id.venue)
+                .oms_type(OmsType::Netting)
+                .account_type(AccountType::Margin)
+                .book_type(BookType::L1_MBP)
+                .starting_balances(vec![Money::from("1_000_000 USDT")])
+                .bar_execution(false)
+                .trade_execution(true)
+                .liquidity_consumption(true)
+                .use_message_queue(use_message_queue)
+                .latency_model(LatencyModelHandle::new(StaticLatencyModel::new(
+                    DurationNanos::new(latency),
+                    DurationNanos::default(),
+                    DurationNanos::default(),
+                    DurationNanos::default(),
+                )))
+                .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
+                .build()
+                .unwrap(),
+        )
+        .unwrap();
+    engine.add_instrument(&instrument).unwrap();
+    let fills = Rc::new(RefCell::new(Vec::new()));
+    engine
+        .add_strategy(TradeFillChain::new(
+            instrument_id,
+            side,
+            Price::from(entry_price),
+            Price::from(child_price),
+            Rc::clone(&fills),
+        ))
+        .unwrap();
+    let aggressor = if side == OrderSide::Buy {
+        AggressorSide::Sell
+    } else {
+        AggressorSide::Buy
+    };
+    let opposite = if side == OrderSide::Buy {
+        AggressorSide::Buy
+    } else {
+        AggressorSide::Sell
+    };
+    let first_ts = 1_000_000_000_u64;
+    let data = [
+        ("50000.00", "1.000", opposite),
+        (entry_price, "0.010", aggressor),
+        ("50000.00", "0.010", opposite),
+        (final_price, "0.010", aggressor),
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(i, (price, size, aggressor))| {
+        let ts = UnixNanos::from(first_ts + i as u64 * (latency + 1));
+        Data::Trade(TradeTick::new(
+            instrument_id,
+            Price::from(price),
+            Quantity::from(size),
+            aggressor,
+            TradeId::new(format!("T-{i}")),
+            ts,
+            ts,
+        ))
+    })
+    .collect();
+    engine.add_data(data, None, true, true).unwrap();
+    engine.run(None, None, None, false).unwrap();
+
+    let fills = fills.borrow();
+    let actual: Vec<_> = fills
+        .iter()
+        .map(|fill| {
+            (
+                fill.client_order_id,
+                fill.order_side,
+                fill.last_qty,
+                fill.last_px,
+                fill.liquidity_side,
+                fill.ts_event,
+            )
+        })
+        .collect();
+    let child_side = if side == OrderSide::Buy {
+        OrderSide::Sell
+    } else {
+        OrderSide::Buy
+    };
+    let expected_child_price = if latency == 0 || !use_message_queue {
+        child_price
+    } else {
+        "50000.00"
+    };
+    let expected_child_liquidity = if latency == 0 || !use_message_queue {
+        LiquiditySide::Maker
+    } else {
+        LiquiditySide::Taker
+    };
+    assert_eq!(
+        actual,
+        vec![
+            (
+                ClientOrderId::from("O-ENTRY"),
+                side,
+                Quantity::from("0.010"),
+                Price::from(entry_price),
+                expected_child_liquidity,
+                UnixNanos::from(first_ts + latency + 1)
+            ),
+            (
+                ClientOrderId::from("O-CHAIN-1"),
+                child_side,
+                Quantity::from("0.010"),
+                Price::from(expected_child_price),
+                expected_child_liquidity,
+                UnixNanos::from(first_ts + 2 * (latency + 1))
+            ),
+            (
+                ClientOrderId::from("O-ENTRY"),
+                side,
+                Quantity::from("0.010"),
+                Price::from(entry_price),
+                LiquiditySide::Maker,
+                UnixNanos::from(first_ts + 3 * (latency + 1))
+            ),
+        ]
+    );
+    let cache = engine.kernel().cache();
+    let cache = cache.borrow();
+    assert_eq!(
+        cache
+            .order(&ClientOrderId::from("O-ENTRY"))
+            .unwrap()
+            .leaves_qty(),
+        Quantity::from("0.000")
+    );
+    assert_eq!(
+        cache
+            .order(&ClientOrderId::from("O-CHAIN-1"))
+            .unwrap()
+            .leaves_qty(),
+        Quantity::from("0.000")
+    );
+    assert_eq!(
+        cache
+            .order(&ClientOrderId::from("O-CHAIN-2"))
+            .unwrap()
+            .leaves_qty(),
+        Quantity::from("0.010")
+    );
+}
+
+struct TradeFillChain {
+    core: StrategyCore,
+    instrument_id: InstrumentId,
+    side: OrderSide,
+    entry_price: Price,
+    child_price: Price,
+    submitted: bool,
+    fills: Rc<RefCell<Vec<OrderFilled>>>,
+}
+
+impl TradeFillChain {
+    fn new(
+        instrument_id: InstrumentId,
+        side: OrderSide,
+        entry_price: Price,
+        child_price: Price,
+        fills: Rc<RefCell<Vec<OrderFilled>>>,
+    ) -> Self {
+        Self {
+            core: StrategyCore::new(StrategyConfig {
+                strategy_id: Some(StrategyId::from("TRADE-CHAIN-001")),
+                order_id_tag: Some("001".to_string()),
+                ..Default::default()
+            }),
+            instrument_id,
+            side,
+            entry_price,
+            child_price,
+            submitted: false,
+            fills,
+        }
+    }
+
+    fn submit_limit(
+        &mut self,
+        side: OrderSide,
+        quantity: Quantity,
+        price: Price,
+        id: ClientOrderId,
+    ) -> anyhow::Result<()> {
+        let order = self.order().limit(
+            self.instrument_id,
+            side,
+            quantity,
+            price,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(id),
+        );
+        self.submit_order(order, None, None, None)
+    }
+}
+
+nautilus_strategy!(TradeFillChain, {
+    fn on_order_filled(&mut self, event: &OrderFilled) {
+        self.fills.borrow_mut().push(event.clone());
+        let side = if event.order_side == OrderSide::Buy {
+            OrderSide::Sell
+        } else {
+            OrderSide::Buy
+        };
+        let price = if side == self.side {
+            self.entry_price
+        } else {
+            self.child_price
+        };
+        let id = ClientOrderId::new(format!("O-CHAIN-{}", self.fills.borrow().len()));
+        self.submit_limit(side, Quantity::from("0.010"), price, id)
+            .unwrap();
+    }
+});
+
+impl Debug for TradeFillChain {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(TradeFillChain)).finish()
+    }
+}
+
+impl DataActor for TradeFillChain {
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_trades(self.instrument_id, None, None);
+        Ok(())
+    }
+
+    fn on_trade(&mut self, _tick: &TradeTick) -> anyhow::Result<()> {
+        if !self.submitted {
+            self.submitted = true;
+            self.submit_limit(
+                self.side,
+                Quantity::from("0.020"),
+                self.entry_price,
+                ClientOrderId::from("O-ENTRY"),
+            )?;
+        }
+        Ok(())
     }
 }

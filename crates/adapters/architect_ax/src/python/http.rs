@@ -210,9 +210,9 @@ impl AxHttpClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - No credentials are available from either source
-    /// - The HTTP request fails
-    /// - The credentials are invalid
+    /// - No credentials are available from either source.
+    /// - The HTTP request fails.
+    /// - The credentials are invalid.
     #[pyo3(name = "authenticate_auto")]
     #[pyo3(signature = (expiration_seconds=86400))]
     fn py_authenticate_auto<'py>(
@@ -573,10 +573,7 @@ impl AxHttpClient {
     /// Returns an error if:
     /// - The HTTP request fails.
     /// - A position's instrument cannot be fetched or parsed.
-    ///
-    /// # Notes
-    ///
-    /// Position parsing failures are skipped with a warning.
+    /// - A position cannot be parsed.
     #[pyo3(name = "request_position_reports")]
     fn py_request_position_reports<'py>(
         &self,

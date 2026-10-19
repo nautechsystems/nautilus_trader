@@ -46,6 +46,13 @@ python = [
   "pyo3-stub-gen",
 ]
 high-precision = ["nautilus-model/high-precision"]
+simulation = [
+  "dep:madsim",
+  "nautilus-common/simulation",
+  "nautilus-core/simulation",
+  "nautilus-live/simulation",
+  "nautilus-network/simulation",
+]
 
 [package.metadata]
 cargo-fuzz = true
@@ -72,6 +79,7 @@ async-trait = { workspace = true }
 bon = { workspace = true }
 dashmap = { workspace = true }
 futures-util = { workspace = true }
+indexmap = { workspace = true }
 jiff = { workspace = true }
 log = { workspace = true }
 parking_lot = { workspace = true }
@@ -87,10 +95,13 @@ tokio-util = { workspace = true }
 ustr = { workspace = true }
 zeroize = { workspace = true }
 
+madsim = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
+nautilus-execution = { workspace = true }
+nautilus-live = { workspace = true, features = ["test-support"] }
 nautilus-testkit = { workspace = true, default-features = false, features = [
   "testers",
 ] }
@@ -193,3 +204,11 @@ name = "derive-delta-neutral"
 path = "examples/node_delta_neutral.rs"
 required-features = ["examples"]
 doc = false
+
+# Run with `cargo test -p nautilus-derive --features examples --test derive-book-stress -- --scenario initial --timeout 2 --rounds 60`.
+[[test]]
+name = "derive-book-stress"
+path = "tests/stress/book_stress.rs"
+harness = false
+test = false
+required-features = ["examples"]

@@ -15,14 +15,14 @@
 
 use std::fmt::Display;
 
+use nautilus_core::correctness::FAILED;
 use nautilus_model::{data::QuoteTick, identifiers::InstrumentId};
 
 use crate::indicator::Indicator;
 
-/// An indicator which calculates the efficiency ratio across a rolling window.
+/// Calculates the current bid-ask spread and its average across a rolling window.
 ///
-/// The Kaufman Efficiency measures the ratio of the relative market speed in
-/// relation to the volatility, this could be thought of as a proxy for noise.
+/// A zero capacity is accepted.
 #[repr(C)]
 #[derive(Debug)]
 #[cfg_attr(
@@ -114,17 +114,32 @@ impl Indicator for SpreadAnalyzer {
 
 impl SpreadAnalyzer {
     /// Creates a new [`SpreadAnalyzer`] instance.
+    ///
+    /// A zero capacity is accepted.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the spread window capacity overflows or its allocation fails.
     #[must_use]
     pub fn new(capacity: usize, instrument_id: InstrumentId) -> Self {
-        Self {
+        Self::new_checked(capacity, instrument_id).expect(FAILED)
+    }
+
+    pub(crate) fn new_checked(
+        capacity: usize,
+        instrument_id: InstrumentId,
+    ) -> anyhow::Result<Self> {
+        let mut spreads = Vec::new();
+        spreads.try_reserve_exact(capacity)?;
+        Ok(Self {
             capacity,
             instrument_id,
             current: 0.0,
             average: 0.0,
             initialized: false,
             has_inputs: false,
-            spreads: Vec::with_capacity(capacity),
-        }
+            spreads,
+        })
     }
 }
 
@@ -138,7 +153,7 @@ fn fast_mean(values: &[f64]) -> f64 {
 
 #[cfg(test)]
 mod tests {
-
+    use nautilus_model::identifiers::InstrumentId;
     use rstest::rstest;
 
     use crate::{
@@ -147,6 +162,33 @@ mod tests {
         stubs::{spread_analyzer_10, *},
         testing::assert_approx_equal,
     };
+
+    #[rstest]
+    #[case(usize::MAX)]
+    #[case(isize::MAX as usize / size_of::<f64>() + 1)]
+    fn test_checked_constructor_rejects_capacity_overflow(#[case] capacity: usize) {
+        let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+        let error = SpreadAnalyzer::new_checked(capacity, instrument_id).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "memory allocation failed because the computed capacity exceeded the collection's maximum"
+        );
+    }
+
+    #[rstest]
+    #[case(0)]
+    #[case(10)]
+    fn test_checked_constructor_preserves_capacity(#[case] capacity: usize) {
+        let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+        let ind = SpreadAnalyzer::new_checked(capacity, instrument_id).unwrap();
+        assert_eq!(ind.capacity, capacity);
+        assert_eq!(ind.instrument_id, instrument_id);
+        assert_eq!(ind.current, 0.0);
+        assert_eq!(ind.average, 0.0);
+        assert!(!ind.initialized());
+        assert!(!ind.has_inputs());
+    }
+
     #[rstest]
     fn test_efficiency_ratio_initialized(spread_analyzer_10: SpreadAnalyzer) {
         let display_str = format!("{spread_analyzer_10}");

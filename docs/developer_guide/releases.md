@@ -6,21 +6,27 @@ This guide covers the release process and the standards for writing release note
 
 NautilusTrader uses a three-branch model:
 
-- **`develop`**: active development; publishes dev wheels to Cloudflare R2 on every push.
-- **`nightly`**: pre-release testing; publishes all supported pre-release wheels and CLI binaries.
-- **`master`**: stable releases; triggers the full release pipeline.
+- **`develop`**: active development. Publishes dev wheels to Cloudflare R2 on each push.
+- **`nightly`**: pre-release testing. Publishes all supported pre-release wheels and CLI binaries.
+- **`master`**: stable releases. Triggers the full release pipeline.
 
-Merging a release commit to `master` automatically tags the version from `python/pyproject.toml`,
-creates a draft GitHub release, uploads release assets, publishes Cargo crates to crates.io,
-publishes wheels and sdist to PyPI, publishes the GitHub release, builds Docker images, and triggers
-a docs rebuild.
+When a release commit merges to `master`, the pipeline automatically:
+
+- Tags the version from `python/pyproject.toml`.
+- Creates a draft GitHub release.
+- Uploads release assets.
+- Publishes Cargo crates to crates.io.
+- Publishes wheels and sdist to PyPI.
+- Publishes the GitHub release.
+- Builds Docker images.
+- Triggers a docs rebuild.
 
 ## Stable release workflow
 
-The `build` workflow treats the GitHub release as the anchor for stable releases. It creates the
-release as a draft first, uploads the wheel and sdist assets to that draft release, and only then
-publishes those packages to package indexes. The workflow publishes the GitHub release only after
-the registry verification and final integrity assets are complete.
+The `build` workflow treats the GitHub release as the anchor for stable releases. It first creates a draft
+release. It uploads the wheel and sdist assets to that draft. Only then does it publish those packages to
+package indexes. The workflow publishes the GitHub release only after the registry verification and final
+integrity assets are complete.
 
 ```mermaid
 flowchart TD
@@ -69,34 +75,33 @@ Keep these sequencing rules intact when editing `.github/workflows/build.yml`:
   audit failure.
 - Wheel and sdist assets must be attached to the GitHub release before package index publishing
   starts (`packages.nautechsystems.io`, PyPI, crates.io).
-- PyPI and crates.io Trusted Publishing jobs must keep `environment: release` and
-  `id-token: write`; those registrations depend on the `release` environment.
+- PyPI and crates.io Trusted Publishing jobs must keep `environment: release` and `id-token: write`. Those
+  registrations depend on the `release` environment.
 - Non-OIDC integrity and asset-upload jobs should avoid `environment: release` unless they need
   release environment secrets or approvals.
 - `publish-release-integrity` must run after PyPI and crates.io publishing. It generates the
   release manifest first, verifies registries against that manifest, then attaches final integrity
   assets only after verification passes.
-- `publish-github-release` must be the final stable release job. GitHub recommends creating a
-  draft release, attaching all assets, then publishing the draft before enabling release
-  immutability. Once GitHub release immutability is enabled for the repo, published release assets
-  and the release tag cannot be changed; only the title and release notes remain editable. The job
-  verifies the final draft asset set before publishing and verifies GitHub's release attestation
-  after publishing the draft.
+- `publish-github-release` must be the final stable release job. GitHub recommends creating a draft release,
+  attaching all assets, then publishing the draft before enabling release immutability. If GitHub release
+  immutability is enabled for the repo, published release assets and the release tag cannot change. Only the
+  title and release notes stay editable. The job verifies the final draft asset set before publishing and
+  verifies GitHub's release attestation after publishing the draft.
 
 ## Recovering a missing release tag
 
-The `Create git tag` step creates `v<version>` only when the version at the run's commit differs
-from the version at the previous commit (`HEAD~1`), and never when the tag already exists. A run
-whose commit carries the same version as its parent therefore never creates the tag, and when the
-tag is missing `Verify release tag` fails no matter how often the failed jobs are re-run. This is
-the normal shape of a retried release: one or more commits land on `master` after the version
-bump, so the retry run carries the same version as its parent. Because `tag-release` anchors the
-draft release and every downstream publish job, the run cannot proceed while the tag is missing.
+The `Create git tag` step creates `v<version>` only when the run's commit changes the version from
+its parent (`HEAD~1`), and never when the tag already exists. If the version is unchanged and the tag
+is missing, `Verify release tag` fails no matter how often the failed jobs are re-run.
+
+A retried release normally has one or more commits on `master` after the version bump. Thus, the retry run has
+the same version as its parent and does not create the tag. Because `tag-release` anchors the draft release
+and each downstream publish job, the run cannot proceed while the tag is missing.
 
 First check whether the tag exists and whether the run's commit bumps the version:
 
-- If the tag is missing and the run's commit bumps the version, re-running the failed jobs is
-  enough: once the failed jobs pass, `tag-release` creates the tag.
+- If the tag is missing and the run's commit bumps the version, rerun the failed jobs. No manual tag is
+  necessary. After the jobs pass, `tag-release` creates the tag.
 - If the tag is missing and the run's commit carries the same version as its parent, no re-run
   creates the tag. Recover with the manual tag procedure below.
 
@@ -136,10 +141,57 @@ To recover, a maintainer creates the tag manually and re-runs the failed jobs:
 1. On the failed run, select "Re-run failed jobs". `Verify release tag` passes with the pushed
    tag, and draft release creation and the downstream publishing jobs continue.
 
-Only do this when the release commit and version are final. The tag is the permanent release
-anchor, and once release immutability applies the published release tag cannot be changed. If
-`v<version>` already exists but points at a different commit, do not move or re-push the tag;
-investigate the mismatch instead, because `Verify release tag` fails in that case by design.
+Only do this when the release commit and version are final. The tag is the permanent release anchor, and once
+release immutability applies the published release tag cannot be changed. If `v<version>` points at a
+different commit, do not move or re-push the existing tag. Investigate the mismatch. `Verify release tag`
+fails in that case by design.
+
+## Recovering a partial release
+
+Use the `recover-release` workflow when packages already exist on PyPI and crates.io but release integrity
+verification or final GitHub publication fails. It verifies existing packages without rebuilding or
+republishing them. It also verifies a release that a maintainer has already published manually.
+
+The source must be a completed `build` workflow run from a push to `master` in this repository, with a
+successful `tag-release` job. The release tag must resolve to that run's commit, and the tag version must
+match `python/pyproject.toml` at that commit. Recovery checks out that source and requires the release's
+complete package inventory to match the current stable wheel matrix, including the matching sdist. Historical
+releases with a different matrix fail verification.
+
+1. Wait for the original build and any other recovery attempt to finish. Do not rerun the source build
+   during recovery. Jobs that write the tag or GitHub release share a lock by release tag. GitHub permits
+   one pending job per lock; a newer pending job replaces the earlier pending job.
+1. Open **Actions > recover-release > Run workflow** and select `master`.
+1. Enter the existing release tag and the original build run ID, then choose a mode:
+   - `verify`: require an already-published release and check it without changing its assets, notes, or
+     publication state.
+   - `recover`: resume a draft release. If it is already published, run verification without changing it.
+1. Review the recovery artifact even when the workflow fails. After correcting the cause, rerun with
+   the same tag and source run ID.
+
+Recovery verifies package attestations and their sibling bundles against the original build workflow and
+source commit, checks each envelope against its verified bundle, then verifies registry contents. It compares
+existing GitHub assets by content, uploads only missing assets, and stops on a mismatch. Existing
+`dist-manifest.json` and `crates-manifest.json` assets keep their bytes when their JSON content matches apart
+from `generated_at`. Recovery updates checksum notes only when needed, verifies the complete draft asset
+set, checks Rekor readiness, publishes the draft, and verifies GitHub's release attestation.
+
+Recovery restores missing packages or provenance only from unexpired artifacts belonging to the selected
+source run. If required evidence is unavailable, recovery stops. A fully populated published release does
+not require retained source-run artifacts. After a failure that follows publication, rerun either mode to
+check the release again without republishing it.
+
+If an asset upload fails, recovery stops after that attempt. Rerun recovery to verify the assets that
+arrived and upload only the remaining files. An interrupted upload can leave an incomplete asset or a
+file whose content does not match. Recovery names the affected asset and stops. Confirm that the release
+is still a draft and that the named asset came from the interrupted upload. Delete only that confirmed
+bad asset from the draft, then rerun recovery. Do not delete or replace assets on a published release.
+
+The runner's GitHub CLI must support `gh attestation verify --source-digest` and `gh release verify`.
+Recovery checks both capabilities before changing the release. The workflow retains source metadata,
+tool versions, the last step checkpoint, per-step and retry logs, exit status, registry responses,
+downloaded verification inputs, and the isolated verifier cache for 30 days. The normal build's integrity and final publication
+jobs also retain diagnostic artifacts on failure. A later successful rerun preserves those artifacts.
 
 ## Versioning
 
@@ -150,9 +202,8 @@ The project maintains two version numbers:
 | `python/pyproject.toml`  | Python package |
 | `Cargo.toml` (workspace) | Rust crates    |
 
-These are bumped independently. The Python version drives the `v<python-version>` release tag.
-Versions ending in `aN`, `bN`, or `rcN` create a GitHub pre-release; final versions create a normal
-release.
+These are bumped independently. The Python version drives the `v<python-version>` release tag. Versions ending
+in `aN`, `bN`, or `rcN` create a GitHub pre-release. Final versions create a normal release.
 
 ## Crates.io publishing
 
@@ -172,20 +223,25 @@ have never been published still need an initial manual publish before crates.io 
 publisher configuration.
 
 Do not use `cargo publish --workspace` for CI releases. The release job runs
-`scripts/ci/publish-cargo-crates.sh`, which publishes crates one at a time in dependency order,
-skips versions already present on crates.io, and waits for each new version to appear in the
-crates.io API and sparse index before publishing dependents. The script fails before uploading if a
-publishable crate depends on a local `publish = false` crate that is absent from crates.io.
-Optional local dependencies count as blockers because publishing a public feature that resolves to
-an absent crate would leave that feature unusable.
+`scripts/ci/publish-cargo-crates.sh`, which:
+
+- Publishes crates one at a time in dependency order.
+- Skips versions already present on crates.io.
+- Waits for each new version to appear in the crates.io API and sparse index before publishing dependents.
+
+The script fails before uploading if a publishable crate depends on a local `publish = false` crate
+absent from crates.io. Optional local dependencies also block publication because a public feature
+that resolves to an absent crate would be unusable.
 
 Post-publish verification treats an existing crate version as `previously_published` only when
-crates.io shows it was trusted-published by this repository. It still fails for user-published
-crate versions unless `CRATES_IO_MANUAL_PUBLISH_EXCEPTIONS` names each recovered `crate@version`
-entry for emergency token-publish recovery. Accepted manual entries are recorded in
-`crates-manifest.json` with `release_status: "manual_token_publish"`, and malformed or unused
-exception entries fail the job. Wrong trusted-publishing repositories and checksum or sparse-index
-mismatches also fail.
+crates.io shows it was trusted-published by this repository.
+
+**Manual recovery**: User-published versions fail verification unless
+`CRATES_IO_MANUAL_PUBLISH_EXCEPTIONS` names each recovered `crate@version` for emergency token-publish
+recovery. Accepted entries appear in `crates-manifest.json` with `release_status: "manual_token_publish"`.
+Malformed or unused exception entries fail the job.
+
+Wrong trusted-publishing repositories and checksum or sparse-index mismatches also fail verification.
 
 ## Release checklist
 
@@ -195,6 +251,8 @@ mismatches also fail.
 - [ ] Ensure versions are set in `python/pyproject.toml` and the `Cargo.toml` workspace
 - [ ] Ensure crates.io Trusted Publishing is configured for every crate that CI publishes:
   `bash scripts/ci/check-crates-io-trusted-publishing.sh`
+- [ ] Run `make check-features` locally on the final release candidate
+- [ ] Run `make check-docsrs` locally on the final release candidate
 - [ ] Ensure all CI checks pass on `develop`
 
 ### Release
@@ -215,6 +273,8 @@ mismatches also fail.
   - GitHub release published after all release assets and integrity assets are attached
   - If the run fails with the release tag missing, follow
     [Recovering a missing release tag](#recovering-a-missing-release-tag) and re-run the failed jobs
+  - If packages exist but integrity verification or GitHub publication fails, follow
+    [Recovering a partial release](#recovering-a-partial-release)
 - [ ] Verify the `docker` workflow completes (images built and pushed)
 - [ ] Verify the `build-docs` workflow completes (docs rebuild triggered)
 
@@ -302,7 +362,7 @@ Includes significant hardening improvements elevated from Internal Improvements.
 
 ### Fixes
 
-Bug fixes that improve correctness but don't qualify as security issues.
+Bug fixes that improve correctness but do not qualify as security issues.
 
 **Format**:
 

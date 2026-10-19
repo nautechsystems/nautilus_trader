@@ -44,16 +44,16 @@ The extension identifies the shell language, not whether the file is executable 
 | `.bash`   | Bash        | Default for new scripts and sourceable Bash files.                       |
 | `.sh`     | POSIX `sh`  | Only when a supported caller has a real requirement to run without Bash. |
 
-Use `#!/usr/bin/env bash` for `.bash` files and `#!/usr/bin/env sh` for `.sh` files. Keep the
-shebang even when Make or GitHub Actions invokes the file through `bash` or `sh`, because tools and
-direct callers use it to identify the interpreter.
+Use `#!/usr/bin/env bash` for `.bash` files and `#!/usr/bin/env sh` for `.sh` files. Keep the shebang,
+including when Make or GitHub Actions invokes the file through `bash` or `sh`. Tools and direct callers use it
+to identify the interpreter.
 
 Bash is preferred for normal development, Make, and CI scripts because the repository already
 depends on it and its features make non-trivial shell code clearer. These features include
 `pipefail`, `[[ ... ]]`, arrays, process substitution, and function-local variables.
 
-Use POSIX `sh` for a small bootstrap or wrapper only when avoiding a Bash dependency is part of its
-supported interface. Test the script under the target `/bin/sh`; simple syntax alone does not prove
+Small bootstrap or wrapper scripts can have a supported interface that must avoid a Bash dependency. Use POSIX
+`sh` only for such scripts. Test the script under the target `/bin/sh`. Simple syntax alone does not prove
 POSIX compatibility.
 
 Existing filenames predate this extension policy, so some `.sh` files contain Bash. Treat their
@@ -98,9 +98,9 @@ Quote paths and expansions so spaces do not change argument boundaries. Do not a
 paths are case-sensitive. Use repository-relative paths only after resolving the repository root
 from the script location, not from the caller's working directory.
 
-Use only commands installed by the documented development or runner setup. If an optional command
-is necessary, check for it with `command -v` and report how to install or replace it. The repository
-stores text with LF endings through `.gitattributes`; do not add platform-specific line endings.
+Use only commands installed by the documented development or runner setup. If an optional command is
+necessary, check for it with `command -v` and report how to install or replace it. The repository stores text
+with LF endings through `.gitattributes`. Do not add platform-specific line endings.
 
 ## Place and name scripts
 
@@ -149,17 +149,21 @@ Follow these requirements:
   environment or the tool's supported secret input.
 - Use comments only for constraints or behavior that the commands do not make clear.
 
-Give a standalone script executable permissions when users or tools call it as `./path`. A
-sourceable file does not need executable permissions. Prefer executing a script in a child process;
-source a file only when the caller must share its functions or shell state.
+Give a standalone script executable permissions when users or tools call it as `./path`. A sourceable file
+does not need executable permissions. Prefer executing a script in a child process. Source a file only when
+the caller must share its functions or shell state.
 
 A sourceable Bash file must not call `exit` or change the caller's shell options. Return errors from
 functions and let the caller choose its error policy. Use `${BASH_SOURCE[0]}` instead of `$0` to
 resolve the source file's location.
 
-When a script needs several functions, define `main` first, place called functions below their
-callers, and invoke `main "$@"` after all definitions. This keeps the task visible at the top while
-ensuring every function exists before execution starts.
+If a script needs several functions:
+
+1. Define `main` first.
+1. Place called functions below their callers.
+1. Invoke `main "$@"` after all definitions.
+
+This keeps the task visible at the top while ensuring each function exists before execution starts.
 
 ## Integrate with Make and GitHub Actions
 
@@ -172,9 +176,9 @@ GitHub Actions should provide workflow context through named environment variabl
 same script used locally where practical. The build workflow follows this boundary: it owns the
 Python matrix condition and `TARGET_DIR`, then invokes `scripts/ci/check-generated-drift.bash`.
 
-Keep GitHub-specific output files such as `$GITHUB_OUTPUT` and `$GITHUB_ENV` at the workflow boundary
-when the script is also a local command. A script dedicated to GitHub Actions may write them when
-that integration is its stated purpose.
+If the script is also a local command, keep GitHub-specific output files at the workflow boundary. Examples
+include `$GITHUB_OUTPUT` and `$GITHUB_ENV`. A script dedicated to GitHub Actions may write them when that
+integration is its stated purpose.
 
 ## Format and lint
 
@@ -194,20 +198,19 @@ prek run shellcheck --files scripts/ci/test-wheel.bash
 language from the shebang, so a `.sh` file with `#!/usr/bin/env sh` receives POSIX checks even though
 the formatter uses the common Bash parser.
 
-Keep ShellCheck suppressions on the narrowest applicable line. Add a nearby reason when the
-constraint is not clear from the code, and do not disable a check for the whole repository to
-silence one script.
+Keep ShellCheck suppressions on the narrowest applicable line. If the code does not make the constraint clear,
+add a reason nearby. Do not disable a check for the whole repository to silence one script.
 
-The repository also rejects executable files without shebangs, mixed line endings, trailing
-whitespace, and unresolved merge markers. These checks complement ShellCheck; they do not replace a
-runtime test.
+The repository also rejects executable files without shebangs, mixed line endings, trailing whitespace, and
+unresolved merge markers. These checks complement ShellCheck. They do not replace a runtime test.
 
 ## Test behavior
 
-Run the smallest test that exercises the changed branches and failure paths. For logic that can
-regress independently of a workflow, add a companion shell test. This includes parsing,
-multi-branch decisions, retries and cleanup, policy checks, and material external side effects. A
-domain-level suite may cover cooperating scripts, and a thin wrapper does not need a one-to-one test
+Run the smallest test that exercises the changed branches and failure paths. Add a companion shell test for
+logic that can regress independently of a workflow. This includes parsing, multi-branch decisions, retries and
+cleanup, policy checks, and material external side effects.
+
+A domain-level suite may cover cooperating scripts. A thin wrapper does not need a one-to-one test
 when that suite invokes it and proves its behavior.
 
 Each companion test:
@@ -216,7 +219,7 @@ Each companion test:
 - Supplies fake external commands through a temporary `PATH` instead of changing production code.
 - Uses distinct inputs and exact output, exit status, and side-effect assertions.
 - Covers success, invalid input, dependency failure, and cleanup when those paths exist.
-- Fails when a required test command is unavailable; a passing skip does not validate behavior.
+- Fails when a required test command is unavailable. A passing skip does not validate behavior.
 - Runs from `make test-scripts`, which is the script test inventory used by CI.
 
 When a script has callers on multiple operating systems, exercise platform-sensitive changes on

@@ -549,6 +549,112 @@ pub struct OKXAccountConfiguration {
     pub permissions: Vec<OKXApiKeyPermission>,
 }
 
+/// Represents a trading-account bill from the recent or archived bills endpoint.
+///
+/// Numeric values and identifiers retain the exact strings returned by OKX.
+/// Bill codes are not restricted to known values. Optional fields preserve empty strings
+/// separately from absent fields, including trade fields on transfer bills.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OKXAccountBill {
+    /// Bill ID.
+    pub bill_id: String,
+    /// Account balance currency.
+    pub ccy: String,
+    /// Balance update time, as a Unix timestamp in milliseconds.
+    pub ts: String,
+    /// Balance at the account level.
+    pub bal: String,
+    /// Signed change in account balance, in `ccy`.
+    pub bal_chg: String,
+    /// Bill type code, including unrecognized codes.
+    #[serde(rename = "type")]
+    pub bill_type: String,
+    /// Bill subtype code, including unrecognized codes.
+    pub sub_type: String,
+    /// Instrument type; empty for non-trading bills.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub inst_type: Option<String>,
+    /// Instrument ID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub inst_id: Option<String>,
+    /// Margin mode: cross, isolated, cash, or empty for non-trading bills.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mgn_mode: Option<String>,
+    /// Balance at the position level.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pos_bal: Option<String>,
+    /// Change in balance at the position level.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pos_bal_chg: Option<String>,
+    /// Quantity, in contracts for derivatives or in `ccy` otherwise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sz: Option<String>,
+    /// Price associated with the bill subtype.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub px: Option<String>,
+    /// Profit and loss; includes funding payments for funding-fee bills.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pnl: Option<String>,
+    /// Fee: negative for charges, positive for rebates.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fee: Option<String>,
+    /// Auto earn amount, when applicable.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub earn_amt: Option<String>,
+    /// Auto earn APR, when applicable.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub earn_apr: Option<String>,
+    /// Order ID; empty when there is no order.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ord_id: Option<String>,
+    /// Client order ID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cl_ord_id: Option<String>,
+    /// Last trade ID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trade_id: Option<String>,
+    /// Liquidity role: T for taker, M for maker.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exec_type: Option<String>,
+    /// Remitting account for transfers: 6 for funding, 18 for trading.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub from: Option<String>,
+    /// Beneficiary account for transfers: 6 for funding, 18 for trading.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub to: Option<String>,
+    /// Bill notes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+    /// Interest amount.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub interest: Option<String>,
+    /// Order tag.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
+    /// Last fill time in Unix milliseconds.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fill_time: Option<String>,
+    /// Index price at execution.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fill_idx_px: Option<String>,
+    /// Mark price at execution.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fill_mark_px: Option<String>,
+    /// Implied volatility at execution, for options.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fill_px_vol: Option<String>,
+    /// Option price at execution, in USD.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fill_px_usd: Option<String>,
+    /// Mark volatility at execution, for options.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fill_mark_vol: Option<String>,
+    /// Forward price at execution, for options.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fill_fwd_px: Option<String>,
+}
+
 /// Represents an account balance snapshot from `GET /api/v5/account/balance`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1300,6 +1406,9 @@ pub struct OKXTransactionDetail {
     pub fill_sz: String,
     /// Trade side: buy or sell.
     pub side: OKXSide,
+    /// Position side for futures and swaps.
+    #[serde(default)]
+    pub pos_side: Option<OKXPositionSide>,
     /// Execution type.
     pub exec_type: OKXExecType,
     /// Fee currency.
@@ -1532,6 +1641,9 @@ pub struct OKXAmendAlgoOrderRequest {
     /// New trigger price (for `trigger` algo orders).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub new_trigger_px: Option<String>,
+    /// New trigger price type (last, mark, index) for `trigger` algo orders.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub new_trigger_px_type: Option<String>,
     /// New take-profit trigger price (for attached/OCO TP legs).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub new_tp_trigger_px: Option<String>,
@@ -1552,8 +1664,9 @@ pub struct OKXAmendAlgoOrderRequest {
     /// New stop-loss trigger price type (last, mark, index).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub new_sl_trigger_px_type: Option<String>,
-    /// New order price (for limit orders after trigger).
+    /// New order price (`-1` for market).
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "newOrdPx")]
     pub new_order_px: Option<String>,
     /// New callback ratio for trailing stop (e.g., "0.01" for 1%).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1798,6 +1911,7 @@ mod tests {
             algo_cl_ord_id: None,
             new_sz: None,
             new_trigger_px: None,
+            new_trigger_px_type: None,
             new_tp_trigger_px: None,
             new_tp_ord_px: None,
             new_tp_trigger_px_type: None,
@@ -1828,6 +1942,7 @@ mod tests {
             algo_cl_ord_id: None,
             new_sz: None,
             new_trigger_px: None,
+            new_trigger_px_type: None,
             new_tp_trigger_px: Some("0.10495".to_string()),
             new_tp_ord_px: Some("-1".to_string()),
             new_tp_trigger_px_type: Some("last".to_string()),
@@ -1986,6 +2101,7 @@ mod tests {
             algo_cl_ord_id: None,
             new_sz: None,
             new_trigger_px: Some("3500".to_string()),
+            new_trigger_px_type: None,
             new_tp_trigger_px: None,
             new_tp_ord_px: None,
             new_tp_trigger_px_type: None,
@@ -2003,7 +2119,7 @@ mod tests {
         assert!(json.contains("\"instId\":\"ETH-USDT-SWAP\""));
         assert!(json.contains("\"algoId\":\"123456\""));
         assert!(json.contains("\"newTriggerPx\":\"3500\""));
-        assert!(json.contains("\"newOrderPx\":\"3490\""));
+        assert!(json.contains("\"newOrdPx\":\"3490\""));
         assert!(!json.contains("newSz"));
         assert!(!json.contains("algoClOrdId"));
         assert!(!json.contains("newCallbackRatio"));
@@ -2017,6 +2133,7 @@ mod tests {
             algo_cl_ord_id: Some("client456".to_string()),
             new_sz: Some("0.1".to_string()),
             new_trigger_px: None,
+            new_trigger_px_type: None,
             new_tp_trigger_px: None,
             new_tp_ord_px: None,
             new_tp_trigger_px_type: None,
@@ -2038,7 +2155,7 @@ mod tests {
         assert!(json.contains("\"newCallbackRatio\":\"0.02\""));
         assert!(json.contains("\"newActivePx\":\"50000\""));
         assert!(!json.contains("newTriggerPx"));
-        assert!(!json.contains("newOrderPx"));
+        assert!(!json.contains("newOrdPx"));
     }
 
     #[rstest]
@@ -2161,6 +2278,7 @@ mod tests {
             algo_cl_ord_id: None,
             new_sz: None,
             new_trigger_px: None,
+            new_trigger_px_type: None,
             new_tp_trigger_px: None,
             new_tp_ord_px: None,
             new_tp_trigger_px_type: None,
@@ -2190,6 +2308,7 @@ mod tests {
             algo_cl_ord_id: None,
             new_sz: Some("0.5".to_string()),
             new_trigger_px: None,
+            new_trigger_px_type: None,
             new_tp_trigger_px: None,
             new_tp_ord_px: None,
             new_tp_trigger_px_type: None,
@@ -2206,7 +2325,7 @@ mod tests {
 
         assert!(json.contains("\"newSz\":\"0.5\""));
         assert!(!json.contains("newTriggerPx"));
-        assert!(!json.contains("newOrderPx"));
+        assert!(!json.contains("newOrdPx"));
         assert!(!json.contains("newCallbackRatio"));
         assert!(!json.contains("newCallbackSpread"));
         assert!(!json.contains("newActivePx"));
@@ -2220,6 +2339,7 @@ mod tests {
             algo_cl_ord_id: Some("client789".to_string()),
             new_sz: Some("1.0".to_string()),
             new_trigger_px: Some("60000".to_string()),
+            new_trigger_px_type: None,
             new_tp_trigger_px: None,
             new_tp_ord_px: None,
             new_tp_trigger_px_type: None,
@@ -2239,7 +2359,7 @@ mod tests {
         assert!(json.contains("\"algoClOrdId\":\"client789\""));
         assert!(json.contains("\"newSz\":\"1.0\""));
         assert!(json.contains("\"newTriggerPx\":\"60000\""));
-        assert!(json.contains("\"newOrderPx\":\"59900\""));
+        assert!(json.contains("\"newOrdPx\":\"59900\""));
         assert!(json.contains("\"newCallbackRatio\":\"0.015\""));
         assert!(json.contains("\"newCallbackSpread\":\"100\""));
         assert!(json.contains("\"newActivePx\":\"62000\""));

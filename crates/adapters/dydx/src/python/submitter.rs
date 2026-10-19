@@ -197,9 +197,9 @@ impl PyDydxOrderSubmitter {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - Using permissioned key but no authenticators found
-    /// - No authenticator matches the wallet's public key
-    /// - gRPC query fails
+    /// - Using permissioned key but no authenticators found.
+    /// - No authenticator matches the wallet's public key.
+    /// - GRPC query fails.
     #[pyo3(name = "resolve_authenticators")]
     fn py_resolve_authenticators<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let submitter = self.inner.clone();

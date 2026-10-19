@@ -1,0 +1,14 @@
+{
+  "v": 1,
+  "channel": "price.equity",
+  "seq": 2,
+  "ts": 1791355668000,
+  "payload": {
+    "full_accuracy_value": "333.81",
+    "received_at": 1791355668000,
+    "source": "pyth",
+    "symbol": "aapl",
+    "timestamp": 1791355668000,
+    "value": 333.81
+  }
+}

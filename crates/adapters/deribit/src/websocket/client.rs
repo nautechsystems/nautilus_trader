@@ -43,6 +43,7 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
 };
 use nautilus_network::{
+    ConnectionUrl,
     http::create_standard_nautilus_headers,
     mode::ConnectionMode,
     websocket::{
@@ -83,7 +84,7 @@ type CommandSender = tokio::sync::mpsc::UnboundedSender<HandlerCommand>;
 /// WebSocket client for connecting to Deribit.
 #[derive(Clone)]
 pub struct DeribitWebSocketClient {
-    url: String,
+    url: ConnectionUrl,
     environment: DeribitEnvironment,
     heartbeat_interval: Option<u64>,
     auth_timeout_secs: u64,
@@ -190,7 +191,7 @@ impl DeribitWebSocketClient {
         let subscriptions_state = SubscriptionState::new('.');
 
         Ok(Self {
-            url,
+            url: url.into(),
             environment,
             heartbeat_interval: Some(heartbeat_interval),
             auth_timeout_secs: auth_timeout_secs.unwrap_or(AUTHENTICATION_TIMEOUT_SECS),
@@ -337,7 +338,7 @@ impl DeribitWebSocketClient {
     /// Returns the WebSocket URL.
     #[must_use]
     pub fn url(&self) -> &str {
-        &self.url
+        self.url.expose()
     }
 
     /// Returns the environment for this client.
@@ -522,7 +523,7 @@ impl DeribitWebSocketClient {
 
         log_debug!(
             "Connecting to WebSocket: {}",
-            self.url,
+            self.url.origin(),
             color = LogColor::Blue
         );
 
@@ -556,7 +557,7 @@ impl DeribitWebSocketClient {
         let headers = create_standard_nautilus_headers();
 
         let config = WebSocketConfig {
-            url: self.url.clone(),
+            url: self.url.expose().to_owned(),
             headers,
             heartbeat_interval_secs: self.heartbeat_interval,
             heartbeat_payload: None, // Deribit uses JSON-RPC heartbeat, not text ping
@@ -597,9 +598,7 @@ impl DeribitWebSocketClient {
             .connect()
             .await?;
 
-        // Store connection mode
-        self.connection_mode
-            .store(ws_client.connection_mode_atomic());
+        let connection_mode = ws_client.connection_mode_atomic();
         let reconnect_handle = ws_client.reconnect_handle();
 
         // Create message channels
@@ -652,6 +651,7 @@ impl DeribitWebSocketClient {
             }
 
             *command_sender = cmd_tx.clone();
+            self.connection_mode.store(connection_mode);
         }
 
         // Spawn handler task
@@ -945,9 +945,9 @@ impl DeribitWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - No credentials are configured
-    /// - The authentication request fails
-    /// - The authentication times out
+    /// - No credentials are configured.
+    /// - The authentication request fails.
+    /// - The authentication times out.
     pub async fn authenticate(&self, session_name: Option<&str>) -> DeribitWsResult<()> {
         let credential = self.credential.as_ref().ok_or_else(|| {
             DeribitWsError::Authentication("API credentials not configured".to_string())
@@ -1583,8 +1583,8 @@ impl DeribitWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The client is not authenticated
-    /// - The command fails to send
+    /// - The client is not authenticated.
+    /// - The command fails to send.
     pub async fn submit_order(
         &self,
         order_side: OrderSide,
@@ -1642,8 +1642,8 @@ impl DeribitWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The client is not authenticated
-    /// - The command fails to send
+    /// - The client is not authenticated.
+    /// - The command fails to send.
     pub async fn modify_order(
         &self,
         params: DeribitEditParams,
@@ -1687,8 +1687,8 @@ impl DeribitWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The client is not authenticated
-    /// - The command fails to send
+    /// - The client is not authenticated.
+    /// - The command fails to send.
     pub async fn cancel_order(
         &self,
         order_id: &str,
@@ -1731,8 +1731,8 @@ impl DeribitWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The client is not authenticated
-    /// - The command fails to send
+    /// - The client is not authenticated.
+    /// - The command fails to send.
     pub async fn cancel_all_orders(
         &self,
         instrument_id: InstrumentId,
@@ -1771,8 +1771,8 @@ impl DeribitWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The client is not authenticated
-    /// - The command fails to send
+    /// - The client is not authenticated.
+    /// - The command fails to send.
     pub async fn query_order(
         &self,
         order_id: &str,
@@ -1810,9 +1810,60 @@ impl DeribitWebSocketClient {
 
 #[cfg(test)]
 mod tests {
+    use futures_util::StreamExt;
     use rstest::rstest;
 
     use super::*;
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn active_state_waits_for_sender_publication() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let mut socket = tokio_tungstenite::accept_async(socket).await.unwrap();
+
+            while matches!(socket.next().await, Some(Ok(_))) {}
+        });
+
+        let mut ws_client = DeribitWebSocketClient::new_unauthenticated(
+            Some(format!("ws://{addr}")),
+            30,
+            DeribitEnvironment::Testnet,
+        )
+        .unwrap();
+        let observer = ws_client.clone();
+        let sender = Arc::clone(&ws_client.cmd_tx);
+        let (held_tx, held_rx) = tokio::sync::oneshot::channel();
+
+        let publication = tokio::task::spawn_blocking(move || {
+            let guard = sender.read();
+            held_tx.send(()).unwrap();
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+
+            while sender.try_read().is_some() {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "connect must queue its writer"
+                );
+                std::thread::yield_now();
+            }
+
+            let active = observer.is_active();
+            drop(guard);
+            active
+        });
+
+        held_rx.await.unwrap();
+        ws_client.connect().await.unwrap();
+        let active_before_publication = publication.await.unwrap();
+        let active_after_publication = ws_client.is_active();
+        ws_client.close().await.unwrap();
+        server.abort();
+
+        assert!(!active_before_publication);
+        assert!(active_after_publication);
+    }
 
     struct DropSignal(Arc<AtomicBool>);
 

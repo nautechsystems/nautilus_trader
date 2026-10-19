@@ -117,7 +117,8 @@ fn initialize_runtime() -> NautilusRuntime {
 ///
 /// # Errors
 ///
-/// Returns `Err(runtime)` if the runtime is not multi-threaded or a runtime was already initialized.
+/// Returns an error if the runtime is not multi-threaded or a runtime was already initialized. The
+/// error contains `runtime`.
 pub fn set_runtime(runtime: tokio::runtime::Runtime) -> Result<(), tokio::runtime::Runtime> {
     if RUNTIME.get().is_some()
         || !matches!(
@@ -149,9 +150,9 @@ pub fn get_runtime() -> &'static tokio::runtime::Runtime {
 ///
 /// # Panics
 ///
-/// Panics from a `LocalSet` driven on a Nautilus-owned thread, including any `LocalSet` driven
-/// against an injected Nautilus runtime, because Tokio does not permit `block_in_place` while
-/// polling local tasks.
+/// Panics if called from a `LocalSet` driven on a Nautilus-owned thread, including any `LocalSet`
+/// driven against an injected Nautilus runtime, because Tokio does not permit `block_in_place`
+/// while polling local tasks.
 pub fn block_in_place_on_nautilus<F, R>(f: F) -> R
 where
     F: FnOnce() -> R,
@@ -174,9 +175,9 @@ where
 ///
 /// # Panics
 ///
-/// Panics when called from a current-thread runtime or a `LocalSet`. Moving a potentially
-/// non-`Send` future out of those contexts is not possible; use [`block_on_nautilus_with`] for
-/// operations whose future and output can cross a scoped thread boundary.
+/// Panics if called from a current-thread runtime or a `LocalSet`. Moving a potentially non-`Send`
+/// future out of those contexts is not possible; use [`block_on_nautilus_with`] for operations
+/// whose future and output can cross a scoped thread boundary.
 pub fn block_on_nautilus<F>(future: F) -> F::Output
 where
     F: Future,
@@ -208,12 +209,12 @@ where
 ///
 /// # Panics
 ///
-/// Panics from a `LocalSet` driven on a Nautilus-owned thread. Tokio does not expose whether the
-/// current multi-thread runtime context is polling local tasks, so the bridge cannot both preserve
-/// scheduler progress with `block_in_place` and support that context. A `LocalSet` hosted by a
-/// foreign runtime, or driven from an external thread against the default Nautilus runtime, is
-/// supported. Same-runtime `LocalSet` calls are not supported with an injected runtime because its
-/// already-built runtime has no thread-ownership callbacks.
+/// Panics if called from a `LocalSet` driven on a Nautilus-owned thread. Tokio does not expose
+/// whether the current multi-thread runtime context is polling local tasks, so the bridge cannot
+/// both preserve scheduler progress with `block_in_place` and support that context. A `LocalSet`
+/// hosted by a foreign runtime, or driven from an external thread against the default Nautilus
+/// runtime, is supported. Same-runtime `LocalSet` calls are not supported with an injected runtime
+/// because its already-built runtime has no thread-ownership callbacks.
 pub fn block_on_nautilus_with<C, F>(create_future: C) -> F::Output
 where
     C: FnOnce() -> F + Send,

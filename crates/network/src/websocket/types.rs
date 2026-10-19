@@ -30,7 +30,7 @@ use futures_util::stream::{SplitSink, SplitStream};
 
 use crate::{
     error::SendError,
-    transport::{BoxedWsTransport, Message},
+    transport::{BoxedWsTransport, CloseFrame, Message},
 };
 
 /// Sink half of the active WebSocket transport.
@@ -65,6 +65,13 @@ pub type PingHandler = Arc<dyn Fn(Vec<u8>) + Send + Sync>;
 /// Function type for handling WebSocket ping messages with connection ownership.
 pub type EpochPingHandler = Arc<dyn Fn(u64, Vec<u8>) + Send + Sync>;
 
+/// Handles a peer close frame and decides whether automatic reconnection continues.
+///
+/// Returns `true` to use the client's reconnect policy, or `false` to disconnect without retrying.
+/// The callback runs synchronously on the reader task before it ends. Close frames are delivered
+/// only to this callback, not to the message handler.
+pub type CloseHandler = Arc<dyn Fn(Option<CloseFrame>) -> bool + Send + Sync>;
+
 /// Creates a channel-based message handler.
 ///
 /// The handler accepts neutral [`Message`] values. The receiver yields
@@ -75,6 +82,7 @@ pub fn channel_message_handler() -> (
     tokio::sync::mpsc::UnboundedReceiver<tokio_tungstenite::tungstenite::Message>,
 ) {
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+
     let handler: MessageHandler = Arc::new(move |msg: Message| {
         match tokio_tungstenite::tungstenite::Message::try_from(msg) {
             Ok(legacy) => {
@@ -85,6 +93,7 @@ pub fn channel_message_handler() -> (
             Err(e) => log::debug!("Dropping message that failed legacy conversion: {e}"),
         }
     });
+
     (handler, rx)
 }
 
@@ -97,6 +106,7 @@ pub fn channel_epoch_message_handler() -> (
     tokio::sync::mpsc::UnboundedReceiver<(u64, tokio_tungstenite::tungstenite::Message)>,
 ) {
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+
     let handler: EpochMessageHandler =
         Arc::new(
             move |epoch, msg: Message| match tokio_tungstenite::tungstenite::Message::try_from(msg)
@@ -109,6 +119,7 @@ pub fn channel_epoch_message_handler() -> (
                 Err(e) => log::debug!("Dropping message that failed legacy conversion: {e}"),
             },
         );
+
     (handler, rx)
 }
 
@@ -191,6 +202,7 @@ mod tests {
 
         let (connection_epoch, received) = rx.try_recv().expect("text should arrive");
         assert_eq!(connection_epoch, 7);
+
         match received {
             TgMessage::Text(text) => assert_eq!(text.as_str(), "hello"),
             other => panic!("expected text, was {other:?}"),

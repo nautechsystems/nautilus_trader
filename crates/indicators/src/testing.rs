@@ -78,7 +78,7 @@ pub fn approx_equal_with(a: f64, b: f64, relative: f64, absolute: f64) -> bool {
 ///
 /// # Panics
 ///
-/// If the values differ by more than the default tolerances.
+/// Panics if the values differ by more than the default tolerances.
 #[track_caller]
 pub fn assert_approx_equal(actual: f64, expected: f64) {
     assert!(

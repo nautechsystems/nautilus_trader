@@ -22,8 +22,10 @@ use nautilus_core::{
     string::{parsing::precision_from_str, secret::REDACTED, urlencoding},
 };
 use nautilus_model::instruments::InstrumentAny;
-use nautilus_network::http::{
-    HttpClient, HttpRedirectPolicy, HttpResponse, create_standard_nautilus_headers,
+use nautilus_network::{
+    ConnectionUrl,
+    http::{HttpClient, HttpRedirectPolicy, HttpResponse, create_standard_nautilus_headers},
+    url_origin,
 };
 
 use super::{
@@ -64,7 +66,7 @@ const MAX_DECOMPRESSED_BYTES: u64 = 1024 * 1024 * 1024;
 )]
 #[derive(Clone)]
 pub struct TardisHttpClient {
-    base_url: String,
+    base_url: ConnectionUrl,
     credential: Option<Credential>,
     client: HttpClient,
     normalize_symbols: bool,
@@ -130,7 +132,7 @@ impl TardisHttpClient {
             .build()?;
 
         Ok(Self {
-            base_url,
+            base_url: base_url.into(),
             credential,
             client,
             normalize_symbols,
@@ -156,8 +158,7 @@ impl TardisHttpClient {
         symbol: Option<&str>,
         filter: Option<&InstrumentFilter>,
     ) -> Result<Vec<TardisInstrumentInfo>> {
-        let mut url = format!("{}/instruments/{exchange}", self.base_url);
-
+        let mut url = format!("{}/instruments/{exchange}", self.base_url.expose());
         if let Some(symbol) = symbol {
             url.push_str(&format!("/{symbol}"));
         }
@@ -167,14 +168,18 @@ impl TardisHttpClient {
         {
             url.push_str(&format!("?filter={}", urlencoding::encode(&filter_json)));
         }
-        log::debug!("Requesting: {url}");
+
+        log::debug!("Requesting: {}", url_origin(&url));
 
         let rate_keys = Some(vec![TARDIS_REST_RATE_KEY.to_string()]);
+
         let response = self
             .client
             .get(url, None, None, None, rate_keys)
             .await
-            .map_err(|e| Error::Request(e.to_string()))?;
+            .map_err(|e| {
+                Error::Request(format!("Request to {} failed: {e}", self.base_url.origin()))
+            })?;
 
         let status = response.status.as_u16();
         log::debug!("Response status: {status}");
@@ -372,6 +377,21 @@ mod tests {
                 .collect(),
             body: body.into(),
         }
+    }
+
+    #[rstest]
+    #[case("https://api.example.com/v1", "https://api.example.com")]
+    #[case(
+        "https://SYN-user:SYN-password@api.example.com:8443/SYN-path?token=SYN-query#SYN-fragment",
+        "https://api.example.com:8443"
+    )]
+    fn test_debug_preserves_url_origin(#[case] url: &str, #[case] origin: &str) {
+        let client =
+            TardisHttpClient::new(Some("SYN-api-key"), Some(url), Some(1), true, None).unwrap();
+        let debug = format!("{client:?}");
+        assert!(debug.contains(&format!("base_url: {origin:?}")));
+        assert!(!debug.contains("SYN-"));
+        assert_eq!(client.base_url.expose(), url);
     }
 
     #[tokio::test]

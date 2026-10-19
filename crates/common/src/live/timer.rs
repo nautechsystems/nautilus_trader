@@ -17,10 +17,12 @@
 //!
 //! # Scheduling
 //!
-//! Runtime deadlines use the remaining duration to the nominal schedule and are computed before
-//! the timer task is spawned. A deadline already in the past starts immediately. Event timestamps
-//! retain the nominal schedule, and stop times are inclusive. An event whose following schedule is
-//! not representable in [`UnixNanos`] is the timer's final event.
+//! Runtime waits use the time remaining until the selected UTC deadline. Fixed timers normalize
+//! an overdue initial deadline to the current time, except at an inclusive stop boundary, and use
+//! a runtime interval to deliver overdue ticks. Deadline schedules deliver a selected overdue
+//! deadline immediately with its original timestamp, then skip to the first deadline after now.
+//! They calculate each wait inside the task. Stop times are inclusive. An event whose following
+//! deadline is not representable in [`UnixNanos`] is the timer's final event.
 //!
 //! # Task lifecycle
 //!
@@ -38,12 +40,9 @@
 //! leases. Senderless Python callbacks run inline and publish their following schedule, when one
 //! exists, after the callback returns.
 
-use std::{
-    num::NonZeroU64,
-    sync::{
-        Arc,
-        atomic::{self, AtomicU8, AtomicU64},
-    },
+use std::sync::{
+    Arc,
+    atomic::{self, AtomicU8, AtomicU64},
 };
 
 use nautilus_core::{
@@ -66,7 +65,7 @@ use crate::{
         TimeEventCallbackLease, TimeEventCallbackToken, TimeEventMessage, TimeEventMessageFactory,
         TimeEventSender, register_time_event_callback,
     },
-    timer::{TimeEvent, TimeEventCallback, Timer},
+    timer::{TimeEvent, TimeEventCallback, Timer, TimerInterval},
 };
 
 const TASK_ACTIVE: u8 = 0;
@@ -86,8 +85,8 @@ const TASK_EXHAUSTED: u8 = 3;
 pub struct LiveTimer {
     /// The name of the timer.
     pub name: Ustr,
-    /// The interval between timer events in nanoseconds.
-    pub interval_ns: NonZeroU64,
+    /// The fixed interval or source of UTC deadlines.
+    pub interval: TimerInterval,
     /// The start time of the timer in UNIX nanoseconds.
     pub start_time_ns: UnixNanos,
     /// The optional stop time of the timer in UNIX nanoseconds.
@@ -110,11 +109,11 @@ impl LiveTimer {
     ///
     /// Panics if:
     /// - `name` is not a valid string.
-    /// - `fire_immediately` is false and `start_time_ns + interval_ns` overflows `UnixNanos`.
+    /// - `fire_immediately` is false and there is no valid deadline after `start_time_ns`.
     #[must_use]
     pub fn new(
         name: Ustr,
-        interval_ns: NonZeroU64,
+        interval: impl Into<TimerInterval>,
         start_time_ns: UnixNanos,
         stop_time_ns: Option<UnixNanos>,
         callback: TimeEventCallback,
@@ -123,10 +122,15 @@ impl LiveTimer {
     ) -> Self {
         check_valid_string_utf8(name, stringify!(name)).expect(FAILED);
 
+        let interval = interval.into();
+
         let next_time_ns = if fire_immediately {
             start_time_ns.as_u64()
         } else {
-            (start_time_ns + DurationNanos::new(interval_ns.get())).as_u64()
+            interval
+                .next_time_after(start_time_ns, start_time_ns, &mut 0)
+                .expect("first timer event should be within the UnixNanos range")
+                .as_u64()
         };
 
         log::trace!("Creating timer '{name}'");
@@ -146,7 +150,7 @@ impl LiveTimer {
 
         Self {
             name,
-            interval_ns,
+            interval,
             start_time_ns,
             stop_time_ns,
             fire_immediately,
@@ -211,7 +215,7 @@ impl LiveTimer {
 
         let event_name = self.name;
         let stop_time_ns = self.stop_time_ns;
-        let interval_ns = DurationNanos::new(self.interval_ns.get());
+        let interval = self.interval.clone();
 
         let retired_task = self.retire_task();
 
@@ -259,8 +263,7 @@ impl LiveTimer {
 
         // Check if the timer's alert time is in the past and adjust if needed
         let now_raw = now_ns.as_u64();
-
-        if should_adjust_past_due_time(observed_next, now_ns, stop_time_ns) {
+        if should_adjust_past_due_time(observed_next, now_ns, stop_time_ns, &interval) {
             if observed_next < now_raw {
                 let original = UnixNanos::from(observed_next);
                 log::warn!(
@@ -272,8 +275,10 @@ impl LiveTimer {
             observed_next = now_raw;
         }
 
-        // Floor the next time to the nearest microsecond which is within the timers accuracy
-        let mut next_time_ns = normalize_start_time_ns(observed_next, now_ns, stop_time_ns);
+        let mut next_time_ns =
+            normalize_start_time_ns(observed_next, now_ns, stop_time_ns, &interval);
+
+        let schedule_start_ns = self.start_time_ns;
         let next_time_atomic = Arc::new(AtomicU64::new(next_time_ns.as_u64()));
         let task_state = Arc::new(TimerTaskState::new(next_time_ns.as_u64()));
         self.next_time_ns = next_time_atomic.clone();
@@ -286,7 +291,7 @@ impl LiveTimer {
         let task = async move {
             let clock = get_atomic_clock_realtime();
 
-            let mut timer = dst::time::interval_at(start, Duration::from(interval_ns));
+            let mut schedule = TimerDriver::new(interval, start, schedule_start_ns);
 
             loop {
                 // Never fire an event scheduled past the stop time. The event's
@@ -306,16 +311,16 @@ impl LiveTimer {
                     break; // Timer expired before this event
                 }
 
-                // `timer.tick` is cancellation safe, if the cancel branch completes
+                // `schedule.tick` is cancellation safe, if the cancel branch completes
                 // first then no tick has been consumed (no event was ready).
-                timer.tick().await;
+                schedule.tick(next_time_ns).await;
                 let now_ns = clock.get_time_ns();
 
                 let event = TimeEvent::new(event_name, UUID4::new(), next_time_ns, now_ns);
 
                 // An event at the inclusive stop boundary or without a representable successor
                 // is terminal.
-                let following_next_time_ns = next_time_ns.checked_add(interval_ns);
+                let following_next_time_ns = schedule.next_time_after(next_time_ns, now_ns);
                 let expires_after_fire = expires_after_scheduled_time(next_time_ns, stop_time_ns)
                     || following_next_time_ns.is_none();
 
@@ -442,6 +447,60 @@ impl Drop for LiveTimer {
     }
 }
 
+enum TimerDriver {
+    Fixed {
+        timer: dst::time::Interval,
+        interval_ns: DurationNanos,
+    },
+    Scheduled {
+        interval: TimerInterval,
+        start_time_ns: UnixNanos,
+        index: u64,
+    },
+}
+
+impl TimerDriver {
+    fn new(interval: TimerInterval, start: Instant, start_time_ns: UnixNanos) -> Self {
+        match interval {
+            TimerInterval::Fixed(interval_ns) => Self::Fixed {
+                timer: dst::time::interval_at(
+                    start,
+                    Duration::from(DurationNanos::new(interval_ns.get())),
+                ),
+                interval_ns: DurationNanos::new(interval_ns.get()),
+            },
+            TimerInterval::Schedule(_) => Self::Scheduled {
+                interval,
+                start_time_ns,
+                index: 0,
+            },
+        }
+    }
+
+    async fn tick(&mut self, next_time_ns: UnixNanos) {
+        match self {
+            Self::Fixed { timer, .. } => {
+                timer.tick().await;
+            }
+            Self::Scheduled { .. } => {
+                let now = get_atomic_clock_realtime().get_time_ns();
+                dst::time::sleep_until(Instant::now() + timer_start_delay(next_time_ns, now)).await;
+            }
+        }
+    }
+
+    fn next_time_after(&mut self, time_ns: UnixNanos, now_ns: UnixNanos) -> Option<UnixNanos> {
+        match self {
+            Self::Fixed { interval_ns, .. } => time_ns.checked_add(*interval_ns),
+            Self::Scheduled {
+                interval,
+                start_time_ns,
+                index,
+            } => interval.next_time_after(*start_time_ns, time_ns.max(now_ns), index),
+        }
+    }
+}
+
 fn should_fire_scheduled_time(next_time_ns: UnixNanos, stop_time_ns: Option<UnixNanos>) -> bool {
     stop_time_ns.is_none_or(|stop_time_ns| next_time_ns <= stop_time_ns)
 }
@@ -458,16 +517,22 @@ fn should_adjust_past_due_time(
     observed_next: u64,
     now_ns: UnixNanos,
     stop_time_ns: Option<UnixNanos>,
+    interval: &TimerInterval,
 ) -> bool {
-    observed_next <= now_ns.as_u64() && !is_stop_boundary(observed_next, stop_time_ns)
+    matches!(interval, TimerInterval::Fixed(_))
+        && observed_next <= now_ns.as_u64()
+        && !is_stop_boundary(observed_next, stop_time_ns)
 }
 
 fn normalize_start_time_ns(
     observed_next: u64,
     now_ns: UnixNanos,
     stop_time_ns: Option<UnixNanos>,
+    interval: &TimerInterval,
 ) -> UnixNanos {
-    if is_stop_boundary(observed_next, stop_time_ns) {
+    if matches!(interval, TimerInterval::Schedule(_))
+        || is_stop_boundary(observed_next, stop_time_ns)
+    {
         return UnixNanos::from(observed_next);
     }
 
@@ -597,6 +662,13 @@ mod tests {
     #[cfg(any(feature = "python", not(all(feature = "simulation", madsim))))]
     use std::{sync::mpsc, time::Duration as StdDuration};
 
+    #[cfg(not(all(feature = "simulation", madsim)))]
+    use jiff::{Span, tz::TimeZone};
+    #[cfg(not(all(feature = "simulation", madsim)))]
+    use nautilus_core::{
+        DurationNanos,
+        datetime::{NANOSECONDS_IN_MILLISECOND, floor_to_nearest_microsecond},
+    };
     use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime};
     #[cfg(not(all(feature = "simulation", madsim)))]
     use parking_lot::Mutex;
@@ -608,15 +680,49 @@ mod tests {
     use rstest::*;
     use ustr::Ustr;
 
-    use super::LiveTimer;
+    use super::{LiveTimer, TimerDriver};
+    #[cfg(not(all(feature = "simulation", madsim)))]
+    use crate::calendar::CalendarSchedule;
     #[cfg(not(all(feature = "simulation", madsim)))]
     use crate::runner::register_time_event_callback;
     #[cfg(not(all(feature = "simulation", madsim)))]
     use crate::testing::wait_until;
     use crate::{
         runner::{TimeEventMessage, TimeEventSender},
-        timer::TimeEventCallback,
+        timer::{TimeEventCallback, TimerInterval, TimerSchedule},
     };
+
+    #[derive(Debug)]
+    struct DeadlineSchedule;
+
+    impl TimerSchedule for DeadlineSchedule {
+        fn start_time_ns(&self) -> UnixNanos {
+            UnixNanos::from(100)
+        }
+
+        fn next_after(&self, time_ns: UnixNanos, index: &mut u64) -> Option<UnixNanos> {
+            *index = (time_ns.as_u64() - 100) / 10 + 1;
+            Some(UnixNanos::from(100 + *index * 10))
+        }
+    }
+
+    #[rstest]
+    fn test_live_timer_schedule_skips_deadlines_missed_since_event() {
+        let mut driver = TimerDriver::Scheduled {
+            interval: TimerInterval::Schedule(Arc::new(DeadlineSchedule)),
+            start_time_ns: UnixNanos::from(100),
+            index: 1,
+        };
+
+        assert_eq!(
+            driver.next_time_after(UnixNanos::from(110), UnixNanos::from(137)),
+            Some(UnixNanos::from(140))
+        );
+        assert_eq!(
+            driver.next_time_after(UnixNanos::from(140), UnixNanos::from(145)),
+            Some(UnixNanos::from(150))
+        );
+    }
 
     #[cfg(any(feature = "python", not(all(feature = "simulation", madsim))))]
     #[derive(Debug)]
@@ -687,19 +793,29 @@ mod tests {
     }
 
     #[rstest]
-    #[case::stop_boundary(100, 110, 100, false)]
-    #[case::before_stop(90, 110, 120, true)]
+    #[case::fixed_stop_boundary(100, 110, 100, false, false)]
+    #[case::fixed_before_stop(90, 110, 120, false, true)]
+    #[case::scheduled_stop_boundary(100, 110, 100, true, false)]
+    #[case::scheduled_before_stop(90, 110, 120, true, false)]
     fn test_live_timer_past_due_adjustment(
         #[case] observed_next: u64,
         #[case] now: u64,
         #[case] stop_time_ns: u64,
+        #[case] scheduled: bool,
         #[case] expected: bool,
     ) {
+        let interval = if scheduled {
+            TimerInterval::Schedule(Arc::new(DeadlineSchedule))
+        } else {
+            TimerInterval::Fixed(NonZeroU64::MIN)
+        };
+
         assert_eq!(
             super::should_adjust_past_due_time(
                 observed_next,
                 UnixNanos::from(now),
                 Some(UnixNanos::from(stop_time_ns)),
+                &interval,
             ),
             expected
         );
@@ -720,6 +836,7 @@ mod tests {
                 observed_next,
                 UnixNanos::from(now),
                 stop_time_ns.map(UnixNanos::from),
+                &TimerInterval::Fixed(NonZeroU64::MIN),
             ),
             UnixNanos::from(expected)
         );
@@ -976,7 +1093,9 @@ mod tests {
 
     #[cfg(not(all(feature = "simulation", madsim)))]
     #[rstest]
-    fn test_live_timer_cancel_preserves_queued_rust_local_callback_lease() {
+    #[case::fixed(false)]
+    #[case::schedule(true)]
+    fn test_live_timer_cancel_preserves_queued_rust_local_callback_lease(#[case] scheduled: bool) {
         let (tx, rx) = mpsc::channel();
         let (release_tx, release_rx) = mpsc::channel();
         let sender = Arc::new(PausingChannelSender {
@@ -989,9 +1108,22 @@ mod tests {
             Rc::new(move |_| callback_count.set(callback_count.get() + 1));
         let callback_weak = Rc::downgrade(&callback);
         let now = get_atomic_clock_realtime().get_time_ns();
+
+        let interval = if scheduled {
+            TimerInterval::Schedule(Arc::new(
+                CalendarSchedule::new(
+                    &now.to_datetime_utc().to_zoned(TimeZone::UTC),
+                    Span::new().milliseconds(1),
+                )
+                .unwrap(),
+            ))
+        } else {
+            TimerInterval::Fixed(NonZeroU64::new(1_000_000).unwrap())
+        };
+
         let mut timer = LiveTimer::new(
             Ustr::from("CANCEL_QUEUED"),
-            NonZeroU64::new(1_000_000).unwrap(),
+            interval,
             now,
             None,
             TimeEventCallback::RustLocal(callback),
@@ -1048,7 +1180,11 @@ mod tests {
 
     #[cfg(not(all(feature = "simulation", madsim)))]
     #[rstest]
-    fn test_live_timer_restart_after_cancel_re_registers_rust_local_callback() {
+    #[case::fixed(false)]
+    #[case::schedule(true)]
+    fn test_live_timer_restart_after_cancel_re_registers_rust_local_callback(
+        #[case] scheduled: bool,
+    ) {
         let (tx, rx) = mpsc::channel();
         let sender = Arc::new(ChannelSender { tx });
         let count = Rc::new(std::cell::Cell::new(0));
@@ -1056,9 +1192,22 @@ mod tests {
         let callback: Rc<dyn Fn(crate::timer::TimeEvent)> =
             Rc::new(move |_| callback_count.set(callback_count.get() + 1));
         let now = get_atomic_clock_realtime().get_time_ns();
+
+        let interval = if scheduled {
+            TimerInterval::Schedule(Arc::new(
+                CalendarSchedule::new(
+                    &now.to_datetime_utc().to_zoned(TimeZone::UTC),
+                    Span::new().milliseconds(1),
+                )
+                .unwrap(),
+            ))
+        } else {
+            TimerInterval::Fixed(NonZeroU64::new(1_000_000).unwrap())
+        };
+
         let mut timer = LiveTimer::new(
             Ustr::from("RESTART_TIMER"),
-            NonZeroU64::new(1_000_000).unwrap(),
+            interval,
             now,
             None,
             TimeEventCallback::RustLocal(callback),
@@ -1155,6 +1304,105 @@ mod tests {
         // drops must no registry copy remain.
         drop(timer);
         assert!(callback_weak.upgrade().is_none());
+    }
+
+    #[cfg(not(all(feature = "simulation", madsim)))]
+    #[rstest]
+    #[case::time_only(Span::new().milliseconds(100), 100_000_000)]
+    #[case::day(Span::new().days(1), 86_400_000_000_000)]
+    fn test_live_timer_calendar_first_event_keeps_nanosecond_grid(
+        #[case] span: Span,
+        #[case] interval_ns: u64,
+    ) {
+        let (tx, rx) = mpsc::channel();
+        let sender = Arc::new(ChannelSender { tx });
+        let now = get_atomic_clock_realtime().get_time_ns();
+        let first_time_ns = UnixNanos::from(floor_to_nearest_microsecond(now.as_u64()))
+            + DurationNanos::new(200_000_321);
+        let start_time_ns = first_time_ns - DurationNanos::new(interval_ns);
+
+        let mut timer = LiveTimer::new(
+            Ustr::from("CALENDAR_NANOSECOND_TIMER"),
+            TimerInterval::Schedule(Arc::new(
+                CalendarSchedule::new(
+                    &start_time_ns.to_datetime_utc().to_zoned(TimeZone::UTC),
+                    span,
+                )
+                .unwrap(),
+            )),
+            start_time_ns,
+            None,
+            TimeEventCallback::from(|_| {}),
+            false,
+            Some(sender),
+        );
+
+        timer.start();
+        let event = rx
+            .recv_timeout(StdDuration::from_secs(2))
+            .expect("timer event should arrive");
+        let next_time_ns = timer.next_time_ns();
+        timer.cancel();
+
+        assert_eq!(event.event().ts_event, first_time_ns);
+        assert_eq!(
+            next_time_ns,
+            first_time_ns + DurationNanos::new(interval_ns)
+        );
+    }
+
+    #[cfg(not(all(feature = "simulation", madsim)))]
+    #[rstest]
+    #[case::one_missed(250, false, 3, vec![1, 2, 3])]
+    #[case::several_missed(650, false, 5, vec![1, 4, 5])]
+    #[case::past_stop_window(650, false, 3, vec![1])]
+    #[case::immediate_now(0, true, 1, vec![0, 1])]
+    fn test_live_timer_calendar_interval_preserves_overdue_deadline(
+        #[case] lateness_ms: u64,
+        #[case] fire_immediately: bool,
+        #[case] stop_index: u64,
+        #[case] expected_indices: Vec<u64>,
+    ) {
+        let (tx, rx) = mpsc::channel();
+        let sender = Arc::new(ChannelSender { tx });
+        let interval_ns = DurationNanos::new(200 * NANOSECONDS_IN_MILLISECOND);
+        let now = get_atomic_clock_realtime().get_time_ns();
+        let start_time_ns = UnixNanos::from(floor_to_nearest_microsecond(now.as_u64()))
+            - DurationNanos::new(lateness_ms * NANOSECONDS_IN_MILLISECOND);
+
+        let mut timer = LiveTimer::new(
+            Ustr::from("CALENDAR_TIMER"),
+            TimerInterval::Schedule(Arc::new(
+                CalendarSchedule::new(
+                    &start_time_ns.to_datetime_utc().to_zoned(TimeZone::UTC),
+                    Span::new().milliseconds(200),
+                )
+                .unwrap(),
+            )),
+            start_time_ns,
+            Some(start_time_ns + interval_ns * stop_index),
+            TimeEventCallback::from(|_| {}),
+            fire_immediately,
+            Some(sender),
+        );
+
+        timer.start();
+
+        let events: Vec<UnixNanos> = (0..expected_indices.len())
+            .map(|_| {
+                rx.recv_timeout(StdDuration::from_secs(2))
+                    .expect("timer event should arrive")
+                    .event()
+                    .ts_event
+            })
+            .collect();
+
+        let expected: Vec<UnixNanos> = expected_indices
+            .into_iter()
+            .map(|index| start_time_ns + interval_ns * index)
+            .collect();
+        assert_eq!(events, expected);
+        assert!(rx.recv_timeout(StdDuration::from_millis(300)).is_err());
     }
 
     #[cfg(all(feature = "simulation", madsim))]

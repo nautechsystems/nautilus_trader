@@ -73,14 +73,14 @@ The adapter communicates through three independent transport layers:
 
 ### Block-based settlement
 
-Trades settle on block commit, and short-term orders expire by block height rather than wall-clock
-time. The adapter tracks block heights and timestamps from the WebSocket feed over a rolling
-100-block window and estimates `seconds_per_block` from it, then uses that estimate to convert
-time-based order expiry into block-height offsets.
+Trades settle on block commit, and short-term orders expire by block height rather than wall-clock time. The
+adapter tracks WebSocket block heights and timestamps over a rolling 100-block window. It estimates
+`seconds_per_block` from this window. Then it uses the estimate to convert time-based order expiry into
+block-height offsets.
 
-Until five block samples have been collected, the estimate falls back to **500 ms** per block.
-Observed mainnet block times run closer to one second, so the fallback understates the short-term
-window and routes borderline orders to the long-term path rather than the reverse.
+Until five block samples have been collected, the estimate falls back to **500 ms** per block. Observed
+mainnet block times are closer to one second. Thus, the fallback understates the short-term window. It routes
+borderline orders to the long-term path rather than the reverse.
 
 ## Architecture
 
@@ -96,8 +96,8 @@ The dYdX v4 adapter includes multiple components which can be used together or s
 - `DydxExecutionClientFactory`: Factory for dYdX v4 execution clients (used by the trading node builder).
 
 :::note
-Most users will define a configuration for a live trading node (as below),
-and won't need to work with these lower level components directly.
+Most users configure a live trading node as shown below. They do not need to use these lower-level components
+directly.
 :::
 
 :::warning[First-time account activation]
@@ -114,13 +114,13 @@ from the same wallet on the same network (mainnet/testnet). Once the transaction
 
 ### gRPC `NotFound` on connect
 
-**Cause:** The wallet/sub-account has never been funded and therefore does not yet exist on-chain.
+**Cause**: The wallet/sub-account has never been funded and therefore does not yet exist on-chain.
 
-**Fix:**
+**Fix**:
 
 1. Deposit any positive amount of USDC to sub-account 0 on the correct network.
 2. Wait for finality (roughly 30 seconds on mainnet, longer on testnet).
-3. Restart the `LiveNode`; the connection should now succeed.
+3. Restart the `LiveNode`. The connection should now succeed.
 
 :::tip
 In unattended deployments, wrap the `connect()` call in an exponential-backoff loop so the
@@ -276,17 +276,17 @@ The tiers are governance-adjustable. Query the live values from a node's
 
 ### MIT and LIT round-tripping
 
-dYdX's protocol uses a single `TAKE_PROFIT` order type with a price (`subticks`) and trigger
-price; whether it behaves as market-on-trigger or limit-on-trigger is implicit in the price. The
-adapter submits Nautilus `MARKET_IF_TOUCHED` as a take-profit with the price set to the 5%
-pay-through worst-case, and `LIMIT_IF_TOUCHED` as a take-profit at the user's limit price. Both
-forms are returned by the Indexer as `"type":"TAKE_PROFIT"`.
+dYdX's protocol uses a single `TAKE_PROFIT` order type with a price (`subticks`) and trigger price. Whether it
+behaves as market-on-trigger or limit-on-trigger is implicit in the price. The adapter submits Nautilus
+`MARKET_IF_TOUCHED` as a take-profit with the price set to the 5% pay-through worst-case, and
+`LIMIT_IF_TOUCHED` as a take-profit at the user's limit price. Both forms are returned by the Indexer as
+`"type":"TAKE_PROFIT"`.
 
-On reconciliation, the adapter recovers the original Nautilus order type from how far the reported
-price sits from the trigger price. A drift of **2% or more** means the price came from the 5%
-pay-through buffer, so the order is reconciled as `MARKET_IF_TOUCHED`; anything closer is treated as
-a user-chosen limit and reconciled as `LIMIT_IF_TOUCHED`. The 2% threshold separates the pay-through
-band from typical take-profit limit offsets, which sit well under 1%.
+On reconciliation, the adapter recovers the original Nautilus order type from how far the reported price sits
+from the trigger price. A drift of **2% or more** means the price came from the 5% pay-through buffer. Thus,
+the order is reconciled as `MARKET_IF_TOUCHED`. Anything closer is treated as a user-chosen limit and
+reconciled as `LIMIT_IF_TOUCHED`. The 2% threshold separates the pay-through band from typical take-profit
+limit offsets, which sit well under 1%.
 
 ### Liquidation and ADL (deleveraging) handling
 
@@ -357,8 +357,8 @@ fastest order type on dYdX because they skip on-chain storage.
   dynamic short-term window (`40 blocks × seconds_per_block`)
 - Use Good-Til-Block (GTB) for replay protection instead of Cosmos SDK sequences
 - Can be broadcast **concurrently** (no semaphore, cached sequence)
-- Expire without a cancel transaction; the indexer reports each expiry as a cancel, which the
-  adapter emits as `OrderCanceled`
+- Expire without a cancel transaction. The indexer reports each expiry as a cancel, which the adapter emits as
+  `OrderCanceled`
 - Cannot be batched in a single transaction (one `MsgPlaceOrder` per tx)
 
 #### Long-term orders
@@ -424,10 +424,10 @@ For the standard O-format (`O-YYYYMMDD-HHMMSS-TTT-SSS-CCC`), the encoding is det
 Because the encoding is deterministic, the adapter can decode any reconciled order back to its
 original `ClientOrderId` string without needing a database or mapping file.
 
-A `ClientOrderId` that is a plain number is also deterministic: the number becomes `client_id` and
-`client_metadata` is set to a fixed marker, so it decodes across restarts as well. Any other format
-falls back to sequential allocation with an in-memory reverse map, and those IDs can only be decoded
-within the same session.
+A `ClientOrderId` that is a plain number is also deterministic. The number becomes `client_id`, and
+`client_metadata` is set to a fixed marker. Thus, it also decodes across restarts. Any other format falls back
+to sequential allocation with an in-memory reverse map, and those IDs can only be decoded within the same
+session.
 
 #### Restart collision prevention
 
@@ -538,8 +538,8 @@ notice. The execution config resolves that list in order:
 2. `grpc_endpoint`, as a single-URL list. Setting only this field gives up the fallback.
 3. The default public validator nodes for the selected network.
 
-Both fields are config-struct fields and are not parameters of the Python `DydxExecutionClientConfig`
-constructor, so Python configs always get the network defaults with their built-in fallback.
+Both fields belong to the config struct, but the Python `DydxExecutionClientConfig` constructor does not
+expose them. Thus, Python configs always use the network defaults with their built-in fallback.
 
 ## Price and size quantization
 
@@ -563,11 +563,10 @@ Orders submitted without an explicit price use the oracle price with a 5% slippa
 - **Buy**: `oracle_price × 1.05`
 - **Sell**: `oracle_price × 0.95`
 
-Order pricing reads the oracle price from the instrument cache, which the Indexer populates when the
-client connects and does not refresh afterwards, so the pay-through band stays anchored to the
-oracle price observed at connect time. This is a separate path from the live oracle prices the
-execution client tracks off the markets channel, which it uses to value account state and positions
-rather than to price orders.
+Order pricing reads the oracle price from the instrument cache. The Indexer populates this cache when the
+client connects and does not refresh it afterwards. Thus, the pay-through band stays anchored to the oracle
+price observed at connect time. The execution client separately tracks live oracle prices from the markets
+channel. It uses those prices to value account state and positions, not to price orders.
 
 ### Automatic handling
 
@@ -662,12 +661,12 @@ address from the key automatically using Cosmos bech32 encoding.
 
 A subaccount must be funded before the adapter can connect (see [First-time account activation](#architecture)).
 
-**Via the testnet web app:**
+**Via the testnet web app**:
 
 Click the deposit/recharge button on [v4.testnet.dydx.exchange](https://v4.testnet.dydx.exchange)
 to receive testnet USDC automatically.
 
-**Via the faucet API directly:**
+**Via the faucet API directly**:
 
 ```bash
 # Fund subaccount 0 with 2000 USDC

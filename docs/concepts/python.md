@@ -1,8 +1,8 @@
 # Python
 
-NautilusTrader provides a Python control surface over the Rust core through PyO3. Use this guide to
-understand which runtime owns each part of the system, where Python code executes, and which Python
-interfaces form the supported public contract.
+NautilusTrader provides a Python control surface over the Rust core through PyO3. This guide explains which
+runtime owns each part of the system and where Python code executes. It also identifies the Python interfaces
+that form the supported public contract.
 
 For native Rust applications, see [Rust](rust.md). For installation and supported Python versions,
 see [Installation](../getting_started/installation.md).
@@ -37,8 +37,8 @@ callbacks:
 | `Controller`         | Create and manage actors and strategies through `ImportableControllerConfig`. |
 
 Application code constructs configs, registers official adapter factories, and adds components to
-`BacktestNode`, `BacktestEngine`, or `LiveNode`. Rust remains responsible for routing, engine state,
-order management, accounting, and venue clients.
+`BacktestNode`, `BacktestEngine`, or `LiveNode`. Rust stays responsible for routing, engine state, order
+management, accounting, and venue clients.
 
 Callbacks execute **synchronously** on the event-processing thread and must return promptly.
 Blocking I/O, model inference, or long calculations delay market-data handling and order execution.
@@ -47,29 +47,32 @@ Offload that work to an executor or another process. See
 
 ## Async execution
 
-Rust adapter networking runs on Tokio. Python async libraries run on an asyncio event loop; PyO3
-does not turn Python coroutines into Tokio tasks.
+Rust adapter networking runs on Tokio. Python async libraries run on an asyncio event loop. PyO3 does not turn
+Python coroutines into Tokio tasks.
 
 `LiveNode` supports two execution modes:
 
-| Method        | Execution context      | Signal owner     | Completion                                                  |
-| ------------- | ---------------------- | ---------------- | ----------------------------------------------------------- |
-| `run()`       | Calling thread; blocks | `LiveNode`       | Returns after coordinated shutdown finishes.                |
-| `run_async()` | Python host loop       | Host application | Resolves after the same coordinated shutdown path finishes. |
+| Method        | Execution context        | Signal owner     | Completion                                                  |
+| ------------- | ------------------------ | ---------------- | ----------------------------------------------------------- |
+| `run()`       | Calling thread, blocking | `LiveNode`       | Returns after coordinated shutdown finishes.                |
+| `run_async()` | Python host loop         | Host application | Resolves after the same coordinated shutdown path finishes. |
 
-`run_async()` lets an asyncio or ASGI application host the node on its existing loop. It drives the
-same Rust lifecycle as `run()` and leaves `SIGINT` and `SIGTERM` handling to the host. Compatibility
-is tested with the default asyncio loop, uvloop, and an ASGI lifespan managed by Uvicorn. The Python
-wheel does not install uvloop or Uvicorn; applications supply their chosen loop and server. An ASGI
+`run_async()` lets an asyncio or ASGI application host the node on its existing loop. It drives the same Rust
+lifecycle as `run()` and leaves `SIGINT` and `SIGTERM` handling to the host.
+
+Compatibility is tested with the default asyncio loop, uvloop, and an ASGI lifespan managed by Uvicorn. The
+Python wheel does not install uvloop or Uvicorn. Applications supply their chosen loop and server. An ASGI
 application whose lifespan constructs a node must run with one worker and without hot reload.
 
-Capture `node.cache`, `node.portfolio`, and `node.handle()` before starting `run_async()`. The
-coroutine owns the node until it finishes, while the captured objects remain usable. Stop a hosted
-run through `LiveNodeHandle.stop()`, then await the run task for complete shutdown. Cancellation
-requests the same graceful shutdown before it propagates. Call `node.dispose()` after the task
-finishes to release the node's resources. A host must wait for the handle to report `Running` before
-reporting startup complete, supervise the run task for its lifetime, and fail the service if the
-task completes unexpectedly.
+For a hosted run:
+
+1. Capture `node.cache`, `node.portfolio`, and `node.handle()` before starting `run_async()`. The coroutine
+   owns the node until it finishes, while the captured objects stay usable.
+1. Wait for the handle to report `Running` before reporting startup complete. Supervise the run task for its
+   lifetime, and fail the service if the task completes unexpectedly.
+1. Stop through `LiveNodeHandle.stop()`, then await the run task for complete shutdown. Cancellation requests
+   the same graceful shutdown before it propagates.
+1. Call `node.dispose()` after the task finishes to release the node's resources.
 
 See [Hosted event loops](live.md#hosted-event-loops) for the lifecycle, cancellation, fairness, and
 cache-backing contract.
@@ -87,31 +90,30 @@ validates bound arguments before Rust code runs and maps fallible operations to 
 Code should handle the documented exception type instead of depending on an internal Rust error
 representation.
 
-Generated stubs are source-derived artifacts. Binding changes update the Rust source and regenerate
-the stubs; the checked-in `.pyi` files are not independent API definitions.
+Generated stubs are source-derived artifacts. Binding changes update the Rust source and regenerate the stubs.
+The checked-in `.pyi` files are not independent API definitions.
 
 :::warning[Side enum compatibility aliases]
-`OrderSide.NO_ORDER_SIDE` and `PositionSide.NO_POSITION_SIDE` remain available as compatibility
-aliases for `None`. They are not enum members and may be removed in a future version. Use `None`
-for optional side values.
+`OrderSide.NO_ORDER_SIDE` and `PositionSide.NO_POSITION_SIDE` stay available as compatibility aliases for
+`None`. They are not enum members and may be removed in a future version. Use `None` for optional side values.
 :::
 
 ## Ownership and lifecycle
 
-Rust ownership remains visible at node boundaries:
+Rust ownership stays visible at node boundaries:
 
 - `BacktestNode` keeps its engines internal. Preserve an engine after a run with
   `dispose_on_completion=False`, then inspect it through the node's cache, portfolio, statistics,
   and report methods.
-- `LiveNode.run_async()` lends the node to its coroutine. State access through the node raises during
-  the run, while `is_running` and `handle()` remain available. A `dispose()` call during the run is a
-  no-op, not a deferred request. Call it again after the run finishes; objects captured before the
-  run remain available until then.
-- Concurrent `LiveNode` or `BacktestNode` instances in one process are not supported because their
-  runtime state is not isolated. Dispose one node before starting the next, or use separate processes
-  for parallel execution. Before constructing a replacement `LiveNode` on the same thread, also
-  release all references to the previous node. With a single reference, use `del node` before the
-  next build; reassigning the variable constructs the replacement before releasing the old node.
+- `LiveNode.run_async()` lends the node to its coroutine. State access through the node raises during the run,
+  while `is_running` and `handle()` stay available. A `dispose()` call during the run is a no-op, not a
+  deferred request. Call it again after the run finishes. Objects captured before the run stay available until
+  then.
+- Concurrent `LiveNode` or `BacktestNode` instances in one process are not supported because their runtime
+  state is not isolated. Dispose one node before starting the next, or use separate processes for parallel
+  execution. Before constructing a replacement `LiveNode` on the same thread, also release all references to
+  the previous node. With a single reference, use `del node` before the next build. Reassigning the variable
+  constructs the replacement before releasing the old node.
 
 These boundaries prevent Python references from exposing mutable engine internals or creating
 multiple owners for the same runtime state.
@@ -123,9 +125,10 @@ and data types under `nautilus_trader.adapters`. Their integration guides define
 capabilities.
 
 Custom live adapters subclass the Python client bases and register through `LiveNodeBuilder` or
-`LiveNode.build`. Their async work runs on the node's bound Python event loop. They receive a
-read-only cache view and emit typed data, events, and reports through queued output. Independent
-Rust/PyO3 packages can use the same Python protocol with model objects from the installed wheel.
+`LiveNode.build`. Their async work runs on the node's bound Python event loop. They receive a read-only cache
+view and emit typed data, events, and reports through queued output.
+
+Independent Rust/PyO3 packages can use the same Python protocol with model objects from the installed wheel.
 See the [Python adapter interface](../developer_guide/python_adapters.md) for the supported hooks,
 factory/config contract, lifecycle rules, and v1 migration limits.
 

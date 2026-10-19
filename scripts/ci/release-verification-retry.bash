@@ -53,6 +53,12 @@ run_release_verification_with_retry() {
   release_verification_validate_positive_integer RELEASE_VERIFICATION_MAX_RETRY_DELAY_SECONDS "$max_delay_seconds"
 
   local output_file
+  local diagnostics="${RELEASE_VERIFICATION_DIAGNOSTICS_DIR:-}"
+  if [[ -n "$diagnostics" ]]; then
+    mkdir -p "$diagnostics"
+    diagnostics="$(mktemp -d "${diagnostics}/retry.XXXXXX")"
+    printf '%s\n' "$description" > "${diagnostics}/command.txt"
+  fi
   output_file="$(mktemp "${TMPDIR:-/tmp}/release-verification.XXXXXX")"
 
   local attempt delay_seconds status
@@ -67,6 +73,10 @@ run_release_verification_with_retry() {
       status=0
     else
       status=$?
+    fi
+    if [[ -n "$diagnostics" ]]; then
+      cp "$output_file" "${diagnostics}/attempt-${attempt}.log"
+      printf '%s\n' "$status" > "${diagnostics}/attempt-${attempt}.status"
     fi
 
     if [[ "$status" -eq 0 ]]; then

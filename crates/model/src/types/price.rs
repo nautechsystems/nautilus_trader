@@ -451,7 +451,7 @@ impl Price {
     ///
     /// # Panics
     ///
-    /// With the `defi` feature, panics if precision exceeds `MAX_FLOAT_PRECISION` (16).
+    /// Panics if the `defi` feature is enabled and precision exceeds `MAX_FLOAT_PRECISION` (16).
     #[must_use]
     pub fn as_f64(&self) -> f64 {
         #[cfg(feature = "defi")]

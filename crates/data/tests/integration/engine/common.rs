@@ -47,7 +47,7 @@ pub(super) fn data_engine(
 ) -> Rc<RefCell<DataEngine>> {
     let data_engine = Rc::new(RefCell::new(DataEngine::new(clock, cache, None)));
 
-    let data_engine_clone = data_engine.clone();
+    let data_engine_clone = Rc::clone(&data_engine);
 
     let handler = TypedIntoHandler::from(move |cmd: DataCommand| {
         data_engine_clone.borrow_mut().execute(cmd);
@@ -97,7 +97,7 @@ pub(super) fn register_mock_client(
         cache,
         client_id,
         Some(venue),
-        Some(recorder.clone()),
+        Some(Rc::clone(recorder)),
     );
     let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(client));
     data_engine.register_client(adapter, routing);
@@ -117,7 +117,7 @@ pub(super) fn register_failing_subscribe_client(
         cache,
         client_id,
         Some(venue),
-        Some(recorder.clone()),
+        Some(Rc::clone(recorder)),
     )
     .with_subscribe_failure(failure);
     let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(client));
@@ -467,7 +467,7 @@ pub(super) fn create_snapshot_test_engine(
         MessageBus::new(TraderId::test_default(), UUID4::new(), None, None).register_message_bus();
 
     let data_engine = Rc::new(RefCell::new(DataEngine::new(clock, cache, None)));
-    let data_engine_clone = data_engine.clone();
+    let data_engine_clone = Rc::clone(&data_engine);
 
     let handler = TypedIntoHandler::from(move |cmd: DataCommand| {
         data_engine_clone.borrow_mut().execute(cmd);
@@ -706,7 +706,7 @@ pub(super) fn register_time_range_recorder(
         cache,
         client_id,
         Some(venue),
-        Some(recorder.clone()),
+        Some(Rc::clone(&recorder)),
     );
     let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
     data_engine.register_client(adapter, None);
@@ -824,11 +824,11 @@ pub(super) fn managed_book_engine(
     client_id: ClientId,
     venue: Venue,
 ) -> Rc<RefCell<DataEngine>> {
-    let engine = create_snapshot_test_engine(clock.clone(), cache.clone());
+    let engine = create_snapshot_test_engine(Rc::clone(&clock), Rc::clone(&cache));
     let recorder = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
         clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         None,

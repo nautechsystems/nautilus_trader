@@ -1,6 +1,6 @@
 [project]
 name = "nautilus-trader"
-version = "2.0.0rc7"
+version = "2.0.0rc8"
 description = "Production-grade Rust-native trading engine with deterministic event-driven architecture"
 authors = [{ name = "Nautech Systems", email = "info@nautechsystems.io" }]
 classifiers = [
@@ -28,8 +28,8 @@ dependencies = []
 visualization = [
   "pandas>=2.3.3,<4.0.0",
   "plotly>=7.0.0,<8.0.0",
-  "kaleido>=1.4.0,<2.0.0",
-  "simplejson>=4.1.2,<5.0.0",
+  "kaleido>=1.5.0,<2.0.0",
+  "simplejson>=4.2.0,<5.0.0",
 ]
 
 [project.urls]
@@ -50,6 +50,7 @@ features = [
   "extension-module",
   "arrow",
   "betfair",
+  "coinapi",
   "high-precision",
   "mimalloc",
   "redis",
@@ -63,14 +64,13 @@ strip = false
 include = ["**/*.pyi"]
 
 [tool.uv]
-required-version = ">=0.12,<0.13"
+required-version = ">=0.13,<0.14"
 environments = [
   "sys_platform == 'linux'",
   "sys_platform == 'darwin'",
   "sys_platform == 'win32' and platform_machine == 'AMD64'",
 ]
 exclude-newer = "7 days"
-exclude-newer-package = { ruff = "2026-10-01T19:00:00Z" }
 # Block sdist builds for every third-party package in python/uv.lock so
 # unexpected loss of wheel publishing fails `uv lock` instead of silently
 # building from source. Kept in sync with python/uv.lock by
@@ -207,9 +207,9 @@ torch = [
 ]
 
 [dependency-groups]
-dev = ["maturin==1.15.0", "ruff>=0.16.10", "ty>=0.0.84"]
+dev = ["maturin==1.15.0", "ruff>=0.16.10", "ty>=0.0.86"]
 test = [
-  "pyarrow>=25.0.0",
+  "pyarrow>=26.0.0",
   "polars",
   "pytest>=9.1.1",
   "pytest-asyncio>=1.4.0",
@@ -217,7 +217,7 @@ test = [
   "pytest-memray>=1.10.0; sys_platform == 'darwin' or sys_platform == 'linux'",
   "pytest-xdist[psutil]>=3.8.0",
   "uvicorn>=0.54.0",
-  "uvloop>=0.22.1; sys_platform != 'win32'",
+  "uvloop>=0.23.0; sys_platform != 'win32'",
 ]
 docs = [
   "furo==2025.12.19",
@@ -556,6 +556,7 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 "scripts/check-markdown-tables.py" = ["INP001"]
 "scripts/extract-doc-links.py" = ["INP001"]
 "scripts/security-audit.py" = ["INP001"]
+"test_data/nautilus/catalog_1_231_0/generate.py" = ["INP001", "S101", "T201"]
 "scripts/ci/check_commit_message.py" = ["S603", "T201"]
 "scripts/ci/test_*.py" = [
   "S101",

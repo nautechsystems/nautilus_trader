@@ -17,11 +17,12 @@
 //!
 //! [`DeriveHttpClient`] exposes typed `send_public` / `send_private`
 //! dispatchers plus thin wrappers for the two endpoints that establish the
-//! plumbing this crate needs to grow against: `public/get_instruments` and
+//! plumbing this crate needs to grow against: `public/get_all_instruments` and
 //! `private/order`. Authenticated requests inject the EIP-191 session-key
 //! headers built by [`crate::signing::auth`].
 
 use std::{
+    collections::HashSet,
     fmt::Debug,
     sync::{
         Arc,
@@ -31,13 +32,12 @@ use std::{
 
 use ahash::AHashMap;
 use alloy::signers::local::PrivateKeySigner;
-use nautilus_core::string::secret::REDACTED;
+use nautilus_core::string::secret::{REDACTED, SecretString, zeroize_json_value};
 use nautilus_network::{
     http::{
-        HttpClient, HttpClientError, HttpRedirectPolicy, HttpResponse,
-        create_standard_nautilus_headers,
+        HttpClient, HttpClientError, HttpRedirectPolicy, HttpResponse, Method, RETRY_AFTER,
+        create_standard_nautilus_headers, parse_retry_after,
     },
-    ratelimiter::clock::MonotonicClock,
     retry::{RetryConfig, RetryManager},
 };
 use serde::{Serialize, de::DeserializeOwned};
@@ -46,25 +46,28 @@ use ustr::Ustr;
 
 use crate::{
     common::{
-        consts::{HEADER_LYRA_SIGNATURE, HEADER_LYRA_TIMESTAMP, HEADER_LYRA_WALLET, HTTP_TIMEOUT},
+        consts::{
+            HEADER_DERIVE_SIGNATURE, HEADER_DERIVE_TIMESTAMP, HEADER_DERIVE_WALLET, HTTP_TIMEOUT,
+        },
         enums::DeriveInstrumentType,
-        rate_limit::{self, DeriveRateLimiter, FixedWindowLimiter},
+        rate_limit::{self, DeriveRateLimiter},
         retry::{http_retry_config, should_retry_http_error},
     },
     http::{
         error::{DeriveHttpError, Result},
         models::{
-            DeriveCancelByLabelResult, DeriveEmptyResult, DeriveInstrument, DeriveOpenOrdersResult,
-            DeriveOrder, DeriveOrderResult, DeriveOrdersResult, DerivePositionsResult,
-            DerivePublicCandle, DerivePublicFundingRateHistoryResult, DerivePublicTradesResult,
-            DeriveReplaceOutcome, DeriveReplaceResult, DeriveSubaccount, DeriveTickerSnapshot,
-            DeriveTickersResult, DeriveTradesResult, JsonRpcResponse,
+            DeriveCancelByLabelResult, DeriveEmptyResult, DeriveInstrument,
+            DeriveInstrumentsResult, DeriveOpenOrdersResult, DeriveOrder, DeriveOrderResult,
+            DeriveOrdersResult, DerivePositionsResult, DerivePublicCandle,
+            DerivePublicFundingRateHistoryResult, DerivePublicTradesResult, DeriveReplaceOutcome,
+            DeriveReplaceResult, DeriveSubaccount, DeriveTickerSnapshot, DeriveTickersResult,
+            DeriveTradesResult, JsonRpcResponse,
         },
         query::{
             DeriveCancelAllParams, DeriveCancelByLabelParams, DeriveCancelParams,
             DeriveGetOpenOrdersParams, DeriveGetOrderHistoryParams, DeriveGetOrderParams,
             DeriveGetPositionsParams, DeriveGetSubaccountParams, DeriveGetTradeHistoryParams,
-            DeriveGetTriggerOrdersParams, DeriveOrderParams, DeriveReplaceParams,
+            DeriveGetTriggerOrdersParams, DeriveOrderParams, DeriveReplaceParams, PaginationCursor,
         },
     },
     signing::auth::{AuthHeaders, build_rest_auth_headers},
@@ -76,7 +79,7 @@ use crate::{
 /// loggers or Python `__repr__`.
 #[derive(Clone)]
 pub struct DeriveCredentials {
-    /// Derive Chain smart-contract wallet address (`0x`-prefixed hex, 42 chars).
+    /// Owner's EOA or multisig address (`0x`-prefixed hex, 42 chars).
     pub wallet_address: String,
     /// secp256k1 session-key signer.
     pub signer: PrivateKeySigner,
@@ -87,8 +90,7 @@ impl DeriveCredentials {
     ///
     /// # Errors
     ///
-    /// Returns [`DeriveHttpError::Auth`] when the session-key hex cannot be
-    /// parsed.
+    /// Returns an error if the session-key hex cannot be parsed.
     pub fn new(wallet_address: impl Into<String>, session_key_hex: &str) -> Result<Self> {
         let signer: PrivateKeySigner = session_key_hex
             .parse()
@@ -115,7 +117,7 @@ impl Debug for DeriveCredentials {
 /// unique correlator; the REST transport ships only `params` on the wire but
 /// the id is preserved for logs and reused by the upcoming WebSocket client.
 /// Each call routes through a [`RetryManager`] that re-signs auth headers on
-/// every attempt, so retries never replay a stale `X-LYRATIMESTAMP`.
+/// every attempt, so retries never replay a stale `X-DeriveTimestamp`.
 #[derive(Debug, Clone)]
 pub struct DeriveHttpClient {
     client: HttpClient,
@@ -134,8 +136,7 @@ impl DeriveHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns [`DeriveHttpError::Transport`] when the underlying HTTP client
-    /// (proxy URL, TLS init) cannot be constructed.
+    /// Returns an error if the underlying HTTP client (proxy URL, TLS init) cannot be constructed.
     pub fn new(
         base_url: impl Into<String>,
         timeout_secs: Option<u64>,
@@ -143,11 +144,13 @@ impl DeriveHttpClient {
         retry_config: Option<RetryConfig>,
     ) -> Result<Self> {
         let timeout_secs = timeout_secs.unwrap_or_else(|| HTTP_TIMEOUT.as_secs());
-        let (client, rate_limiter) = build_client(timeout_secs, proxy_url)?;
+        let client = build_client(timeout_secs, proxy_url)?;
+        let base_url = trim_trailing_slash(base_url.into());
+        let rate_limiter = Arc::new(DeriveRateLimiter::shared(&base_url, None, None, None));
         let retry_config = retry_config.unwrap_or_else(|| http_retry_config(3, 100, 5_000));
         Ok(Self {
             client,
-            base_url: trim_trailing_slash(base_url.into()),
+            base_url,
             credentials: None,
             next_id: Arc::new(AtomicU64::new(1)),
             timeout_secs,
@@ -160,8 +163,7 @@ impl DeriveHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns [`DeriveHttpError::Transport`] when the underlying HTTP client
-    /// cannot be constructed.
+    /// Returns an error if the underlying HTTP client cannot be constructed.
     pub fn with_credentials(
         base_url: impl Into<String>,
         credentials: DeriveCredentials,
@@ -170,6 +172,13 @@ impl DeriveHttpClient {
         retry_config: Option<RetryConfig>,
     ) -> Result<Self> {
         let mut client = Self::new(base_url, timeout_secs, proxy_url, retry_config)?;
+
+        client.rate_limiter = Arc::new(DeriveRateLimiter::shared(
+            &client.base_url,
+            Some(&credentials.wallet_address),
+            None,
+            None,
+        ));
         client.credentials = Some(credentials);
         Ok(client)
     }
@@ -198,7 +207,7 @@ impl DeriveHttpClient {
     ///
     /// # Errors
     ///
-    /// Propagates transport, HTTP, and JSON-RPC errors. See [`DeriveHttpError`].
+    /// Returns an error if transport, HTTP, or JSON-RPC processing fails.
     pub async fn send_public<P, R>(&self, method: &str, params: &P) -> Result<R>
     where
         P: Serialize + ?Sized,
@@ -216,9 +225,8 @@ impl DeriveHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns [`DeriveHttpError::MissingCredentials`] when the client was
-    /// built without credentials. Other variants propagate from the transport
-    /// or the venue.
+    /// Returns an error if the client was built without credentials. Other variants propagate from
+    /// the transport or the venue.
     pub async fn send_private<P, R>(&self, method: &str, params: &P) -> Result<R>
     where
         P: Serialize + ?Sized,
@@ -229,6 +237,7 @@ impl DeriveHttpClient {
                 method: method.to_owned(),
             });
         }
+
         let id = self.next_id();
         self.dispatch(method, params, id, true, true, None).await
     }
@@ -245,17 +254,14 @@ impl DeriveHttpClient {
     /// is live). Callers are expected to resolve ambiguous outcomes via
     /// reconciliation rather than retry here.
     ///
-    /// Matching-engine writes must carry their instrument so the venue's
-    /// per-instrument allowance is paced too; use the typed wrappers
-    /// ([`Self::submit_order`], [`Self::cancel_order`],
-    /// [`Self::replace_order`]) which pass it through
-    /// `Self::send_private_write`.
+    /// Instrument pacing uses the typed wrapper's instrument or the body's
+    /// `instrument_name` field. Requests without an instrument consume only
+    /// their wallet request budgets.
     ///
     /// # Errors
     ///
-    /// Returns [`DeriveHttpError::MissingCredentials`] when the client was
-    /// built without credentials. Other variants propagate from the transport
-    /// or the venue.
+    /// Returns an error if the client was built without credentials. Other variants propagate from
+    /// the transport or the venue.
     pub async fn send_private_once<P, R>(&self, method: &str, params: &P) -> Result<R>
     where
         P: Serialize + ?Sized,
@@ -266,12 +272,13 @@ impl DeriveHttpClient {
                 method: method.to_owned(),
             });
         }
+
         let id = self.next_id();
         self.dispatch(method, params, id, true, false, None).await
     }
 
     /// Sends an authenticated matching-engine write exactly once, pacing it
-    /// against both the account-wide and the per-instrument allowances.
+    /// against both the wallet and per-instrument allowances.
     async fn send_private_write<P, R>(
         &self,
         method: &str,
@@ -287,6 +294,7 @@ impl DeriveHttpClient {
                 method: method.to_owned(),
             });
         }
+
         let id = self.next_id();
         self.dispatch(method, params, id, true, false, Some(instrument_name))
             .await
@@ -294,40 +302,79 @@ impl DeriveHttpClient {
 
     /// Fetches the venue's listed instruments.
     ///
-    /// `currency` is the perpetual/option underlying (e.g. `"ETH"`). When
-    /// `expired` is `true` the venue includes expired option strikes.
+    /// Fetches every page for `currency` and `instrument_type`. For options,
+    /// `expired` selects either live (`false`) or expired (`true`) listings.
+    /// Perpetuals and spot ignore `expired`.
     ///
     /// # Errors
     ///
-    /// Propagates [`DeriveHttpError`] for transport, HTTP, and JSON-RPC failures.
+    /// Returns an error if transport, HTTP, or JSON-RPC processing fails. Returns a decode error
+    /// for invalid pagination counts or a page count that exceeds the collection limit.
     pub async fn get_instruments(
         &self,
         currency: &str,
         instrument_type: DeriveInstrumentType,
         expired: bool,
     ) -> Result<Vec<DeriveInstrument>> {
-        let params = serde_json::json!({
-            "currency": currency,
-            "instrument_type": instrument_type,
-            "expired": expired,
-        });
-        self.send_public("public/get_instruments", &params).await
+        let mut instruments = Vec::new();
+        let mut names = HashSet::new();
+        let mut pages = PaginationCursor::new_public();
+
+        loop {
+            let params = serde_json::json!({
+                "currency": currency,
+                "instrument_type": instrument_type,
+                "expired": expired,
+                "page": pages.page(),
+                "page_size": 1000,
+            });
+            let result: DeriveInstrumentsResult = self
+                .send_public("public/get_all_instruments", &params)
+                .await?;
+            let more = pages.advance(
+                &result.pagination,
+                result
+                    .instruments
+                    .iter()
+                    .map(|row| row.instrument_name.as_str()),
+            )?;
+            instruments.extend(
+                result
+                    .instruments
+                    .into_iter()
+                    .filter(|row| names.insert(row.instrument_name)),
+            );
+
+            if !more {
+                return Ok(instruments);
+            }
+        }
     }
 
     /// Fetches a single instrument definition by name.
     ///
-    /// Mirrors `public/get_instrument`, which the venue documents as the
-    /// per-asset variant of `public/get_instruments`. The returned record
-    /// matches one row of the bulk endpoint.
+    /// Expired options remain queryable by name. Settlement prices appear
+    /// here before they appear in the bulk listing.
     ///
     /// # Errors
     ///
-    /// Propagates [`DeriveHttpError`] for transport, HTTP, and JSON-RPC failures.
+    /// Returns an error if transport, HTTP, or JSON-RPC processing fails. Returns a decode error
+    /// when the response names a different instrument.
     pub async fn get_instrument(&self, instrument_name: &str) -> Result<DeriveInstrument> {
         let params = serde_json::json!({
             "instrument_name": instrument_name,
         });
-        self.send_public("public/get_instrument", &params).await
+        let instrument: DeriveInstrument =
+            self.send_public("public/get_instrument", &params).await?;
+
+        if instrument.instrument_name.as_str() != instrument_name {
+            return Err(DeriveHttpError::decode(format!(
+                "instrument response identity mismatch: requested {instrument_name}, received {}",
+                instrument.instrument_name,
+            )));
+        }
+
+        Ok(instrument)
     }
 
     /// Fetches a page of public trade history for the instrument.
@@ -338,7 +385,7 @@ impl DeriveHttpClient {
     ///
     /// # Errors
     ///
-    /// Propagates [`DeriveHttpError`] for transport, HTTP, and JSON-RPC failures.
+    /// Returns an error if transport, HTTP, or JSON-RPC processing fails.
     pub async fn get_trade_history(
         &self,
         instrument_name: &str,
@@ -370,7 +417,7 @@ impl DeriveHttpClient {
     ///
     /// # Errors
     ///
-    /// Propagates [`DeriveHttpError`] for transport, HTTP, and JSON-RPC failures.
+    /// Returns an error if transport, HTTP, or JSON-RPC processing fails.
     pub async fn get_funding_rate_history(
         &self,
         instrument_name: &str,
@@ -406,7 +453,7 @@ impl DeriveHttpClient {
     ///
     /// # Errors
     ///
-    /// Propagates [`DeriveHttpError`] for transport, HTTP, and JSON-RPC failures.
+    /// Returns an error if transport, HTTP, or JSON-RPC processing fails.
     pub async fn get_candles(
         &self,
         instrument_name: &str,
@@ -432,7 +479,7 @@ impl DeriveHttpClient {
     ///
     /// # Errors
     ///
-    /// Propagates [`DeriveHttpError`] for transport, HTTP, and JSON-RPC failures.
+    /// Returns an error if transport, HTTP, or JSON-RPC processing fails.
     pub async fn get_tickers(
         &self,
         instrument_type: DeriveInstrumentType,
@@ -465,8 +512,8 @@ impl DeriveHttpClient {
     ///
     /// # Errors
     ///
-    /// Propagates [`DeriveHttpError`] for transport, HTTP, JSON-RPC failures,
-    /// or when the response omits the requested instrument.
+    /// Returns an error if transport, HTTP, or JSON-RPC processing fails, or the response omits the
+    /// requested instrument.
     pub async fn get_ticker(&self, instrument_name: &str) -> Result<DeriveTickerSnapshot> {
         let request = ticker_request(instrument_name)?;
         let result = self
@@ -476,6 +523,7 @@ impl DeriveHttpClient {
                 request.expiry_date,
             )
             .await?;
+
         let mut ticker = result
             .tickers
             .get(instrument_name)
@@ -485,6 +533,7 @@ impl DeriveHttpClient {
                     "missing ticker `{instrument_name}` in public/get_tickers response"
                 ))
             })?;
+
         ticker.instrument_name = instrument_name.into();
         Ok(ticker)
     }
@@ -495,8 +544,8 @@ impl DeriveHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns [`DeriveHttpError::MissingCredentials`] when no credentials
-    /// were installed; otherwise propagates transport and venue errors.
+    /// Returns an error if no credentials were installed; otherwise propagates transport and venue
+    /// errors.
     pub async fn submit_order(&self, params: &DeriveOrderParams) -> Result<DeriveOrder> {
         let result: DeriveOrderResult = self
             .send_private_write("private/order", params, params.instrument_name)
@@ -508,8 +557,8 @@ impl DeriveHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns [`DeriveHttpError::MissingCredentials`] when no credentials
-    /// were installed; otherwise propagates transport and venue errors.
+    /// Returns an error if no credentials were installed; otherwise propagates transport and venue
+    /// errors.
     pub async fn cancel_order(&self, params: &DeriveCancelParams) -> Result<DeriveEmptyResult> {
         self.send_private_write("private/cancel", params, params.instrument_name)
             .await
@@ -520,8 +569,8 @@ impl DeriveHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns [`DeriveHttpError::MissingCredentials`] when no credentials
-    /// were installed; otherwise propagates transport and venue errors.
+    /// Returns an error if no credentials were installed; otherwise propagates transport and venue
+    /// errors.
     pub async fn cancel_all(&self, params: &DeriveCancelAllParams) -> Result<DeriveEmptyResult> {
         self.send_private_once("private/cancel_all", params).await
     }
@@ -530,8 +579,8 @@ impl DeriveHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns [`DeriveHttpError::MissingCredentials`] when no credentials
-    /// were installed; otherwise propagates transport and venue errors.
+    /// Returns an error if no credentials were installed; otherwise propagates transport and venue
+    /// errors.
     pub async fn cancel_by_label(
         &self,
         params: &DeriveCancelByLabelParams,
@@ -547,8 +596,8 @@ impl DeriveHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns [`DeriveHttpError::MissingCredentials`] when no credentials
-    /// were installed; otherwise propagates transport and venue errors.
+    /// Returns an error if no credentials were installed; otherwise propagates transport and venue
+    /// errors.
     pub async fn replace_order(
         &self,
         params: &DeriveReplaceParams,
@@ -557,7 +606,12 @@ impl DeriveHttpClient {
             .send_private_write("private/replace", params, params.order.instrument_name)
             .await?;
         result
-            .into_outcome(&params.order_id_to_cancel, &params.order.label)
+            .into_outcome(
+                &params.order_id_to_cancel,
+                &params.order.label,
+                params.order.envelope.subaccount_id,
+                params.order.instrument_name.as_str(),
+            )
             .map_err(DeriveHttpError::decode)
     }
 
@@ -566,50 +620,63 @@ impl DeriveHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns [`DeriveHttpError::MissingCredentials`] when no credentials
-    /// were installed; otherwise propagates transport and venue errors.
+    /// Returns an error if no credentials were installed; otherwise propagates transport and venue
+    /// errors. Returns a decode error if a response subaccount ID differs from the request.
     pub async fn get_subaccount(
         &self,
         params: &DeriveGetSubaccountParams,
     ) -> Result<DeriveSubaccount> {
-        self.send_private("private/get_subaccount", params).await
+        let result: DeriveSubaccount = self.send_private("private/get_subaccount", params).await?;
+        validate_subaccount_id(params.subaccount_id, result.subaccount_id)?;
+        validate_order_subaccounts(params.subaccount_id, &result.open_orders)?;
+        Ok(result)
     }
 
     /// Returns currently open orders for the subaccount.
     ///
     /// # Errors
     ///
-    /// Returns [`DeriveHttpError::MissingCredentials`] when no credentials
-    /// were installed; otherwise propagates transport and venue errors.
+    /// Returns an error if no credentials were installed; otherwise propagates transport and venue
+    /// errors. Returns a decode error if a response subaccount ID differs from the request.
     pub async fn get_open_orders(
         &self,
         params: &DeriveGetOpenOrdersParams,
     ) -> Result<DeriveOpenOrdersResult> {
-        self.send_private("private/get_open_orders", params).await
+        let result: DeriveOpenOrdersResult =
+            self.send_private("private/get_open_orders", params).await?;
+        validate_subaccount_id(params.subaccount_id, result.subaccount_id)?;
+        validate_order_subaccounts(params.subaccount_id, &result.orders)?;
+        Ok(result)
     }
 
     /// Returns currently untriggered trigger orders for the subaccount.
     ///
     /// # Errors
     ///
-    /// Returns [`DeriveHttpError::MissingCredentials`] when no credentials
-    /// were installed; otherwise propagates transport and venue errors.
+    /// Returns an error if no credentials were installed; otherwise propagates transport and venue
+    /// errors. Returns a decode error if a response subaccount ID differs from the request.
     pub async fn get_trigger_orders(
         &self,
         params: &DeriveGetTriggerOrdersParams,
     ) -> Result<DeriveOpenOrdersResult> {
-        self.send_private("private/get_trigger_orders", params)
-            .await
+        let result: DeriveOpenOrdersResult = self
+            .send_private("private/get_trigger_orders", params)
+            .await?;
+        validate_subaccount_id(params.subaccount_id, result.subaccount_id)?;
+        validate_order_subaccounts(params.subaccount_id, &result.orders)?;
+        Ok(result)
     }
 
     /// Returns a single order by venue order id.
     ///
     /// # Errors
     ///
-    /// Returns [`DeriveHttpError::MissingCredentials`] when no credentials
-    /// were installed; otherwise propagates transport and venue errors.
+    /// Returns an error if no credentials were installed; otherwise propagates transport and venue
+    /// errors. Returns a decode error if a response subaccount ID differs from the request.
     pub async fn get_order(&self, params: &DeriveGetOrderParams) -> Result<DeriveOrder> {
-        self.send_private("private/get_order", params).await
+        let result: DeriveOrder = self.send_private("private/get_order", params).await?;
+        validate_subaccount_id(params.subaccount_id, result.subaccount_id)?;
+        Ok(result)
     }
 
     /// Returns one page of order history for the subaccount, optionally
@@ -620,39 +687,55 @@ impl DeriveHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns [`DeriveHttpError::MissingCredentials`] when no credentials
-    /// were installed; otherwise propagates transport and venue errors.
+    /// Returns an error if no credentials were installed; otherwise propagates transport and venue
+    /// errors. Returns a decode error if a response subaccount ID differs from the request.
     pub async fn get_order_history(
         &self,
         params: &DeriveGetOrderHistoryParams,
     ) -> Result<DeriveOrdersResult> {
-        self.send_private("private/get_order_history", params).await
+        let result: DeriveOrdersResult = self
+            .send_private("private/get_order_history", params)
+            .await?;
+        validate_subaccount_id(params.subaccount_id, result.subaccount_id)?;
+        validate_order_subaccounts(params.subaccount_id, &result.orders)?;
+        Ok(result)
     }
 
     /// Returns one page of subaccount trade history.
     ///
     /// # Errors
     ///
-    /// Returns [`DeriveHttpError::MissingCredentials`] when no credentials
-    /// were installed; otherwise propagates transport and venue errors.
+    /// Returns an error if no credentials were installed; otherwise propagates transport and venue
+    /// errors. Returns a decode error if a response subaccount ID differs from the request.
     pub async fn get_private_trade_history(
         &self,
         params: &DeriveGetTradeHistoryParams,
     ) -> Result<DeriveTradesResult> {
-        self.send_private("private/get_trade_history", params).await
+        let result: DeriveTradesResult = self
+            .send_private("private/get_trade_history", params)
+            .await?;
+        validate_subaccount_id(params.subaccount_id, result.subaccount_id)?;
+        for trade in &result.trades {
+            validate_subaccount_id(params.subaccount_id, trade.subaccount_id)?;
+        }
+
+        Ok(result)
     }
 
     /// Returns the positions held by the subaccount.
     ///
     /// # Errors
     ///
-    /// Returns [`DeriveHttpError::MissingCredentials`] when no credentials
-    /// were installed; otherwise propagates transport and venue errors.
+    /// Returns an error if no credentials were installed; otherwise propagates transport and venue
+    /// errors. Returns a decode error if a response subaccount ID differs from the request.
     pub async fn get_positions(
         &self,
         params: &DeriveGetPositionsParams,
     ) -> Result<DerivePositionsResult> {
-        self.send_private("private/get_positions", params).await
+        let result: DerivePositionsResult =
+            self.send_private("private/get_positions", params).await?;
+        validate_subaccount_id(params.subaccount_id, result.subaccount_id)?;
+        Ok(result)
     }
 
     async fn dispatch<P, R>(
@@ -669,41 +752,56 @@ impl DeriveHttpClient {
         R: DeserializeOwned,
     {
         let url = format!("{}/{}", self.base_url, method.trim_start_matches('/'));
-        let body_value = serde_json::to_value(params).map_err(DeriveHttpError::from)?;
-        let body = serde_json::to_vec(&body_value).map_err(DeriveHttpError::from)?;
+        let mut body_value = serde_json::to_value(params).map_err(DeriveHttpError::from)?;
+        let body = serde_json::to_string(&body_value).map_err(DeriveHttpError::from);
 
         let rate_class = rate_limit::rate_class_for_method(method);
 
-        // Sign per-attempt so the venue never sees a stale `X-LYRATIMESTAMP`
+        let instrument_name = instrument_name.or_else(|| {
+            body_value
+                .get("instrument_name")
+                .and_then(Value::as_str)
+                .map(Ustr::from)
+        });
+
+        zeroize_json_value(&mut body_value);
+        let body = SecretString::from(body?);
+
+        // Sign per-attempt so the venue never sees a stale `X-DeriveTimestamp`
         // after a long backoff window; single-shot writes still run the
-        // closure once and use freshly built headers. The fixed-window wait
+        // closure once and use freshly built headers. The pacing wait
         // happens inside the closure, so pacing delays never consume the
         // signed timestamp's validity.
         let attempt = || async {
-            self.rate_limiter
-                .await_class_ready(rate_class, instrument_name.as_ref())
-                .await;
+            if authenticate {
+                self.rate_limiter
+                    .await_class_ready(rate_class, instrument_name.as_ref())
+                    .await;
+            } else {
+                self.rate_limiter.await_public_ready().await;
+            }
 
             let mut headers: AHashMap<String, String> = AHashMap::with_capacity(4);
             headers.insert("Content-Type".to_string(), "application/json".to_string());
 
             if authenticate {
                 let auth = self.build_auth_headers(method)?;
-                headers.insert(HEADER_LYRA_WALLET.to_string(), auth.wallet);
-                headers.insert(HEADER_LYRA_TIMESTAMP.to_string(), auth.timestamp);
+                headers.insert(HEADER_DERIVE_WALLET.to_string(), auth.wallet);
+                headers.insert(HEADER_DERIVE_TIMESTAMP.to_string(), auth.timestamp);
                 headers.insert(
-                    HEADER_LYRA_SIGNATURE.to_string(),
+                    HEADER_DERIVE_SIGNATURE.to_string(),
                     auth.signature.into_inner(),
                 );
             }
 
             let response = self
                 .client
-                .post(
+                .request_with_secret_body(
+                    Method::POST,
                     url.clone(),
                     None,
                     Some(headers.into_iter().collect()),
-                    Some(body.clone()),
+                    body.clone(),
                     Some(self.timeout_secs),
                     None,
                 )
@@ -715,9 +813,13 @@ impl DeriveHttpClient {
 
         if retry {
             self.retry_manager
-                .invocation(method, attempt, should_retry_http_error, |e| {
-                    DeriveHttpError::transport(e.to_string())
-                })
+                .invocation(
+                    method,
+                    attempt,
+                    should_retry_http_error,
+                    DeriveHttpError::Retry,
+                )
+                .retry_delay(&DeriveHttpError::retry_after)
                 .execute()
                 .await
         } else {
@@ -732,6 +834,7 @@ impl DeriveHttpClient {
                 .ok_or_else(|| DeriveHttpError::MissingCredentials {
                     method: method.to_owned(),
                 })?;
+
         let auth = build_rest_auth_headers(&credentials.wallet_address, &credentials.signer)?;
         Ok(auth)
     }
@@ -760,6 +863,7 @@ fn ticker_request(instrument_name: &str) -> Result<TickerRequest<'_>> {
     }
 
     let mut parts = suffix.split('-');
+
     let Some(expiry_date) = parts.next() else {
         return Ok(TickerRequest {
             instrument_type: DeriveInstrumentType::Erc20,
@@ -767,6 +871,7 @@ fn ticker_request(instrument_name: &str) -> Result<TickerRequest<'_>> {
             expiry_date: None,
         });
     };
+
     let has_option_tail = parts.clone().count() == 2;
     if expiry_date.len() == 8 && expiry_date.chars().all(|c| c.is_ascii_digit()) && has_option_tail
     {
@@ -787,25 +892,15 @@ fn ticker_request(instrument_name: &str) -> Result<TickerRequest<'_>> {
 fn build_client(
     timeout_secs: u64,
     proxy_url: Option<String>,
-) -> std::result::Result<(HttpClient, Arc<DeriveRateLimiter>), HttpClientError> {
-    // The REST limiter carries Trader-default matching allowances: execution
-    // writes travel over the WebSocket, whose client is built from the
-    // configured market-maker overrides.
-    let rate_limiter = Arc::new(FixedWindowLimiter::new(
-        rate_limit::FixedWindowLimits::rest(None, None),
-        MonotonicClock {},
-    ));
-    // Pacing runs caller-side in `dispatch` (before auth headers are built),
-    // so the network client carries no limiter of its own and never sleeps
-    // inside its request path.
-    let client = HttpClient::builder()
+) -> std::result::Result<HttpClient, HttpClientError> {
+    HttpClient::builder()
         .redirect_policy(HttpRedirectPolicy::Reject)
         .headers(create_standard_nautilus_headers().into_iter().collect())
+        .header_keys(vec![RETRY_AFTER.as_str().to_string()])
         .timeout_secs(timeout_secs)
         .maybe_proxy_url(proxy_url)
         .rate_limiters(Vec::new())
-        .build()?;
-    Ok((client, rate_limiter))
+        .build()
 }
 
 fn trim_trailing_slash(url: String) -> String {
@@ -822,6 +917,18 @@ fn decode_envelope<R: DeserializeOwned>(
     response: HttpResponse,
 ) -> Result<R> {
     let status = response.status.as_u16();
+
+    let retry_after = response
+        .headers
+        .get(RETRY_AFTER.as_str())
+        .and_then(|value| {
+            parse_retry_after(
+                value,
+                nautilus_core::UnixNanos::from(nautilus_core::time::nanos_since_unix_epoch())
+                    .to_datetime_utc(),
+            )
+        });
+
     let is_success_status = (200..300).contains(&status);
     let body = response.body;
 
@@ -830,8 +937,13 @@ fn decode_envelope<R: DeserializeOwned>(
         Err(e) => {
             if !is_success_status {
                 let text = String::from_utf8_lossy(&body).into_owned();
-                return Err(DeriveHttpError::http(status, truncate(text, 512)));
+                return Err(DeriveHttpError::Http {
+                    status,
+                    message: truncate(text, 512),
+                    retry_after,
+                });
             }
+
             return Err(DeriveHttpError::decode(format!(
                 "failed to decode `{method}` response: {e}",
             )));
@@ -843,6 +955,7 @@ fn decode_envelope<R: DeserializeOwned>(
             code: err.code,
             message: err.message,
             data: err.data,
+            retry_after,
         });
     }
 
@@ -852,7 +965,11 @@ fn decode_envelope<R: DeserializeOwned>(
     // instead of MissingResult.
     if !is_success_status {
         let text = String::from_utf8_lossy(&body).into_owned();
-        return Err(DeriveHttpError::http(status, truncate(text, 512)));
+        return Err(DeriveHttpError::Http {
+            status,
+            message: truncate(text, 512),
+            retry_after,
+        });
     }
 
     if let Some(echoed) = envelope.id
@@ -874,14 +991,34 @@ fn truncate(s: String, max: usize) -> String {
     if s.len() <= max {
         return s;
     }
+
     let mut cutoff = max;
     while cutoff > 0 && !s.is_char_boundary(cutoff) {
         cutoff -= 1;
     }
+
     let mut out = String::with_capacity(cutoff + 3);
     out.push_str(&s[..cutoff]);
     out.push_str("...");
     out
+}
+
+fn validate_order_subaccounts(expected: u64, orders: &[DeriveOrder]) -> Result<()> {
+    for order in orders {
+        validate_subaccount_id(expected, order.subaccount_id)?;
+    }
+
+    Ok(())
+}
+
+fn validate_subaccount_id(expected: u64, received: i64) -> Result<()> {
+    if u64::try_from(received).ok() != Some(expected) {
+        return Err(DeriveHttpError::decode(format!(
+            "subaccount response identity mismatch: requested {expected}, received {received}",
+        )));
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -904,6 +1041,7 @@ mod tests {
 
     fn test_response(status: u16, body: &serde_json::Value) -> HttpResponse {
         let status_code = StatusCode::from_u16(status).unwrap();
+
         HttpResponse {
             status: HttpStatus::new(status_code),
             headers: HashMap::new(),
@@ -913,7 +1051,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_authenticated_client_rejects_redirects() {
-        let client = build_client(3, None).unwrap().0;
+        let client = build_client(3, None).unwrap();
         assert_http_redirect_rejected(|url| async move {
             client
                 .get(url, None, None, Some(3), None)
@@ -1016,14 +1154,18 @@ mod tests {
     #[rstest]
     fn test_decode_envelope_flags_non_2xx_with_unparsable_body() {
         let status_code = StatusCode::from_u16(503).unwrap();
+
         let response = HttpResponse {
             status: HttpStatus::new(status_code),
             headers: HashMap::new(),
             body: bytes::Bytes::from_static(b"<html>upstream down</html>"),
         };
+
         let err = decode_envelope::<Value>("public/get_instruments", 1, response).unwrap_err();
         match err {
-            DeriveHttpError::Http { status, message } => {
+            DeriveHttpError::Http {
+                status, message, ..
+            } => {
                 assert_eq!(status, 503);
                 assert!(message.contains("upstream down"));
             }
@@ -1038,7 +1180,9 @@ mod tests {
         let resp = test_response(401, &serde_json::json!({"message": "Unauthorized"}));
         let err = decode_envelope::<Value>("private/order", 1, resp).unwrap_err();
         match err {
-            DeriveHttpError::Http { status, message } => {
+            DeriveHttpError::Http {
+                status, message, ..
+            } => {
                 assert_eq!(status, 401);
                 assert!(message.contains("Unauthorized"));
             }
@@ -1055,11 +1199,13 @@ mod tests {
             "id": 1,
             "error": {"code": -32602, "message": "Invalid params"},
         });
+
         let response = HttpResponse {
             status: HttpStatus::new(status_code),
             headers: HashMap::new(),
             body: serde_json::to_vec(&body).unwrap().into(),
         };
+
         let err = decode_envelope::<Value>("private/order", 1, response).unwrap_err();
         assert!(matches!(err, DeriveHttpError::JsonRpc { code: -32602, .. }));
     }
@@ -1090,11 +1236,13 @@ mod tests {
         let glyph = "Ω";
         let body = glyph.repeat(600);
         let status_code = StatusCode::from_u16(503).unwrap();
+
         let response = HttpResponse {
             status: HttpStatus::new(status_code),
             headers: HashMap::new(),
             body: body.into_bytes().into(),
         };
+
         let err = decode_envelope::<Value>("public/get_instruments", 1, response).unwrap_err();
         assert!(matches!(err, DeriveHttpError::Http { status: 503, .. }));
     }

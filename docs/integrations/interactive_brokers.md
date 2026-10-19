@@ -17,17 +17,28 @@ Enable socket API access in TWS or IB Gateway before starting a client. IB uses 
 | TWS         | `7497`        | `7496`       |
 | IB Gateway  | `4002`        | `4001`       |
 
-The pinned `ibapi 4.0.1` transport requires TWS or IB Gateway server protocol version **213 or newer**.
-This is the API protocol version, not the application's release number. Older servers are unsupported
-even when their TCP port accepts connections. [Issue #4796](https://github.com/nautechsystems/nautilus_trader/issues/4796)
-reports this failure with protocol 187 on Gateway 10.41. Upgrade TWS or IB Gateway before connecting.
+The pinned `ibapi 4.0.1` transport requires TWS or IB Gateway server protocol version **213 or newer**. This
+is the API protocol version, not the application's release number. Older servers are unsupported even when
+their TCP port accepts connections.
+[Issue #4796](https://github.com/nautechsystems/nautilus_trader/issues/4796) reports this failure with
+protocol 187 on Gateway 10.41. Upgrade TWS or IB Gateway before connecting.
+
 The transport rejects an older version before sending `StartApi` when the server completes the initial
-handshake. If an old server does not answer that handshake, the connection timeout also applies;
-increasing the timeout does not add protocol support.
+handshake. If an old server does not answer that handshake, the connection timeout also applies. Increasing
+the timeout does not add protocol support.
 
 The adapter defaults to `127.0.0.1:4002`. Each process connected to the same TWS or Gateway session
 needs a distinct IB API `client_id`. An execution client ID cannot be a multiple of `1000` because
 the adapter partitions order IDs with `client_id % 1000`.
+
+IB refuses an order ID at or below one the same `client_id` already used, across sessions (error 103). On
+connect, the execution client starts above its `client_id`'s highest order ID among IB's open and completed
+orders. It keeps IB's next valid ID only when it falls in the client's partition. If IB's next valid ID lies
+above the partition, IB would refuse every ID in it, so connecting fails. Use another `client_id`. Connecting
+also fails if the completed orders do not arrive in full within `request_timeout`.
+
+IB lists completed orders for a limited period only, so a client that left no order open can still start below
+an ID it used before that period.
 
 The data and execution clients can share one provider configuration:
 
@@ -67,7 +78,7 @@ exec_factory = ib.InteractiveBrokersExecutionClientFactory()
 
 Pass these factories and configs to `LiveNode.builder`. The
 [`connect_with_tws.py`](https://github.com/nautechsystems/nautilus_trader/blob/develop/examples/live/interactive_brokers/connect_with_tws.py)
-example shows the complete node setup. Its default invocation constructs the node offline; set
+example shows the complete node setup. Its default invocation constructs the node offline. Set
 `IB_V2_RUN_NODE=1` to connect.
 
 ### Market data modes
@@ -108,21 +119,19 @@ data_config = ib.InteractiveBrokersDataClientConfig(
 )
 ```
 
-Start the gateway before constructing clients that connect. Python owns the container lifecycle
-through `DockerizedIBGateway`; the client configs accept only `host` and `port`. Set
-`read_only_api=False` only when the gateway must accept orders. Readiness uses login messages from
-the current container session, so retained logs from an earlier session cannot report a false ready
-state.
+Start the gateway before constructing clients that connect. Python owns the container lifecycle through
+`DockerizedIBGateway`. The client configs accept only `host` and `port`. Set `read_only_api=False` only when
+the gateway must accept orders. Readiness uses login messages from the current container session, so retained
+logs from an earlier session cannot report a false ready state.
 
 ## Architecture
 
-The adapter is one Rust implementation exposed through the native Rust API and PyO3 bindings.
-It translates between IB's TWS API and the Nautilus live engines, and it does not own a
-transport: the `ibapi` crate speaks the TWS socket protocol and reconnects it, while the
-adapter's job is domain mapping, subscription lifecycle, and policy (commands, events,
-instrument conversion, stream resubscription, and execution reconciliation). That boundary
-explains the crate's layout, and it is why the `http` and `websocket` modules standard in other
-adapters do not exist here.
+The adapter is one Rust implementation exposed through the native Rust API and PyO3 bindings. It translates
+between IB's TWS API and the Nautilus live engines. It does not own a transport: `ibapi` speaks the TWS socket
+protocol and reconnects it. The adapter owns domain mapping, subscription lifecycle, and policy (commands,
+events, instrument conversion, stream resubscription, and execution reconciliation). That boundary explains
+the crate's layout, and it is why the `http` and `websocket` modules standard in other adapters do not exist
+here.
 
 ```mermaid
 flowchart LR
@@ -169,33 +178,35 @@ connection, and the registry removes it after the final client releases its hand
 | `config`     | Typed data, execution, provider, and gateway configuration.                       |
 | `factories`  | `DataClientFactory` and `ExecutionClientFactory` implementations.                 |
 
-The integration surface with the rest of Nautilus is deliberately thin. The node builder hands
-each factory a typed config; the factory builds the client and seeds the instrument provider
-from the engine cache, which the adapter never writes. The data client sends typed data events
-(ticks, bars, instruments, and correlated request responses) and the execution client sends
-typed execution events (order events, fills, and account state) into the engines through their
-event channels; these channels are the only paths into the engines. The adapter registers its
-factories and config extractors with the global PyO3 registry, which is how Python
-`TradingNode` configurations reach the Rust factories. Reconciliation is a pull interface
-driven by the execution engine (see [Reconciliation](#reconciliation)).
+The integration surface with the rest of Nautilus is deliberately thin. The node builder hands each factory a
+typed config. The factory builds the client and seeds the instrument provider from the engine cache, which the
+adapter never writes.
+
+The data client sends typed data events (ticks, bars, instruments, and correlated request responses) and the
+execution client sends typed execution events (order events, fills, and account state) into the engines
+through their event channels. These channels are the only paths into the engines. The adapter registers its
+factories and config extractors with the global PyO3 registry, which is how Python `TradingNode`
+configurations reach the Rust factories. Reconciliation is a pull interface driven by the execution engine
+(see [Reconciliation](#reconciliation)).
 
 ### Reconnect and resubscribe
 
-The `ibapi` transport reconnects the socket with Fibonacci backoff up to a bounded attempt
-count, then establishes a complete session; a TCP connection followed by a transient handshake
-or startup error consumes an attempt and retries instead of ending recovery. A successful
-reconnect resets open subscription channels by delivering a connection-reset error to each; on
-exhaustion the transport shuts down and the adapter reports disconnected. Each data stream then
-waits for the transport, subscribes again, and retries failed resubscriptions with a delay. One
-generic stream driver owns this lifecycle policy for every stream type, so recovery behavior
-cannot drift between quotes, trades, depth, bars, greeks, and index prices. Market-data farm
-notices use the same stream policy without treating a farm outage as a socket failure. TWS
-resets the session's market-data type to realtime after a reconnect; the notice monitor
-restores the configured frozen or delayed mode before releasing recovered subscriptions.
+The `ibapi` transport reconnects the socket with Fibonacci backoff up to a bounded attempt count, then
+establishes a complete session. A TCP connection followed by a transient handshake or startup error consumes
+an attempt and retries instead of ending recovery. A successful reconnect resets open subscription channels by
+delivering a connection-reset error to each. On exhaustion the transport shuts down and the adapter reports
+disconnected.
 
-Order-bound error frames arrive on the order update stream as notices carrying the originating
-order or request ID, delivered by the transport's routing layer rather than a decoded message
-variant, so the update stream stays alive across error frames.
+Each data stream then waits for the transport, subscribes again, and retries failed resubscriptions with a
+delay. One generic stream driver owns this lifecycle policy for every stream type, so recovery behavior cannot
+drift between quotes, trades, depth, bars, greeks, and index prices. Market-data farm notices use the same
+stream policy without treating a farm outage as a socket failure. TWS resets the session's market-data type to
+realtime after a reconnect. The notice monitor restores the configured frozen or delayed mode before releasing
+recovered subscriptions.
+
+Order-bound error frames arrive on the order update stream as notices with the originating order or request
+ID. The transport's routing layer delivers these notices instead of a decoded message variant. Thus, the
+update stream stays alive across error frames.
 
 ```mermaid
 stateDiagram-v2
@@ -218,11 +229,11 @@ disconnected instead of appearing healthy with a dead stream.
 
 ### Order identity and cancellation
 
-Distinct broker permanent IDs sharing one client order reference remain separate physical orders.
-The adapter reports each additional order under its own client order ID,
-`DUP-<account length>:<account ID>:PERM-<permanent ID>`, so the execution engine creates it as an
-external order, claimed by the instrument's external order claim or otherwise `EXTERNAL`. An
-unresolved duplicate group blocks modification.
+Distinct broker permanent IDs sharing one client order reference remain separate physical orders. The adapter
+reports each additional order under its own client order ID:
+`DUP-<account length>:<account ID>:PERM-<permanent ID>`. Thus, the execution engine creates it as an external
+order. The instrument's external order claim applies, or otherwise the `EXTERNAL` strategy. An unresolved
+duplicate group blocks modification.
 
 When an execution arrives for an order the adapter does not track, including such a duplicate, the
 adapter holds the fill and queries the order's details and executions. It then reports the order
@@ -231,26 +242,26 @@ bounded by `request_timeout` and at most 3 seconds, below the live node's defaul
 `position_check_threshold_ms` of 5 seconds. If the query fails, returns nothing, or times out, the
 adapter logs a warning and forwards the held fills unchanged.
 
-With `strategy_only=True` (the default), the strategy issues individual cancellations for its own orders.
-With `strategy_only=False`, cancel-all is instrument-wide within the selected account and side.
-A side-filtered cancel-all skips duplicate orders whose broker side is still unknown.
-Canceling the original order
-also considers its known working duplicates. The adapter cancels only uniquely bound routes owned by
-the configured API client; ambiguous or unbound orders remain explicitly unresolved and require TWS
-binding or operator action. One cancellation confirmation does not establish group completion.
+With `strategy_only=True` (the default), the strategy issues individual cancellations for its own orders. With
+`strategy_only=False`, cancel-all is instrument-wide within the selected account and side. A side-filtered
+cancel-all skips duplicate orders whose broker side is still unknown. Canceling the original order also
+considers its known working duplicates.
+
+The adapter cancels only uniquely bound routes owned by the configured API client. Ambiguous or unbound orders
+remain explicitly unresolved and require TWS binding or operator action. One cancellation confirmation does
+not establish group completion.
 
 Risk checks and execution use the same account routing. The risk engine denies an order whose
 account is unresolved rather than skipping account checks.
 
 ### Execution order flow
 
-The execution client is split along message direction: outbound commands (submit, modify,
-cancel), inbound venue updates, combo-fill assembly, and account streams are separate modules
-sharing one order-state owner. That owner holds the client-to-venue ID maps, active orders, and
-a bounded terminal-order cache behind a single lock; the terminal cache absorbs IB's execution
-replays after a reconnect, so a completed order's re-sent fills deduplicate instead of
-duplicating. The client converts each Nautilus order once, applies optional IB tags, and then
-submits it through `ibapi`.
+The execution client is split along message direction: outbound commands (submit, modify, cancel), inbound
+venue updates, combo-fill assembly, and account streams are separate modules sharing one order-state owner.
+That owner holds the client-to-venue ID maps, active orders, and a bounded terminal-order cache behind a
+single lock. The terminal cache absorbs IB's execution replays after a reconnect. Thus, a completed order's
+re-sent fills deduplicate instead of duplicating. The client converts each Nautilus order once, applies
+optional IB tags, and then submits it through `ibapi`.
 
 ```mermaid
 sequenceDiagram
@@ -286,24 +297,28 @@ flowchart TD
     Deduplicate --> Event[Emit Nautilus event]
 ```
 
-Every engine-visible order event originates from venue evidence on the update stream:
-`OrderAccepted` requires an order status or open-order message, never local send success. An
-order-bound IB error notice resolves against tracked orders and is handled by order state.
-Before acceptance, an order rejection code (200 to 399) emits a terminal `OrderRejected`; any
-other error code triggers a venue query, and the order is rejected only when IB lists it neither
-as open nor as completed, since IB sends such codes for orders it keeps working (10349 sets the
-time in force from an order preset). A presence query that fails, times out, or ends early leaves the order
-working. After acceptance a notice emits `OrderModifyRejected` when
-a modify is pending and `OrderCancelRejected` when a cancel is pending, and otherwise triggers a
-venue presence query
-rather than a terminal event, because IB reports modify rejections with the same codes while
-the original order keeps working. Warning codes (2100 to 2169), warning-form order messages
-(code 399 with a `Warning:` line), and the cancel confirmation (202) never terminalize an order.
-The global notice stream handles error frames that cannot be routed to an individual request or
-order. Ambiguous command outcomes resolve through a venue query that recovers missed fills from
-execution history before inferring any terminal state, so a fill can never be misreported as a
-cancellation. Cancel-all prefers the tracked TWS order ID over the permanent ID, which lets the
-originating client cancel its own live orders without a cross-client lookup.
+Every engine-visible order event originates from venue evidence on the update stream: `OrderAccepted` requires
+an order status or open-order message, never local send success. An order-bound IB error notice resolves
+against tracked orders and is handled by order state.
+
+Before acceptance, an order rejection code in `[200, 399]` emits a terminal `OrderRejected`. Any other error
+code triggers a venue query. The order is rejected only when IB lists it neither as open nor as completed. IB
+also sends such codes for working orders (10349 sets the time in force from an order preset). A presence query
+that fails, times out, or ends early leaves the order working.
+
+After acceptance, a notice emits `OrderModifyRejected` when a modify is pending or `OrderCancelRejected` when
+a cancel is pending. Otherwise, it triggers a venue presence query rather than a terminal event. IB reports
+modify rejections with the same codes while the original order keeps working, so the query prevents a false
+terminal event.
+
+Warning codes in `[2100, 2169]`, warning-form order messages (code 399 with a `Warning:` line), and the cancel
+confirmation (202) never terminalize an order. The global notice stream handles error frames that cannot be
+routed to an individual request or order.
+
+Ambiguous command outcomes resolve through a venue query. It recovers missed fills from execution history
+before inferring any terminal state. Thus, a fill can never be misreported as a cancellation. Cancel-all
+prefers the tracked TWS order ID over the permanent ID, which lets the originating client cancel its own live
+orders without a cross-client lookup.
 
 ## Data capabilities
 
@@ -324,8 +339,19 @@ Set `batch_quotes=False` to prefer tick-by-tick bid/ask subscriptions. The clien
 The quote cache assembles bid and ask updates into complete quote ticks. IB no-quote sentinels
 (price `-1` without a size, or a zero price with zero size) are filtered before ticks are built
 and clear the affected book side, so a one-sided market emits nothing rather than stale values.
+For a contract with a price magnifier, IB sends the `-1` multiplied by it (`-100` for a ZC
+option), and the adapter filters that the same way.
 Genuine zero and negative prices, including a `-1` price with a size, which calendar spreads
 produce routinely, flow through.
+
+IB reports IDEALPRO prices in steps finer than a pair's `minTick`, which is the pair's price
+increment. The adapter rounds a pair's bid prices down and its ask prices up to the increment, so
+a published bid is never above IB's bid, a published ask is never below IB's ask, and a quote IB
+sends unlocked never locks or crosses. This applies to quotes, historical bid and ask ticks, and
+the prices of bid and ask bars. Every other price (trades, midpoint, last and index prices, and the
+bars built from them) rounds to the nearest increment, with ties going to the even multiple. Order
+book levels are not rounded, because two IB levels could round to one price. Other instruments are
+not rounded.
 
 For historical data, `HistoricalInteractiveBrokersClient` accepts an instrument provider and data
 client config. Constructing this Python client connects immediately, so keep it behind the same
@@ -355,13 +381,15 @@ client = ib.HistoricalInteractiveBrokersClient(provider, config)
 | `request_bars`        | Accepts bar specification strings, an end time, and either a start time or IB duration string; contracts or instrument IDs select the instruments.           |
 | `request_ticks`       | Accepts `IbHistoricalTickType.TRADES` or `BID_ASK`, a bounded time range, contracts or instrument IDs, regular-hours filtering, timeout, and a result limit. |
 
-Historical tick requests need both a start and an end time, page backward from the end time with a
-default cap of 10,000 ticks when no limit is given, send only an end bound (IB misinterprets requests carrying both), and
-deduplicate the boundary second that IB's second-resolution end encoding re-delivers. When one
-second holds a full page and the window cannot retreat, the request stops with a warning
-instead of looping. A bar request whose segment fails returns an error rather than a series
-with a silent hole. Historical trade ticks with IB's zero size are skipped before constructing
-the positive-quantity Nautilus type; other invalid conversions still fail the request.
+Historical tick requests need both a start and an end time. They page backward from the end time, with a
+default cap of 10,000 ticks when no limit is given. They send only an end bound because IB misinterprets
+requests with both bounds. They deduplicate the boundary second that IB's second-resolution end encoding
+re-delivers. When one second holds a full page and the window cannot retreat, the request stops with a warning
+instead of looping.
+
+A bar request whose segment fails returns an error rather than a series with a silent hole. Historical trade
+ticks with IB's zero size are skipped before constructing the positive-quantity Nautilus type. Other invalid
+conversions still fail the request.
 
 IB controls pacing, available history, supported bar sizes, and regular-trading-hours filtering.
 For continuous futures, IB rejects an explicit bar end time. The adapter omits it and requests one
@@ -389,8 +417,10 @@ or limit order with `AT_THE_CLOSE` becomes the corresponding market-on-close or 
 order. GTD orders include their Nautilus expiry time in the IB order.
 
 The adapter rejects post-only orders. Quote quantity is valid only for inverse instruments, and
-trailing orders support price offsets and basis-point offsets, which IB receives as a trailing
-percent. These checks emit coded `OrderDenied` reasons before the adapter sends an order to IB.
+only on BUY `MARKET` orders, which IB sizes by `cashQty` (IB rejects a cash quantity on any other
+order type with error 10244). Trailing orders support price offsets and basis-point offsets, which
+IB receives as a trailing percent. These checks, and any order the adapter cannot resolve or
+transform for IB, emit coded `OrderDenied` reasons before the adapter sends an order to IB.
 
 ### Commands and order attributes
 
@@ -420,6 +450,11 @@ conversion. The adapter normalizes `order_type`, `tif` or `timeInForce`, `action
 `reference_price_type`, `rule_80_a`, `open_close`, and `NonGuaranteed`. Active, stop, cancel, manual,
 and good-till timestamps use `%Y%m%d %H:%M:%S UTC`.
 
+The adapter tracks each order by its IB order ID and reference, and checks each execution against the order
+side. Thus, tags cannot set `orderId`, `clientId`, `permId`, `orderRef`, `totalQuantity`, `cashQty`,
+`parentId`, or `transmit`. A tagged `action` must keep the order side: a SELL order may use `SSHORT` or
+`SLONG`, but not `BUY`. Such a tag fails the order conversion.
+
 The optional `conditions` array accepts these shapes:
 
 | Condition        | Required fields | Optional fields and defaults                                                |
@@ -431,7 +466,7 @@ The optional `conditions` array accepts these shapes:
 | `volume`         | None            | `conId=0`, `exchange="SMART"`, `volume=0`, `isMore=True`.                   |
 | `percent_change` | None            | `conId=0`, `exchange="SMART"`, `changePercent=0`, `isMore=True`.            |
 
-Every condition accepts `conjunction="and"` or `"or"`; the default is `"and"`.
+Every condition accepts `conjunction="and"` or `"or"`. The default is `"and"`.
 
 ### Account state
 
@@ -442,6 +477,12 @@ signals the download end. Every raw tag and key from both snapshots lands in `Ac
 under its IB name, so values IB publishes only on `updateAccountValue` (for example
 `PostExpirationExcess` and `PostExpirationMargin`) are readable from Python alongside the summary
 tags such as `TotalCashValue`. A key reported once per currency keeps the last value IB sends.
+
+The account has no base currency by default and keeps one balance per currency. Set `base_currency`
+to the account's base currency, the currency IB reports the summary tags in, for a single-currency
+account. The portfolio then converts P&L in other currencies with exchange rates from the cache, as
+for any account with a base currency. The client logs an error if IB reports a balance in another
+currency.
 
 ## Reconciliation
 
@@ -456,15 +497,28 @@ matching order or fill history, the execution engine can adopt the position from
 alone by creating its internal reconciliation fill. This preserves the report boundary: the adapter
 reports venue state, while the engine owns inferred state needed to reconcile its cache.
 
-IB's position average cost includes commissions, while a position rebuilt from fills averages their
-prices. When the reported fills of an instrument net to exactly its position quantity, the position
-report carries the entry price of those fills instead, so a position held across a restart
-reconciles. Otherwise the report keeps IB's average cost, which the engine's reconciliation fill
-uses.
+IB's position average cost includes commissions, while a position rebuilt from fills averages their prices.
+The adapter replays an instrument's fills, including the leg executions of combo orders, from the quantity
+held before the fill window. When the replay passes through flat or flips, the position report carries the
+average price of the fills after the last crossing, so a position held across a restart reconciles.
 
-On connect, the execution client resolves the instrument of every open position in the account and
-publishes any the cache does not hold, so a position in a contract outside the provider's `load_ids`
-is still recovered at startup rather than aborting the node.
+Fills that share a timestamp have no known execution order. If such a group mixes sides or flips, the entry
+price stays unknown until a later fill opens from flat or flips.
+
+The replay infers the quantity held before the window, so a missing execution would change the result. The
+report carries the replayed entry price only when both conditions hold:
+
+- Every execution of the instrument was parsed.
+- The price reproduces IB's average cost.
+
+For this check, the expected average cost is the entry price plus opening commissions per unit for a long. For
+a short, it is the entry price minus those commissions. A lot opened by a flip carries no commission.
+
+Otherwise the report keeps IB's average cost, which the engine's reconciliation fill uses.
+
+On connect, the execution client resolves the instrument of every open position in the account. It publishes
+any instrument absent from the cache. Thus, a position in a contract outside the provider's `load_ids` still
+recovers at startup instead of aborting the node.
 
 For a pending-cancel order missing from the open-orders snapshot, the adapter checks execution
 history before emitting a canceled event. Replayed executions are deduplicated after terminal order
@@ -473,12 +527,12 @@ state is evicted, including generated spread-leg fills.
 Set `track_option_exercise_from_position_update=True` only when position changes should drive option
 exercise tracking. This setting does not restore synthetic position-derived order reports.
 
-After a restart, orders a previous session left working return as open external orders. IB's
-`PreSubmitted` status, used for example while an order waits for its `goodAfterTime`, maps to
-`ACCEPTED`. The execution client resolves each restored order's IB order ID from its `PERM-`
-venue order ID and tracks it, so later IB status updates, fills, and cancels reach the owning
-strategy. Filled orders from the previous session reconcile from their real executions; the
-adapter reports no price for market-type orders, so reconciliation never infers a fill at price 0.
+After a restart, orders a previous session left working return as open external orders. IB's `PreSubmitted`
+status, used for example while an order waits for its `goodAfterTime`, maps to `ACCEPTED`. The execution
+client resolves each restored order's IB order ID from its `PERM-` venue order ID and tracks it, so later IB
+status updates, fills, and cancels reach the owning strategy. Filled orders from the previous session
+reconcile from their real executions. The adapter reports no price for market-type orders, so reconciliation
+never infers a fill at price 0.
 
 Replies to execution queries (`reqExecutions`) also arrive on IB's order update stream. The adapter
 treats only unsolicited execution details there as live fills, so startup and periodic execution
@@ -527,10 +581,10 @@ flowchart TD
     F -- no --> H[Remaining IB exchange value]
 ```
 
-The pseudo-venues are part of the adapter namespace under both symbology methods. For example,
-simplified symbology can produce `IBDE30.IBCFD` or `XAUUSD.IBCMDTY`, while raw symbology adds the
-security type to the symbol. These venues take precedence over `symbol_to_mic_venue` and
-`convert_exchange_to_mic_venue`; they do not describe a separate IB routing mechanism.
+The pseudo-venues are part of the adapter namespace under both symbology methods. For example, simplified
+symbology can produce `IBDE30.IBCFD` or `XAUUSD.IBCMDTY`, while raw symbology adds the security type to the
+symbol. These venues take precedence over `symbol_to_mic_venue` and `convert_exchange_to_mic_venue`. They do
+not describe a separate IB routing mechanism.
 
 Use the same provider config for data and execution clients so both resolve identical IDs. Startup
 `load_ids` and `load_contracts` are required entries: client initialization fails if a configured
@@ -583,13 +637,13 @@ provider_config = ib.InteractiveBrokersInstrumentProviderConfig(
 )
 ```
 
-Without a chain flag, `CONTFUT` represents IB's continuous future. IB limits continuous futures to
-historical data; they do not support live subscriptions or orders.
+Without a chain flag, `CONTFUT` represents IB's continuous future. IB limits continuous futures to historical
+data. They do not support live subscriptions or orders.
 
 ### Generic spreads
 
-Build spread IDs with `new_generic_spread_id`; do not format their leg grammar by hand. All legs
-must use the same venue, and the ratio sign selects the IB leg action:
+Build spread IDs with `new_generic_spread_id`. Do not format their leg grammar by hand. All legs must use the
+same venue, and the ratio sign selects the IB leg action:
 
 ```python
 from nautilus_trader.model import new_generic_spread_id
@@ -607,15 +661,65 @@ Load the leg instruments before requesting the spread. The provider qualifies ea
 the IB BAG contract, and caches the resulting spread instrument before data subscription or order
 submission.
 
-Spread executions come back from IB as a combo-level fill for the spread order and one execution
-per leg. Each leg execution becomes an `OrderFilled` event on the leg instrument, under the spread
-order's strategy, with a `-LEG-` client order ID; the execution engine applies it to the leg
-position without an order of its own. IB sends commission reports for the leg executions only, so
-the combo-level fill carries zero commission. On connect, the execution client loads and publishes
-the spread and leg instruments of every open or completed combo order, so startup reconciliation
-restores those orders even when the node does not load the spread itself. Startup fill reports hold
-each combo order's combo-level fills; its leg executions are left out, and the leg positions
-reconcile from IB's position reports.
+Spread executions come back from IB as a combo-level fill for the spread order and one execution per leg. Each
+leg execution becomes an `OrderFilled` event on the leg instrument under the spread order's strategy. It has a
+`-LEG-` client order ID. The execution engine applies it to the leg position without an order of its own. IB
+sends commission reports for the leg executions only, so the combo-level fill carries zero commission.
+
+On connect, the execution client loads and publishes the spread and leg instruments of every open or completed
+combo order, so startup reconciliation restores those orders even when the node does not load the spread
+itself. Startup fill reports hold each combo order's combo-level fills. Its leg executions are left out, and
+the leg positions reconcile from IB's position reports.
+
+### Price magnifier
+
+IB prices some contracts in a sub-unit of their currency, such as CBOT grains in cents and LSE
+stocks in pence, and reports a `priceMagnifier` for them (100 for both). The adapter divides every
+price IB reports for such a contract by the magnifier (market data, historical data, fills, and
+order reports), and multiplies the prices of orders it sends by it. Nautilus prices are therefore
+in the contract's currency, so a ZC bar IB reports at 486.25 is 4.8625, and `price * multiplier`
+is the contract value. IB's `minTick` is already in the contract's currency, so the instrument's
+price increment is the `minTick` as reported. A magnified option's strike is divided by the
+magnifier too. Prices given in `IBOrderTags` (for example `starting_price`, `stock_ref_price`,
+`discretionary_amt`, and `delta_neutral_aux_price`) and in order conditions are passed to IB as
+given, in IB's units, so a magnified contract's tag or condition price is the price IB reports for
+it, not the Nautilus price.
+
+Position average cost is a price in the contract's currency times the multiplier, so the adapter
+divides it by the multiplier only. IB reports a magnified option's computation (the underlying price
+and the greeks) in the contract's currency already, so the adapter publishes it unchanged.
+
+The execution client needs an instrument's magnifier before it submits or modifies an order for it.
+When its provider has not loaded the instrument, for example one a data client loaded after the
+execution client was created, the client takes the contract and magnifier from the instrument in
+the cache, or else requests the contract details from IB and waits up to `request_timeout` for
+them. It denies the order, or rejects the modify, when neither supplies the magnifier in time.
+An order canceled while it waits, singly or by a cancel-all, is canceled in the client and never
+reaches IB. Canceling one order of a waiting order list stops the whole list, and the client
+denies the list's other orders.
+
+#### Upgrading with magnified contracts
+
+Earlier versions converted a magnified contract's prices differently on each path. Before
+upgrading a node that trades or records contracts with a magnifier above 1:
+
+- **Flatten positions and cancel working orders in those contracts.** Earlier versions reported
+  fills and order prices at the magnifier squared times the price this version reports, reported
+  position average prices divided by the magnifier, and divided the prices of orders they sent by
+  it. A position opened before the upgrade and closed after it, or an order placed before it and
+  modified after it, mixes the two scales.
+- **Rebuild cached magnified options.** A magnified option's strike is now divided by the magnifier,
+  but an option instrument cached by an earlier version loads unchanged and keeps its strike in
+  IB's units beside prices in the contract's currency. Delete the provider's instrument cache file
+  (`cache_path`), and remove those instruments from any cache database the node loads instruments
+  from, so the adapter loads them again from IB. Other instruments are unchanged: their price
+  increment is IB's `minTick` in both versions.
+- **Convert recorded live data, not history.** Data from history requests (`request_bars`,
+  `request_quotes`, `request_trades`, and `HistoricalInteractiveBrokersClient`) and index prices
+  were already divided by the magnifier, so they match this version. Data recorded from
+  subscriptions was not: divide tick-by-tick quotes by the magnifier squared, and other quotes,
+  trades, bars, and order book data by the magnifier. Recorded fills, orders, and positions follow
+  the scales in the first item.
 
 ## Configuration reference
 
@@ -646,10 +750,10 @@ update, whichever comes first.
 
 When `subscription_idle_timeout_secs` is set, each live subscription emits
 `InteractiveBrokersSubscriptionIdle` once per interval of inactivity. A new market-data update rearms the
-notification. Subscribe to `DataType("InteractiveBrokersSubscriptionIdle")` through the message bus to
-receive these events in `on_data`. Each event identifies the data client, instrument, subscription, timeout,
-and last local data receipt time. A quiet instrument or closed market can also trigger an event; inactivity
-alone does not restart a subscription.
+notification. Subscribe to `DataType("InteractiveBrokersSubscriptionIdle")` through the message bus to receive
+these events in `on_data`. Each event identifies the data client, instrument, subscription, timeout, and last
+local data receipt time. A quiet instrument or closed market can also trigger an event. Inactivity alone does
+not restart a subscription.
 
 ### Execution client
 
@@ -659,6 +763,7 @@ alone does not restart a subscription.
 | `port`                                       | `4002`                  | TWS or IB Gateway socket port.                       |
 | `client_id`                                  | `1`                     | IB API client ID.                                    |
 | `account_id`                                 | `None`                  | Raw IB account code such as `DU123456`.              |
+| `base_currency`                              | `None`                  | Account base currency; `None` is multi-currency.     |
 | `connection_timeout`                         | `300` seconds           | Set the socket connection timeout.                   |
 | `request_timeout`                            | `60` seconds            | Set the IB request timeout.                          |
 | `fetch_all_open_orders`                      | `False`                 | Request all open orders visible to the session.      |

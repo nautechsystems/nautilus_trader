@@ -17,7 +17,7 @@ It reduces per-message overhead when an adapter receives or produces several cha
 ## Behavior
 
 - The batch must contain at least one delta.
-- Every delta's `instrument_id` must match the batch `instrument_id`.
+- Each delta's `instrument_id` must match the batch `instrument_id`.
 - The batch metadata mirrors the final delta.
 - The final delta should carry `F_LAST` when it closes a logical event group. See
   [Delta flags and event boundaries](index.md#delta-flags-and-event-boundaries).

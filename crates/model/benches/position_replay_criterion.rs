@@ -19,7 +19,7 @@
 
 use std::hint::black_box;
 
-use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
+use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     enums::{LiquiditySide, OrderSide, OrderType},
@@ -102,6 +102,24 @@ fn bench_fill_apply(c: &mut Criterion) {
                     },
                     BatchSize::LargeInput,
                 );
+            },
+        );
+    }
+
+    group.finish();
+}
+
+fn bench_requires_replay_state(c: &mut Criterion) {
+    let mut group = c.benchmark_group("position/requires_replay_state");
+
+    for count in HISTORY_COUNTS {
+        let (position, _) = position_with_fills(count);
+        group.throughput(Throughput::Elements(count as u64));
+        group.bench_with_input(
+            BenchmarkId::from_parameter(count),
+            &position,
+            |b, position| {
+                b.iter(|| black_box(position.requires_replay_state()));
             },
         );
     }
@@ -250,5 +268,10 @@ fn fill_void(fill: &OrderFilled) -> OrderFillVoided {
     )
 }
 
-criterion_group!(benches, bench_fill_apply, bench_fill_void_replay);
+criterion_group!(
+    benches,
+    bench_fill_apply,
+    bench_requires_replay_state,
+    bench_fill_void_replay
+);
 criterion_main!(benches);

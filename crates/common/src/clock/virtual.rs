@@ -18,6 +18,7 @@
 use std::{
     collections::{BTreeMap, BinaryHeap},
     ops::Deref,
+    sync::Arc,
 };
 
 use nautilus_core::{
@@ -27,12 +28,12 @@ use nautilus_core::{
 use ustr::Ustr;
 
 use super::{
-    CallbackRegistry, Clock, replace_existing_timer, validate_and_prepare_time_alert,
-    validate_and_prepare_timer,
+    CallbackRegistry, Clock, replace_existing_timer, validate_and_prepare_schedule,
+    validate_and_prepare_time_alert, validate_and_prepare_timer,
 };
 use crate::timer::{
-    ScheduledTimeEvent, TimeEvent, TimeEventCallback, TimeEventHandler, VirtualTimer,
-    create_valid_interval,
+    ScheduledTimeEvent, TimeEvent, TimeEventCallback, TimeEventHandler, TimerInterval,
+    TimerSchedule, VirtualTimer, create_valid_interval,
 };
 
 /// A deterministic clock for controlled time advancement.
@@ -202,6 +203,36 @@ impl VirtualClock {
             timer.next_time_ns(),
         ))
     }
+    fn register_timer(
+        &mut self,
+        name: Ustr,
+        interval: TimerInterval,
+        start_time_ns: UnixNanos,
+        stop_time_ns: Option<UnixNanos>,
+        callback: Option<TimeEventCallback>,
+        fire_immediately: bool,
+    ) -> anyhow::Result<()> {
+        check_predicate_true(
+            callback.is_some() | self.callbacks.has_any_callback(&name),
+            "No callbacks provided",
+        )?;
+
+        self.replace_existing_timer_if_needed(&name);
+        if let Some(callback) = callback {
+            self.callbacks.register_callback(name, callback);
+        }
+
+        let timer = VirtualTimer::new(
+            name,
+            interval,
+            start_time_ns,
+            stop_time_ns,
+            fire_immediately,
+        );
+        self.insert_timer(timer);
+
+        Ok(())
+    }
 }
 
 impl Default for VirtualClock {
@@ -317,41 +348,54 @@ impl Clock for VirtualClock {
         allow_past: Option<bool>,
         fire_immediately: Option<bool>,
     ) -> anyhow::Result<()> {
-        let ts_now = self.get_time_ns();
-        let (name, start_time_ns, stop_time_ns, _allow_past, fire_immediately) =
-            validate_and_prepare_timer(
-                name,
-                interval_ns,
-                start_time_ns,
-                stop_time_ns,
-                allow_past,
-                fire_immediately,
-                ts_now,
-            )?;
-
-        check_predicate_true(
-            callback.is_some() | self.callbacks.has_any_callback(&name),
-            "No callbacks provided",
-        )?;
-
-        self.replace_existing_timer_if_needed(&name);
-
-        if let Some(callback) = callback {
-            self.callbacks.register_callback(name, callback);
-        }
-
-        let interval_ns = create_valid_interval(interval_ns);
-
-        let timer = VirtualTimer::new(
+        let (name, start_time_ns, stop_time_ns, _, fire_immediately) = validate_and_prepare_timer(
             name,
             interval_ns,
             start_time_ns,
             stop_time_ns,
+            allow_past,
             fire_immediately,
-        );
-        self.insert_timer(timer);
+            self.get_time_ns(),
+        )?;
+        self.register_timer(
+            name,
+            TimerInterval::Fixed(create_valid_interval(interval_ns)),
+            start_time_ns,
+            stop_time_ns,
+            callback,
+            fire_immediately,
+        )
+    }
 
-        Ok(())
+    fn set_timer_schedule(
+        &mut self,
+        name: &str,
+        schedule: Arc<dyn TimerSchedule>,
+        stop_time_ns: Option<UnixNanos>,
+        callback: Option<TimeEventCallback>,
+        allow_past: Option<bool>,
+        fire_immediately: Option<bool>,
+    ) -> anyhow::Result<()> {
+        let start_time_ns = schedule.start_time_ns();
+        let interval = TimerInterval::Schedule(schedule);
+        let (name, start_time_ns, stop_time_ns, _, fire_immediately) =
+            validate_and_prepare_schedule(
+                name,
+                &interval,
+                Some(start_time_ns),
+                stop_time_ns,
+                allow_past,
+                fire_immediately,
+                self.get_time_ns(),
+            )?;
+        self.register_timer(
+            name,
+            interval,
+            start_time_ns,
+            stop_time_ns,
+            callback,
+            fire_immediately,
+        )
     }
 
     fn next_time_ns(&self, name: &str) -> Option<UnixNanos> {

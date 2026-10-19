@@ -429,3 +429,72 @@ def test_engine_generate_reports_match_reportprovider() -> None:
     assert isinstance(account, pd.DataFrame)
 
     engine.dispose()
+
+
+@pytest.mark.parametrize("is_snapshot", [False, True])
+def test_generate_positions_report_ts_closed_precision(is_snapshot: bool) -> None:
+    """
+    Test that ts_closed nanosecond values survive exactly.
+
+    See #5287.
+
+    """
+    ts_closed_exact = 1_760_000_000_123_456_789
+
+    opener = _make_fill(
+        client_order_id="O-001",
+        position_id="P-001",
+        order_side=OrderSide.BUY,
+        ts_event=1_760_000_000_000_000_000,
+    )
+    closed = Position(instrument=AUDUSD, fill=opener)
+    closer = _make_fill(
+        client_order_id="O-002",
+        position_id="P-001",
+        order_side=OrderSide.SELL,
+        ts_event=ts_closed_exact,
+    )
+    closed.apply(closer)
+
+    open_position = _make_position("O-003", "P-002")
+
+    positions = [open_position] if is_snapshot else [closed, open_position]
+    snapshots = [closed] if is_snapshot else None
+    report = ReportProvider.generate_positions_report(positions, snapshots=snapshots)
+
+    assert report.loc["P-001", "ts_closed"] == pd.Timestamp(ts_closed_exact, tz="UTC")
+    assert pd.isna(report.loc["P-002", "ts_closed"])
+    assert report.loc["P-001", "is_snapshot"] == is_snapshot
+    assert not report.loc["P-002", "is_snapshot"]
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_generate_positions_report_duplicate_ids(reverse: bool) -> None:
+    """
+    Test that duplicate position IDs retain each row's timestamps.
+    """
+    ts_opened = 1_760_000_000_000_000_000
+    ts_closed = 1_760_000_000_123_456_789
+    closed = Position(instrument=AUDUSD, fill=_make_fill(ts_event=ts_opened))
+    closed.apply(
+        _make_fill(
+            client_order_id="O-002",
+            order_side=OrderSide.SELL,
+            ts_event=ts_closed,
+        ),
+    )
+    open_position = _make_position("O-003", "P-001")
+    positions = [closed, open_position]
+    if reverse:
+        positions.reverse()
+
+    report = ReportProvider.generate_positions_report(positions)
+
+    assert report.index.tolist() == ["P-001", "P-001"]
+    assert report["ts_opened"].tolist() == [
+        pd.Timestamp(1_000_000_000, tz="UTC"),
+        pd.Timestamp(ts_opened, tz="UTC"),
+    ]
+    assert pd.isna(report["ts_closed"].iloc[0])
+    assert report["ts_closed"].iloc[1] == pd.Timestamp(ts_closed, tz="UTC")
+    assert report["is_snapshot"].tolist() == [False, False]

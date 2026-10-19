@@ -16,7 +16,7 @@
       "limit_price": "21.22",
       "max_fee": "1000",
       "mmp": false,
-      "nonce": 17796074552590,
+      "nonce": "17796074552590",
       "order_fee": "0",
       "order_id": "6a6eed97-b882-4909-a7ac-566fe99577e1",
       "order_status": "open",

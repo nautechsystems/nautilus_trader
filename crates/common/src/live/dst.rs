@@ -169,9 +169,11 @@ pub mod signal {
 
     /// Waits forever on builds without a real SIGTERM listener.
     ///
-    /// # Errors
-    ///
     /// This function never returns on these builds.
+    #[allow(
+        clippy::missing_errors_doc,
+        reason = "this build waits indefinitely instead of installing a signal listener"
+    )]
     #[cfg(any(all(feature = "simulation", madsim), not(unix)))]
     pub async fn terminate() -> std::io::Result<()> {
         std::future::pending::<std::io::Result<()>>().await

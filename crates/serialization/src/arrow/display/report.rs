@@ -81,7 +81,7 @@ pub fn order_status_report_schema() -> Schema {
 ///
 /// # Errors
 ///
-/// Returns an [`ArrowError`] if the Arrow `RecordBatch` cannot be constructed.
+/// Returns an error if the Arrow `RecordBatch` cannot be constructed.
 pub fn encode_order_status_reports(data: &[OrderStatusReport]) -> Result<RecordBatch, ArrowError> {
     let mut account_id = StringBuilder::new();
     let mut instrument_id = StringBuilder::new();

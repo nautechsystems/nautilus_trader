@@ -16,9 +16,8 @@ Nautilus domain messages. This page covers the shared transport behavior beneath
 
 ## HTTP client
 
-[`HttpClient`](../../crates/network/src/http/client.rs) wraps one reusable Hyper client and one
-or more shared rate limiters. A request waits for every applicable quota before the inner client
-builds and executes it.
+[`HttpClient`](../../crates/network/src/http/client.rs) wraps one reusable Hyper client and one or more shared
+rate limiters. A request waits for each applicable quota before the inner client builds and executes it.
 
 ```mermaid
 flowchart LR
@@ -40,8 +39,7 @@ flowchart LR
     hyper <--> endpoint
 ```
 
-The outer client applies quota policy; the reusable inner client owns connection and response
-policy.
+The outer client applies quota policy. The reusable inner client owns connection and response policy.
 
 The Rust API exposes `http::Method`, `http::StatusCode`, and `url::Url`. Requests return
 `HttpResponse` or `HttpResponseStream`, and failures return `HttpClientError`.
@@ -60,45 +58,47 @@ all requests unless a request supplies its own timeout.
 
 ### Proxy routing
 
-By default the client honors ambient proxy configuration: with `use_system_proxy` left at its
-default of `true` and no explicit `proxy_url`, requests are routed through the proxy named by
-`HTTP_PROXY`, `HTTPS_PROXY`, or `ALL_PROXY` (lowercase variants included), except destinations
-matched by `NO_PROXY`.
+By default the client honors ambient proxy configuration. With `use_system_proxy` at its default of `true` and
+no explicit `proxy_url`, requests use the proxy named by `HTTP_PROXY`, `HTTPS_PROXY`, or `ALL_PROXY`
+(lowercase variants included). Destinations matched by `NO_PROXY` bypass that proxy.
 
-This default is a deliberate trust decision on the process environment: an actor who controls it
-chooses the proxy that observes all plaintext HTTP traffic and the CONNECT tunnels that carry HTTPS.
+This default deliberately trusts the process environment. An actor who controls that environment chooses the
+proxy that observes all plaintext HTTP traffic and the CONNECT tunnels that carry HTTPS.
 
 An optional explicit `proxy_url` applies to both HTTP and HTTPS traffic and always takes precedence
 over ambient lookup. Passing `use_system_proxy(false)` disables ambient lookup, so requests route
 directly only when `proxy_url` is unset.
 
-**HTTP status errors remain normal `HttpResponse` values** so each adapter can interpret the venue's
-body and retry rules. The transport retries requests canceled before transmission on reused
-connections, and allows two retries for remote HTTP/2 `GOAWAY(NO_ERROR)` or `REFUSED_STREAM` errors.
-Other transport failures and HTTP status codes do not trigger retries. Adapters can wrap retryable
-operations with [`RetryManager`](../../crates/network/src/retry.rs), but the adapter must decide
-which venue errors and operations are safe to retry.
+**HTTP status errors stay normal `HttpResponse` values** so each adapter can interpret the venue's body and
+retry rules. Transport retries cover:
+
+- Requests canceled before transmission on reused connections.
+- Remote HTTP/2 `GOAWAY(NO_ERROR)` or `REFUSED_STREAM` errors, with two retries allowed.
+
+Other transport failures and HTTP status codes do not trigger retries. Adapters can wrap retryable operations
+with [`RetryManager`](../../crates/network/src/retry.rs), but the adapter must decide which venue errors and
+operations are safe to retry.
 
 ### Connection reuse and response bounds
 
-Each production `HttpClient` enables `TCP_NODELAY`, keeps up to 32 idle connections per host, and
-retains an idle connection for up to 60 seconds. HTTP/2 connections send keepalive probes every 30 seconds even
-while idle. Reusing a client preserves the pool and avoids a new TCP and TLS handshake for each
-request.
+Each production `HttpClient` enables `TCP_NODELAY`, keeps up to 32 idle connections per host, and keeps an
+idle connection for up to 60 seconds. HTTP/2 connections send keepalive probes at 30-second intervals even
+while idle. Reusing a client preserves the pool and avoids a new TCP and TLS handshake for each request.
 
-HTTP/2 connections use fixed flow-control windows of 16 MiB per stream and 32 MiB per connection,
-so a server can send up to 16 MiB of a response before the client acknowledges any of it. Setting
-`NAUTILUS_HTTP2_ADAPTIVE_WINDOW=true` before building a client selects Hyper's adaptive windows
-instead. The value `false` or an unset variable keeps the fixed windows, and any other value makes
-the client build fail. [Flow-control windows](#flow-control-windows) explains how these sizes were
-chosen.
+HTTP/2 connections use fixed flow-control windows of 16 MiB per stream and 32 MiB per connection. Thus, a
+server can send up to 16 MiB of a response before the client acknowledges any of it. Setting
+`NAUTILUS_HTTP2_ADAPTIVE_WINDOW=true` before building a client selects Hyper's adaptive windows instead. The
+value `false` or an unset variable keeps the fixed windows, and any other value makes the client build fail.
+[Flow-control windows](#flow-control-windows) explains how these sizes were chosen.
 
 Buffered responses contain the status, only the header names selected when the client was built, and the raw
 body bytes. The client rejects a declared body larger than 100 MiB before reading it. For chunked
-or unbounded responses, it stops as soon as accumulated bytes would cross the same limit. Transport
-error messages carry the request URL without its query string or fragment, so query credentials
-cannot leak through errors. Endpoints whose path can also contain credentials can use the redacted
-request path, which omits the URL from transport errors.
+or unbounded responses, it stops as soon as accumulated bytes would cross the same limit.
+
+The client adds only the request origin (scheme, host, and port) to transport errors and response-stream
+diagnostics. It excludes userinfo, paths, queries, and fragments from this URL context. Set
+`HttpClient::builder().redact_url(true)` to omit the added origin. Requests and diagnostic messages
+from lower layers are unchanged; TLS certificate errors and dependency logs can still include the hostname.
 
 `HttpClient::get_stream` returns status and body chunks without accumulating the complete response
 or applying the buffered size limit. One absolute deadline covers headers and the whole body,
@@ -116,9 +116,9 @@ direct Hyper implementation. Both run in the same `bench-lto` binary with fat LT
 unit. The CPU governor is `performance`, ASLR is disabled per process, and client and server threads
 are pinned to separate physical cores. Accepted sessions have no sampled Cargo or compiler activity.
 
-Five independent sessions provide 60 paired samples per workload. The following 64 KiB cases
-summarize GET and POST at concurrency 1 and 16; the full report includes 1 KiB and 1 MiB responses,
-p99 values, uncertainty intervals, and resource measurements.
+Five independent sessions provide 60 paired samples per workload. The following 64 KiB cases summarize GET and
+POST at concurrency 1 and 16. The full report includes 1 KiB and 1 MiB responses, p99 values, uncertainty
+intervals, and resource measurements.
 
 | 64 KiB workload      | Reqwest req/s | Hyper req/s | Paired throughput change | Paired p99 change |
 | -------------------- | ------------- | ----------- | ------------------------ | ----------------- |
@@ -127,8 +127,8 @@ p99 values, uncertainty intervals, and resource measurements.
 | GET, concurrency 16  | 55,870        | 55,460      | -0.5%                    | +0.4%             |
 | POST, concurrency 16 | 47,779        | 47,631      | -0.3%                    | +0.2%             |
 
-Throughput columns are medians of sample summaries. Changes are medians of paired within-round
-ratios; positive throughput changes and negative p99 changes favor Hyper.
+Throughput columns are medians of sample summaries. Changes are medians of paired within-round ratios.
+Positive throughput changes and negative p99 changes favor Hyper.
 
 Serial throughput for 1 KiB and 64 KiB responses improves by 3.6% to 5.0%. Concurrent cases range
 from -2.6% to +0.2%, and the 1 KiB concurrent POST case has a paired p99 increase of 1.8%. These
@@ -146,18 +146,18 @@ can set download speed. Hyper offers two modes:
 
 - Adaptive windows start at 65,535 bytes and grow toward 16 MiB as PING probes measure the
   bandwidth-delay product, with SETTINGS frames raising the window.
-- Fixed windows stay constant; Hyper's defaults are 2 MiB per stream and 5 MiB per connection.
+- Fixed windows stay constant. Hyper's defaults are 2 MiB per stream and 5 MiB per connection.
 
 `HttpClient` uses fixed windows of 16 MiB per stream and 32 MiB per connection. Adaptive windows
 caused two problems:
 
-- Cloudflare resets: downloads of the 284 MB uncompressed Deribit instrument list from
-  `api.tardis.dev`, which Cloudflare fronts, reset mid-body in 13 of 21 runs with adaptive windows,
-  while all 49 downloads with fixed windows of 2, 8, or 16 MiB completed. The evidence points to the
-  probe and SETTINGS traffic of adaptive growth as the trigger, not the window size.
-- Slow new connections: every body larger than 65,535 bytes needs extra round trips while the
-  window grows. At 100 ms RTT, a 1 MiB response on a new connection took 616 ms with adaptive windows
-  and 207 ms with fixed windows.
+- Cloudflare resets: Cloudflare fronts `api.tardis.dev`, which serves the 284 MB uncompressed Deribit
+  instrument list. Downloads reset mid-body in 13 of 21 runs with adaptive windows. All 49 downloads with
+  fixed windows of 2, 8, or 16 MiB completed. The evidence points to the probe and SETTINGS traffic of
+  adaptive growth as the trigger, not the window size.
+- Slow new connections: each body larger than 65,535 bytes needs extra round trips while the window grows. At
+  100 ms RTT, a 1 MiB response on a new connection took 616 ms with adaptive windows and 207 ms with fixed
+  windows.
 
 Hyper's fixed default avoids both problems but delivers at most 2 MiB per round trip, so large
 bodies slow down. A local benchmark compared the settings over TLS on loopback, with a relay adding
@@ -173,20 +173,23 @@ round-trip delay. The following cases at 100 ms RTT show the pattern, as median 
 | 4 MiB  | Warm       | 105      | 310         | 105         | 105          |
 | 16 MiB | Warm       | 212      | 935         | 315         | 108          |
 
-Warm connections had already served three requests of the same size, which gives adaptive windows
-time to grow. The 16 MiB stream window equals the adaptive ceiling, so a response gets that
-capacity from its first round trip without the probe traffic. Across 20, 100, and 250 ms RTT and
-bodies from 32 KiB to 16 MiB, on new and warm connections, fixed 16 MiB matched the faster of
-adaptive and Hyper's default within 1 ms or beat it. Fixed 8 MiB took two to three times as long
-for 16 MiB bodies. The 32 MiB connection window lets two large responses on one connection each
+Warm connections had already served three requests of the same size, which gives adaptive windows time to
+grow. The 16 MiB stream window equals the adaptive ceiling, so a response gets that capacity from its first
+round trip without the probe traffic.
+
+Tests covered 20, 100, and 250 ms RTT, bodies from 32 KiB to 16 MiB, and new and warm connections. Fixed 16
+MiB matched the faster of adaptive and Hyper's default within 1 ms or beat it. Fixed 8 MiB took two to three
+times as long for 16 MiB bodies. The 32 MiB connection window lets two large responses on one connection each
 use a full stream window.
 
-A slow reader can receive up to 16 MiB per stream and 32 MiB per connection before flow control
-pushes back, against at most 16 MiB for each under adaptive windows. Loopback bandwidth is effectively unlimited, so
-the benchmark overstates large-body gains. On a real link, the window limits throughput only when
-it is smaller than bandwidth times RTT: at 100 ms RTT, 2 MiB allows about 20 MiB/s and 16 MiB
-about 160 MiB/s. The [HTTP/2 flow-control benchmark](../../crates/network/benches/BENCHMARKS.md#http2-flow-control-windows)
-has the full tables, the method, and the Cloudflare runs.
+Before flow control applies backpressure, a slow reader can receive up to 16 MiB per stream and 32 MiB per
+connection. Adaptive windows allow at most 16 MiB for each.
+
+Loopback bandwidth is effectively unlimited, so the benchmark overstates large-body gains. On a real link, the
+window limits throughput only when it is smaller than bandwidth times RTT. At 100 ms RTT, 2 MiB allows about
+20 MiB/s and 16 MiB about 160 MiB/s. The
+[HTTP/2 flow-control benchmark](../../crates/network/benches/BENCHMARKS.md#http2-flow-control-windows) has the
+full tables, the method, and the Cloudflare runs.
 
 ## WebSocket client
 
@@ -262,17 +265,20 @@ tunneling is not implemented. Malformed proxy URLs and other unsupported schemes
 
 ### Inbound size limits
 
-`WebSocketConfig.max_message_size_bytes` and `WebSocketConfig.max_frame_size_bytes` bound inbound
-message and frame payload sizes for one connection. Leave them unset to pass each backend's current
-default config: 64 MiB per message and 16 MiB per frame. The frame cap bounds memory for one
-inbound frame. Both backends apply the message cap after that frame payload is read, so a lower
-message cap does not shrink the buffer. A zero value is rejected on the builder
-and on both handler and stream connect paths. A message that exceeds the message cap and fits in
-the frame cap fails the read with `MessageTooLarge`. On Sockudo, a frame that exceeds the frame cap
-fails first with `FrameTooLarge`. Sockudo applies its message cap to fragmented messages, and to a
-finished single-frame message only when `max_message_size_bytes` is set. Its small-frame parser
-skips the frame cap when the whole frame of 125 bytes or less is already buffered, so that case is
-not a reliable rejection. Tungstenite reports every frame breach as `MessageTooLarge`.
+`WebSocketConfig.max_message_size_bytes` and `WebSocketConfig.max_frame_size_bytes` bound inbound message and
+frame payload sizes for one connection. Leave them unset to pass each backend's current default config: **64
+MiB per message and 16 MiB per frame**.
+
+The frame cap bounds memory for one inbound frame. Both backends apply the message cap after that frame
+payload is read, so a lower message cap does not shrink the buffer. A zero value is rejected on the builder
+and on both handler and stream connect paths.
+
+Both backends apply the message cap to single-frame and fragmented messages. A message that exceeds the cap
+and fits in the frame cap fails the read with `MessageTooLarge`. Frame-limit errors differ by backend:
+
+- **Sockudo**: a frame that exceeds the frame cap fails first with `FrameTooLarge`, including a fully buffered
+  small frame.
+- **Tungstenite**: each frame breach is reported as `MessageTooLarge`.
 
 ### Liveness and recovery
 
@@ -282,21 +288,21 @@ peer to answer, so an unset `heartbeat_timeout_secs` defaults to three intervals
 choose a different window. A transport with no heartbeat gets no default, because nothing would
 guarantee the inbound frames needed to keep the window open.
 
-The **heartbeat timeout** resets on every inbound frame, including Ping and Pong, so it detects a peer
-that has stopped sending anything. The separate **idle timeout** resets only on text or binary
-application data, so control traffic cannot hide a silent market-data stream. A venue that answers
-the keepalive with a text payload refreshes the idle timeout exactly like real data does, so that
-window means something only when it sits below the heartbeat interval.
+The **heartbeat timeout** resets on each inbound frame, including Ping and Pong, so it detects a peer that has
+stopped sending anything. The separate **idle timeout** resets only on text or binary application data, so
+control traffic cannot hide a silent market-data stream. A venue that answers the keepalive with a text
+payload refreshes the idle timeout exactly like real data does. Thus, this window is meaningful only when it
+sits below the heartbeat interval.
 
 An unset timeout leaves that detection off, except that an unset `heartbeat_timeout_secs` still
 derives three intervals when a heartbeat is configured. A zero timeout is rejected. Adapters that
 expose a non-optional integer map zero to unset rather than passing it through.
 
-A read failure, write failure, Close frame, heartbeat timeout, idle timeout, or explicit reconnect
-request moves a handler-mode client into reconnecting state. Reconnect uses exponential backoff with
-bounded jitter and allows unlimited attempts by default. A replacement connection that remains
-active for at least 10 seconds resets the attempt count and backoff. A configured maximum closes
-the client after that many consecutive failed or short-lived attempts.
+A read failure, write failure, Close frame, heartbeat timeout, idle timeout, or explicit reconnect request
+moves a handler-mode client into reconnecting state. Reconnect uses exponential backoff with bounded jitter
+and allows unlimited attempts by default. A replacement connection that stays active for at least 10 seconds
+resets the attempt count and backoff. A configured maximum closes the client after that many consecutive
+failed or short-lived attempts.
 
 ```mermaid
 stateDiagram-v2
@@ -310,8 +316,8 @@ stateDiagram-v2
     Disconnecting --> Closed: shutdown completes
 ```
 
-Handler mode publishes `Disconnected` on entry to `Reconnecting` and `Connected` on recovery;
-individual attempts and deliberate disconnects add no state-sink edges.
+Handler mode publishes `Disconnected` on entry to `Reconnecting` and `Connected` on recovery. Individual
+attempts and deliberate disconnects add no state-sink edges.
 
 The writer installs the replacement sink before the controller starts its reader and publishes the
 reconnect notification. A **connection epoch** advances with each sink replacement. Reader fences drop
@@ -319,35 +325,38 @@ frames from retired sessions, while epoch-aware handlers and sends let an adapte
 transport that produced it. Mutable reconnect headers apply to later handshakes without interrupting
 the active connection.
 
-Adapters can register an `AuthTracker` so a disconnect invalidates authentication. They can also
-gate the reconnect buffer on that tracker, making messages wait for the new session to authenticate
-and discarding the remaining buffer if authentication fails. `SubscriptionState` separately records
-confirmed, pending subscribe, and pending unsubscribe intent for adapter-driven resubscription; it
-never sends protocol messages itself.
+Adapters can register an `AuthTracker` so a disconnect invalidates authentication. They can also gate the
+reconnect buffer on that tracker. Messages then wait for the new session to authenticate. If authentication
+fails, the client discards the remaining buffer. `SubscriptionState` separately records confirmed, pending
+subscribe, and pending unsubscribe intent for adapter-driven resubscription. It never sends protocol messages
+itself.
 
 ### Reconnect throttling
 
-Once three reconnect attempts occur inside a rolling two-minute window, each further attempt waits
-at least one second, regardless of the configured backoff. The window is purely time-based: a
-replacement connection that survives the stability threshold still resets the backoff and attempt
-count, but has no effect on the floor. Throttling lifts by itself once fewer than three attempts
-remain inside the window.
+Once three reconnect attempts occur inside a rolling two-minute window, each further attempt waits at least
+one second, regardless of the configured backoff. The window is purely time-based. A replacement connection
+that survives the stability threshold still resets the backoff and attempt count. This has no effect on the
+floor. Throttling lifts by itself once fewer than three attempts stay inside the window.
 
-Venues rate-limit new connections per IP (Binance permits 300 connections per five minutes, OKX
-three per second), so an unthrottled reconnect loop can otherwise escalate a transient drop into an
-IP-level throttle or ban affecting every client behind that address. The first three attempts in any
-window incur no additional throttling delay; configured backoff still applies. A single drop can
-still trigger an immediate first reconnect.
+Venues rate-limit new connections per IP (Binance permits 300 connections per five minutes, OKX three per
+second). Thus, an unthrottled reconnect loop can turn a transient drop into an IP-level throttle or ban that
+affects each client behind that address. The first three attempts in any window incur no additional throttling
+delay. Configured backoff still applies. A single drop can still trigger an immediate first reconnect.
 
 ### State reporting and explicit reconnect
 
-Clients configured with a `SocketStateSink` publish ordered `Connected` and `Disconnected`
-availability edges. A successful initial connection publishes `Connected`; transport loss or an
-accepted explicit reconnect publishes `Disconnected`; and a successful replacement publishes
-`Connected`. Initial connection failure, individual retry attempts, retry exhaustion, deliberate
-disconnect, and client drop do not add events. The sink therefore describes transport availability,
-not every internal `ConnectionMode` transition. Its callback runs synchronously and serializes
-edges, so it must return promptly and must not request another transition through the same sink.
+Clients configured with a `SocketStateSink` publish ordered `Connected` and `Disconnected` availability edges:
+
+1. A successful initial connection publishes `Connected`.
+1. Transport loss or an accepted explicit reconnect publishes `Disconnected`.
+1. A successful replacement publishes `Connected`.
+
+Initial connection failure, individual retry attempts, retry exhaustion, deliberate disconnect, and client
+drop do not add events. The sink describes transport availability and does not report all internal
+`ConnectionMode` transitions.
+
+Its callback runs synchronously and serializes edges, so it must return promptly and must not request another
+transition through the same sink.
 
 `request_reconnect()` atomically asks a handler-mode controller to replace its active transport. A
 cloneable `WebSocketReconnectHandle` gives adapter tasks the same capability without ownership of
@@ -359,12 +368,14 @@ caller-owned.
 
 ### Send semantics
 
-Application text and binary sends wait for their rate-limit keys and for an active connection. The
-ordinary send methods return after enqueueing the frame, so **success does not prove delivery**. The
-writer keeps FIFO order for application messages buffered during reconnect or after a failed write
-and replays them on a replacement connection. A control frame belongs to the connection it was
-issued on, so a failed Ping, Pong, or Close is dropped rather than replayed. This in-memory buffer
-provides reconnect continuity, not durable or exactly-once delivery.
+Application text and binary sends wait for their rate-limit keys and for an active connection. The ordinary
+send methods return after enqueueing the frame, so **success does not prove delivery**.
+
+The writer keeps FIFO order for application messages buffered during reconnect or after a failed write and
+replays them on a replacement connection. A control frame belongs to the connection it was issued on, so a
+failed Ping, Pong, or Close is dropped rather than replayed.
+
+This in-memory buffer provides reconnect continuity, not durable or exactly-once delivery.
 
 Ownership-bound text sends take an expected connection epoch and wait for the writer result. They
 fail if ownership changes and never replay on another connection. Connection-bound Pong sends use
@@ -378,11 +389,12 @@ retry blindly.
 
 ### Writer capacity
 
-`WebSocketConfig::writer_capacity` limits ordinary messages across the writer queue, in-flight writes,
-and reconnect buffer. It defaults to 1,024 messages. Ownership-bound sends, keepalives, and control
-frames share a separate allowance of the same size so authentication can proceed when replay fills
-the ordinary allowance. A full allowance rejects new sends with `SendError::BufferFull` before
-enqueueing. These limits bound message count, not payload bytes.
+`WebSocketConfig::writer_capacity` limits ordinary messages across the writer queue, in-flight writes, and
+reconnect buffer. It defaults to 1,024 messages.
+
+Ownership-bound sends, keepalives, and control frames share a separate allowance of the same size so
+authentication can proceed when replay fills the ordinary allowance. A full allowance rejects new sends with
+`SendError::BufferFull` before enqueueing. These limits bound **message count, not payload bytes**.
 
 ### Backend benchmarks
 
@@ -443,22 +455,23 @@ flowchart LR
     stream <--> endpoint
 ```
 
-The writer owns framing and replay order; the adapter receives complete messages without the
-configured suffix.
+The writer owns framing and replay order. The adapter receives complete messages without the configured
+suffix.
 
 ### Framing and liveness
 
-The suffix must contain at least one byte and applies in both directions. The reader retains a
-partial frame across reads and strips the suffix before invoking the callback. While the session
-remains active, it emits complete messages in arrival order. If an unterminated frame grows past
-10 MiB, the reader stops and the controller reconnects instead of allowing unchecked memory growth.
+The suffix must contain at least one byte and applies in both directions. The reader keeps a partial frame
+across reads and strips the suffix before invoking the callback. While the session stays active, it emits
+complete messages in arrival order. If an unterminated frame grows past 10 MiB, the reader stops and the
+controller reconnects instead of allowing unchecked memory growth.
 
-An optional heartbeat task sends a configured byte payload at a fixed interval; the writer appends
-the same suffix as it does for application messages. A raw socket has no Ping frames, so the
-payload is required. `heartbeat_timeout_secs` stops the reader when no bytes arrive within the
-window. Unset, it defaults to three intervals when a heartbeat is configured and leaves detection
-off otherwise. A zero timeout is rejected. The socket enables `TCP_NODELAY` to avoid Nagle delays
-for small protocol messages.
+An optional heartbeat task sends a configured byte payload at a fixed interval. The writer appends the same
+suffix as it does for application messages. A raw socket has no Ping frames, so the payload is required.
+
+`heartbeat_timeout_secs` stops the reader when no bytes arrive within the window. Unset, it defaults to three
+intervals when a heartbeat is configured and leaves detection off otherwise. A zero timeout is rejected.
+
+The socket enables `TCP_NODELAY` to avoid Nagle delays for small protocol messages.
 
 ### Connection and TLS policy
 
@@ -466,12 +479,13 @@ The client accepts `host:port` or URL input and supports plain or TLS mode. TLS 
 web PKI roots. A certificate directory can add trusted roots and, when it contains a matching
 certificate and private key, supply a client identity for mutual TLS.
 
-Initial connection establishment makes up to five attempts by default, with a 10-second bound per
-attempt and exponential backoff. Once connected, transport loss uses the configurable reconnect
-timeout, exponential backoff, bounded jitter, and unlimited attempts by default. As with the
-WebSocket client, 10 seconds of stable uptime resets the reconnect cycle, and the same reconnect
-throttling bounds its attempt rate once reconnects flap. An optional state sink reports semantic
-connection loss and recovery.
+Initial connection establishment makes up to five attempts by default, with a 10-second bound per attempt and
+exponential backoff.
+
+Once connected, transport loss uses the configurable reconnect timeout, exponential backoff, bounded jitter,
+and unlimited attempts by default. As with the WebSocket client, 10 seconds of stable uptime resets the
+reconnect cycle. The same reconnect throttling bounds its attempt rate once reconnects flap. An optional state
+sink reports semantic connection loss and recovery.
 
 ### State reporting and explicit reconnect
 
@@ -481,19 +495,22 @@ enters reconnect, and `Connected` after recovery. It omits initial failures, ind
 retry exhaustion, deliberate disconnect, and drop. Its synchronous callback must return promptly
 and must not request another transition through the same sink.
 
-`request_reconnect()` atomically asks the controller to replace an active plain or TLS transport.
-The cloneable `SocketReconnectHandle` lets adapter tasks make that request without owning the client
-and reports whether it was accepted or rejected because the client is already reconnecting,
-disconnecting, or closed. An accepted request publishes `Disconnected` before waking the controller;
-normal reconnect replay and buffer ordering then apply to the replacement.
+`request_reconnect()` atomically asks the controller to replace an active plain or TLS transport. The
+cloneable `SocketReconnectHandle` lets adapter tasks make that request without owning the client. It reports
+whether the request was accepted. The request is rejected if the client is already reconnecting,
+disconnecting, or closed. An accepted request publishes `Disconnected` before waking the controller. Normal
+reconnect replay and buffer ordering then apply to the replacement.
 
 ### Replay and delivery boundaries
 
-During reconnect, the writer buffers application messages in FIFO order. After installing a
-replacement writer, it can first send protocol replay messages supplied by the adapter, such as a
-logon or session setup sequence, and then drain the buffered application messages. The replacement
-reader starts only after that drain succeeds. A post-reconnection callback runs after the writer,
-buffer, and reader are ready.
+During reconnect, the writer buffers application messages in FIFO order. Recovery proceeds as follows:
+
+1. After installing a replacement writer, it can send protocol replay messages supplied by the adapter, such as
+   a logon or session setup sequence.
+1. The writer drains the buffered application messages.
+1. The replacement reader starts only after that drain succeeds.
+
+A post-reconnection callback runs after the writer, buffer, and reader are ready.
 
 ```mermaid
 sequenceDiagram
@@ -523,8 +540,8 @@ sequenceDiagram
     end
 ```
 
-A raw TCP replacement becomes active only after optional protocol replay and buffered application
-messages drain successfully; the reader and post-reconnection callback start afterward.
+A raw TCP replacement becomes active only after optional protocol replay and buffered application messages
+drain successfully. The reader and post-reconnection callback start afterward.
 
 :::warning
 `send_bytes` returns when the message enters the writer channel, not when the peer receives it. A
@@ -535,18 +552,18 @@ socket client.
 
 ### Writer capacity
 
-`SocketConfig::writer_capacity` limits the combined number of queued, in-flight, and replay messages
-and defaults to 1,024. Once full, the writer rejects new sends with `SendError::BufferFull`, including
-sends through `SocketClient::writer_tx`. Accepted messages retain their replay policy. This limits
-message count, not payload bytes.
+`SocketConfig::writer_capacity` limits the combined number of queued, in-flight, and replay messages and
+defaults to 1,024. Once full, the writer rejects new sends with `SendError::BufferFull`, including sends
+through `SocketClient::writer_tx`. Accepted messages keep their replay policy. This limits message count, not
+payload bytes.
 
 ## TCP socket options
 
-The WebSocket and raw TCP socket clients apply the same options to every outbound connection,
-including the hop to an HTTP `CONNECT` proxy. The HTTP client uses a separate Hyper connector with
-`TCP_NODELAY`, keepalive after 15 seconds idle with 15 seconds between probes and three retries, and
-a 30-second `TCP_USER_TIMEOUT` on Linux, Android, and Fuchsia. The table below applies to WebSocket
-and raw TCP clients.
+The WebSocket and raw TCP socket clients apply the same options to each outbound connection, including the hop
+to an HTTP `CONNECT` proxy. The HTTP client uses a separate Hyper connector with `TCP_NODELAY`.
+The HTTP client's keepalive starts after 15 seconds idle, with 15 seconds between probes and three retries.
+The HTTP client also uses a 30-second `TCP_USER_TIMEOUT` on Linux, Android, and Fuchsia.
+The table below applies to WebSocket and raw TCP clients.
 
 | Option             | Value                           | Detects or prevents                                       |
 | ------------------ | ------------------------------- | --------------------------------------------------------- |
@@ -554,10 +571,10 @@ and raw TCP clients.
 | Keepalive          | 20 s idle, 10 s apart, 3 probes | An idle peer that has gone away without closing           |
 | `TCP_USER_TIMEOUT` | 1 minute, Linux only            | Outbound data that is never acknowledged                  |
 
-These catch a connection that stops delivering without closing, which a NAT or load balancer
-produces when it drops state with no `FIN` and no `RST`. Writes keep succeeding into the send buffer
-and return `Ok` for messages the peer will never receive. Kernel defaults take roughly 15 minutes to
-give up; these bound that at about a minute.
+These catch a connection that stops delivering without closing. A NAT or load balancer produces this condition
+when it drops state with no `FIN` and no `RST`. Writes keep succeeding into the send buffer and return `Ok`
+for messages the peer will never receive. Kernel defaults take approximately 15 minutes to detect this
+failure. These settings limit detection to approximately one minute.
 
 `TCP_USER_TIMEOUT` is sized to exceed the keepalive probe budget. On Linux it also overrides
 `TCP_KEEPCNT`, so detection there follows the timeout rather than the probe count, which applies on
@@ -569,19 +586,17 @@ that rejects an option is still usable, so failures are logged and the connectio
 
 ## Testing
 
-The network crate separates algorithm checks from operating-system I/O and simulated failure
-topologies. This keeps a failure local: a state-machine invariant should fail without a socket, wire
-behavior should fail against a small loopback peer, and reconnect races should fail under a
-reproducible network schedule.
+The network crate separates algorithm checks from operating-system I/O and simulated failure topologies. This
+keeps a failure local. A state-machine invariant should fail without a socket. Wire behavior should fail
+against a small loopback peer. Reconnect races should fail under a reproducible network schedule.
 
 ### Unit and component tests
 
-Tests beside the implementation cover configuration validation, state transitions, rate limits,
-backoff, retry budgets, framing, transport conversion, authentication, subscription state, and
-reconnect buffer policy. Pure logic uses fake clocks and direct state models. Async task tests use
-paused Tokio time, in-memory duplex streams, injected transports, or an ephemeral loopback server so
-they can exercise the real reader, writer, heartbeat, and controller tasks without an external
-service.
+Tests beside the implementation cover configuration validation, state transitions, rate limits, backoff, retry
+budgets, framing, transport conversion, authentication, subscription state, and reconnect buffer policy. Pure
+logic uses fake clocks and direct state models. Async task tests use paused Tokio time, in-memory duplex
+streams, injected transports, or an ephemeral loopback server. Thus, they exercise the real reader, writer,
+heartbeat, and controller tasks without an external service.
 
 The client suites then test their own protocol boundary. HTTP tests cover request serialization,
 response headers and body limits, timeouts, proxy behavior, and URL redaction. WebSocket and raw TCP
@@ -592,22 +607,20 @@ complete mutual-TLS handshake. A separate loopback integration suite exercises t
 
 ### Property tests
 
-[`proptest`](https://github.com/proptest-rs/proptest) generates values and operation traces for
-invariants that example cases cannot enumerate. The suites compare GCRA decisions with a reference
-model, check backoff and retry bounds, round-trip transport messages through both WebSocket
-backends, and exercise authentication, subscription, and reconnect-buffer state machines. Selected
-suites persist minimized failures in `crates/network/proptest-regressions` so a discovered case
-becomes a permanent regression test.
+[`proptest`](https://github.com/proptest-rs/proptest) generates values and operation traces for invariants
+that example cases cannot enumerate. The suites compare GCRA decisions with a reference model and check
+backoff and retry bounds. They round-trip transport messages through both WebSocket backends and exercise
+authentication, subscription, and reconnect-buffer state machines. Selected suites persist minimized failures
+in `crates/network/proptest-regressions` so a discovered case becomes a permanent regression test.
 
 ### Deterministic network simulation
 
-[`turmoil`](https://crates.io/crates/turmoil) tests compile the production raw TCP and WebSocket
-clients against simulated TCP types through the crate's `net` seam. Fixed seeds make failures
-reproducible. Stressed runs vary task order and message latency, while scenarios inject connection
-drops, partitions and repairs, stalled peers, handshake failures, and disconnects during backoff or
-recovery. Assertions cover eventual state, attempt limits, heartbeat behavior, message ordering,
-authentication gating, and clean shutdown. Separate suites exercise the Tungstenite and Sockudo
-backends over the same simulated protocol.
+[`turmoil`](https://crates.io/crates/turmoil) tests compile the production raw TCP and WebSocket clients
+against simulated TCP types through the crate's `net` seam. Fixed seeds make failures reproducible. Stressed
+runs vary task order and message latency. Scenarios inject connection drops, partitions and repairs, stalled
+peers, handshake failures, and disconnects during backoff or recovery. Assertions cover eventual state,
+attempt limits, heartbeat behavior, message ordering, authentication gating, and clean shutdown. Separate
+suites exercise the Tungstenite and Sockudo backends over the same simulated protocol.
 
 Default tests keep real Tokio loopback networking and exclude the simulation-only suites. Enabling
 the `turmoil` feature swaps the TCP layer and includes those suites:

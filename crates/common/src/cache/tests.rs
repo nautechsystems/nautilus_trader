@@ -15,13 +15,7 @@
 
 //! Tests module for `Cache`.
 
-use std::{
-    borrow::Cow,
-    cell::RefCell,
-    panic::{AssertUnwindSafe, catch_unwind},
-    rc::Rc,
-    sync::Arc,
-};
+use std::{borrow::Cow, cell::RefCell, rc::Rc, sync::Arc};
 
 use ahash::{AHashMap, AHashSet, RandomState};
 use bytes::Bytes;
@@ -37,19 +31,21 @@ use nautilus_model::{
     accounts::AccountAny,
     data::{
         Bar, BarType, CustomData, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentClose,
-        InstrumentStatus, MarkPriceUpdate, QuoteTick, TradeTick, greeks::OptionGreekValues,
+        InstrumentStatus, MarkPriceUpdate, QuoteTick, TradeTick,
+        greeks::{OptionGreekValues, YieldCurve},
         option_chain::OptionGreeks,
     },
     enums::{
         AccountType, AggregationSource, AggressorSide, AssetClass, BookType, ContingencyType,
         CurrencyType, GreeksConvention, InstrumentClass, InstrumentCloseType, LiquiditySide,
-        MarketStatusAction, OmsType, OptionKind, OrderSide, OrderStatus, OrderType, PositionSide,
-        PriceType, TimeInForce, TriggerType,
+        MarketStatusAction, OmsType, OptionKind, OrderSide, OrderStatus, OrderType,
+        PositionAdjustmentType, PositionSide, PriceType, TimeInForce, TriggerType,
     },
     events::{
         AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderEmulated,
         OrderEventAny, OrderFilled, OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate,
         OrderRejected, OrderReleased, OrderSnapshot, OrderSubmitted, OrderUpdated,
+        PositionAdjusted,
         order::spec::{
             OrderCanceledSpec, OrderEmulatedSpec, OrderFilledSpec, OrderReleasedSpec,
             OrderUpdatedSpec,
@@ -1833,6 +1829,35 @@ fn test_add_instrument_close_persists_replacement() {
         restored.instrument_close(&instrument_id),
         Some(&replacement)
     );
+}
+
+#[rstest]
+fn test_add_yield_curve_rejects_curve_get_rate_cannot_evaluate(mut cache: Cache) {
+    let valid = YieldCurve::new(
+        "USD".to_string(),
+        vec![0.0],
+        vec![0.04],
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    );
+
+    let invalid = YieldCurve::new(
+        "USD".to_string(),
+        vec![],
+        vec![],
+        UnixNanos::from(2),
+        UnixNanos::from(2),
+    );
+    cache.add_yield_curve(valid).unwrap();
+
+    let error = cache.add_yield_curve(invalid).unwrap_err();
+
+    assert!(
+        error
+            .to_string()
+            .contains("one rate or at least three points")
+    );
+    assert_eq!(cache.yield_curve("USD").unwrap()(1.0), 0.04);
 }
 
 // -- EXECUTION -------------------------------------------------------------------------------
@@ -4281,6 +4306,108 @@ fn test_update_position_from_fill_applies_to_canonical_state(
     assert_eq!(cache.is_position_open(&position_id), !expected_closed);
 }
 
+fn funding_adjustment(position: &Position, pnl: &str) -> PositionAdjusted {
+    PositionAdjusted::new(
+        position.trader_id,
+        position.strategy_id,
+        position.instrument_id,
+        position.id,
+        position.account_id,
+        PositionAdjustmentType::Funding,
+        None,
+        Some(Money::from(pnl)),
+        Some("funding_settlement:test".into()),
+        UUID4::new(),
+        UnixNanos::from(2),
+        UnixNanos::from(2),
+    )
+}
+
+#[rstest]
+fn test_update_position_from_adjustment_applies_in_place_and_reverts(
+    mut cache: Cache,
+    audusd_sim: CurrencyPair,
+) {
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    let opening_fill = OrderFilledSpec::builder()
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::new("O-ADJ-OPEN"))
+        .trade_id(TradeId::new("T-ADJ-OPEN"))
+        .position_id(PositionId::new("P-ADJ"))
+        .last_px(Price::from("1.00000"))
+        .liquidity_side(LiquiditySide::Maker)
+        .commission(Money::from("1 USD"))
+        .build();
+    let position = Position::new(&instrument, opening_fill);
+    let position_id = position.id;
+    cache.add_position(&position, OmsType::Netting).unwrap();
+
+    {
+        let mut cached = cache.position_mut(&position_id).unwrap();
+        cached.adjustments.reserve(4);
+        cached.replay_events.reserve(4);
+    }
+    let (adjustments_ptr, replay_events_ptr) = {
+        let cached = cache.position(&position_id).unwrap();
+        (cached.adjustments.as_ptr(), cached.replay_events.as_ptr())
+    };
+
+    let adjustment = funding_adjustment(&position, "-3 USD");
+    let mut expected = position.clone();
+    expected.apply_adjustment(adjustment);
+    let prior = position.clone_without_events();
+
+    cache
+        .update_position_from_adjustment(position_id, adjustment)
+        .unwrap();
+
+    {
+        let cached = cache.position(&position_id).unwrap();
+        assert_eq!(
+            serde_json::to_value(&*cached).unwrap(),
+            serde_json::to_value(&expected).unwrap(),
+        );
+        assert_eq!(cached.adjustments.as_ptr(), adjustments_ptr);
+        assert_eq!(cached.replay_events.as_ptr(), replay_events_ptr);
+        assert!(cache.is_position_open(&position_id));
+    }
+
+    cache.revert_position_adjustment(&prior).unwrap();
+
+    assert!(cache.is_position_open(&position_id));
+    let cached = cache.position(&position_id).unwrap();
+    assert_eq!(
+        serde_json::to_value(&*cached).unwrap(),
+        serde_json::to_value(&position).unwrap(),
+    );
+}
+
+#[rstest]
+fn test_update_position_from_adjustment_refuses_unknown_position(audusd_sim: CurrencyPair) {
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    let fill = OrderFilledSpec::builder()
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::new("O-ADJ-UNKNOWN"))
+        .trade_id(TradeId::new("T-ADJ-UNKNOWN"))
+        .position_id(PositionId::new("P-ADJ-UNKNOWN"))
+        .last_px(Price::from("1.0"))
+        .liquidity_side(LiquiditySide::Maker)
+        .commission(Money::from("1 USD"))
+        .build();
+    let position = Position::new(&instrument, fill);
+    let mut cache = Cache::default();
+
+    let error = cache
+        .update_position_from_adjustment(position.id, funding_adjustment(&position, "-3 USD"))
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        format!("Cannot update position {}: not found in cache", position.id),
+    );
+    assert!(cache.positions.is_empty());
+}
+
 #[rstest]
 fn test_update_position_from_fill_refuses_unknown_position(audusd_sim: CurrencyPair) {
     let instrument = InstrumentAny::CurrencyPair(audusd_sim);
@@ -4328,11 +4455,7 @@ fn test_update_position_from_fill_duplicate_leaves_canonical_state_unchanged(
     let position = Position::new(&instrument, fill.clone());
     cache.add_position(&position, OmsType::Netting).unwrap();
 
-    let result = catch_unwind(AssertUnwindSafe(|| {
-        cache.update_position_from_fill(position_id, &fill)
-    }));
-
-    assert!(result.is_err());
+    cache.update_position_from_fill(position_id, &fill).unwrap();
     let cached = cache.position(&position_id).unwrap();
     assert_eq!(
         serde_json::to_value(&*cached).unwrap(),
@@ -7563,7 +7686,7 @@ fn test_purge_open_position_skips_purge() {
 }
 
 #[rstest]
-fn test_purge_instrument_removes_from_cache_and_indices() {
+fn test_purge_instrument_removes_market_data_and_preserves_history() {
     let mut cache = Cache::default();
     let audusd_sim = audusd_sim();
     let instrument_id = audusd_sim.id;
@@ -7728,13 +7851,12 @@ fn test_purge_instrument_removes_from_cache_and_indices() {
     assert!(cache.funding_rate(&instrument_id).is_none());
     assert!(cache.instrument_status(&instrument_id).is_none());
     assert!(cache.instrument_close(&instrument_id).is_none());
-    assert!(!cache.index.instrument_orders.contains_key(&instrument_id));
-    assert!(
-        !cache
-            .index
-            .instrument_positions
-            .contains_key(&instrument_id)
-    );
+    {
+        let orders = cache.orders(None, Some(&instrument_id), None, None, None);
+        let positions = cache.positions(None, Some(&instrument_id), None, None, None);
+        assert_eq!(orders.len(), 2);
+        assert_eq!(positions.len(), 1);
+    }
     assert!(cache.check_integrity());
 }
 
@@ -7816,7 +7938,7 @@ fn test_purge_instrument_skip_order_guard_allows_orders_open() {
     cache.purge_instrument_skip_order_guard(instrument_id);
 
     assert!(cache.instrument(&instrument_id).is_none());
-    assert!(!cache.index.instrument_orders.contains_key(&instrument_id));
+    assert!(cache.has_orders_open(None, Some(&instrument_id), None, None, None));
     assert!(cache.check_integrity());
 }
 

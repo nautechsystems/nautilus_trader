@@ -72,8 +72,7 @@ pub trait KernelEventStore: Debug {
     ///
     /// # Errors
     ///
-    /// Returns an error when the source reader, snapshot restore, decode, or cache apply
-    /// step fails.
+    /// Returns an error if the source reader, snapshot restore, decode, or cache apply step fails.
     fn restore_parent_cache(&mut self, instance_id: UUID4, cache: &mut Cache)
     -> anyhow::Result<()>;
 
@@ -85,8 +84,8 @@ pub trait KernelEventStore: Debug {
     ///
     /// # Errors
     ///
-    /// Returns an error when opening the new run, spawning the writer, or blocking on the
-    /// initial entry ack fails.
+    /// Returns an error if opening the new run, spawning the writer, or blocking on the initial
+    /// entry ack fails.
     fn open(
         &mut self,
         instance_id: UUID4,

@@ -185,7 +185,7 @@ pub fn estimate_max_size_for_impact(
 ///
 /// # Errors
 ///
-/// Returns error if:
+/// Returns an error if:
 /// - The pool is not initialized.
 /// - The swap simulation fails.
 /// - The trade info or slippage calculation fails.
@@ -323,7 +323,7 @@ fn binary_search_for_size(
 ///
 /// # Errors
 ///
-/// Returns error if:
+/// Returns an error if:
 /// - The target impact is zero or exceeds 10,000 basis points.
 /// - The pool is not initialized.
 pub fn size_for_impact_bps(
@@ -344,7 +344,7 @@ pub fn size_for_impact_bps(
 ///
 /// # Errors
 ///
-/// Returns error if:
+/// Returns an error if:
 /// - The target impact is zero or exceeds 10,000 basis points.
 /// - The pool is not initialized.
 /// - The final slippage calculation fails.

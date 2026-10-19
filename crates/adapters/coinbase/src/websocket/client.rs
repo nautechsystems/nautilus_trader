@@ -42,6 +42,7 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
 };
 use nautilus_network::{
+    ConnectionUrl,
     http::create_standard_nautilus_headers,
     mode::ConnectionMode,
     ratelimiter::quota::Quota,
@@ -90,7 +91,7 @@ pub static COINBASE_WS_SUBSCRIPTION_KEYS: LazyLock<[Ustr; 1]> =
 /// Spawns a [`FeedHandler`] task that parses raw messages into Nautilus types.
 #[derive(Debug)]
 pub struct CoinbaseWebSocketClient {
-    url: String,
+    url: ConnectionUrl,
     connection_mode: Arc<ArcSwap<AtomicU8>>,
     signal: Arc<AtomicBool>,
     cmd_tx: Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>>,
@@ -141,7 +142,7 @@ impl CoinbaseWebSocketClient {
         let (placeholder_tx, _) = tokio::sync::mpsc::unbounded_channel();
 
         Self {
-            url: url.to_string(),
+            url: url.into(),
             connection_mode: Arc::new(ArcSwap::from_pointee(AtomicU8::new(
                 ConnectionMode::Closed.as_u8(),
             ))),
@@ -201,11 +202,12 @@ impl CoinbaseWebSocketClient {
     /// command the client sends to the handler; when called after, a fresh
     /// `InitializeInstruments` command is sent to refresh the handler's cache.
     pub async fn initialize_instruments(&self, instruments: Vec<InstrumentAny>) {
+        let cmd_tx = self.cmd_tx.read().await;
+
         for instrument in &instruments {
             self.instruments.insert(instrument.id(), instrument.clone());
         }
 
-        let cmd_tx = self.cmd_tx.read().await;
         if let Err(e) = cmd_tx.send(HandlerCommand::InitializeInstruments(instruments)) {
             log::debug!("Failed to send InitializeInstruments: {e}");
         }
@@ -251,7 +253,7 @@ impl CoinbaseWebSocketClient {
         let headers = create_standard_nautilus_headers();
 
         let cfg = WebSocketConfig {
-            url: self.url.clone(),
+            url: self.url.expose().to_owned(),
             headers,
             // Coinbase uses TCP control-frame pings for transport keep-alive;
             // application-layer liveness comes from the heartbeats channel.
@@ -292,11 +294,10 @@ impl CoinbaseWebSocketClient {
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
         let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<NautilusWsMessage>();
 
-        *self.cmd_tx.write().await = cmd_tx.clone();
         self.out_rx = Some(out_rx);
-        self.connection_mode.store(client.connection_mode_atomic());
+        let connection_mode = client.connection_mode_atomic();
         let reconnect_handle = client.reconnect_handle();
-        log::debug!("Coinbase WebSocket connected: {}", self.url);
+        log::debug!("Coinbase WebSocket connected: {}", self.url.origin());
 
         if let Err(e) = cmd_tx.send(HandlerCommand::SetClient(client)) {
             anyhow::bail!("Failed to send SetClient command: {e}");
@@ -306,40 +307,46 @@ impl CoinbaseWebSocketClient {
             control.register(move || reconnect_handle.request_reconnect());
         }
 
-        let instruments_vec: Vec<InstrumentAny> =
-            self.instruments.load().values().cloned().collect();
-
-        if !instruments_vec.is_empty()
-            && let Err(e) = cmd_tx.send(HandlerCommand::InitializeInstruments(instruments_vec))
         {
-            log::error!("Failed to send InitializeInstruments: {e}");
-        }
+            let mut command_sender = self.cmd_tx.write().await;
+            let instruments_vec: Vec<InstrumentAny> =
+                self.instruments.load().values().cloned().collect();
 
-        // Restore bar type registrations from previous session
-        for (key, bar_type) in &self.bar_types {
-            if let Err(e) = cmd_tx.send(HandlerCommand::AddBarType {
-                key: key.clone(),
-                bar_type: *bar_type,
-            }) {
-                log::error!("Failed to restore bar type {key}: {e}");
+            if !instruments_vec.is_empty()
+                && let Err(e) = cmd_tx.send(HandlerCommand::InitializeInstruments(instruments_vec))
+            {
+                log::error!("Failed to send InitializeInstruments: {e}");
             }
+
+            // Restore bar type registrations from previous session
+            for (key, bar_type) in &self.bar_types {
+                if let Err(e) = cmd_tx.send(HandlerCommand::AddBarType {
+                    key: key.clone(),
+                    bar_type: *bar_type,
+                }) {
+                    log::error!("Failed to restore bar type {key}: {e}");
+                }
+            }
+
+            if let Some(account_id) = self.account_id
+                && let Err(e) = cmd_tx.send(HandlerCommand::SetAccountId(account_id))
+            {
+                log::error!("Failed to restore account_id: {e}");
+            }
+
+            self.prime_default_subscriptions();
+
+            // Replay retained subscriptions from previous session
+            resubscribe_all(
+                &self.subscriptions,
+                &self.credential,
+                &cmd_tx,
+                Some(&out_tx),
+            );
+
+            *command_sender = cmd_tx.clone();
+            self.connection_mode.store(connection_mode);
         }
-
-        if let Some(account_id) = self.account_id
-            && let Err(e) = cmd_tx.send(HandlerCommand::SetAccountId(account_id))
-        {
-            log::error!("Failed to restore account_id: {e}");
-        }
-
-        self.prime_default_subscriptions();
-
-        // Replay retained subscriptions from previous session
-        resubscribe_all(
-            &self.subscriptions,
-            &self.credential,
-            &cmd_tx,
-            Some(&out_tx),
-        );
 
         let signal = Arc::clone(&self.signal);
         let subscriptions = self.subscriptions.clone();
@@ -593,10 +600,9 @@ impl CoinbaseWebSocketClient {
 
     /// Updates an instrument in the cache and notifies the handler.
     pub async fn update_instrument(&self, instrument: InstrumentAny) {
+        let cmd_tx = self.cmd_tx.read().await;
         let id = instrument.id();
         self.instruments.insert(id, instrument.clone());
-
-        let cmd_tx = self.cmd_tx.read().await;
 
         if let Err(e) = cmd_tx.send(HandlerCommand::UpdateInstrument(Box::new(instrument))) {
             log::debug!("Failed to send UpdateInstrument: {e}");
@@ -755,10 +761,135 @@ fn resubscribe_all(
 
 #[cfg(test)]
 mod tests {
+    use futures_util::StreamExt;
     use nautilus_network::websocket::SubscriptionState;
+    use nautilus_testkit::connection::race_command_with_publication;
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    #[case::single(false)]
+    #[case::bulk(true)]
+    #[tokio::test]
+    async fn instrument_updates_wait_for_sender_publication(#[case] bulk: bool) {
+        let ws_client =
+            CoinbaseWebSocketClient::new("wss://test", TransportBackend::default(), None);
+        let instrument = InstrumentAny::CryptoPerpetual(
+            nautilus_model::instruments::stubs::crypto_perpetual_ethusdt(),
+        );
+        let mut sender = ws_client.cmd_tx.write().await;
+
+        let mut update = Box::pin(async {
+            if bulk {
+                ws_client
+                    .initialize_instruments(vec![instrument.clone()])
+                    .await;
+            } else {
+                ws_client.update_instrument(instrument.clone()).await;
+            }
+        });
+
+        assert!(futures_util::poll!(update.as_mut()).is_pending());
+        assert!(ws_client.instruments.load().is_empty());
+        let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        *sender = cmd_tx;
+        drop(sender);
+        update.await;
+
+        assert_eq!(
+            ws_client.instruments.get_cloned(&instrument.id()),
+            Some(instrument.clone())
+        );
+
+        match (bulk, cmd_rx.try_recv().unwrap()) {
+            (true, HandlerCommand::InitializeInstruments(instruments)) => {
+                assert_eq!(instruments, vec![instrument]);
+            }
+            (false, HandlerCommand::UpdateInstrument(updated)) => assert_eq!(*updated, instrument),
+            (_, command) => panic!("unexpected cache command: {command:?}"),
+        }
+
+        assert!(cmd_rx.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn command_during_sender_publication_reaches_initialized_handler() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (received_tx, mut received_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let server = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let mut socket = tokio_tungstenite::accept_async(socket).await.unwrap();
+            while let Some(Ok(message)) = socket.next().await {
+                if let tokio_tungstenite::tungstenite::Message::Text(text) = message {
+                    let payload: serde_json::Value = serde_json::from_str(text.as_str()).unwrap();
+                    let _ = received_tx.send(payload);
+                }
+            }
+        });
+
+        let url = format!("ws://{addr}");
+        let mut ws_client = CoinbaseWebSocketClient::new(&url, TransportBackend::default(), None);
+        let observer = ws_client.clone();
+        let expected = serde_json::json!({
+            "type": "subscribe",
+            "channel": "market_trades",
+            "product_ids": [
+                "BTC-USD"
+            ]
+        });
+
+        let command = HandlerCommand::Subscribe {
+            channel: CoinbaseWsChannel::MarketTrades,
+            product_ids: vec![Ustr::from("BTC-USD")],
+            payload: SecretString::from(expected.to_string()),
+        };
+
+        race_command_with_publication(
+            Arc::clone(&ws_client.cmd_tx),
+            ws_client.connect(),
+            move || command,
+            || observer.is_active(),
+        )
+        .await
+        .expect("connect failed");
+
+        let received = tokio::time::timeout(Duration::from_secs(2), async {
+            let heartbeat = received_rx.recv().await.unwrap();
+            let command = received_rx.recv().await.unwrap();
+            (heartbeat, command)
+        })
+        .await;
+
+        ws_client.disconnect().await.expect("disconnect failed");
+        server.abort();
+
+        let (heartbeat, payload) = received.expect("startup command must reach server");
+        assert_eq!(
+            heartbeat,
+            serde_json::json!({
+                "type": "subscribe",
+                "channel": "heartbeats"
+            })
+        );
+        assert_eq!(payload, expected);
+    }
+
+    #[rstest]
+    #[case("wss://stream.example.com/feed", "wss://stream.example.com")]
+    #[case(
+        "wss://SYN-user:SYN-password@stream.example.com:9443/SYN-path?token=SYN-query#SYN-fragment",
+        "wss://stream.example.com:9443"
+    )]
+    fn test_debug_preserves_url_origin(#[case] url: &str, #[case] origin: &str) {
+        let client = CoinbaseWebSocketClient::new(url, TransportBackend::default(), None);
+        let debug = format!("{client:?}");
+        assert!(debug.contains(&format!("url: {origin:?}")));
+        assert!(!debug.contains("SYN-"));
+        assert_eq!(client.url.expose(), url);
+    }
 
     #[rstest]
     fn test_debug_redacts_proxy_url() {

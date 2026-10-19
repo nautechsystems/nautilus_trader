@@ -45,6 +45,7 @@ pub fn create_ib_conditions(conditions_data: &Value) -> anyhow::Result<Vec<Order
 
     for condition_dict in conditions_array {
         let condition_type = json_str(condition_dict, "type").context("Missing condition type")?;
+
         let condition_kind = match IbConditionKind::from_str(condition_type) {
             Ok(condition_kind) => condition_kind,
             Err(_) => {
@@ -69,12 +70,12 @@ pub fn create_ib_conditions(conditions_data: &Value) -> anyhow::Result<Vec<Order
                 let trigger_method = json_i32(condition_dict, "triggerMethod").unwrap_or(0);
 
                 let mut builder = PriceCondition::builder(con_id, exchange);
-
                 if is_more {
                     builder = builder.greater_than(price);
                 } else {
                     builder = builder.less_than(price);
                 }
+
                 builder = builder.trigger_method(
                     IbTriggerMethod::try_from(trigger_method)?.ibapi_trigger_method(),
                 );
@@ -86,12 +87,12 @@ pub fn create_ib_conditions(conditions_data: &Value) -> anyhow::Result<Vec<Order
                 let is_more = json_bool(condition_dict, "isMore").unwrap_or(true);
 
                 let mut builder = TimeCondition::builder();
-
                 if is_more {
                     builder = builder.greater_than(time);
                 } else {
                     builder = builder.less_than(time);
                 }
+
                 builder = builder.conjunction(is_conjunction);
                 OrderCondition::Time(builder.build())
             }
@@ -100,12 +101,12 @@ pub fn create_ib_conditions(conditions_data: &Value) -> anyhow::Result<Vec<Order
                 let is_more = json_bool(condition_dict, "isMore").unwrap_or(true);
 
                 let mut builder = MarginCondition::builder();
-
                 if is_more {
                     builder = builder.greater_than(percent);
                 } else {
                     builder = builder.less_than(percent);
                 }
+
                 builder = builder.conjunction(is_conjunction);
                 OrderCondition::Margin(builder.build())
             }
@@ -128,12 +129,12 @@ pub fn create_ib_conditions(conditions_data: &Value) -> anyhow::Result<Vec<Order
                 let is_more = json_bool(condition_dict, "isMore").unwrap_or(true);
 
                 let mut builder = VolumeCondition::builder(con_id, exchange);
-
                 if is_more {
                     builder = builder.greater_than(volume);
                 } else {
                     builder = builder.less_than(volume);
                 }
+
                 builder = builder.conjunction(is_conjunction);
                 OrderCondition::Volume(builder.build())
             }
@@ -144,12 +145,12 @@ pub fn create_ib_conditions(conditions_data: &Value) -> anyhow::Result<Vec<Order
                 let is_more = json_bool(condition_dict, "isMore").unwrap_or(true);
 
                 let mut builder = PercentChangeCondition::builder(con_id, exchange);
-
                 if is_more {
                     builder = builder.greater_than(change_percent);
                 } else {
                     builder = builder.less_than(change_percent);
                 }
+
                 builder = builder.conjunction(is_conjunction);
                 OrderCondition::PercentChange(builder.build())
             }

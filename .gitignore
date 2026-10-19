@@ -137,7 +137,6 @@ env/
 !scripts/install-osv-scanner.sh
 !scripts/package-version.sh
 !scripts/purge-orphan-dev-wheels.sh
-!scripts/regen-capnp.sh
 !scripts/rust-toolchain.sh
 !scripts/soak-network-turmoil.sh
 !scripts/tool-version.sh
@@ -196,5 +195,7 @@ tests/unit_tests/persistence/catalog/
 !/test_data/large/checksums.json
 !/test_data/large/*.metadata.json
 !/test_data/nautilus/*/**.parquet
+!/test_data/nautilus/catalog_1_231_0/**/
+!/test_data/nautilus/catalog_1_231_0/**/*.parquet
 !tests/integration_tests/adapters/betfair/responses/*.log
 !/nautilus_core/adapters/src/databento/test_data/*

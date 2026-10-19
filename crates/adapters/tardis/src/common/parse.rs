@@ -47,7 +47,7 @@ const FNV_PRIME: u64 = 0x0100_0000_01b3;
 ///
 /// # Errors
 ///
-/// Returns a deserialization error if the input is not a valid string.
+/// Returns an error if the input is not a valid string.
 pub(crate) fn deserialize_uppercase<'de, D>(deserializer: D) -> Result<Ustr, D::Error>
 where
     D: Deserializer<'de>,
@@ -59,8 +59,7 @@ where
 ///
 /// # Errors
 ///
-/// Returns a deserialization error if the input is not numeric or if the string cannot be parsed
-/// as `f64`.
+/// Returns an error if the input is not numeric or if the string cannot be parsed as `f64`.
 pub(crate) fn deserialize_f64_or_string<'de, D>(deserializer: D) -> Result<f64, D::Error>
 where
     D: Deserializer<'de>,
@@ -96,8 +95,7 @@ where
 ///
 /// # Errors
 ///
-/// Returns a deserialization error if a non-null input is not numeric or if the string cannot be
-/// parsed as `f64`.
+/// Returns an error if a non-null input is not numeric or if the string cannot be parsed as `f64`.
 pub(crate) fn deserialize_opt_f64_or_string<'de, D>(
     deserializer: D,
 ) -> Result<Option<f64>, D::Error>

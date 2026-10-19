@@ -102,6 +102,7 @@ impl DataClientFactory for InteractiveBrokersDataClientFactory {
             ib_config.instrument_provider.clone(),
         ));
         instrument_provider.seed_from_cache(&cache.borrow());
+
         let client = InteractiveBrokersDataClient::new(
             ClientId::from(name),
             ib_config,
@@ -181,7 +182,7 @@ impl ExecutionClientFactory for InteractiveBrokersExecutionClientFactory {
             OmsType::Netting,
             account_id,
             AccountType::Margin,
-            None, // base_currency: IB accounts can be multi-currency
+            ib_config.base_currency,
             cache,
         );
 
@@ -217,9 +218,13 @@ mod tests {
         cache::Cache,
         clock::VirtualClock,
         factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
-        live::runner::replace_data_event_sender,
+        live::runner::{replace_data_event_sender, replace_exec_event_sender},
+        messages::ExecutionEvent,
     };
+    use nautilus_core::UnixNanos;
+    use nautilus_model::types::{AccountBalance, Currency};
     use rstest::rstest;
+    use rust_decimal::Decimal;
 
     use super::*;
 
@@ -307,10 +312,12 @@ mod tests {
     #[rstest]
     fn test_interactive_brokers_exec_client_factory_uses_config_account_id() {
         let factory = InteractiveBrokersExecutionClientFactory::new();
+
         let config = InteractiveBrokersExecutionClientConfig {
             account_id: Some(String::from("U7654321")),
             ..Default::default()
         };
+
         let cache = Rc::new(RefCell::new(Cache::default()));
 
         let result = factory.create(
@@ -324,5 +331,49 @@ mod tests {
         assert!(result.is_ok());
         let client = result.unwrap();
         assert_eq!(client.account_id(), AccountId::from("IB-CUSTOM-U7654321"));
+    }
+
+    #[rstest]
+    #[case(Some(Currency::USD()))]
+    #[case(Some(Currency::EUR()))]
+    #[case(None)]
+    fn test_interactive_brokers_exec_client_factory_passes_base_currency_to_account(
+        #[case] base_currency: Option<Currency>,
+    ) {
+        let factory = InteractiveBrokersExecutionClientFactory::new();
+        let config = InteractiveBrokersExecutionClientConfig {
+            base_currency,
+            ..Default::default()
+        };
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        replace_exec_event_sender(tx);
+
+        let client = factory
+            .create(
+                TraderId::from("TRADER-001"),
+                "IB-TEST",
+                &config,
+                cache.into(),
+                Rc::new(RefCell::new(VirtualClock::new())),
+            )
+            .unwrap();
+        let balances = vec![
+            AccountBalance::from_total_and_free(
+                Decimal::new(100050, 2),
+                Decimal::new(90025, 2),
+                Currency::USD(),
+            )
+            .unwrap(),
+        ];
+
+        client
+            .generate_account_state(balances, Vec::new(), true, UnixNanos::default(), None)
+            .unwrap();
+
+        match rx.try_recv().unwrap() {
+            ExecutionEvent::Account(state) => assert_eq!(state.base_currency, base_currency),
+            other => panic!("expected account state, was {other:?}"),
+        }
     }
 }

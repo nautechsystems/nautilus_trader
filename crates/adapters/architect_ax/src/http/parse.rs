@@ -15,14 +15,17 @@
 
 //! Parsing functions to convert Ax HTTP responses to Nautilus domain types.
 
+use std::collections::HashMap;
+
 use anyhow::Context;
 use jiff::tz::Offset;
 use nautilus_core::{Params, UUID4, datetime::datetime_to_unix_nanos, nanos::UnixNanos};
 use nautilus_model::{
     data::{Bar, BarSpecification, BarType, FundingRateUpdate, TradeTick},
     enums::{
-        AccountType, AggregationSource, AggressorSide, AssetClass, BarAggregation, CurrencyType,
-        LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide, PriceType, TimeInForce,
+        AccountType, AggregationSource, AggressorSide, AssetClass, AvgPxReconciliation,
+        BarAggregation, CurrencyType, LiquiditySide, OrderSide, OrderStatus, OrderType,
+        PositionSide, PriceType, TimeInForce,
     },
     events::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, TradeId, VenueOrderId},
@@ -39,7 +42,7 @@ use super::models::{
     AxOrderRejectReason, AxPosition, AxRestTrade, AxRiskSnapshot,
 };
 use crate::common::{
-    consts::AX_VENUE,
+    consts::{AX_FILL_ORDER_PREFIX, AX_VENUE},
     enums::{AxCandleWidth, AxOrderSide, AxOrderStatus, AxTimeInForce},
     parse::{
         ax_timestamp_ns_to_unix_nanos, ax_timestamp_s_to_unix_nanos,
@@ -153,10 +156,6 @@ pub fn parse_funding_rate(
 /// # Errors
 ///
 /// Returns an error if any required field cannot be parsed or is invalid.
-///
-/// # Panics
-///
-/// Panics if the constructed perpetual instrument fails validation.
 pub fn parse_instrument(
     definition: &AxInstrument,
     ts_event: UnixNanos,
@@ -347,6 +346,7 @@ pub fn parse_instrument(
         .quote_currency(quote_currency)
         .settlement_currency(settlement_currency)
         .is_inverse(false)
+        .multiplier(decimal_to_quantity(definition.multiplier, "multiplier")?)
         .price_precision(price_increment.precision)
         .size_precision(size_increment.precision)
         .price_increment(price_increment)
@@ -359,7 +359,7 @@ pub fn parse_instrument(
         .ts_event(ts_event)
         .ts_init(ts_init)
         .build()
-        .unwrap();
+        .context("failed to construct AX perpetual contract")?;
 
     Ok(InstrumentAny::PerpetualContract(instrument))
 }
@@ -531,6 +531,31 @@ where
     )
 }
 
+pub(crate) fn update_order_report_timestamps(
+    reports: &mut [OrderStatusReport],
+    fills: &[FillReport],
+) {
+    let mut last_fill_timestamps = HashMap::new();
+    for fill in fills {
+        last_fill_timestamps
+            .entry((fill.account_id, fill.venue_order_id))
+            .and_modify(|ts: &mut UnixNanos| *ts = (*ts).max(fill.ts_event))
+            .or_insert(fill.ts_event);
+    }
+
+    for report in reports {
+        if !report.order_status.is_closed() {
+            continue;
+        }
+
+        if let Some(ts_last_fill) =
+            last_fill_timestamps.get(&(report.account_id, report.venue_order_id))
+        {
+            report.ts_last = report.ts_last.max(*ts_last_fill);
+        }
+    }
+}
+
 struct OrderStatusReportFields<'a> {
     ts: i64,
     tn: i64,
@@ -700,8 +725,9 @@ pub fn parse_fill_report(
     );
 
     let is_special_fill = is_block_trade == Some(true) || is_final_settlement == Some(true);
+
     let venue_order_id = if is_special_fill {
-        VenueOrderId::new_checked(format!("AX-FILL-{}", fill.trade_id))
+        VenueOrderId::new_checked(format!("{AX_FILL_ORDER_PREFIX}{}", fill.trade_id))
             .context("Invalid synthetic venue order ID for AX fill")?
     } else {
         let order_id = fill
@@ -764,6 +790,9 @@ pub fn parse_fill_report(
 
 /// Parses an Ax position into a Nautilus [`PositionStatusReport`].
 ///
+/// Reports the signed fill-ledger cost-basis average with
+/// [`AvgPxReconciliation::OpeningOnly`] semantics.
+///
 /// # Errors
 ///
 /// Returns an error if:
@@ -802,12 +831,11 @@ pub fn parse_position_status_report(
     };
 
     let avg_px_open = if position.signed_quantity != 0 {
-        let qty_dec = Decimal::from(position.signed_quantity.unsigned_abs());
+        let qty_dec = Decimal::from(position.signed_quantity);
         Some(
             position
                 .signed_cost_basis
                 .unwrap_or(position.signed_notional)
-                .abs()
                 / qty_dec,
         )
     } else {
@@ -836,7 +864,8 @@ pub fn parse_position_status_report(
         None,
         None,
         avg_px_open,
-    ))
+    )
+    .with_avg_px_open_reconciliation(AvgPxReconciliation::OpeningOnly))
 }
 
 /// Parses an Ax REST trade into a Nautilus [`TradeTick`].
@@ -1072,6 +1101,104 @@ mod tests {
             po: false,
             rb: None,
         }
+    }
+
+    #[rstest]
+    #[case::canceled(AxOrderStatus::Canceled, "matching", 1_704_067_200_508_000_123)]
+    #[case::expired(AxOrderStatus::Expired, "matching", 1_704_067_200_508_000_123)]
+    #[case::filled(AxOrderStatus::Filled, "matching", 1_704_067_200_508_000_123)]
+    #[case::open(AxOrderStatus::PartiallyFilled, "matching", 1_704_067_200_500_000_000)]
+    #[case::empty(AxOrderStatus::Canceled, "empty", 1_704_067_200_500_000_000)]
+    #[case::older(AxOrderStatus::Canceled, "older", 1_704_067_200_500_000_000)]
+    #[case::other_account(AxOrderStatus::Canceled, "other_account", 1_704_067_200_500_000_000)]
+    #[case::later_report(AxOrderStatus::Canceled, "later_report", 1_704_067_200_600_000_000)]
+    fn test_closed_order_report_uses_latest_fill_timestamp(
+        #[case] status: AxOrderStatus,
+        #[case] scenario: &str,
+        #[case] expected_last: u64,
+    ) {
+        let orders: crate::http::models::AxOrdersResponse = serde_json::from_str(include_str!(
+            "../../test_data/http_get_orders_partial_canceled.json"
+        ))
+        .unwrap();
+        let fills: crate::http::models::AxFillsResponse = serde_json::from_str(include_str!(
+            "../../test_data/http_get_fills_partial_canceled.json"
+        ))
+        .unwrap();
+        let instrument = parse_instrument(
+            &create_eurusd_instrument(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+        .unwrap();
+        let account_id = AccountId::from("AX-001");
+        let ts_init = UnixNanos::from(1_704_067_201_000_000_000_u64);
+        let mut order = orders.orders[0].clone();
+        order.o = status;
+        order.q = if status == AxOrderStatus::Filled {
+            100
+        } else {
+            200
+        };
+
+        order.rq = if status == AxOrderStatus::PartiallyFilled {
+            100
+        } else {
+            0
+        };
+
+        let mut reports = [parse_order_detail_status_report(
+            &order,
+            account_id,
+            &instrument,
+            ts_init,
+            None::<&fn(u64) -> Option<ClientOrderId>>,
+        )
+        .unwrap()];
+        let mut fills: Vec<_> = fills
+            .fills
+            .iter()
+            .map(|fill| parse_fill_report(fill, account_id, &instrument, ts_init).unwrap())
+            .collect();
+
+        match scenario {
+            "empty" => fills.clear(),
+            "older" => {
+                for fill in &mut fills {
+                    fill.ts_event = UnixNanos::from(1_704_067_200_400_000_000_u64);
+                }
+            }
+            "other_account" => {
+                for fill in &mut fills {
+                    fill.account_id = AccountId::from("AX-OTHER");
+                }
+            }
+            "later_report" => {
+                reports[0].ts_last = UnixNanos::from(1_704_067_200_600_000_000_u64);
+            }
+            "matching" => {}
+            _ => panic!("unexpected test scenario: {scenario}"),
+        }
+
+        let mut expected = reports[0].clone();
+        expected.ts_last = UnixNanos::from(expected_last);
+
+        update_order_report_timestamps(&mut reports, &fills);
+
+        let report = &reports[0];
+        assert_eq!(*report, expected);
+        assert_eq!(
+            report.ts_accepted,
+            UnixNanos::from(1_704_067_200_500_000_000_u64)
+        );
+        assert_eq!(report.ts_last, UnixNanos::from(expected_last));
+        assert_eq!(report.ts_init, ts_init);
+        assert_eq!(report.quantity.as_decimal(), Decimal::from(order.q));
+        assert_eq!(report.filled_qty.as_decimal(), dec!(100));
+        assert_eq!(
+            report.venue_order_id,
+            VenueOrderId::from("O-PARTIAL-CANCELED")
+        );
     }
 
     #[rstest]
@@ -1734,6 +1861,30 @@ mod tests {
     }
 
     #[rstest]
+    fn test_parse_perpetual_instrument_preserves_multiplier() {
+        let mut definition = create_eurusd_instrument();
+        definition.multiplier = dec!(2.5);
+        let instrument =
+            parse_instrument(&definition, UnixNanos::default(), UnixNanos::default()).unwrap();
+
+        assert_eq!(instrument.multiplier().as_decimal(), dec!(2.5));
+        assert_eq!(instrument.size_increment().as_decimal(), Decimal::ONE);
+    }
+
+    #[rstest]
+    fn test_parse_perpetual_instrument_rejects_zero_multiplier() {
+        let mut definition = create_eurusd_instrument();
+        definition.multiplier = Decimal::ZERO;
+        let error =
+            parse_instrument(&definition, UnixNanos::default(), UnixNanos::default()).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "failed to construct AX perpetual contract"
+        );
+    }
+
+    #[rstest]
     fn test_parse_dated_instrument_without_product_uses_symbol_fallback() {
         let test_data = include_str!("../../test_data/http_get_dated_instruments.json");
         let mut response: AxInstrumentsResponse = serde_json::from_str(test_data).unwrap();
@@ -2106,6 +2257,62 @@ mod tests {
         assert_eq!(report.position_side, PositionSide::Short);
         assert_eq!(report.quantity.as_decimal(), dec!(300));
     }
+
+    #[rstest]
+    #[case::reduction(1, dec!(2) * dec!(100) - dec!(150), dec!(50))]
+    #[case::short_reduction(-1, -dec!(2) * dec!(100) + dec!(150), dec!(50))]
+    #[case::reversal(-1, dec!(2) * dec!(100) - dec!(3) * dec!(120), dec!(160))]
+    #[case::short_reversal(1, -dec!(2) * dec!(100) + dec!(3) * dec!(120), dec!(160))]
+    #[case::negative(1, dec!(-100), dec!(-100))]
+    #[case::zero(1, dec!(0), dec!(0))]
+    #[case::fraction(4, dec!(99), dec!(24.75))]
+    #[case::flat(0, dec!(100), dec!(0))]
+    fn test_position_ledger_average_contract(
+        #[case] quantity: i64,
+        #[case] basis: Decimal,
+        #[case] expected: Decimal,
+        #[values(false, true)] legacy_alias: bool,
+    ) {
+        let mut response: crate::http::models::AxPositionsResponse =
+            serde_json::from_str(include_str!("../../test_data/http_get_positions.json")).unwrap();
+        let position = &mut response.positions[0];
+        position.signed_quantity = quantity;
+
+        position.signed_notional = if legacy_alias { basis } else { dec!(999) };
+        position.signed_cost_basis = (!legacy_alias).then_some(basis);
+        let instrument = parse_instrument(
+            &create_eurusd_instrument(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+        .unwrap();
+        let result = parse_position_status_report(
+            position,
+            AccountId::from("AX-001"),
+            &instrument,
+            UnixNanos::default(),
+        );
+
+        let report = result.unwrap();
+        assert_eq!(report.avg_px_open, (quantity != 0).then_some(expected));
+        assert_eq!(
+            report.avg_px_open_reconciliation,
+            AvgPxReconciliation::OpeningOnly
+        );
+        assert_eq!(report.avg_px_open_precision, None);
+        assert_eq!(report.quantity.as_decimal(), Decimal::from(quantity).abs());
+        assert_eq!(
+            report.position_side,
+            if quantity > 0 {
+                PositionSide::Long
+            } else if quantity < 0 {
+                PositionSide::Short
+            } else {
+                PositionSide::Flat
+            }
+        );
+    }
+
     #[rstest]
     #[case(TimeInForce::Ioc, OrderStatus::Canceled)]
     #[case(TimeInForce::Fok, OrderStatus::Canceled)]

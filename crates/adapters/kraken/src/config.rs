@@ -15,11 +15,13 @@
 
 //! Configuration types for Kraken data and execution clients.
 
+use std::fmt::Debug;
+
 #[cfg(test)]
 use nautilus_core::string::secret::REDACTED;
 use nautilus_core::string::secret::SecretString;
 use nautilus_model::{enums::AccountType, identifiers::AccountId};
-use nautilus_network::websocket::TransportBackend;
+use nautilus_network::{url_origin, websocket::TransportBackend};
 use serde::{Deserialize, Serialize};
 
 use crate::common::{
@@ -28,7 +30,7 @@ use crate::common::{
 };
 
 /// Configuration for the Kraken data client.
-#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
+#[derive(Clone, Serialize, Deserialize, bon::Builder)]
 #[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
@@ -55,6 +57,9 @@ pub struct KrakenDataClientConfig {
     /// Validate Kraken's CRC32 checksum on each L3 update.
     #[builder(default = true)]
     pub validate_l3_checksum: bool,
+    /// Validate Kraken's CRC32 checksum on each Spot L2 `book` snapshot and update.
+    #[builder(default = true)]
+    pub validate_l2_checksum: bool,
     #[builder(default = 30)]
     pub timeout_secs: u64,
     #[builder(default = 30)]
@@ -85,12 +90,42 @@ pub struct KrakenDataClientConfig {
     pub transport_backend: TransportBackend,
 }
 
+impl Debug for KrakenDataClientConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(KrakenDataClientConfig))
+            .field("api_key", &self.api_key)
+            .field("api_secret", &self.api_secret)
+            .field("product_type", &self.product_type)
+            .field("environment", &self.environment)
+            .field("base_url", &self.base_url.as_deref().map(url_origin))
+            .field(
+                "ws_public_url",
+                &self.ws_public_url.as_deref().map(url_origin),
+            )
+            .field(
+                "ws_private_url",
+                &self.ws_private_url.as_deref().map(url_origin),
+            )
+            .field("ws_l3_url", &self.ws_l3_url.as_deref().map(url_origin))
+            .field("proxy_url", &self.proxy_url)
+            .field("validate_l3_checksum", &self.validate_l3_checksum)
+            .field("validate_l2_checksum", &self.validate_l2_checksum)
+            .field("timeout_secs", &self.timeout_secs)
+            .field("heartbeat_interval_secs", &self.heartbeat_interval_secs)
+            .field("ws_idle_timeout_ms", &self.ws_idle_timeout_ms)
+            .field("max_requests_per_second", &self.max_requests_per_second)
+            .field("transport_backend", &self.transport_backend)
+            .finish()
+    }
+}
+
 #[cfg(feature = "python")]
 nautilus_core::impl_pyo3_config_getters!(KrakenDataClientConfig {
     product_type: KrakenProductType,
     environment: KrakenEnvironment,
     base_url: Option<String>,
     validate_l3_checksum: bool,
+    validate_l2_checksum: bool,
     timeout_secs: u64,
     heartbeat_interval_secs: u64,
     ws_idle_timeout_ms: u64,
@@ -149,7 +184,7 @@ impl KrakenDataClientConfig {
 }
 
 /// Configuration for the Kraken execution client.
-#[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
+#[derive(Clone, Serialize, Deserialize, bon::Builder)]
 #[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
@@ -245,6 +280,37 @@ pub struct KrakenExecutionClientConfig {
     /// also send a best-effort compensating cancel.
     #[builder(default = 5)]
     pub ws_request_timeout_secs: u64,
+}
+
+impl Debug for KrakenExecutionClientConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(KrakenExecutionClientConfig))
+            .field("account_id", &self.account_id)
+            .field("api_key", &self.api_key)
+            .field("api_secret", &self.api_secret)
+            .field("product_type", &self.product_type)
+            .field("environment", &self.environment)
+            .field("base_url", &self.base_url.as_deref().map(url_origin))
+            .field("ws_url", &self.ws_url.as_deref().map(url_origin))
+            .field("proxy_url", &self.proxy_url)
+            .field("timeout_secs", &self.timeout_secs)
+            .field("heartbeat_interval_secs", &self.heartbeat_interval_secs)
+            .field("auth_timeout_secs", &self.auth_timeout_secs)
+            .field("max_requests_per_second", &self.max_requests_per_second)
+            .field("max_retries", &self.max_retries)
+            .field("transport_backend", &self.transport_backend)
+            .field("spot_account_type", &self.spot_account_type)
+            .field("default_leverage", &self.default_leverage)
+            .field("use_spot_position_reports", &self.use_spot_position_reports)
+            .field(
+                "spot_positions_quote_currency",
+                &self.spot_positions_quote_currency,
+            )
+            .field("margin_balance_asset", &self.margin_balance_asset)
+            .field("use_ws_trade", &self.use_ws_trade)
+            .field("ws_request_timeout_secs", &self.ws_request_timeout_secs)
+            .finish()
+    }
 }
 
 #[cfg(feature = "python")]
@@ -355,6 +421,14 @@ mod tests {
             api_secret: EXEC_API_SECRET.into(),
             product_type: KrakenProductType::Futures,
             timeout_secs: 43,
+            base_url: Some(
+                "https://SYN-user:SYN-password@api.example.com:8443/SYN-path?token=SYN-query"
+                    .to_string(),
+            ),
+            ws_url: Some(
+                "wss://SYN-user:SYN-password@stream.example.com:9443/SYN-path?token=SYN-query"
+                    .to_string(),
+            ),
             ..Default::default()
         };
 
@@ -368,6 +442,9 @@ mod tests {
         assert!(debug_output.contains(&api_secret_marker));
         assert!(debug_output.contains("product_type: Futures"));
         assert!(debug_output.contains("timeout_secs: 43"));
+        assert!(debug_output.contains("base_url: Some(\"https://api.example.com:8443\")"));
+        assert!(debug_output.contains("ws_url: Some(\"wss://stream.example.com:9443\")"));
+        assert!(!debug_output.contains("SYN-"));
     }
 
     #[rstest]

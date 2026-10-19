@@ -38,7 +38,7 @@ use crate::{
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if the class name is not recognized.
+/// Returns an error if the class name is not recognized.
 #[pyfunction]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.databento")]
 pub fn get_databento_arrow_schema_map(
@@ -63,7 +63,7 @@ pub fn get_databento_arrow_schema_map(
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if encoding fails.
+/// Returns an error if encoding fails.
 #[pyfunction(name = "databento_imbalance_to_arrow_record_batch_bytes")]
 #[expect(clippy::needless_pass_by_value)]
 pub fn py_databento_imbalance_to_arrow_record_batch_bytes(
@@ -80,7 +80,7 @@ pub fn py_databento_imbalance_to_arrow_record_batch_bytes(
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if decoding fails.
+/// Returns an error if decoding fails.
 #[pyfunction(name = "databento_imbalance_from_arrow_record_batch_bytes")]
 pub fn py_databento_imbalance_from_arrow_record_batch_bytes(
     _py: Python,
@@ -105,7 +105,7 @@ pub fn py_databento_imbalance_from_arrow_record_batch_bytes(
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if encoding fails.
+/// Returns an error if encoding fails.
 #[pyfunction(name = "databento_statistics_to_arrow_record_batch_bytes")]
 #[expect(clippy::needless_pass_by_value)]
 pub fn py_databento_statistics_to_arrow_record_batch_bytes(
@@ -122,7 +122,7 @@ pub fn py_databento_statistics_to_arrow_record_batch_bytes(
 ///
 /// # Errors
 ///
-/// Returns a `PyErr` if decoding fails.
+/// Returns an error if decoding fails.
 #[pyfunction(name = "databento_statistics_from_arrow_record_batch_bytes")]
 pub fn py_databento_statistics_from_arrow_record_batch_bytes(
     _py: Python,

@@ -152,6 +152,11 @@ name = "queue_monitor"
 harness = false
 required-features = ["node"]
 
+[[bench]]
+name = "reconciliation"
+path = "benches/reconciliation.rs"
+harness = false
+
 [[test]]
 name = "integration"
 path = "tests/integration/main.rs"

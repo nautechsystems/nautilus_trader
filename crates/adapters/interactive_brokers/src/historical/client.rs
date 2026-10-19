@@ -31,7 +31,7 @@ use nautilus_model::{
     enums::{AggregationSource, BarAggregation, PriceType},
     identifiers::InstrumentId,
     instruments::{Instrument, any::InstrumentAny},
-    types::{Price, Quantity},
+    types::Quantity,
 };
 
 use crate::{
@@ -43,9 +43,9 @@ use crate::{
     config::{InteractiveBrokersDataClientConfig, MarketDataType},
     data::{
         convert::{
-            apply_bar_price_magnifier, apply_price_magnifier, bar_request_segments,
-            bar_type_to_ib_bar_size, calculate_duration_segments, extend_historical_tick_batch,
-            ib_bar_to_nautilus_bar, ib_timestamp_to_unix_nanos, jiff_to_ib_datetime,
+            IbPriceConverter, bar_request_segments, bar_type_to_ib_bar_size,
+            calculate_duration_segments, extend_historical_tick_batch, ib_bar_to_nautilus_bar,
+            ib_timestamp_to_unix_nanos, jiff_to_ib_datetime,
             price_type_to_ib_what_to_show_for_security, retain_historical_ticks_in_range,
         },
         parse::parse_trade_tick,
@@ -140,6 +140,7 @@ impl HistoricalInteractiveBrokersClient {
                 config.market_data_type.into();
             client.switch_market_data_type(market_data_type).await?;
         }
+
         instrument_provider
             .initialize_with_client(client.as_ref())
             .await?;
@@ -187,6 +188,7 @@ impl HistoricalInteractiveBrokersClient {
                 config.market_data_type.into();
             client.switch_market_data_type(market_data_type).await?;
         }
+
         instrument_provider
             .initialize_with_client(client.as_ref())
             .await?;
@@ -392,18 +394,19 @@ impl HistoricalInteractiveBrokersClient {
                             .with_context(|| {
                                 format!("Instrument {instrument_id} is missing from the provider")
                             })?;
-                    let price_precision = instrument.price_precision();
+
+                    let prices = IbPriceConverter::for_instrument(
+                        &instrument,
+                        self.instrument_provider.get_price_magnifier(&instrument_id),
+                    );
                     let size_precision = instrument.size_precision();
-                    let price_magnifier =
-                        self.instrument_provider.get_price_magnifier(&instrument_id);
 
                     // Create new bar_type with correct instrument_id
                     for ib_bar in &historical_data.bars {
-                        let ib_bar = apply_bar_price_magnifier(ib_bar, price_magnifier);
                         let nautilus_bar = ib_bar_to_nautilus_bar(
-                            &ib_bar,
+                            ib_bar,
                             bar_type_with_id,
-                            price_precision,
+                            prices,
                             size_precision,
                         )?;
                         all_bars.push(nautilus_bar);
@@ -532,9 +535,12 @@ impl HistoricalInteractiveBrokersClient {
                 .with_context(|| {
                     format!("Instrument {instrument_id} is missing from the provider")
                 })?;
-            let price_precision = instrument.price_precision();
+
+            let prices = IbPriceConverter::for_instrument(
+                &instrument,
+                self.instrument_provider.get_price_magnifier(&instrument_id),
+            );
             let size_precision = instrument.size_precision();
-            let price_magnifier = self.instrument_provider.get_price_magnifier(&instrument_id);
             let mut contract_ticks = Vec::new();
 
             // Pagination loop for ticks (similar to Python _handle_timestamp_iteration)
@@ -577,6 +583,7 @@ impl HistoricalInteractiveBrokersClient {
                                     continue;
                                 }
                             };
+
                             let ts_event = ib_timestamp_to_unix_nanos(&tick.timestamp);
 
                             if ts_event < start_date_time_ns || ts_event > end_date_time_ns {
@@ -585,8 +592,6 @@ impl HistoricalInteractiveBrokersClient {
 
                             let ts_init = ts_event;
 
-                            let converted_price =
-                                apply_price_magnifier(tick.price, price_magnifier);
                             let Some(raw_size) = tick.size else {
                                 tracing::warn!(
                                     "Skipping historical trade tick with no size for {}",
@@ -601,11 +606,12 @@ impl HistoricalInteractiveBrokersClient {
                                 );
                                 continue;
                             }
+
                             let trade_tick = parse_trade_tick(
                                 instrument_id,
-                                converted_price,
+                                tick.price,
                                 raw_size,
-                                price_precision,
+                                prices,
                                 size_precision,
                                 ts_event,
                                 ts_init,
@@ -659,6 +665,7 @@ impl HistoricalInteractiveBrokersClient {
                                     continue;
                                 }
                             };
+
                             let ts_event = ib_timestamp_to_unix_nanos(&tick.timestamp);
 
                             if ts_event < start_date_time_ns || ts_event > end_date_time_ns {
@@ -667,14 +674,16 @@ impl HistoricalInteractiveBrokersClient {
 
                             let ts_init = ts_event;
 
-                            let raw_bid_price =
-                                apply_price_magnifier(tick.price_bid, price_magnifier);
-                            let bid_price = Price::new_checked(raw_bid_price, price_precision)
+                            let raw_bid_price = tick.price_bid;
+
+                            let bid_price = prices
+                                .bid_price(raw_bid_price)
                                 .with_context(|| {
                                     format!(
                                         "Invalid historical bid price {raw_bid_price} for {instrument_id}"
                                     )
                                 })?;
+
                             let (Some(raw_bid_size), Some(raw_ask_size)) =
                                 (tick.size_bid, tick.size_ask)
                             else {
@@ -684,20 +693,24 @@ impl HistoricalInteractiveBrokersClient {
                                 );
                                 continue;
                             };
+
                             let bid_size = Quantity::new_checked(raw_bid_size, size_precision)
                                 .with_context(|| {
                                     format!(
                                         "Invalid historical bid size {raw_bid_size} for {instrument_id}"
                                     )
                                 })?;
-                            let raw_ask_price =
-                                apply_price_magnifier(tick.price_ask, price_magnifier);
-                            let ask_price = Price::new_checked(raw_ask_price, price_precision)
+
+                            let raw_ask_price = tick.price_ask;
+
+                            let ask_price = prices
+                                .ask_price(raw_ask_price)
                                 .with_context(|| {
                                     format!(
                                         "Invalid historical ask price {raw_ask_price} for {instrument_id}"
                                     )
                                 })?;
+
                             let ask_size = Quantity::new_checked(raw_ask_size, size_precision)
                                 .with_context(|| {
                                     format!(
@@ -741,12 +754,12 @@ impl HistoricalInteractiveBrokersClient {
                 data_ts_event,
             );
             contract_ticks.sort_by_key(data_ts_event);
-
             if let Some(limit) = limit
                 && contract_ticks.len() > limit
             {
                 contract_ticks = contract_ticks.split_off(contract_ticks.len() - limit);
             }
+
             all_ticks.extend(contract_ticks);
         }
 
@@ -796,6 +809,7 @@ impl HistoricalInteractiveBrokersClient {
                     if !loaded_instruments.iter().any(|i| i.id() == instrument.id()) {
                         loaded_instruments.push(instrument);
                     }
+
                     continue;
                 }
                 Ok(None) => {}

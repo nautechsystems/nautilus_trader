@@ -36,6 +36,7 @@ pub fn parse_futures_symbol(symbol: &str) -> Option<FuturesSymbol<'_>> {
         }
 
         let year_digits = &symbol[month_pos + month_code.len_utf8()..];
+
         if !matches!(year_digits.len(), 1 | 2 | 4)
             || !year_digits.bytes().all(|b| b.is_ascii_digit())
             || month_pos == 0
@@ -95,6 +96,7 @@ pub fn resolve_futures_year(year_digits: &str, reference_year: i32) -> Option<i3
             if year < reference_year {
                 year += 10;
             }
+
             Some(year)
         }
         2 => {
@@ -104,6 +106,7 @@ pub fn resolve_futures_year(year_digits: &str, reference_year: i32) -> Option<i3
             } else if year > reference_year + 69 {
                 year -= 100;
             }
+
             Some(year)
         }
         4 => Some(partial),

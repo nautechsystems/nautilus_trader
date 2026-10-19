@@ -554,9 +554,10 @@ where
 ///
 /// # Errors
 ///
-/// - Returns an error if the component is not found.
-/// - Returns an error if the component is already borrowed.
-/// - Returns an error if `start()` fails.
+/// Returns an error if:
+/// - The component is not found.
+/// - The component is already borrowed.
+/// - `start()` fails.
 pub fn start_component(id: &Ustr) -> anyhow::Result<()> {
     let component_ref = with_component_registry(|registry| {
         let component_ref = registry
@@ -586,8 +587,9 @@ pub fn start_component(id: &Ustr) -> anyhow::Result<()> {
 ///
 /// # Errors
 ///
-/// - Returns an error if the component is not found.
-/// - Returns an error if the component is already borrowed.
+/// Returns an error if:
+/// - The component is not found.
+/// - The component is already borrowed.
 pub fn component_state(id: &Ustr) -> anyhow::Result<ComponentState> {
     let component_ref = with_component_registry(|registry| {
         let component_ref = registry
@@ -617,9 +619,10 @@ pub fn component_state(id: &Ustr) -> anyhow::Result<ComponentState> {
 ///
 /// # Errors
 ///
-/// - Returns an error if the component is not found.
-/// - Returns an error if the component is already borrowed.
-/// - Returns an error if `stop()` fails.
+/// Returns an error if:
+/// - The component is not found.
+/// - The component is already borrowed.
+/// - `stop()` fails.
 pub fn stop_component(id: &Ustr) -> anyhow::Result<()> {
     let component_ref = with_component_registry(|registry| {
         let component_ref = registry
@@ -649,9 +652,10 @@ pub fn stop_component(id: &Ustr) -> anyhow::Result<()> {
 ///
 /// # Errors
 ///
-/// - Returns an error if the component is not found.
-/// - Returns an error if the component is already borrowed.
-/// - Returns an error if `reset()` fails.
+/// Returns an error if:
+/// - The component is not found.
+/// - The component is already borrowed.
+/// - `reset()` fails.
 pub fn reset_component(id: &Ustr) -> anyhow::Result<()> {
     let component_ref = with_component_registry(|registry| {
         let component_ref = registry
@@ -681,9 +685,10 @@ pub fn reset_component(id: &Ustr) -> anyhow::Result<()> {
 ///
 /// # Errors
 ///
-/// - Returns an error if the component is not found.
-/// - Returns an error if the component is already borrowed.
-/// - Returns an error if `dispose()` fails.
+/// Returns an error if:
+/// - The component is not found.
+/// - The component is already borrowed.
+/// - `dispose()` fails.
 pub fn dispose_component(id: &Ustr) -> anyhow::Result<()> {
     let component_ref = with_component_registry(|registry| {
         let component_ref = registry
@@ -716,8 +721,9 @@ pub fn dispose_component(id: &Ustr) -> anyhow::Result<()> {
 ///
 /// # Errors
 ///
-/// - Returns an error if the component is not found.
-/// - Returns an error if the component is already borrowed.
+/// Returns an error if:
+/// - The component is not found.
+/// - The component is already borrowed.
 pub fn release_component_subscriptions(id: &Ustr) -> anyhow::Result<()> {
     let component_ref = with_component_registry(|registry| {
         let component_ref = registry

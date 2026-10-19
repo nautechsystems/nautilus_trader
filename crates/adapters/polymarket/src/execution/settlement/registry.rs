@@ -44,7 +44,7 @@ use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use super::{
-    admission::{AdmittedLeg, AdmittedTrade},
+    admission::{AdmittedLeg, AdmittedTrade, TakerFeeBasis, TakerFeeBasisLookup},
     state::{
         LegApplication, MAX_SETTLEMENT_RECORDS, SettlementAction, SettlementLeg, SettlementRecord,
         SettlementState, UncertainOrder, UncertainOrderKind,
@@ -66,6 +66,7 @@ struct RegistryInner {
     records: AHashMap<String, SettlementRecord>,
     leg_trade_ids: AHashMap<TradeId, String>,
     unbound_legs: AHashMap<TradeId, SettlementLeg>,
+    settled_on_arrival: AHashSet<TradeId>,
     uncertain_orders: AHashMap<VenueOrderId, UncertainOrder>,
     hydrated: usize,
     account_refresh_requested: bool,
@@ -83,6 +84,7 @@ impl Default for RegistryInner {
             records: AHashMap::new(),
             leg_trade_ids: AHashMap::new(),
             unbound_legs: AHashMap::new(),
+            settled_on_arrival: AHashSet::new(),
             uncertain_orders: AHashMap::new(),
             hydrated: 0,
             account_refresh_requested: false,
@@ -573,7 +575,18 @@ impl SettlementRegistry {
         std::mem::take(&mut self.inner.lock().account_refresh_requested)
     }
 
+    /// Returns whether this leg was first applied from terminal REST evidence.
+    ///
+    /// Those fills are admitted only after the trade is confirmed, so collateral accounting does
+    /// not lock them against a snapshot that may already exclude the spend.
+    pub(crate) fn settled_on_arrival(&self, trade_id: &TradeId) -> bool {
+        self.inner.lock().settled_on_arrival.contains(trade_id)
+    }
+
     /// Returns whether the trade reached a confirmed settlement (stream or REST).
+    ///
+    /// A hard fault does not clear this outcome. Terminal bookkeeping uses
+    /// [`Self::authorizes_terminal_bookkeeping`] instead.
     pub(crate) fn is_trade_confirmed(&self, venue_trade_id: &str) -> bool {
         self.inner
             .lock()
@@ -585,6 +598,43 @@ impl SettlementRegistry {
                     SettlementState::StreamConfirmed | SettlementState::RestConfirmed
                 )
             })
+    }
+
+    /// Returns whether confirmed settlement may authorize terminal order bookkeeping.
+    ///
+    /// `venue_trade_id` is the venue trade id, not a leg trade id. A hard fault keeps the
+    /// confirmed venue outcome and withdraws this authority.
+    pub(crate) fn authorizes_terminal_bookkeeping(&self, venue_trade_id: &str) -> bool {
+        self.inner
+            .lock()
+            .records
+            .get(venue_trade_id)
+            .is_some_and(|record| {
+                record.hard_fault.is_none()
+                    && matches!(
+                        record.settlement,
+                        SettlementState::StreamConfirmed | SettlementState::RestConfirmed
+                    )
+            })
+    }
+
+    /// Returns whether the trade holds a sticky hard fault.
+    pub(crate) fn is_trade_hard_faulted(&self, venue_trade_id: &str) -> bool {
+        self.inner
+            .lock()
+            .records
+            .get(venue_trade_id)
+            .is_some_and(|record| record.hard_fault.is_some())
+    }
+
+    /// Returns whether a hard-faulted trade touches this order.
+    ///
+    /// The scan includes terminal REST legs when the faulting transition stored them. A missing
+    /// record does not block.
+    pub(crate) fn blocks_terminal_bookkeeping(&self, venue_order_id: &VenueOrderId) -> bool {
+        self.inner.lock().records.values().any(|record| {
+            record.hard_fault.is_some() && faulted_record_touches_order(record, venue_order_id)
+        })
     }
 
     /// Returns whether the registry holds evidence or an observed fill for the trade.
@@ -608,7 +658,7 @@ impl SettlementRegistry {
         incoming: &AdmittedLeg,
         ts_init: UnixNanos,
     ) -> anyhow::Result<FillReport> {
-        let inner = self.inner.lock();
+        let mut inner = self.inner.lock();
         anyhow::ensure!(
             inner.client_fault.is_none(),
             "settlement registry is faulted"
@@ -663,6 +713,9 @@ impl SettlementRegistry {
             }
         }
 
+        // Reconciliation emits this report after the trade is confirmed, so collateral must not
+        // lock it against a snapshot that already excludes the spend.
+        inner.settled_on_arrival.insert(incoming.trade_id);
         Ok(report)
     }
 
@@ -861,6 +914,23 @@ impl SettlementRegistry {
     }
 }
 
+impl TakerFeeBasisLookup for SettlementRegistry {
+    fn taker_fee_basis(
+        &self,
+        venue_trade_id: &str,
+        venue_order_id: &VenueOrderId,
+    ) -> Option<TakerFeeBasis> {
+        let inner = self.inner.lock();
+        inner.records.get(venue_trade_id).and_then(|record| {
+            record
+                .legs
+                .iter()
+                .find(|leg| &leg.venue_order_id == venue_order_id)
+                .and_then(|leg| leg.taker_fee_basis)
+        })
+    }
+}
+
 fn stream_transition(
     inner: &mut RegistryInner,
     key: &str,
@@ -1046,6 +1116,7 @@ fn enter_rest_confirmed(
     record.settlement = SettlementState::RestConfirmed;
 
     let mut new_trade_ids = Vec::new();
+    let mut settled_on_arrival = Vec::new();
     let mut divergent_order = None;
 
     for incoming in admitted {
@@ -1058,6 +1129,7 @@ fn enter_rest_confirmed(
             leg.authorized = true;
             record.legs.push(leg);
             new_trade_ids.push(incoming.trade_id);
+            settled_on_arrival.push(incoming.trade_id);
             actions.push(SettlementAction::ApplyLeg {
                 venue_trade_id: key.to_string(),
                 leg: incoming.clone(),
@@ -1074,6 +1146,7 @@ fn enter_rest_confirmed(
                 .insert(incoming.trade_id, key.to_string());
             *leg = SettlementLeg::from_admitted(incoming);
             leg.authorized = true;
+            settled_on_arrival.push(incoming.trade_id);
             actions.push(SettlementAction::ApplyLeg {
                 venue_trade_id: key.to_string(),
                 leg: incoming.clone(),
@@ -1097,7 +1170,10 @@ fn enter_rest_confirmed(
              order {venue_order_id}"
         );
         hard_fault(inner, key, reason);
+        return;
     }
+
+    inner.settled_on_arrival.extend(settled_on_arrival);
 }
 
 fn enter_rest_failed(
@@ -1236,7 +1312,20 @@ fn admitted_economics_diverge(stored: &SettlementLeg, incoming: &AdmittedLeg) ->
 }
 
 fn legs_materially_equal(previous: &[AdmittedLeg], incoming: &[AdmittedLeg]) -> bool {
-    previous.len() == incoming.len() && previous.iter().all(|leg| incoming.contains(leg))
+    // Fee basis is local metadata, not venue evidence. Two schedules can floor to the same
+    // commission, and a basis-less restored fill must not hard-fault on that difference alone.
+    fn without_basis(leg: &AdmittedLeg) -> AdmittedLeg {
+        AdmittedLeg {
+            taker_fee_basis: None,
+            ..leg.clone()
+        }
+    }
+
+    previous.len() == incoming.len()
+        && previous.iter().all(|leg| {
+            let leg = without_basis(leg);
+            incoming.iter().any(|other| without_basis(other) == leg)
+        })
 }
 
 /// Marks an order for a targeted REST read of trades missed during a stream gap, unless it already
@@ -1254,6 +1343,17 @@ fn insert_stream_gap_order(
             noted_at,
             kind: UncertainOrderKind::StreamGap,
         });
+}
+
+fn faulted_record_touches_order(record: &SettlementRecord, venue_order_id: &VenueOrderId) -> bool {
+    record
+        .legs
+        .iter()
+        .any(|leg| &leg.venue_order_id == venue_order_id)
+        || record
+            .terminal_rest_legs
+            .as_ref()
+            .is_some_and(|legs| legs.iter().any(|leg| &leg.venue_order_id == venue_order_id))
 }
 
 fn hard_fault(inner: &mut RegistryInner, key: &str, reason: String) {
@@ -1456,6 +1556,7 @@ fn observed_leg(fill: &OrderFilled) -> SettlementLeg {
             .commission
             .clone()
             .unwrap_or_else(|| Money::zero(fill.currency.clone())),
+        taker_fee_basis: None,
         ts_event: fill.ts_event,
         application: LegApplication::FillObserved,
         applied_fill: Some(Box::new(fill.clone())),
@@ -1571,6 +1672,7 @@ pub(crate) mod tests {
             last_qty: Quantity::from("10.00"),
             last_px: Price::from("0.50"),
             commission: Money::zero(get_pusd_currency()),
+            taker_fee_basis: None,
             ts_event: UnixNanos::from(1_000_u64),
         }
     }
@@ -1911,6 +2013,21 @@ pub(crate) mod tests {
     }
 
     #[rstest]
+    fn test_terminal_rest_apply_marks_leg_settled_on_arrival() {
+        let registry = live_registry();
+        let leg = maker_leg("0xmaker-a");
+
+        let actions =
+            registry.admit_rest_result(&trade(PolymarketTradeStatus::Confirmed, vec![leg.clone()]));
+
+        assert!(matches!(
+            actions.as_slice(),
+            [SettlementAction::ApplyLeg { .. }]
+        ));
+        assert!(registry.settled_on_arrival(&leg.trade_id));
+    }
+
+    #[rstest]
     fn test_unknown_report_validation_does_not_establish_terminal_settlement() {
         let registry = live_registry();
 
@@ -2123,6 +2240,155 @@ pub(crate) mod tests {
     }
 
     #[rstest]
+    #[case::refreshed_commission(false, false)]
+    #[case::changed_quantity(true, false)]
+    #[case::changed_timestamp(false, true)]
+    fn test_retained_basis_does_not_hide_a_different_admitted_commission(
+        #[case] change_quantity: bool,
+        #[case] change_timestamp: bool,
+    ) {
+        let registry = live_registry();
+        let mut original = taker_leg();
+        original.taker_fee_basis = Some(TakerFeeBasis {
+            rate: rust_decimal::Decimal::ONE,
+            exponent: rust_decimal::Decimal::ONE,
+        });
+
+        original.commission = Money::from("0.45062 pUSD");
+        registry.note_order_submitted(original.venue_order_id);
+        registry.admit_stream_trade(&trade(
+            PolymarketTradeStatus::Matched,
+            vec![original.clone()],
+        ));
+        registry.note_leg_enqueued(&original.trade_id);
+        registry.observe_fill_applied(&applied_fill(&original, Some(TRADE)));
+
+        let mut incoming = original.clone();
+        incoming.commission = Money::from("0.06250 pUSD");
+        incoming.taker_fee_basis = Some(TakerFeeBasis {
+            rate: rust_decimal::Decimal::new(1, 2),
+            exponent: rust_decimal::Decimal::ONE,
+        });
+
+        if change_quantity {
+            incoming.last_qty = Quantity::from("9.00");
+        }
+
+        if change_timestamp {
+            incoming.ts_event = UnixNanos::from(2_000);
+        }
+
+        // A different admitted commission is venue-comparable evidence. The retained basis
+        // does not replace it.
+        let conflicts = true;
+
+        let stream = registry.admit_stream_trade(&trade(
+            PolymarketTradeStatus::Confirmed,
+            vec![incoming.clone()],
+        ));
+        let first_rest = registry.admit_rest_result(&trade(
+            PolymarketTradeStatus::Confirmed,
+            vec![incoming.clone()],
+        ));
+        let mut repeated = incoming;
+        repeated.commission = Money::from("0.10000 pUSD");
+        let second_rest =
+            registry.admit_rest_result(&trade(PolymarketTradeStatus::Confirmed, vec![repeated]));
+
+        assert!(stream.is_empty());
+        assert!(first_rest.is_empty());
+        assert!(second_rest.is_empty());
+        assert_eq!(
+            settlement_state(&registry, TRADE),
+            Some(SettlementState::RestConfirmed)
+        );
+        assert_eq!(trade_hard_fault(&registry, TRADE).is_some(), conflicts);
+        assert_eq!(
+            registry.ensure_resolved(None, "mass status").is_ok(),
+            !conflicts
+        );
+        assert_eq!(
+            registry.inner.lock().records[TRADE].legs[0].commission,
+            original.commission
+        );
+        assert_eq!(
+            leg_application(&registry, &original.trade_id),
+            Some(LegApplication::FillObserved)
+        );
+    }
+
+    #[rstest]
+    fn test_repeated_rest_ignores_fee_basis_when_commission_matches() {
+        let registry = live_registry();
+        registry.mark_hydrating();
+        let historical = taker_leg();
+        registry.hydrate_fill(&applied_fill(&historical, Some(TRADE)));
+        registry.mark_live();
+
+        let mut first = historical.clone();
+        first.taker_fee_basis = Some(TakerFeeBasis {
+            rate: rust_decimal::Decimal::ZERO,
+            exponent: rust_decimal::Decimal::ONE,
+        });
+
+        assert!(
+            registry
+                .admit_rest_result(&trade(PolymarketTradeStatus::Confirmed, vec![first]))
+                .is_empty()
+        );
+
+        let mut second = historical;
+        second.taker_fee_basis = Some(TakerFeeBasis {
+            rate: rust_decimal::Decimal::ZERO,
+            exponent: rust_decimal::Decimal::TWO,
+        });
+
+        assert!(
+            registry
+                .admit_rest_result(&trade(PolymarketTradeStatus::Confirmed, vec![second]))
+                .is_empty()
+        );
+
+        assert_eq!(trade_hard_fault(&registry, TRADE), None);
+        assert_eq!(
+            settlement_state(&registry, TRADE),
+            Some(SettlementState::RestConfirmed)
+        );
+        assert!(registry.ensure_resolved(None, "mass status").is_ok());
+    }
+
+    #[rstest]
+    fn test_retained_basis_keeps_rest_quantity_change_on_unattempted_leg() {
+        let registry = live_registry();
+        let mut original = taker_leg();
+        original.taker_fee_basis = Some(TakerFeeBasis {
+            rate: rust_decimal::Decimal::ONE,
+            exponent: rust_decimal::Decimal::ONE,
+        });
+
+        original.commission = Money::from("0.45062 pUSD");
+        registry.admit_stream_trade(&trade(
+            PolymarketTradeStatus::Matched,
+            vec![original.clone()],
+        ));
+
+        let mut incoming = original;
+        incoming.last_qty = Quantity::from("9.00");
+        incoming.commission = Money::from("0.20000 pUSD");
+        let actions = registry.admit_rest_result(&trade(
+            PolymarketTradeStatus::Confirmed,
+            vec![incoming.clone()],
+        ));
+
+        assert_eq!(apply_count(&actions), 1);
+        assert_eq!(trade_hard_fault(&registry, TRADE), None);
+        let inner = registry.inner.lock();
+        let stored = &inner.records[TRADE].legs[0];
+        assert_eq!(stored.last_qty, incoming.last_qty);
+        assert_eq!(stored.commission, incoming.commission);
+    }
+
+    #[rstest]
     #[case::matching(|_: &mut AdmittedLeg| {}, false)]
     #[case::quantity(|leg: &mut AdmittedLeg| leg.last_qty = Quantity::from("9.00"), true)]
     #[case::price(|leg: &mut AdmittedLeg| leg.last_px = Price::from("0.60"), true)]
@@ -2270,6 +2536,7 @@ pub(crate) mod tests {
             last_qty: Quantity::from("9.00"),
             last_px: Price::from("0.60"),
             commission: Money::zero(get_pusd_currency()),
+            taker_fee_basis: None,
             ts_event: UnixNanos::from(2_000),
         };
 
@@ -2998,10 +3265,50 @@ pub(crate) mod tests {
         assert!(confirmed.is_empty());
         assert!(trade_hard_fault(&registry, TRADE).is_some());
         assert_eq!(
+            settlement_state(&registry, TRADE),
+            Some(SettlementState::RestConfirmed)
+        );
+        assert!(registry.is_trade_confirmed(TRADE));
+        assert!(!registry.authorizes_terminal_bookkeeping(TRADE));
+        assert!(registry.blocks_terminal_bookkeeping(&leg.venue_order_id));
+        assert_eq!(
             leg_application(&registry, &leg.trade_id),
             Some(LegApplication::FillObserved)
         );
         assert!(registry.ensure_resolved(None, "mass status").is_err());
+    }
+
+    #[rstest]
+    fn test_faulted_rest_payload_blocks_order_not_copied_onto_legs() {
+        let registry = live_registry();
+        let leg = applied_taker(&registry);
+        let order_id = leg.venue_order_id;
+        registry.admit_stream_trade(&trade(PolymarketTradeStatus::Failed, vec![leg.clone()]));
+        let rest_leg = AdmittedLeg {
+            last_qty: Quantity::from("9.00"),
+            ..leg
+        };
+        let extra = maker_leg("0xuncopied");
+        let extra_order_id = extra.venue_order_id;
+        let confirmed = registry.admit_rest_result(&trade(
+            PolymarketTradeStatus::Confirmed,
+            vec![rest_leg, extra],
+        ));
+
+        assert!(confirmed.is_empty());
+        assert_eq!(
+            settlement_state(&registry, TRADE),
+            Some(SettlementState::RestConfirmed)
+        );
+        assert!(trade_hard_fault(&registry, TRADE).is_some());
+        assert!(
+            !registry.inner.lock().records[TRADE]
+                .legs
+                .iter()
+                .any(|stored| stored.venue_order_id == extra_order_id)
+        );
+        assert!(registry.blocks_terminal_bookkeeping(&order_id));
+        assert!(registry.blocks_terminal_bookkeeping(&extra_order_id));
     }
 
     #[rstest]

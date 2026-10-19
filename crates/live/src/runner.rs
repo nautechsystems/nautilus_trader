@@ -120,11 +120,7 @@ impl DataCommandSender for AsyncDataCommandSender {
         if let Err(e) = self.cmd_tx.send(DispatchMessage::new(command, self.owner)) {
             // Disposal releases retained subscriptions after the node drops its receivers
             #[cfg(feature = "node")]
-            if self
-                .node_handle
-                .as_ref()
-                .is_some_and(|handle| handle.state() == NodeState::Stopped)
-            {
+            if node_stopped(self.node_handle.as_ref()) {
                 return;
             }
 
@@ -137,6 +133,8 @@ impl DataCommandSender for AsyncDataCommandSender {
 #[derive(Debug, Clone)]
 pub struct AsyncTimeEventSender {
     time_tx: DispatchSender<TimeEventMessage>,
+    #[cfg(feature = "node")]
+    node_handle: Option<LiveNodeHandle>,
 }
 
 impl AsyncTimeEventSender {
@@ -147,6 +145,8 @@ impl AsyncTimeEventSender {
     ) -> Self {
         Self {
             time_tx: DispatchSender::new(time_tx),
+            #[cfg(feature = "node")]
+            node_handle: None,
         }
     }
 }
@@ -154,6 +154,11 @@ impl AsyncTimeEventSender {
 impl TimeEventSender for AsyncTimeEventSender {
     fn send(&self, message: TimeEventMessage) {
         if let Err(e) = self.time_tx.send(message) {
+            #[cfg(feature = "node")]
+            if node_stopped(self.node_handle.as_ref()) {
+                return;
+            }
+
             log::error!("Failed to send time event message: {e}");
         }
     }
@@ -325,7 +330,11 @@ impl AsyncRunner {
 
     #[rustfmt::skip]
     fn bind_senders_with_data_sender(&self, sender: AsyncDataCommandSender) {
-        replace_time_event_sender(Arc::new(AsyncTimeEventSender::new(self.time_evt_tx.clone())));
+        replace_time_event_sender(Arc::new(AsyncTimeEventSender {
+            time_tx: DispatchSender::new(self.time_evt_tx.clone()),
+            #[cfg(feature = "node")]
+            node_handle: sender.node_handle.clone(),
+        }));
         replace_system_event_sender(EventSender::new(self.system_evt_tx.clone()));
         replace_system_command_sender(DispatchSender::new(self.system_cmd_tx.clone()));
         replace_exec_event_sender(EventSender::new(self.exec_evt_tx.clone()));
@@ -426,7 +435,8 @@ impl AsyncRunner {
     ///
     /// # Errors
     ///
-    /// Returns a callback dispatch failure, retaining pending channel messages and the failure latch.
+    /// Returns an error if callback dispatch fails. Pending channel messages and the failure latch
+    /// are retained.
     pub async fn run(&mut self) -> anyhow::Result<()> {
         self.bind_senders();
 
@@ -709,6 +719,11 @@ impl AsyncRunner {
             else => None,
         }
     }
+}
+
+#[cfg(feature = "node")]
+fn node_stopped(handle: Option<&LiveNodeHandle>) -> bool {
+    handle.is_some_and(|handle| handle.state() == NodeState::Stopped)
 }
 
 #[cfg(feature = "node")]
@@ -1195,7 +1210,7 @@ mod tests {
 
     #[cfg(feature = "node")]
     #[rstest]
-    fn test_data_command_sender_shutdown_logging() {
+    fn test_runner_senders_shutdown_logging() {
         struct ErrorCapture(std::sync::Mutex<Vec<String>>);
 
         impl log::Log for ErrorCapture {
@@ -1222,6 +1237,7 @@ mod tests {
         handle.set_starting();
         runner.bind_senders_for_node(handle.clone());
         let sender = get_data_cmd_sender();
+        let time_sender = get_time_event_sender();
         let mut channels = runner.take_channels();
 
         let command = DataCommand::Subscribe(SubscribeCommand::Data(SubscribeCustomData {
@@ -1234,7 +1250,15 @@ mod tests {
             params: None,
         }));
 
-        // Stopping and final draining must still deliver commands while the receiver is alive
+        let event = TimeEvent::new("shutdown-timer".into(), UUID4::new(), 17.into(), 23.into());
+        let expected_events = vec![event.clone(); 2];
+        let received = Rc::new(RefCell::new(Vec::new()));
+        let observed = received.clone();
+        let callback = TimeEventCallback::RustLocal(Rc::new(move |event| {
+            observed.borrow_mut().push(event);
+        }));
+
+        // Final draining still delivers commands and timer callbacks while receivers are alive
         for stopped in [false, true] {
             if stopped {
                 handle.set_stopped();
@@ -1251,10 +1275,18 @@ mod tests {
                     .dispatch(|command| command),
                 command
             );
+
+            time_sender.send(TimeEventMessage::new(event.clone(), callback.clone()));
+            assert!(AsyncRunner::handle_time_event(
+                channels.time_evt_rx.try_recv().unwrap()
+            ));
         }
+
+        assert_eq!(*received.borrow(), expected_events);
 
         drop(channels);
         sender.execute(command.clone());
+        time_sender.send(TimeEventMessage::new(event.clone(), callback.clone()));
         assert_eq!(*ERRORS.0.lock().unwrap(), Vec::<String>::new());
 
         // A stopped previous node must not hide an unexpected closure in its replacement
@@ -1262,6 +1294,7 @@ mod tests {
         let handle = LiveNodeHandle::new();
         runner.bind_senders_for_node(handle.clone());
         let sender = get_data_cmd_sender();
+        let time_sender = get_time_event_sender();
         drop(runner);
 
         for shutting_down in [false, true] {
@@ -1272,21 +1305,24 @@ mod tests {
             }
 
             sender.execute(command.clone());
+            time_sender.send(TimeEventMessage::new(event.clone(), callback.clone()));
         }
 
-        assert_eq!(
-            *ERRORS.0.lock().unwrap(),
-            vec!["Failed to send data command: channel closed"; 2],
-        );
+        let expected_errors = vec![
+            "Failed to send data command: channel closed",
+            "Failed to send time event message: channel closed",
+        ];
+        assert_eq!(*ERRORS.0.lock().unwrap(), expected_errors.repeat(2));
 
         ERRORS.0.lock().unwrap().clear();
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         drop(rx);
         AsyncDataCommandSender::new(tx).execute(command);
-        assert_eq!(
-            *ERRORS.0.lock().unwrap(),
-            vec!["Failed to send data command: channel closed"],
-        );
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        drop(rx);
+        AsyncTimeEventSender::new(tx).send(TimeEventMessage::new(event, callback));
+        assert_eq!(*ERRORS.0.lock().unwrap(), expected_errors);
+        assert_eq!(*received.borrow(), expected_events);
     }
 
     #[rstest]

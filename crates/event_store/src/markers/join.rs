@@ -50,9 +50,9 @@ pub struct JoinedStream {
 ///
 /// # Errors
 ///
-/// Returns [`EventStoreError`] when marker cursor folding fails, when a folded slot has no
-/// dictionary entry, when `count` does not fit in memory on this platform, or when the catalog
-/// fails while planning or loading a replayable slice.
+/// Returns an error if marker cursor folding fails, when a folded slot has no dictionary entry,
+/// when `count` does not fit in memory on this platform, or when the catalog fails while planning
+/// or loading a replayable slice.
 pub fn join_at_entry<C>(
     reader: &MarkerReader,
     catalog: &mut C,

@@ -66,6 +66,9 @@ mod serial_tests {
         types::{AccountBalance, Currency, Money, Price, Quantity},
     };
     use redis::AsyncCommands;
+    use rstest::rstest;
+
+    use crate::position_flip::populate_flip_cache;
 
     fn redis_test_mutex() -> &'static tokio::sync::Mutex<()> {
         static LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
@@ -112,6 +115,75 @@ mod serial_tests {
         let adapter = RedisCacheDatabaseAdapter { database };
 
         Ok(adapter)
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_virtual_hedging_flip_survives_cache_restart(
+        #[values("none", "source", "destination")] reopen: &str,
+        #[values(false, true)] void_fill: bool,
+    ) {
+        let _guard = redis_test_mutex().lock().await;
+        let trader_id = TraderId::from(format!("flip-{}", UUID4::new()));
+        let database = RedisCacheDatabase::new(
+            trader_id,
+            UUID4::new(),
+            CacheConfig::default(),
+            redis_cache_config(),
+        )
+        .await
+        .unwrap();
+        let trader_key = database.trader_key.clone();
+        let mut conn = database.con.clone();
+        let mut cache = Cache::default();
+        cache.set_database(Box::new(RedisCacheDatabaseAdapter { database }));
+        let (order_id, source_id, destination_id) =
+            populate_flip_cache(&mut cache, trader_id, reopen, void_fill);
+        let expected_order =
+            serde_json::to_value(cache.order(&order_id).unwrap().cloned()).unwrap();
+        let expected_source =
+            serde_json::to_value(cache.position(&source_id).unwrap().cloned()).unwrap();
+        let expected_destination =
+            serde_json::to_value(cache.position(&destination_id).unwrap().cloned()).unwrap();
+        cache.dispose();
+
+        let database = RedisCacheDatabase::new(
+            trader_id,
+            UUID4::new(),
+            CacheConfig::default(),
+            redis_cache_config(),
+        )
+        .await
+        .unwrap();
+        cache.set_database(Box::new(RedisCacheDatabaseAdapter { database }));
+        cache.cache_all().await.unwrap();
+        cache.build_index();
+        assert_eq!(
+            serde_json::to_value(cache.position(&source_id).unwrap().cloned()).unwrap(),
+            expected_source,
+        );
+        assert_eq!(
+            serde_json::to_value(cache.position(&destination_id).unwrap().cloned()).unwrap(),
+            expected_destination,
+        );
+        let route = cache.hedging_flip_position_ids(order_id);
+
+        let expected_id = if void_fill { source_id } else { destination_id };
+        if reopen == "destination" && void_fill {
+            assert!(route.is_err());
+            assert_eq!(cache.position_id(&order_id), None);
+        } else {
+            assert_eq!(route.unwrap().unwrap()[1], expected_id);
+            assert_eq!(cache.position_id(&order_id), Some(&expected_id));
+        }
+
+        assert_eq!(
+            serde_json::to_value(cache.order(&order_id).unwrap().cloned()).unwrap(),
+            expected_order
+        );
+        cache.dispose();
+        let keys: Vec<String> = conn.keys(format!("{trader_key}:*")).await.unwrap();
+        let _: usize = conn.del(keys).await.unwrap();
     }
 
     #[tokio::test]

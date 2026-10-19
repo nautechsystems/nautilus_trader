@@ -161,7 +161,7 @@ impl BinanceBar {
 
     /// # Errors
     ///
-    /// Returns a `PyErr` if generating the Python dictionary fails.
+    /// Returns an error if generating the Python dictionary fails.
     #[pyo3(name = "to_dict")]
     pub fn py_to_dict(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let dict = PyDict::new(py);

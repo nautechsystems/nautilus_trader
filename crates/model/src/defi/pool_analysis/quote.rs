@@ -212,7 +212,7 @@ impl SwapQuote {
     /// Price impact in basis points (10000 = 100%)
     ///
     /// # Errors
-    /// Returns error if price calculations fail
+    /// Returns an error if price calculations fail.
     pub fn get_price_impact_bps(&mut self) -> anyhow::Result<u32> {
         match self.check_if_trade_info_initialized() {
             Ok(trade_info) => trade_info.get_price_impact_bps(),
@@ -230,7 +230,7 @@ impl SwapQuote {
     /// Total slippage in basis points (10000 = 100%)
     ///
     /// # Errors
-    /// Returns error if price calculations fail
+    /// Returns an error if price calculations fail.
     pub fn get_slippage_bps(&mut self) -> anyhow::Result<u32> {
         match self.check_if_trade_info_initialized() {
             Ok(trade_info) => trade_info.get_slippage_bps(),
@@ -254,7 +254,7 @@ impl SwapQuote {
     /// Validates that the quote satisfied an exact output request.
     ///
     /// # Errors
-    /// Returns error if the actual output is less than the requested amount.
+    /// Returns an error if the actual output is less than the requested amount.
     pub fn validate_exact_output(&self, amount_out_requested: U256) -> anyhow::Result<()> {
         let actual_out = self.get_output_amount();
         if actual_out < amount_out_requested {

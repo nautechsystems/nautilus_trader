@@ -23,7 +23,7 @@ use crate::{
     enums::SerializationEncoding,
     msgbus::{
         BusPayloadType,
-        external::{codec::deserialize_json_msgpack_payload, handle_json_msgpack},
+        external::{codec::deserialize_payload, handle_payload},
         mstr::{MStr, Topic},
         publish_defi_block, publish_defi_collect, publish_defi_flash, publish_defi_liquidity,
         publish_defi_pool,
@@ -39,9 +39,9 @@ pub(crate) fn republish_external_message(
     match payload_type {
         BusPayloadType::Block => handle_block(topic, payload_type, encoding, payload),
         BusPayloadType::Pool => {
-            handle_json_msgpack(topic, payload_type, encoding, payload, publish_defi_pool)
+            handle_payload(topic, payload_type, encoding, payload, publish_defi_pool)
         }
-        BusPayloadType::PoolLiquidityUpdate => handle_json_msgpack(
+        BusPayloadType::PoolLiquidityUpdate => handle_payload(
             topic,
             payload_type,
             encoding,
@@ -49,10 +49,10 @@ pub(crate) fn republish_external_message(
             publish_defi_liquidity,
         ),
         BusPayloadType::PoolFeeCollect => {
-            handle_json_msgpack(topic, payload_type, encoding, payload, publish_defi_collect)
+            handle_payload(topic, payload_type, encoding, payload, publish_defi_collect)
         }
         BusPayloadType::PoolFlash => {
-            handle_json_msgpack(topic, payload_type, encoding, payload, publish_defi_flash)
+            handle_payload(topic, payload_type, encoding, payload, publish_defi_flash)
         }
         _ => Ok(()),
     }
@@ -77,7 +77,7 @@ fn decode_block_payload(
     encoding: SerializationEncoding,
     payload: &[u8],
 ) -> anyhow::Result<Option<Block>> {
-    deserialize_json_msgpack_payload::<ExternalBlockPayload>(payload_type, encoding, payload)
+    deserialize_payload::<ExternalBlockPayload>(payload_type, encoding, payload)
         .map(|payload| payload.map(Block::from))
 }
 

@@ -50,11 +50,10 @@ use crate::{
 ///
 /// # Errors
 ///
-/// Returns an error when the channel is unsupported or `params.data` does not
-/// match the channel payload shape.
+/// Returns an error if the channel is unsupported or `params.data` does not match the channel
+/// payload shape.
 pub fn parse_public_ws_data(payload: &WsSubscriptionPayload) -> anyhow::Result<DerivePublicWsData> {
     let channel = payload.channel.as_str();
-
     if channel.starts_with("orderbook.") {
         return parse_orderbook_msg(payload).map(DerivePublicWsData::Orderbook);
     }
@@ -74,7 +73,7 @@ pub fn parse_public_ws_data(payload: &WsSubscriptionPayload) -> anyhow::Result<D
 ///
 /// # Errors
 ///
-/// Returns an error when `params.data` is not a Derive order book snapshot.
+/// Returns an error if `params.data` is not a Derive order book snapshot.
 pub fn parse_orderbook_msg(payload: &WsSubscriptionPayload) -> anyhow::Result<DeriveOrderbookMsg> {
     let data = serde_json::from_str::<DeriveOrderbookData>(payload.data.get())
         .context("failed to decode Derive orderbook data")?;
@@ -88,7 +87,7 @@ pub fn parse_orderbook_msg(payload: &WsSubscriptionPayload) -> anyhow::Result<De
 ///
 /// # Errors
 ///
-/// Returns an error when `params.data` is not a list of Derive public trades.
+/// Returns an error if `params.data` is not a list of Derive public trades.
 pub fn parse_trades_msg(payload: &WsSubscriptionPayload) -> anyhow::Result<DeriveTradesMsg> {
     let trades = serde_json::from_str::<Vec<DerivePublicTrade>>(payload.data.get())
         .context("failed to decode Derive trades data")?;
@@ -102,7 +101,7 @@ pub fn parse_trades_msg(payload: &WsSubscriptionPayload) -> anyhow::Result<Deriv
 ///
 /// # Errors
 ///
-/// Returns an error when `params.data` is not a Derive ticker payload.
+/// Returns an error if `params.data` is not a Derive ticker payload.
 pub fn parse_ticker_msg(payload: &WsSubscriptionPayload) -> anyhow::Result<DeriveTickerMsg> {
     let mut data = serde_json::from_str::<DeriveTickerData>(payload.data.get())
         .context("failed to decode Derive ticker data")?;
@@ -126,18 +125,19 @@ pub fn parse_ticker_msg(payload: &WsSubscriptionPayload) -> anyhow::Result<Deriv
 ///
 /// # Errors
 ///
-/// Returns an error when a price, size, or timestamp cannot be converted.
+/// Returns an error if a price, size, or timestamp cannot be converted.
 pub fn parse_orderbook_deltas(
     msg: &DeriveOrderbookMsg,
     price_precision: u8,
     size_precision: u8,
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderBookDeltas> {
-    let instrument_id = msg.data.instrument_id();
+    let instrument_id = msg.data.instrument_id()?;
     let timestamp =
         u64::try_from(msg.data.timestamp).context("negative Derive orderbook timestamp")?;
     let ts_event = timestamp_millis_to_nanos(timestamp, "timestamp")?;
     let sequence = timestamp;
+
     let context = BookDeltaContext {
         instrument_id,
         sequence,
@@ -148,11 +148,13 @@ pub fn parse_orderbook_deltas(
     };
 
     let mut deltas = Vec::with_capacity(1 + msg.data.bids.len() + msg.data.asks.len());
+
     let clear_flags = if msg.data.bids.is_empty() && msg.data.asks.is_empty() {
         RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8
     } else {
         RecordFlag::F_SNAPSHOT as u8
     };
+
     deltas.push(OrderBookDelta::new_checked(
         context.instrument_id,
         BookAction::Clear,
@@ -192,14 +194,14 @@ pub fn parse_orderbook_deltas(
 ///
 /// # Errors
 ///
-/// Returns an error when a price, size, or timestamp cannot be converted.
+/// Returns an error if a price, size, or timestamp cannot be converted.
 pub fn parse_orderbook_depth(
     msg: &DeriveOrderbookMsg,
     price_precision: u8,
     size_precision: u8,
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderBookDepth> {
-    let instrument_id = msg.data.instrument_id();
+    let instrument_id = msg.data.instrument_id()?;
     let timestamp =
         u64::try_from(msg.data.timestamp).context("negative Derive orderbook timestamp")?;
     let ts_event = timestamp_millis_to_nanos(timestamp, "timestamp")?;
@@ -241,49 +243,38 @@ pub fn parse_orderbook_depth(
 
 /// Parses a public trade message into a Nautilus trade tick.
 ///
-/// The public WS feed defines `direction` as the taker's direction, so it maps
-/// directly to the aggressor side.
+/// Public rows carry the participant's `direction`. It maps directly
+/// to the aggressor side when the participant role is absent, unrecognized, or taker.
+/// Maker rows use the opposite direction.
 ///
 /// Pass price and size precision from the instrument definition rather than
 /// inferring them from the wire values, since Derive may trim trailing zeroes.
 ///
 /// # Errors
 ///
-/// Returns an error when price, size, or timestamp conversion fails.
+/// Returns an error if trade identifier, price, size, or timestamp conversion fails.
 pub fn parse_trade_tick(
     trade: &DerivePublicTrade,
     price_precision: u8,
     size_precision: u8,
     ts_init: UnixNanos,
 ) -> anyhow::Result<TradeTick> {
-    let aggressor_side = match trade.direction {
-        DeriveOrderSide::Buy => AggressorSide::Buy,
-        DeriveOrderSide::Sell => AggressorSide::Sell,
-    };
-    build_trade_tick(
-        trade,
-        aggressor_side,
-        price_precision,
-        size_precision,
-        ts_init,
-    )
+    parse_trade_tick_from_rest(trade, price_precision, size_precision, ts_init)
 }
 
-/// Parses a REST `public/get_trade_history` row into a Nautilus trade tick.
+/// Parses a public participant trade row into a Nautilus trade tick.
 ///
-/// The endpoint returns one maker row and one taker row per trade under the
-/// same `trade_id`, and each row's `direction` is that participant's own side:
-/// the aggressor side is the taker row's direction and the inverse of the maker
-/// row's. A missing role keeps the public WS contract where `direction` already
-/// denotes the taker; an unknown role degrades the same way so the trade is
-/// still emitted.
+/// Public rows can pair maker and taker participants under the same `trade_id`.
+/// Each row's `direction` is that participant's side: the aggressor side is the
+/// taker row's direction and the inverse of the maker row's. An absent or
+/// unrecognized role treats `direction` as the taker's side.
 ///
 /// Pass price and size precision from the instrument definition rather than
 /// inferring them from the wire values, since Derive may trim trailing zeroes.
 ///
 /// # Errors
 ///
-/// Returns an error when price, size, or timestamp conversion fails.
+/// Returns an error if trade identifier, price, size, or timestamp conversion fails.
 pub fn parse_trade_tick_from_rest(
     trade: &DerivePublicTrade,
     price_precision: u8,
@@ -320,12 +311,12 @@ fn build_trade_tick(
     size_precision: u8,
     ts_init: UnixNanos,
 ) -> anyhow::Result<TradeTick> {
-    let instrument_id = format_instrument_id(trade.instrument_name);
+    let instrument_id = format_instrument_id(trade.instrument_name)?;
     let price = Price::from_decimal_dp(trade.trade_price, price_precision)
         .with_context(|| format!("invalid trade price for {}", trade.instrument_name))?;
     let size = Quantity::from_decimal_dp(trade.trade_amount, size_precision)
         .with_context(|| format!("invalid trade amount for {}", trade.instrument_name))?;
-    let trade_id = TradeId::new(&trade.trade_id);
+    let trade_id = TradeId::new_checked(&trade.trade_id).context("invalid Derive trade_id")?;
     let timestamp = u64::try_from(trade.timestamp).context("negative Derive trade timestamp")?;
     let ts_event = timestamp_millis_to_nanos(timestamp, "timestamp")?;
 
@@ -347,14 +338,14 @@ fn build_trade_tick(
 ///
 /// # Errors
 ///
-/// Returns an error when price, size, or timestamp conversion fails.
+/// Returns an error if price, size, or timestamp conversion fails.
 pub fn parse_ticker_quote(
     msg: &DeriveTickerMsg,
     price_precision: u8,
     size_precision: u8,
     ts_init: UnixNanos,
 ) -> anyhow::Result<QuoteTick> {
-    let instrument_id = msg.data.instrument_id();
+    let instrument_id = msg.data.instrument_id()?;
     let instrument_name = msg.data.instrument_name().as_str();
     let bid_price = Price::from_decimal_dp(msg.data.best_bid_price(), price_precision)
         .with_context(|| format!("invalid bid price for {instrument_name}"))?;
@@ -383,14 +374,14 @@ pub fn parse_ticker_quote(
 ///
 /// # Errors
 ///
-/// Returns an error when price, size, or timestamp conversion fails.
+/// Returns an error if price, size, or timestamp conversion fails.
 pub fn parse_ticker_quote_from_rest(
     ticker: &DeriveTickerSnapshot,
     price_precision: u8,
     size_precision: u8,
     ts_init: UnixNanos,
 ) -> anyhow::Result<QuoteTick> {
-    let instrument_id = format_instrument_id(ticker.instrument_name);
+    let instrument_id = format_instrument_id(ticker.instrument_name)?;
     let instrument_name = ticker.instrument_name.as_str();
     let bid_price = Price::from_decimal_dp(ticker.best_bid_price, price_precision)
         .with_context(|| format!("invalid bid price for {instrument_name}"))?;
@@ -509,13 +500,13 @@ pub(crate) fn ticker_ts_event(timestamp_ms: i64) -> anyhow::Result<UnixNanos> {
 ///
 /// # Errors
 ///
-/// Returns an error when the ticker timestamp is negative or overflows.
+/// Returns an error if the ticker timestamp is negative or overflows.
 pub fn parse_mark_price(
     msg: &DeriveTickerMsg,
     price_precision: u8,
     ts_init: UnixNanos,
 ) -> anyhow::Result<Option<MarkPriceUpdate>> {
-    let instrument_id = msg.data.instrument_id();
+    let instrument_id = msg.data.instrument_id()?;
     let value = Price::from_decimal_dp(msg.data.mark_price(), price_precision)
         .with_context(|| format!("invalid Derive mark price for {instrument_id}"))?;
     let ts_event = ticker_ts_event(msg.data.timestamp())?;
@@ -531,13 +522,13 @@ pub fn parse_mark_price(
 ///
 /// # Errors
 ///
-/// Returns an error when the ticker timestamp is negative or overflows.
+/// Returns an error if the ticker timestamp is negative or overflows.
 pub fn parse_index_price(
     msg: &DeriveTickerMsg,
     price_precision: u8,
     ts_init: UnixNanos,
 ) -> anyhow::Result<Option<IndexPriceUpdate>> {
-    let instrument_id = msg.data.instrument_id();
+    let instrument_id = msg.data.instrument_id()?;
     let value = Price::from_decimal_dp(msg.data.index_price(), price_precision)
         .with_context(|| format!("invalid Derive index price for {instrument_id}"))?;
     let ts_event = ticker_ts_event(msg.data.timestamp())?;
@@ -555,7 +546,7 @@ pub fn parse_index_price(
 ///
 /// # Errors
 ///
-/// Returns an error when the ticker timestamp is negative or overflows.
+/// Returns an error if the ticker timestamp is negative or overflows.
 pub fn parse_funding_rate(
     msg: &DeriveTickerMsg,
     ts_init: UnixNanos,
@@ -563,7 +554,8 @@ pub fn parse_funding_rate(
     let Some(rate) = msg.data.funding_rate() else {
         return Ok(None);
     };
-    let instrument_id = msg.data.instrument_id();
+
+    let instrument_id = msg.data.instrument_id()?;
     let ts_event = ticker_ts_event(msg.data.timestamp())?;
     Ok(Some(FundingRateUpdate::new(
         instrument_id,
@@ -579,7 +571,7 @@ pub fn parse_funding_rate(
 ///
 /// # Errors
 ///
-/// Returns an error when the record timestamp is negative or overflows.
+/// Returns an error if the record timestamp is negative or overflows.
 pub fn parse_funding_rate_history_record(
     record: &DerivePublicFundingRate,
     instrument_id: InstrumentId,
@@ -606,7 +598,7 @@ pub fn parse_funding_rate_history_record(
 ///
 /// # Errors
 ///
-/// Returns an error when price, size, or timestamp conversion fails.
+/// Returns an error if price, size, or timestamp conversion fails.
 pub fn parse_candle_record(
     record: &DerivePublicCandle,
     bar_type: BarType,
@@ -667,12 +659,14 @@ pub fn bar_spec_to_derive_period(aggregation: BarAggregation, step: u64) -> anyh
             if step != 1 {
                 anyhow::bail!("Derive only supports 1 DAY interval bars");
             }
+
             Ok(86400)
         }
         BarAggregation::Week => {
             if step != 1 {
                 anyhow::bail!("Derive only supports 1 WEEK interval bars");
             }
+
             Ok(604800)
         }
         _ => anyhow::bail!("Derive does not support {aggregation:?} bars"),
@@ -692,7 +686,7 @@ fn timestamp_seconds_to_nanos(value: u64, field: &str) -> anyhow::Result<UnixNan
 ///
 /// # Errors
 ///
-/// Returns an error when the ticker timestamp is negative or overflows.
+/// Returns an error if the ticker timestamp is negative or overflows.
 pub fn parse_option_greeks(
     msg: &DeriveTickerMsg,
     ts_init: UnixNanos,
@@ -700,8 +694,10 @@ pub fn parse_option_greeks(
     let Some(pricing) = msg.data.option_pricing() else {
         return Ok(None);
     };
-    let instrument_id = msg.data.instrument_id();
+
+    let instrument_id = msg.data.instrument_id()?;
     let ts_event = ticker_ts_event(msg.data.timestamp())?;
+
     let to_f64 = |label: &str, value: rust_decimal::Decimal| {
         value
             .to_f64()
@@ -852,7 +848,7 @@ mod tests {
 
         assert_eq!(msg.channel, "orderbook.ETH-PERP.1.10");
         assert_eq!(
-            msg.data.instrument_id(),
+            msg.data.instrument_id().unwrap(),
             InstrumentId::from("ETH-PERP.DERIVE")
         );
         assert_eq!(msg.data.bids[0].price().to_string(), "3499.50");
@@ -866,6 +862,37 @@ mod tests {
         assert_eq!(
             deltas.deltas[3].flags,
             RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8
+        );
+    }
+
+    #[rstest]
+    #[case::null_price(0, Value::Null)]
+    #[case::empty_price(0, json!(""))]
+    #[case::null_amount(1, Value::Null)]
+    #[case::empty_amount(1, json!(""))]
+    fn test_parse_orderbook_rejects_missing_numeric_values(
+        #[case] field: usize,
+        #[case] value: Value,
+        #[values("bids", "asks")] side: &str,
+        #[values(false, true)] depth: bool,
+    ) {
+        let mut data = load_json("perps/ws_orderbook_eth.json");
+        data[side][0][field] = value;
+        let payload = subscription_data_payload("orderbook.ETH-PERP.1.10", &data);
+
+        let result = parse_orderbook_msg(&payload).and_then(|msg| {
+            if depth {
+                parse_orderbook_depth(&msg, PRICE_PRECISION, SIZE_PRECISION, UnixNanos::from(123))
+                    .map(|_| ())
+            } else {
+                parse_orderbook_deltas(&msg, PRICE_PRECISION, SIZE_PRECISION, UnixNanos::from(123))
+                    .map(|_| ())
+            }
+        });
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "failed to decode Derive orderbook data"
         );
     }
 
@@ -888,7 +915,7 @@ mod tests {
         assert_eq!(msg.channel, "trades.perp.ETH");
         assert_eq!(msg.trades.len(), 1);
         assert_eq!(
-            format_instrument_id(msg.trades[0].instrument_name),
+            format_instrument_id(msg.trades[0].instrument_name).unwrap(),
             InstrumentId::from("ETH-PERP.DERIVE")
         );
         assert_eq!(tick.instrument_id, InstrumentId::from("ETH-PERP.DERIVE"));
@@ -897,6 +924,54 @@ mod tests {
         assert_eq!(tick.aggressor_side, AggressorSide::Buy);
         assert_eq!(tick.trade_id, TradeId::from("trade-1"));
         assert_eq!(tick.ts_event, UnixNanos::from(1_700_000_000_001_000_000));
+    }
+
+    #[rstest]
+    #[case("")]
+    #[case(" ")]
+    #[case("external-\u{03bb}")]
+    #[case("1234567890123456789012345678901234567")]
+    fn test_parse_public_trade_rejects_invalid_trade_id(#[case] trade_id: &str) {
+        let mut trade: DerivePublicTrade =
+            serde_json::from_value(load_json("perps/http_public_trade_eth_maker.json")).unwrap();
+        trade.trade_id = trade_id.to_string();
+        let result = parse_trade_tick_from_rest(
+            &trade,
+            PRICE_PRECISION,
+            SIZE_PRECISION,
+            UnixNanos::default(),
+        );
+
+        assert_eq!(result.unwrap_err().to_string(), "invalid Derive trade_id");
+    }
+
+    #[rstest]
+    fn test_parse_public_trade_preserves_maximum_trade_id() {
+        let trade_id = "123456789012345678901234567890123456";
+        let mut trade: DerivePublicTrade =
+            serde_json::from_value(load_json("perps/http_public_trade_eth_maker.json")).unwrap();
+        trade.trade_id = trade_id.to_string();
+        let tick = parse_trade_tick_from_rest(
+            &trade,
+            PRICE_PRECISION,
+            SIZE_PRECISION,
+            UnixNanos::from(123),
+        )
+        .unwrap();
+
+        assert_eq!(tick.trade_id.as_str(), trade_id);
+        assert_eq!(tick.instrument_id, InstrumentId::from("ETH-PERP.DERIVE"));
+        assert_eq!(
+            tick.price.as_decimal(),
+            Decimal::from_str_exact("3499").unwrap()
+        );
+        assert_eq!(
+            tick.size.as_decimal(),
+            Decimal::from_str_exact("0.5").unwrap()
+        );
+        assert_eq!(tick.aggressor_side, AggressorSide::Buy);
+        assert_eq!(tick.ts_event, UnixNanos::from(1_700_000_000_000_000_000));
+        assert_eq!(tick.ts_init, UnixNanos::from(123));
     }
 
     #[rstest]
@@ -912,7 +987,7 @@ mod tests {
 
         assert_eq!(msg.channel, "ticker_slim.ETH-PERP.1000");
         assert_eq!(
-            msg.data.instrument_id(),
+            msg.data.instrument_id().unwrap(),
             InstrumentId::from("ETH-PERP.DERIVE")
         );
         assert_eq!(msg.data.timestamp(), 1_779_953_796_714);
@@ -938,7 +1013,7 @@ mod tests {
 
         assert_eq!(msg.channel, "orderbook.ETH-USDC.1.10");
         assert_eq!(
-            msg.data.instrument_id(),
+            msg.data.instrument_id().unwrap(),
             InstrumentId::from("ETH-USDC.DERIVE")
         );
         assert_eq!(deltas.instrument_id, InstrumentId::from("ETH-USDC.DERIVE"));
@@ -975,7 +1050,7 @@ mod tests {
         assert_eq!(tick.instrument_id, InstrumentId::from("ETH-USDC.DERIVE"));
         assert_eq!(tick.price, price("2050"));
         assert_eq!(tick.size, quantity("0.1"));
-        assert_eq!(tick.aggressor_side, AggressorSide::Sell);
+        assert_eq!(tick.aggressor_side, AggressorSide::Buy);
         assert_eq!(
             tick.trade_id,
             TradeId::from("0445f96a-10fb-4fdc-a0f9-eed94a2f32e1")
@@ -995,7 +1070,7 @@ mod tests {
 
         assert_eq!(msg.channel, "ticker_slim.ETH-USDC.1000");
         assert_eq!(
-            msg.data.instrument_id(),
+            msg.data.instrument_id().unwrap(),
             InstrumentId::from("ETH-USDC.DERIVE")
         );
         assert_eq!(quote.instrument_id, InstrumentId::from("ETH-USDC.DERIVE"));
@@ -1029,7 +1104,7 @@ mod tests {
         assert_eq!(msg.channel, "ticker.ETH-PERP.1000");
         assert_eq!(msg.data.timestamp(), 1_700_000_000_011);
         assert_eq!(
-            msg.data.instrument_id(),
+            msg.data.instrument_id().unwrap(),
             InstrumentId::from("ETH-PERP.DERIVE")
         );
         assert_eq!(quote.instrument_id, InstrumentId::from("ETH-PERP.DERIVE"));
@@ -1175,6 +1250,7 @@ mod tests {
                 })
                 .collect(),
         );
+
         let asks = json!([["3501", "2"], ["3502", "0"], ["3503", "3"]]);
         let payload = subscription_data_payload(
             "orderbook.ETH-PERP.1.10",
@@ -1196,6 +1272,7 @@ mod tests {
         assert_eq!(depth.asks.len(), expected_asks.len());
         assert_eq!(depth.bid_counts.as_slice(), &[1; 10]);
         assert_eq!(depth.ask_counts.as_slice(), &[1; 2]);
+
         for (order, expected_price) in depth.bids.iter().zip(expected_bids) {
             assert_eq!(order.side, Some(OrderSide::Buy));
             assert_eq!(order.price, price(expected_price));
@@ -1209,6 +1286,7 @@ mod tests {
             assert_eq!(order.size, quantity(size));
             assert_eq!(order.order_id, 0);
         }
+
         assert_eq!(depth.sequence, 1_700_000_000_000);
         assert_eq!(depth.flags, RecordFlag::F_SNAPSHOT as u8);
         assert_eq!(depth.ts_event, UnixNanos::from(1_700_000_000_000_000_000));
@@ -1365,7 +1443,7 @@ mod tests {
             DerivePublicWsData::Orderbook(msg) => {
                 assert_eq!(msg.channel, "orderbook.ETH-PERP.1.10");
                 assert_eq!(
-                    msg.data.instrument_id(),
+                    msg.data.instrument_id().unwrap(),
                     InstrumentId::from("ETH-PERP.DERIVE")
                 );
             }
@@ -1398,7 +1476,7 @@ mod tests {
             DerivePublicWsData::Ticker(msg) => {
                 assert_eq!(msg.channel, "ticker_slim.ETH-PERP.1000");
                 assert_eq!(
-                    msg.data.instrument_id(),
+                    msg.data.instrument_id().unwrap(),
                     InstrumentId::from("ETH-PERP.DERIVE")
                 );
             }
@@ -1943,6 +2021,7 @@ mod tests {
             funding_rate: Decimal::from_str("0.00015").unwrap(),
             timestamp: 1_700_000_000_000,
         };
+
         let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
 
         let update = parse_funding_rate_history_record(
@@ -1967,6 +2046,7 @@ mod tests {
             funding_rate: Decimal::from_str("0.0001").unwrap(),
             timestamp: -1,
         };
+
         let err = parse_funding_rate_history_record(
             &record,
             InstrumentId::from("ETH-PERP.DERIVE"),
@@ -1992,6 +2072,7 @@ mod tests {
             timestamp: 1_700_000_007,
             timestamp_bucket: 1_700_000_000,
         };
+
         let bar_type = BarType::from("ETH-PERP.DERIVE-1-MINUTE-LAST-EXTERNAL");
 
         let bar = parse_candle_record(
@@ -2025,6 +2106,7 @@ mod tests {
             timestamp: 1_700_000_000,
             timestamp_bucket: -1,
         };
+
         let err = parse_candle_record(
             &record,
             BarType::from("ETH-PERP.DERIVE-1-MINUTE-LAST-EXTERNAL"),
@@ -2049,6 +2131,7 @@ mod tests {
             timestamp: 1_700_000_000,
             timestamp_bucket: i64::MAX,
         };
+
         let err = parse_candle_record(
             &record,
             BarType::from("ETH-PERP.DERIVE-1-MINUTE-LAST-EXTERNAL"),
@@ -2077,6 +2160,7 @@ mod tests {
             timestamp: 1_700_000_000,
             timestamp_bucket: (u64::MAX / NANOSECONDS_IN_SECOND) as i64,
         };
+
         let err = parse_candle_record(
             &record,
             BarType::from("ETH-PERP.DERIVE-1-MINUTE-LAST-EXTERNAL"),

@@ -162,7 +162,7 @@ pub fn create_position_reconciliation_venue_order_id(
 ///
 /// # Errors
 ///
-/// Returns an error when candidate order history cannot be replayed.
+/// Returns an error if candidate order history cannot be replayed.
 pub fn inferred_reconciliation_trade_ids(order: &OrderAny) -> anyhow::Result<Vec<TradeId>> {
     let events = order.events();
     let trade_ids = order.trade_ids();

@@ -15,9 +15,13 @@
 
 //! Provides the WebSocket client for the Polymarket CLOB API.
 
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, AtomicU8, Ordering},
+use std::{
+    num::NonZeroU32,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicU8, Ordering},
+    },
+    time::Duration,
 };
 
 use nautilus_live::{
@@ -26,12 +30,12 @@ use nautilus_live::{
     task::{TaskJoinOutcome, TaskSlot, finish_task},
 };
 use nautilus_network::{
-    SocketStateSink,
+    ConnectionUrl, SocketStateSink,
     http::create_standard_nautilus_headers,
     mode::ConnectionMode,
     websocket::{
-        AuthTracker, SubscriptionState, TransportBackend, WebSocketClient, WebSocketConfig,
-        channel_epoch_message_handler, proxy::ProxyUrl,
+        AuthTracker, InitialConnectRetryPolicy, SubscriptionState, TransportBackend,
+        WebSocketClient, WebSocketConfig, channel_epoch_message_handler, proxy::ProxyUrl,
     },
 };
 
@@ -128,7 +132,7 @@ impl WsSubscriptionHandle {
 #[derive(Debug)]
 pub struct PolymarketWebSocketClient {
     channel: WsChannel,
-    url: String,
+    url: ConnectionUrl,
     connection_mode: Arc<AtomicU8>,
     signal: Arc<AtomicBool>,
     cmd_tx: Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>>,
@@ -233,7 +237,7 @@ impl PolymarketWebSocketClient {
         let (placeholder_tx, _) = tokio::sync::mpsc::unbounded_channel();
         Self {
             channel,
-            url,
+            url: url.into(),
             connection_mode: Arc::new(AtomicU8::new(ConnectionMode::Closed.as_u8())),
             signal: Arc::new(AtomicBool::new(false)),
             cmd_tx: Arc::new(tokio::sync::RwLock::new(placeholder_tx)),
@@ -289,6 +293,9 @@ impl PolymarketWebSocketClient {
         let client = WebSocketClient::epoch_builder()
             .config(cfg)
             .epoch_handler(message_handler)
+            .maybe_initial_connect_retry_policy(
+                (self.channel == WsChannel::Market).then(Self::initial_connect_retry_policy),
+            )
             .maybe_state_sink(
                 self.socket_control
                     .as_ref()
@@ -313,7 +320,7 @@ impl PolymarketWebSocketClient {
         let client_mode = client.connection_mode_atomic();
         self.connection_mode = client_mode;
 
-        log::debug!("Polymarket WebSocket connected: {}", self.url);
+        log::debug!("Polymarket WebSocket connected: {}", self.url.origin());
 
         // Replay retained state onto the new session. Unlike the RECONNECTED sentinel
         // path, a fresh connect() never fires resubscribe_all() inside the handler.
@@ -413,6 +420,16 @@ impl PolymarketWebSocketClient {
         Ok(())
     }
 
+    fn initial_connect_retry_policy() -> InitialConnectRetryPolicy {
+        InitialConnectRetryPolicy {
+            max_attempts: NonZeroU32::new(5).expect("initial connect attempts must be non-zero"),
+            delay_initial: Duration::from_millis(500),
+            delay_max: Duration::from_secs(5),
+            backoff_factor: 2.0,
+            jitter_ms: 250,
+        }
+    }
+
     fn websocket_config(&self) -> WebSocketConfig {
         // The market endpoint rejects text PING before its initial subscription. Protocol pings
         // keep an idle socket alive until FeedHandler starts the required text heartbeat.
@@ -424,7 +441,7 @@ impl PolymarketWebSocketClient {
         let headers = create_standard_nautilus_headers();
 
         WebSocketConfig {
-            url: self.url.clone(),
+            url: self.url.expose().to_owned(),
             headers,
             heartbeat_interval_secs: Some(POLYMARKET_HEARTBEAT_SECS),
             heartbeat_payload,
@@ -514,7 +531,7 @@ impl PolymarketWebSocketClient {
     /// Returns the URL this client connects to.
     #[must_use]
     pub fn url(&self) -> &str {
-        &self.url
+        self.url.expose()
     }
 
     /// Returns the number of active market asset subscriptions (pending + confirmed).
@@ -700,6 +717,24 @@ mod tests {
 
         tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
         addr
+    }
+
+    #[rstest]
+    #[case("wss://stream.example.com/feed", "wss://stream.example.com")]
+    #[case(
+        "wss://SYN-user:SYN-password@stream.example.com:9443/SYN-path?token=SYN-query#SYN-fragment",
+        "wss://stream.example.com:9443"
+    )]
+    fn test_debug_preserves_url_origin(#[case] url: &str, #[case] origin: &str) {
+        let client = PolymarketWebSocketClient::new_market(
+            Some(url.to_string()),
+            false,
+            TransportBackend::default(),
+        );
+        let debug = format!("{client:?}");
+        assert!(debug.contains(&format!("url: {origin:?}")));
+        assert!(!debug.contains("SYN-"));
+        assert_eq!(client.url.expose(), url);
     }
 
     #[tokio::test]

@@ -53,7 +53,7 @@ impl MarkerReader {
     ///
     /// # Errors
     ///
-    /// Returns [`EventStoreError`] when the backend cannot scan cursor snapshots.
+    /// Returns an error if the backend cannot scan cursor snapshots.
     pub fn fold_to(
         &self,
         event_seq_before: u64,
@@ -77,7 +77,7 @@ impl MarkerReader {
     ///
     /// # Errors
     ///
-    /// Returns [`EventStoreError`] when the backend cannot scan the dictionary.
+    /// Returns an error if the backend cannot scan the dictionary.
     pub fn stream_dictionary(
         &self,
     ) -> Result<AHashMap<StreamSlot, StreamDictEntry>, EventStoreError> {

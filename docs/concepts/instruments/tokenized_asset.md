@@ -1,8 +1,8 @@
 # Tokenized Asset
 
-`TokenizedAsset` represents a spot-like token that tracks another asset on a crypto venue.
-Use it for tokenized equities, tokenized funds, or similar instruments where the trading
-venue exposes a token but the economic reference is an external asset.
+`TokenizedAsset` represents a spot-like token that tracks another asset on a crypto venue. Use it for
+tokenized equities, tokenized funds, or similar instruments. In these instruments, the trading venue exposes a
+token whose economic reference is an external asset.
 
 Examples include tokenized stock or ETF symbols on crypto venues.
 
@@ -35,7 +35,7 @@ Examples include tokenized stock or ETF symbols on crypto venues.
 | `tick_scheme`     | `Option<Ustr>`     | `str \| None`      | `None`           | Registered variable tick scheme name.    |
 | `info`            | `Option<Params>`   | `dict \| None`     | `None`           | Adapter metadata.                        |
 
-*Note: Python constructors use `instrument_id`; Rust stores the same value as `id`.*
+**Note**: Python constructors use `instrument_id`. Rust stores the same value as `id`.
 
 ## Behavior
 
@@ -99,9 +99,8 @@ aaplx = TokenizedAsset(
 
 ## Adapters
 
-Representative adapters that create or consume `TokenizedAsset` instruments include:
-
-- [Kraken](../../integrations/kraken.md) for tokenized assets where the venue exposes them.
+The [Kraken](../../integrations/kraken.md) adapter creates or consumes
+`TokenizedAsset` instruments for tokenized assets where the venue exposes them.
 
 ## Related guides
 

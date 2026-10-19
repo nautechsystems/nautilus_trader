@@ -62,8 +62,10 @@ impl DeriveError {
         Self::Config(msg.into())
     }
 
-    /// Returns `true` for errors that did not reach the venue and can safely
-    /// be retried (transport, timeout, gateway 5xx).
+    /// Returns `true` for transient errors covered by the retry classifiers.
+    ///
+    /// This does not prove that a request was unsent. State-changing operations
+    /// require outcome reconciliation before deciding whether to send again.
     #[must_use]
     pub fn is_retryable(&self) -> bool {
         match self {
@@ -112,8 +114,10 @@ mod tests {
             code: -32602,
             message: "Invalid params".to_string(),
             data: None,
+            retry_after: None,
         }
         .into();
+
         assert!(!err.is_retryable());
     }
 

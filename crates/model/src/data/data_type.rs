@@ -372,7 +372,7 @@ impl DataType {
     ///
     /// # Errors
     ///
-    /// Returns a JSON serialization error if the data cannot be serialized.
+    /// Returns an error if the data cannot be serialized.
     pub fn to_persistence_json(&self) -> Result<String, serde_json::Error> {
         let mut map = serde_json::Map::new();
         map.insert(
@@ -623,7 +623,7 @@ impl FromStr for DataType {
             }
         };
 
-        Ok(Self::new(type_name, metadata, identifier))
+        Self::try_new(type_name, metadata, identifier)
     }
 }
 
@@ -669,6 +669,19 @@ mod tests {
         let error = DataType::from_str(&topic).unwrap_err();
 
         assert_eq!(error.to_string(), "Invalid escaped topic string");
+    }
+
+    #[rstest]
+    #[case("Example.identifier=A.identifier=B")]
+    #[case("Example.value=1.identifier=A.identifier=B")]
+    #[case("Example.identifier=.identifier=B")]
+    fn test_from_str_rejects_repeated_identifier(#[case] topic: &str) {
+        let error = DataType::from_str(topic).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "`identifier` is reserved for DataType catalog identity"
+        );
     }
 
     #[rstest]

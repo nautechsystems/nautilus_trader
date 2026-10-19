@@ -91,5 +91,3 @@ pub mod node;
 
 #[cfg(feature = "python")]
 pub mod python;
-
-mod data_batch;

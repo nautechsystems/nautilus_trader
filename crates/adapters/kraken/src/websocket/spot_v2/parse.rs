@@ -476,16 +476,9 @@ pub fn parse_ws_order_status_report(
         report = report.with_client_order_id(ClientOrderId::new(cl_ord_id));
     }
 
-    // Price fallback: limit_price -> avg_price -> last_price
-    // Note: pending_new messages may not include any price fields, which is fine for
-    // orders we submitted (engine already has the price from submission)
-    let price_value = exec
-        .limit_price
-        .filter(|p| *p > Decimal::ZERO)
-        .or(exec.avg_price.filter(|p| *p > Decimal::ZERO))
-        .or(exec.last_price.filter(|p| *p > Decimal::ZERO));
-
-    if let Some(px) = price_value {
+    // The order's price is its limit alone: a fill price is `avg_px`, and a frame without the
+    // limit states no price
+    if let Some(px) = exec.limit_price.filter(|p| *p > Decimal::ZERO) {
         let price =
             Price::from_decimal_dp(px, price_precision).context("Failed to parse order price")?;
         report = report.with_price(price);
@@ -801,7 +794,7 @@ mod tests {
         assert_eq!(first_delta.instrument_id, instrument.id());
         assert_eq!(first_delta.action, BookAction::Update);
         assert_eq!(first_delta.order.side, OrderSide::Buy.into());
-        assert_eq!(first_delta.order.price, Price::from("105944.20"));
+        assert_eq!(first_delta.order.price, Price::from("45283.5"));
         assert!(RecordFlag::F_MBP.matches(first_delta.flags));
         assert!(RecordFlag::F_LAST.matches(first_delta.flags));
         assert!(!RecordFlag::F_SNAPSHOT.matches(first_delta.flags));
@@ -904,6 +897,37 @@ mod tests {
         .unwrap();
 
         assert_eq!(report.order_side, None);
+    }
+
+    /// A report's price is the order's limit alone, never a fill price. Kraken's executions
+    /// example places a sell limit at 26500.0, then fills part of it at 26599.9 in a trade frame,
+    /// which carries no limit and so states no price.
+    #[rstest]
+    #[case::pending_new_frame("ws_executions_pending_new_doc_example.json", Some("26500.0"), None)]
+    #[case::trade_frame(
+        "ws_executions_trade_doc_example.json",
+        None,
+        Some(dec!(26599.9))
+    )]
+    fn test_parse_ws_order_status_report_prices_the_order_at_its_limit(
+        #[case] filename: &str,
+        #[case] expected_price: Option<&str>,
+        #[case] expected_avg_px: Option<Decimal>,
+    ) {
+        let message: KrakenWsRawMessage = serde_json::from_str(&load_test_json(filename)).unwrap();
+        let execution: KrakenWsExecutionData = serde_json::from_str(message.data[0].get()).unwrap();
+
+        let report = parse_ws_order_status_report(
+            &execution,
+            &create_mock_instrument(),
+            AccountId::from("KRAKEN-001"),
+            None,
+            TS,
+        )
+        .unwrap();
+
+        assert_eq!(report.price, expected_price.map(Price::from));
+        assert_eq!(report.avg_px, expected_avg_px);
     }
 
     #[rstest]

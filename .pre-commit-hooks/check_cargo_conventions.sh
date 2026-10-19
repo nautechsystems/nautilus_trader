@@ -9,7 +9,7 @@
 # 5. [package] section must have required fields in correct order
 # 6. [lib] crate-type must use order: rlib, staticlib, cdylib
 # 7. All [workspace.dependencies] must be used by at least one crate
-# 8. Related dependency versions must be aligned (e.g., capnp/capnpc)
+# 8. Related dependency versions must be aligned (e.g., arrow/parquet)
 # 9. Adapter dependencies section should only contain deps used exclusively by adapters
 # 10. Every name in [package.metadata.cargo-machete] ignored must be a declared dependency
 # 11. Adapter crates must obtain libfuzzer-sys through nautilus-live
@@ -585,17 +585,6 @@ if [[ -f "Cargo.toml" ]]; then
     echo "$1" | cut -d. -f1,2
   }
 
-  # capnp and capnpc must have same major.minor (patch can differ when one releases a fix first)
-  capnp_ver=$(get_version "capnp")
-  capnpc_ver=$(get_version "capnpc")
-  if [[ -n "$capnp_ver" && -n "$capnpc_ver" ]]; then
-    capnp_mm=$(get_major_minor "$capnp_ver")
-    capnpc_mm=$(get_major_minor "$capnpc_ver")
-    if [[ "$capnp_mm" != "$capnpc_mm" ]]; then
-      version_alignment_violations+="  Cargo.toml: capnp ($capnp_ver) and capnpc ($capnpc_ver) major.minor versions must match"$'\n'
-    fi
-  fi
-
   # arrow and parquet must have same major.minor (from same arrow-rs release)
   arrow_ver=$(get_version "arrow")
   parquet_ver=$(get_version "parquet")
@@ -910,7 +899,7 @@ if [[ $VIOLATIONS -gt 0 ]]; then
   echo "    homepage.workspace, then optional fields (publish, build, include)"
   echo "  - crate-type must use order: [\"rlib\", \"staticlib\", \"cdylib\"]"
   echo "  - Remove unused dependencies from [workspace.dependencies] in root Cargo.toml"
-  echo "  - Ensure related dependencies have matching versions (e.g., capnp and capnpc)"
+  echo "  - Ensure related dependencies have matching versions (e.g., arrow and parquet)"
   echo "  - Drop [package.metadata.cargo-machete] ignored entries whose dependency was removed"
   echo "  - Obtain adapter libfuzzer-sys support through nautilus-live/fuzz"
   echo "  - Give every [workspace] member a literal manifest path, not a Cargo glob"

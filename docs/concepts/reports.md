@@ -1,7 +1,7 @@
 # Reports
 
-This guide explains the portfolio analysis and reporting capabilities provided by the `ReportProvider`
-class, and how these reports are used for PnL accounting and backtest post-run analysis.
+This guide explains how `ReportProvider` reports support portfolio analysis, PnL accounting, and backtest
+post-run analysis.
 
 ## Overview
 
@@ -17,7 +17,7 @@ Reports can be generated using two approaches:
 - **`ReportProvider` directly**: pass any collection of orders or positions, such as a live node's
   cache or a filtered cache query.
 
-Every method returns an empty DataFrame when no matching data exists.
+Each method returns an empty DataFrame when no matching data exists.
 
 Report generation requires pandas, which `nautilus_trader.analysis` imports lazily: the module
 imports without pandas installed, and the `ImportError` surfaces when you generate a report. The
@@ -25,8 +25,8 @@ imports without pandas installed, and the `ImportError` surfaces when you genera
 
 ## Available reports
 
-The `ReportProvider` class offers several static methods to generate reports from trading data.
-Each report returns a pandas DataFrame with specific columns and indexing for easy analysis.
+`ReportProvider` provides static methods that return pandas DataFrames from trading data. Each report has its
+own columns and index for analysis.
 
 ### Orders report
 
@@ -42,7 +42,7 @@ orders_report = engine.generate_orders_report()
 orders_report = ReportProvider.generate_orders_report(cache.orders())
 ```
 
-**Returns `pd.DataFrame`. Columns include:**
+Returns `pd.DataFrame`. Columns include:
 
 | Column            | Description                                        |
 | ----------------- | -------------------------------------------------- |
@@ -78,9 +78,8 @@ fills_report = engine.generate_order_fills_report()
 fills_report = ReportProvider.generate_order_fills_report(cache.orders())
 ```
 
-This report includes only orders with `filled_qty > 0` and contains the same columns as the
-orders report, but filtered to executed orders only. Note that `ts_init` and `ts_last` are
-converted to datetime objects in this report for easier analysis.
+This report includes only orders with `filled_qty > 0`. It contains the same columns as the orders report,
+filtered to executed orders, and converts `ts_init` and `ts_last` to datetime objects for analysis.
 
 ### Fills report
 
@@ -94,7 +93,7 @@ fills_report = engine.generate_fills_report()
 fills_report = ReportProvider.generate_fills_report(cache.orders())
 ```
 
-**Returns `pd.DataFrame`. Columns include:**
+Returns `pd.DataFrame`. Columns include:
 
 | Column            | Description                              |
 | ----------------- | ---------------------------------------- |
@@ -115,7 +114,7 @@ fills_report = ReportProvider.generate_fills_report(cache.orders())
 | `ts_event`        | Fill timestamp (datetime).               |
 | `ts_init`         | Initialization timestamp (datetime).     |
 
-See `OrderFilled.to_dict()` for the complete field list; the report drops its `type` column.
+See `OrderFilled.to_dict()` for the complete field list. The report drops its `type` column.
 
 ### Positions report
 
@@ -132,7 +131,7 @@ positions_report = ReportProvider.generate_positions_report(
 )
 ```
 
-**Returns `pd.DataFrame`. Columns include:**
+Returns `pd.DataFrame`. Columns include:
 
 | Column             | Description                                           |
 | ------------------ | ----------------------------------------------------- |
@@ -159,10 +158,9 @@ positions_report = ReportProvider.generate_positions_report(
 | `duration_ns`      | Position duration in nanoseconds.                     |
 | `is_snapshot`      | Whether this is a historical snapshot.                |
 
-Snapshot rows are indexed by a generated ID derived from the original position ID, so use
-`is_snapshot` rather than the index to separate archived cycles from live positions. See
-`Position.to_dict()` for the complete field list; the report drops `signed_qty`, `base_currency`,
-`quote_currency`, and `settlement_currency`.
+Snapshot rows are indexed by a generated ID derived from the original position ID. Use `is_snapshot` rather
+than the index to separate archived cycles from live positions. See `Position.to_dict()` for the complete
+field list. The report drops `signed_qty`, `base_currency`, `quote_currency`, and `settlement_currency`.
 
 ### Account report
 
@@ -184,28 +182,28 @@ account_report = ReportProvider.generate_account_report(cache.account_for_venue(
 when both are omitted. `account_id` takes precedence when both are supplied, and an unknown account
 yields an empty DataFrame.
 
-**Returns `pd.DataFrame`. Columns include:**
+Returns `pd.DataFrame`. Columns include:
 
-| Column          | Description                                |
-| --------------- | ------------------------------------------ |
-| `ts_event`      | Index - timestamp of account state change. |
-| `account_id`    | Account identifier.                        |
-| `account_type`  | Type of account (e.g., CASH, MARGIN).      |
-| `base_currency` | Base currency for the account.             |
-| `total`         | Total balance amount (string).             |
-| `free`          | Available balance (string).                |
-| `locked`        | Balance locked in orders (string).         |
-| `currency`      | Currency of the balance.                   |
-| `reported`      | Whether balance was reported by venue.     |
-| `margins`       | Margin information (list, if applicable).  |
-| `info`          | Additional venue-specific information.     |
+| Column          | Description                                  |
+| --------------- | -------------------------------------------- |
+| `ts_event`      | Index - timestamp of account state change.   |
+| `account_id`    | Account identifier.                          |
+| `account_type`  | Type of account (for example, CASH, MARGIN). |
+| `base_currency` | Base currency for the account.               |
+| `total`         | Total balance amount (string).               |
+| `free`          | Available balance (string).                  |
+| `locked`        | Balance locked in orders (string).           |
+| `currency`      | Currency of the balance.                     |
+| `reported`      | Whether balance was reported by venue.       |
+| `margins`       | Margin information (list, if applicable).    |
+| `info`          | Additional venue-specific information.       |
 
-Each row represents a balance entry; accounts with multiple currencies produce multiple rows
-per account state event.
+Each row represents a balance entry. Accounts with multiple currencies produce multiple rows per account state
+event.
 
 ## PnL accounting considerations
 
-Accurate PnL accounting requires careful consideration of several factors:
+PnL accounting depends on position calculations, currencies, and snapshots.
 
 ### Position-based PnL
 
@@ -229,9 +227,8 @@ When dealing with multiple currencies:
 
 - Each position tracks PnL in its cost currency: quote for linear contracts, base for inverse
   contracts, and settlement for quanto contracts.
-- Portfolio aggregation requires currency conversion. `Portfolio.realized_pnls(target_currency=...)`
-  does this with cached exchange rates; see
-  [Supported conversions](portfolio.md#supported-conversions).
+- Portfolio aggregation requires currency conversion. `Portfolio.realized_pnls(target_currency=...)` does this
+  with cached exchange rates. See [Supported conversions](portfolio.md#supported-conversions).
 - Commission currencies may differ from the position's cost currency.
 
 ```python
@@ -251,9 +248,9 @@ for position in cache.positions_closed():
 
 ### Snapshot considerations
 
-For `NETTING` OMS, an accurate instrument total adds the realized PnL of every archived cycle to the
-live position. See [Position snapshotting](positions.md#position-snapshotting) for how the execution
-engine archives a closed cycle.
+For `NETTING` OMS, an accurate instrument total adds the realized PnL of each archived cycle to the live
+position. See [Position snapshotting](positions.md#position-snapshotting) for how the execution engine
+archives a closed cycle.
 
 ```python
 from decimal import Decimal
@@ -326,7 +323,7 @@ category is derived, and the difference between position returns and portfolio r
 
 ### Visualization
 
-NautilusTrader provides interactive tearsheets and plots via Plotly:
+NautilusTrader provides interactive tearsheets and plots through Plotly:
 
 ```python
 from nautilus_trader.analysis import create_tearsheet

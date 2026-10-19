@@ -126,17 +126,9 @@ impl PolymarketOrderBuilder {
         neg_risk: bool,
         tick_decimals: u32,
     ) -> anyhow::Result<PolymarketOrder> {
-        let (maker_amount, taker_amount) = if side == PolymarketOrderSide::Buy
-            && matches!(
-                order_type,
-                PolymarketOrderType::FAK | PolymarketOrderType::FOK
-            ) {
-            immediate_buy_maker_taker_amounts(price, quantity, order_type, tick_decimals)
-                .map_err(anyhow::Error::msg)?
-        } else {
-            compute_maker_taker_amounts(price, quantity, side, tick_decimals)
-        };
-
+        let (maker_amount, taker_amount) =
+            limit_order_maker_taker_amounts(side, price, quantity, order_type, tick_decimals)
+                .map_err(anyhow::Error::msg)?;
         self.build_and_sign(
             token_id,
             side,
@@ -494,6 +486,23 @@ pub(crate) fn signed_limit_order_quantity(quantity: Decimal) -> Decimal {
     quantity.trunc_with_scale(LOT_SIZE_SCALE)
 }
 
+/// Returns the human share quantity [`PolymarketOrderBuilder::build_limit_order`] would sign.
+///
+/// # Errors
+///
+/// Returns an error if an immediate buy cannot derive a positive share quantity.
+pub(crate) fn posted_limit_share_quantity(
+    side: PolymarketOrderSide,
+    price: Decimal,
+    quantity: Decimal,
+    order_type: PolymarketOrderType,
+    tick_decimals: u32,
+) -> Result<Decimal, String> {
+    let (maker_amount, taker_amount) =
+        limit_order_maker_taker_amounts(side, price, quantity, order_type, tick_decimals)?;
+    Ok(human_share_quantity(maker_amount, taker_amount, side))
+}
+
 /// Signs an immediate base-sized BUY as a cent budget plus derived shares.
 ///
 /// Polymarket treats `FAK` and `FOK` as market orders: the direct maker amount is limited to
@@ -563,6 +572,42 @@ pub fn compute_maker_taker_amounts(
     }
 }
 
+fn limit_order_maker_taker_amounts(
+    side: PolymarketOrderSide,
+    price: Decimal,
+    quantity: Decimal,
+    order_type: PolymarketOrderType,
+    tick_decimals: u32,
+) -> Result<(Decimal, Decimal), String> {
+    if side == PolymarketOrderSide::Buy
+        && matches!(
+            order_type,
+            PolymarketOrderType::FAK | PolymarketOrderType::FOK
+        )
+    {
+        immediate_buy_maker_taker_amounts(price, quantity, order_type, tick_decimals)
+    } else {
+        Ok(compute_maker_taker_amounts(
+            price,
+            quantity,
+            side,
+            tick_decimals,
+        ))
+    }
+}
+
+fn human_share_quantity(
+    maker_amount: Decimal,
+    taker_amount: Decimal,
+    side: PolymarketOrderSide,
+) -> Decimal {
+    let share_scale = Decimal::from(1_000_000u32);
+    match side {
+        PolymarketOrderSide::Buy => taker_amount / share_scale,
+        PolymarketOrderSide::Sell => maker_amount / share_scale,
+    }
+}
+
 /// Builds maker/taker amounts for a Polymarket market order.
 ///
 /// Same precision constraints as limit orders. The direct amount is truncated to
@@ -609,9 +654,11 @@ fn compute_quote_buy_maker_taker_amounts(
 
 /// Generates a random salt for order construction.
 ///
-/// # Panics
-///
-/// Cannot panic: UUID v4 always produces 16 bytes, so the 8-byte slice conversion is infallible.
+/// UUID v4 always produces 16 bytes, so converting the 8-byte slice cannot panic.
+#[allow(
+    clippy::missing_panics_doc,
+    reason = "a UUID always contains enough bytes for the 8-byte slice"
+)]
 pub fn generate_salt() -> u64 {
     let bytes = uuid::Uuid::new_v4().into_bytes();
     u64::from_le_bytes(bytes[..8].try_into().unwrap()) & ((1u64 << 53) - 1)
@@ -1339,6 +1386,57 @@ mod tests {
             validation_failed(
                 "Polymarket FOK BUY maker amount 0.0001 pUSD truncates to zero at 2 decimal places"
             )
+        );
+    }
+
+    #[rstest]
+    #[case::gtc_buy(PolymarketOrderSide::Buy, PolymarketOrderType::GTC, dec!(0.40), dec!(10), 2, dec!(10))]
+    #[case::gtc_sell(PolymarketOrderSide::Sell, PolymarketOrderType::GTC, dec!(0.40), dec!(10), 2, dec!(10))]
+    #[case::truncated(PolymarketOrderSide::Buy, PolymarketOrderType::GTC, dec!(0.50), dec!(5.009), 2, dec!(5))]
+    #[case::immediate_thousandth(
+        PolymarketOrderSide::Buy,
+        PolymarketOrderType::FAK,
+        dec!(0.961),
+        dec!(5),
+        3,
+        dec!(4.9948)
+    )]
+    #[case::immediate_live(
+        PolymarketOrderSide::Buy,
+        PolymarketOrderType::FOK,
+        dec!(0.227),
+        dec!(5),
+        3,
+        dec!(4.977980)
+    )]
+    fn test_posted_limit_share_quantity_matches_signed_amounts(
+        #[case] side: PolymarketOrderSide,
+        #[case] order_type: PolymarketOrderType,
+        #[case] price: Decimal,
+        #[case] quantity: Decimal,
+        #[case] tick_decimals: u32,
+        #[case] expected: Decimal,
+    ) {
+        let shares = posted_limit_share_quantity(side, price, quantity, order_type, tick_decimals)
+            .expect("share quantity is representable");
+
+        assert_eq!(shares, expected);
+    }
+
+    #[rstest]
+    fn test_posted_limit_share_quantity_rejects_zero_immediate_buy_budget() {
+        let error = posted_limit_share_quantity(
+            PolymarketOrderSide::Buy,
+            dec!(0.01),
+            dec!(0.01),
+            PolymarketOrderType::FAK,
+            2,
+        )
+        .expect_err("cent budget truncates to zero");
+
+        assert_eq!(
+            error,
+            "Polymarket FAK BUY maker amount 0.0001 pUSD truncates to zero at 2 decimal places"
         );
     }
 

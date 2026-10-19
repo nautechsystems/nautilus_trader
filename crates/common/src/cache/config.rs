@@ -86,8 +86,7 @@ impl<S: cache_config_builder::IsComplete> CacheConfigBuilder<S> {
     ///
     /// # Errors
     ///
-    /// Returns a [`ConfigError`] if any field fails validation
-    /// (see [`CacheConfig::validate`]).
+    /// Returns an error if any field fails validation (see [`CacheConfig::validate`]).
     pub fn build(self) -> ConfigResult<CacheConfig> {
         let config = self.build_inner();
         config.validate()?;
@@ -148,7 +147,7 @@ impl CacheConfig {
     ///
     /// # Errors
     ///
-    /// Returns a [`ConfigError`] if a capacity setting is outside `[1, 1_000_000]`.
+    /// Returns an error if a capacity setting is outside `[1, 1_000_000]`.
     pub fn validate(&self) -> ConfigResult<()> {
         let mut errors = ConfigErrorCollector::new();
 

@@ -1,8 +1,8 @@
 # Actors
 
-A **data actor** receives requested and subscribed data, handles system events, and manages component
-state. In Python, extend the `DataActor` class; in Rust, implement the `DataActor` trait. A strategy
-adds order-management capabilities.
+A **data actor** receives requested and subscribed data, handles system events, and manages component state.
+In Python, extend the `DataActor` class. In Rust, implement the `DataActor` trait. A strategy adds
+order-management capabilities.
 
 **Capabilities**:
 
@@ -14,10 +14,11 @@ adds order-management capabilities.
 
 ## Basic Python example
 
-Actors support configuration through a pattern similar to strategies. Declare custom fields as
-keyword-only arguments and accept `**_kwargs` so the base fields (`actor_id` and the log settings)
-pass through to `DataActorConfig.__new__`, which reads them from the same call. A positional
-argument would be matched against `actor_id` instead, raising a `TypeError`.
+Actors support configuration through a pattern similar to strategies. Declare custom fields as keyword-only
+arguments and accept `**_kwargs` so the base fields (`actor_id` and the log settings) pass through to
+`DataActorConfig.__new__`, which reads them from the same call.
+
+A positional argument would be matched against `actor_id` instead, raising a `TypeError`.
 
 ```python
 from nautilus_trader.common import DataActor
@@ -49,10 +50,11 @@ class MyActor(DataActor):
 
 ## Actor configuration and IDs
 
-Data actors can receive a `DataActorConfig` subclass. The base config accepts an optional `actor_id`.
-If supplied, the actor registers with that ID; otherwise a Python actor registers under its class
-name. Give each instance an explicit `actor_id` when running more than one instance of the same
-actor, because a duplicate ID is rejected at registration (a `RuntimeError` in Python).
+Data actors can receive a `DataActorConfig` subclass. The base config accepts an optional `actor_id`. If you
+supply an ID, the actor registers with that ID. Without an ID, a Python actor registers under its class name.
+
+Give each instance an explicit `actor_id` when running more than one instance of the same actor, because a
+duplicate ID is rejected at registration (a `RuntimeError` in Python).
 
 Treat configuration as construction data for the actor. Read user-supplied settings through
 `self.config`, and keep runtime state on the actor itself.
@@ -92,10 +94,10 @@ Override these methods to hook into lifecycle events:
 
 | Method         | When called                                                                                                            |
 | -------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `on_start()`   | Actor is starting; subscribe to data here.                                                                             |
-| `on_stop()`    | Actor is stopping; clean up actor-owned resources.                                                                     |
+| `on_start()`   | Actor executes its start transition. Subscribe to data here.                                                           |
+| `on_stop()`    | Actor executes its stop transition. Clean up actor-owned resources here.                                               |
 | `on_resume()`  | Actor is resuming after it stopped or degraded.                                                                        |
-| `on_reset()`   | Actor is resetting, including between backtest runs; retained data subscriptions are released after the hook succeeds. |
+| `on_reset()`   | Actor resets, including between backtest runs. The actor releases retained data subscriptions after the hook succeeds. |
 | `on_degrade()` | Actor is entering a degraded state and may provide only partial functionality.                                         |
 | `on_fault()`   | Actor is entering the faulted state after it encounters a fault.                                                       |
 | `on_dispose()` | Actor is being disposed and must release its remaining resources.                                                      |
@@ -157,6 +159,9 @@ def _on_alert(self, event: TimeEvent) -> None:
 
 Pass a `callback` to direct `TimeEvent` objects to your own method. Without one, the actor runtime
 connects the clock's registered default handler to `on_time_event()`.
+
+Use `set_timer_zoned()` to schedule a recurring local time, such as 09:30 in New York across DST changes.
+See the [calendar timer example](strategies.md#calendar-timers) for setup and delivery behavior.
 
 When components share a clock:
 
@@ -244,9 +249,9 @@ def on_queue_state(self, event: QueueStateChanged) -> None:
 
 #### Filters and delivery
 
-The optional priority controls delivery order among matching subscribers. **Higher values run first.**
-Subscribing again does not change an existing priority; unsubscribe before subscribing with a new
-priority.
+The optional priority controls delivery order among matching subscribers. **Higher values run first.** A
+second subscription does not change an existing priority. To change the priority, unsubscribe first, then
+subscribe with the new priority.
 
 Pass `channel` to select one runner channel, for example
 `self.subscribe_queue_state(channel=SystemChannel.DATA_EVENTS)` in Python. Import `SystemChannel`
@@ -319,9 +324,9 @@ def on_socket_state(self, event: SocketStateChanged) -> None:
 
 #### Filters and delivery
 
-The optional priority controls delivery order among matching subscribers. **Higher values run first.**
-Subscribing again does not change an existing priority; unsubscribe before subscribing with a new
-priority.
+The optional priority controls delivery order among matching subscribers. **Higher values run first.** A
+second subscription does not change an existing priority. To change the priority, unsubscribe first, then
+subscribe with the new priority.
 
 Pass `client_id`, `endpoint`, or both to filter socket events. In Python,
 `self.subscribe_socket_state(client_id=ClientId("BINANCE"), endpoint="binance-futures-market-streams")`
@@ -395,8 +400,8 @@ inspect the `SocketStateChanged` events. An accepted request reports:
 #### Request failures
 
 - **Synchronous failures**: Invalid endpoint labels and unavailable or closed runner channels fail
-  synchronously. Endpoint labels accept only ASCII letters, digits, `.`, `-`, and `_`; pass a logical
-  label rather than a raw URL.
+  synchronously. Endpoint labels accept only ASCII letters, digits, `.`, `-`, and `_`. Pass a logical label
+  rather than a raw URL.
 - **Kernel rejections**: The kernel logs unknown clients, unsupported clients, unknown or ambiguous
   endpoints, duplicate requests, disconnecting transports, and closed transports. These rejections
   do not emit a socket state change or affect another endpoint.
@@ -411,7 +416,7 @@ which callback handles the data.
 The system distinguishes between two data flows:
 
 1. **Request responses**:
-   - Obtained through methods like `request_bars()`, `request_quotes()`, etc.
+   - Received through methods like `request_bars()`, `request_quotes()`, etc.
    - Processed through type-specific batch handlers such as `on_historical_bars()` and
      `on_historical_quotes()`.
    - Custom data uses `on_historical_data()` once per response. A scalar `CustomData` arrives as
@@ -419,7 +424,7 @@ The system distinguishes between two data flows:
    - Used for initial data loading and historical analysis.
 
 2. **Subscribed data**:
-   - Obtained through methods like `subscribe_bars()`, `subscribe_quotes()`, etc.
+   - Received through methods like `subscribe_bars()`, `subscribe_quotes()`, etc.
    - Processed through specific handlers like `on_bar()`, `on_quote()`, etc.
    - Used for ongoing event processing.
 
@@ -498,14 +503,13 @@ class MyActor(DataActor):
         self.log.info(f"Received subscribed bar: {bar}")
 ```
 
-Separate request and subscription handlers let an actor distinguish bootstrap data from ongoing
-updates. Use historical bars to initialize indicators or baseline state, and apply different
-validation or logging to response batches and individual subscribed updates.
+Separate request and subscription handlers let an actor distinguish bootstrap data from ongoing updates. Use
+historical bars to initialize indicators or baseline state. Apply different validation or logging to response
+batches and individual subscribed updates.
 
 :::tip
-When debugging data flow issues, check that you're looking at the correct handler for your data source.
-If you're not seeing data in `on_bar()` but see log messages about receiving bars, check
-`on_historical_bars()` because the data might be coming from a request rather than a subscription.
+When debugging data flow, check the handler for your data source. If bars appear in the logs but not in
+`on_bar()`, check `on_historical_bars()`. They might come from a request rather than a subscription.
 :::
 
 ## Order event handling

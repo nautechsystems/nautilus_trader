@@ -55,7 +55,8 @@ pub type ArrowDecoder = Box<
 ///
 /// # Errors
 ///
-/// Returns an error naming the first opaque byte field.
+/// Returns an error if an unsupported opaque byte field is found. The error names the first such
+/// field.
 #[cfg(feature = "arrow")]
 pub fn validate_custom_arrow_schema(
     type_name: &str,
@@ -146,8 +147,11 @@ pub fn register_json_deserializer(
 /// If the type is already registered, returns `Ok(())` without overwriting (idempotent).
 /// Use this where repeated registration can occur (e.g. module init).
 ///
-/// # Errors
 /// Does not return an error (idempotent insert into `DashMap`).
+#[allow(
+    clippy::missing_errors_doc,
+    reason = "idempotent registration only inserts into a DashMap"
+)]
 pub fn ensure_json_deserializer_registered(
     type_name: &str,
     deserializer: JsonDeserializer,
@@ -160,9 +164,15 @@ pub fn ensure_json_deserializer_registered(
 }
 
 /// Parses a "`data_type`" JSON object into `DataType` (`type_name`, metadata, identifier).
-fn parse_data_type_from_value(value: &serde_json::Value) -> Option<DataType> {
-    let obj = value.get("data_type")?.as_object()?;
-    let type_name = obj.get("type_name")?.as_str()?;
+fn parse_data_type_from_value(value: &serde_json::Value) -> anyhow::Result<Option<DataType>> {
+    let Some(obj) = value.get("data_type").and_then(|v| v.as_object()) else {
+        return Ok(None);
+    };
+
+    let Some(type_name) = obj.get("type_name").and_then(|v| v.as_str()) else {
+        return Ok(None);
+    };
+
     let metadata = obj.get("metadata").and_then(|m| {
         if m.is_null() {
             None
@@ -175,7 +185,7 @@ fn parse_data_type_from_value(value: &serde_json::Value) -> Option<DataType> {
         .get("identifier")
         .and_then(|v| v.as_str())
         .map(String::from);
-    Some(DataType::new(type_name, metadata, identifier))
+    DataType::try_new(type_name, metadata, identifier).map(Some)
 }
 
 /// Parses the canonical `CustomData` JSON envelope `{ type, data_type, payload }` and returns
@@ -193,7 +203,9 @@ fn parse_envelope_payload(value: &serde_json::Value) -> Result<serde_json::Value
 /// Returns `None` if the type is not registered.
 ///
 /// # Errors
-/// Returns an error if the deserializer fails.
+///
+/// Returns an error if metadata contains the reserved `identifier` key, the payload is missing,
+/// or the deserializer fails.
 pub fn deserialize_custom_from_json(
     type_name: &str,
     value: &serde_json::Value,
@@ -203,7 +215,8 @@ pub fn deserialize_custom_from_json(
         Some(d) => d,
         None => return Ok(None),
     };
-    let data_type = parse_data_type_from_value(value);
+
+    let data_type = parse_data_type_from_value(value)?;
     let payload = parse_envelope_payload(value)?;
     let arc = deserializer_ref.value()(payload)?;
     let custom = match data_type {
@@ -240,8 +253,11 @@ pub fn register_arrow(
 /// registered. If the type is already registered, returns `Ok(())` without overwriting (idempotent).
 /// Use this where repeated registration can occur (e.g. module init).
 ///
-/// # Errors
 /// Does not return an error (idempotent insert into `DashMap`).
+#[allow(
+    clippy::missing_errors_doc,
+    reason = "idempotent registration only inserts into a DashMap"
+)]
 #[cfg(feature = "arrow")]
 pub fn ensure_arrow_registered(
     type_name: &str,
@@ -344,8 +360,11 @@ pub fn register_py_extractor(type_name: &str, extractor: PyExtractor) -> Result<
 /// If the type is already registered, returns `Ok(())` without overwriting (idempotent).
 /// Use this where repeated registration can occur (e.g. module init).
 ///
-/// # Errors
 /// Does not return an error (idempotent insert into `DashMap`).
+#[allow(
+    clippy::missing_errors_doc,
+    reason = "idempotent registration only inserts into a DashMap"
+)]
 #[cfg(feature = "python")]
 pub fn ensure_py_extractor_registered(
     type_name: &str,
@@ -381,6 +400,16 @@ fn rust_extractor_factories() -> &'static DashMap<String, RustExtractorFactory> 
     RUST_EXTRACTOR_FACTORIES.get_or_init(DashMap::new)
 }
 
+#[cfg(feature = "python")]
+type RustClassCheck = Box<dyn Fn(&pyo3::Bound<'_, pyo3::PyAny>) -> bool + Send + Sync>;
+
+#[cfg(feature = "python")]
+fn rust_class_checks() -> &'static DashMap<String, RustClassCheck> {
+    static RUST_CLASS_CHECKS: std::sync::OnceLock<DashMap<String, RustClassCheck>> =
+        std::sync::OnceLock::new();
+    RUST_CLASS_CHECKS.get_or_init(DashMap::new)
+}
+
 /// Registers a factory that produces a `PyExtractor` for the given type name.
 /// Crates (e.g. persistence) call this at load time for each Rust custom data type.
 /// When `register_custom_data_class(cls)` is called with that type's class, the factory is invoked
@@ -409,8 +438,11 @@ pub fn register_rust_extractor_factory(
 /// registered. If the type is already registered, returns `Ok(())` without overwriting (idempotent).
 /// Use this where repeated registration can occur (e.g. module load).
 ///
-/// # Errors
 /// Does not return an error (idempotent insert into `DashMap`).
+#[allow(
+    clippy::missing_errors_doc,
+    reason = "idempotent registration only inserts into a DashMap"
+)]
 #[cfg(feature = "python")]
 pub fn ensure_rust_extractor_factory_registered(
     type_name: &str,
@@ -430,9 +462,16 @@ pub fn ensure_rust_extractor_factory_registered(
 #[cfg(feature = "python")]
 pub fn register_rust_extractor<T>() -> Result<(), anyhow::Error>
 where
-    T: CustomDataTrait + for<'a, 'py> pyo3::FromPyObject<'a, 'py> + Send + Sync + 'static,
+    T: CustomDataTrait
+        + pyo3::PyTypeInfo
+        + for<'a, 'py> pyo3::FromPyObject<'a, 'py>
+        + Send
+        + Sync
+        + 'static,
 {
     let type_name = T::type_name_static();
+    ensure_rust_class_registered::<T>(type_name);
+
     let factory: RustExtractorFactory = Box::new(|| {
         Box::new(|obj: &pyo3::Bound<'_, pyo3::PyAny>| {
             obj.extract::<T>()
@@ -447,14 +486,24 @@ where
 /// If the type is already registered, returns `Ok(())` without overwriting (idempotent).
 /// Use this where repeated registration can occur (e.g. module load).
 ///
-/// # Errors
 /// Does not return an error (idempotent insert into `DashMap`).
+#[allow(
+    clippy::missing_errors_doc,
+    reason = "idempotent registration only inserts into a DashMap"
+)]
 #[cfg(feature = "python")]
 pub fn ensure_rust_extractor_registered<T>() -> Result<(), anyhow::Error>
 where
-    T: CustomDataTrait + for<'a, 'py> pyo3::FromPyObject<'a, 'py> + Send + Sync + 'static,
+    T: CustomDataTrait
+        + pyo3::PyTypeInfo
+        + for<'a, 'py> pyo3::FromPyObject<'a, 'py>
+        + Send
+        + Sync
+        + 'static,
 {
     let type_name = T::type_name_static();
+    ensure_rust_class_registered::<T>(type_name);
+
     let factory: RustExtractorFactory = Box::new(|| {
         Box::new(|obj: &pyo3::Bound<'_, pyo3::PyAny>| {
             obj.extract::<T>()
@@ -474,16 +523,41 @@ pub fn get_rust_extractor(type_name: &str) -> Option<PyExtractor> {
     Some(factory_ref.value()())
 }
 
+// Returns `true` when a Rust type registered with a different PyO3 class uses `type_name`
+#[cfg(feature = "python")]
+#[must_use]
+pub(crate) fn conflicts_with_rust_class(
+    type_name: &str,
+    data_class: &pyo3::Bound<'_, pyo3::PyAny>,
+) -> bool {
+    rust_class_checks()
+        .get(type_name)
+        .is_some_and(|check| !check.value()(data_class))
+}
+
+#[cfg(feature = "python")]
+fn ensure_rust_class_registered<T: pyo3::PyTypeInfo>(type_name: &str) {
+    rust_class_checks()
+        .entry(type_name.to_string())
+        .or_insert_with(|| Box::new(|data_class| data_class.is(T::type_object(data_class.py()))));
+}
+
 #[cfg(test)]
 mod tests {
-    use std::hash::{DefaultHasher, Hash, Hasher};
+    use std::{
+        hash::{DefaultHasher, Hash, Hasher},
+        sync::atomic::{AtomicBool, Ordering},
+    };
 
     use nautilus_core::UnixNanos;
     use rstest::rstest;
     use serde::{Deserialize, Serialize};
 
     use super::*;
-    use crate::data::{CustomData, custom::register_custom_data_json};
+    use crate::data::{
+        CustomData,
+        custom::{ensure_custom_data_json_registered, register_custom_data_json},
+    };
 
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
     struct TestRegCustomData {
@@ -609,6 +683,123 @@ mod tests {
     }
 
     #[rstest]
+    #[case("ReservedMetadataString", serde_json::json!("shadow"))]
+    #[case("ReservedMetadataNull", serde_json::Value::Null)]
+    fn json_registry_rejects_reserved_metadata_before_callback(
+        #[case] type_name: &str,
+        #[case] value: serde_json::Value,
+    ) {
+        let called = Arc::new(AtomicBool::new(false));
+        let called_by_callback = called.clone();
+        register_json_deserializer(
+            type_name,
+            Box::new(move |_| {
+                called_by_callback.store(true, Ordering::SeqCst);
+                anyhow::bail!("invalid metadata reached callback")
+            }),
+        )
+        .unwrap();
+
+        let custom = CustomData::from_arc(Arc::new(TestRegCustomData {
+            ts_init: UnixNanos::from(317),
+        }));
+
+        let mut envelope = serde_json::to_value(custom).unwrap();
+        envelope["type"] = serde_json::json!(type_name);
+        envelope["data_type"]["type_name"] = serde_json::json!(type_name);
+        envelope["data_type"]["metadata"]["identifier"] = value;
+
+        let error = deserialize_custom_from_json(type_name, &envelope).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "`identifier` is reserved for DataType catalog identity"
+        );
+        assert!(!called.load(Ordering::SeqCst));
+    }
+
+    #[rstest]
+    #[case::missing(None)]
+    #[case::null(Some(serde_json::Value::Null))]
+    #[case::empty(Some(serde_json::json!({})))]
+    #[case::populated(Some(serde_json::json!({"source": "feed", "level": 3})))]
+    fn json_registry_preserves_envelope_metadata(#[case] metadata: Option<serde_json::Value>) {
+        ensure_custom_data_json_registered::<StrictRegCustomData>().unwrap();
+        let expected_metadata: Option<Params> = metadata
+            .clone()
+            .filter(|v| !v.is_null() && v.as_object().is_some_and(|m| !m.is_empty()))
+            .map(|v| serde_json::from_value(v).unwrap());
+
+        let data_type = DataType::new(
+            "StrictRegCustomData",
+            expected_metadata.clone(),
+            Some("catalog/317".to_string()),
+        );
+
+        let expected = CustomData::new(
+            Arc::new(StrictRegCustomData {
+                ts_init: UnixNanos::from(317),
+            }),
+            data_type,
+        );
+
+        let mut envelope = serde_json::to_value(&expected).unwrap();
+        if let Some(metadata) = metadata {
+            envelope["data_type"]["metadata"] = metadata;
+        } else {
+            envelope["data_type"]
+                .as_object_mut()
+                .unwrap()
+                .remove("metadata");
+        }
+
+        let actual = deserialize_custom_from_json("StrictRegCustomData", &envelope)
+            .unwrap()
+            .unwrap();
+
+        let Data::Custom(actual) = actual else {
+            panic!("expected Custom variant");
+        };
+
+        assert_eq!(
+            serde_json::to_value(&actual).unwrap(),
+            serde_json::to_value(&expected).unwrap()
+        );
+        assert_eq!(actual.data_type.metadata(), expected_metadata.as_ref());
+        assert_eq!(actual.data_type.identifier(), Some("catalog/317"));
+    }
+
+    #[rstest]
+    #[case::missing(None)]
+    #[case::null(Some(serde_json::Value::Null))]
+    #[case::missing_type_name(Some(serde_json::json!({"metadata": {"source": "feed"}})))]
+    fn json_registry_preserves_missing_descriptor_fallback(
+        #[case] descriptor: Option<serde_json::Value>,
+    ) {
+        ensure_custom_data_json_registered::<StrictRegCustomData>().unwrap();
+
+        let expected = CustomData::from_arc(Arc::new(StrictRegCustomData {
+            ts_init: UnixNanos::from(317),
+        }));
+
+        let mut envelope = serde_json::to_value(&expected).unwrap();
+        if let Some(descriptor) = descriptor {
+            envelope["data_type"] = descriptor;
+        } else {
+            envelope.as_object_mut().unwrap().remove("data_type");
+        }
+
+        let actual = deserialize_custom_from_json("StrictRegCustomData", &envelope)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(
+            serde_json::to_value(actual).unwrap(),
+            serde_json::to_value(expected).unwrap()
+        );
+    }
+
+    #[rstest]
     fn data_type_registry_result_hashes_like_equal_values_from_all_routes() {
         fn hash_data_type(data_type: &DataType) -> u64 {
             let mut hasher = DefaultHasher::new();
@@ -629,7 +820,9 @@ mod tests {
         });
         let persisted = DataType::from_persistence_json(&persistence_json.to_string()).unwrap();
         let registry_envelope = serde_json::json!({"data_type": persistence_json});
-        let registered = parse_data_type_from_value(&registry_envelope).unwrap();
+        let registered = parse_data_type_from_value(&registry_envelope)
+            .unwrap()
+            .unwrap();
         let deserialization_payload = serde_json::json!({
             "type_name": constructed.type_name(),
             "metadata": constructed.metadata(),

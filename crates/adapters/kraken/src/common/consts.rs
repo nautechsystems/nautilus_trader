@@ -34,6 +34,10 @@ pub static KRAKEN_CLIENT_ID: LazyLock<ClientId> =
 // API Partner integration identifier
 pub const NAUTILUS_KRAKEN_BROKER_ID: &str = "AA98 N84G GOPN GL6Y";
 
+/// Maximum length of a Kraken Futures client order ID (`cliOrdId`), as the send-order API
+/// documents it.
+pub const KRAKEN_FUTURES_MAX_CLIENT_ORDER_ID_LEN: usize = 100;
+
 // WebSocket-specific constants
 pub const KRAKEN_PONG: &str = "pong";
 pub const KRAKEN_WS_TOPIC_DELIMITER: char = '.';
@@ -110,3 +114,10 @@ pub const KRAKEN_SPOT_POST_ONLY_ERROR: &str = "EOrder:Post only order";
 /// `raw_symbol`, so a client fed through the cache APIs can index the alias without the
 /// `AssetPairs` response.
 pub(crate) const KRAKEN_ALTNAME_KEY: &str = "kraken_altname";
+
+/// Instrument `info` key for the scale at which Kraken sends a Spot pair's prices on the wire.
+///
+/// `AssetPairs` declares it as `pair_decimals`. The instrument's price precision comes from
+/// `tick_size`, and for a handful of pairs that is one digit below the wire scale, so the key is
+/// present only when the two differ. The `book` checksum is computed over wire-scale strings.
+pub(crate) const KRAKEN_PAIR_DECIMALS_KEY: &str = "kraken_pair_decimals";

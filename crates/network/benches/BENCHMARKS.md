@@ -50,7 +50,7 @@ For policy and the general noise-reduction recipe, see
 
 ## Methodology
 
-The benchmarks compare `tokio-tungstenite 0.30.0` and `sockudo-ws 2.0.1` in
+The July measurement compares `tokio-tungstenite 0.30.0` and `sockudo-ws 2.0.1` in
 the same binary and measurement session.
 
 - Both use established, uncompressed streams over identical 1 MiB in-memory
@@ -65,9 +65,28 @@ the same binary and measurement session.
 - Each p99.9 value covers 50 observations per run; it is useful but noisier
   than p50, p95, or p99.
 
-The benchmark excludes DNS, TCP connect, TLS, HTTP upgrade, kernel network I/O,
+That measurement excludes DNS, TCP connect, TLS, HTTP upgrade, kernel network I/O,
 and external network latency. It also excludes Compio, sockudo's native
 split-stream driver, compression, and keepalive traffic.
+
+The `websocket_transport` benchmark also includes `nautilus_sockudo` cases. These use the
+neutral message conversions and Sockudo's unified stream through `SockudoTransport::new`,
+matching the client transport adapter. Both endpoints use that adapter; the cases do not
+include the client's reader and writer tasks. The raw `sockudo_ws` cases retain the unified
+stream and the `sockudo_native` cases use Sockudo's split handles directly, to distinguish
+library performance from adapter performance.
+
+The `websocket_latency` benchmark reports the native split adapter as `nautilus_sockudo_native`.
+Both endpoints use `SockudoTransport::into_split`. These cases measure a different path from the
+unified stream adapter in `websocket_transport`. The July tables below cover only the raw streams.
+
+The `websocket_client` benchmark drives the public `WebSocketClient` over loopback TCP
+against a Tungstenite peer, with the client's own reader and writer tasks, for both client
+backends. It runs `mixed`, `duplex`, `ingress-batched`, and `pingpong` workloads per payload
+size, plus a `paused` case in which the peer delays reading so a client write blocks.
+`NAUTILUS_WS_CLIENT_MESSAGES`, `NAUTILUS_WS_CLIENT_PAYLOADS`,
+`NAUTILUS_WS_CLIENT_MODE`, and `NAUTILUS_WS_CLIENT_BACKEND=sockudo` narrow a run;
+`NAUTILUS_WS_CLIENT_CPU` and `NAUTILUS_WS_PEER_CPU` pin the client and peer threads.
 
 ## Round-trip text latency
 

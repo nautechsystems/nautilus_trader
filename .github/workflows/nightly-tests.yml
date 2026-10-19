@@ -180,7 +180,7 @@ jobs:
       - name: Run Rust doctests
         run: >-
           make cargo-test-doc
-          EXTRA_FEATURES="capnp,hypersync,nautilus-serialization/sbe,nautilus-infrastructure/postgres"
+          EXTRA_FEATURES="hypersync,nautilus-common/sbe,nautilus-infrastructure/postgres"
 
   python-memray:
     name: Python memory leak tests
@@ -354,8 +354,8 @@ jobs:
       - name: Dry-run Cargo crate publishing
         run: bash scripts/ci/publish-cargo-crates.sh --dry-run
 
-  docsrs-check:
-    name: docsrs-check
+  check-docsrs:
+    name: check-docsrs
     runs-on: [self-hosted, Linux, X64, self-hosted-linux-x86]
     env:
       # Outside the workspace so it survives actions/checkout's git clean -ffdx,
@@ -390,12 +390,12 @@ jobs:
 
       - name: Install cargo-hack
         # https://github.com/taiki-e/install-action
-        uses: taiki-e/install-action@94c31af3204a9f15ab40b35ad084410b905bbc73 # v2.87.17
+        uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
         with:
           tool: cargo-hack
 
-      - name: Run docsrs-check
-        run: make docsrs-check
+      - name: Run check-docsrs
+        run: make check-docsrs
 
   check-features:
     name: check-features
@@ -430,7 +430,7 @@ jobs:
 
       - name: Install cargo-hack
         # https://github.com/taiki-e/install-action
-        uses: taiki-e/install-action@94c31af3204a9f15ab40b35ad084410b905bbc73 # v2.87.17
+        uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
         with:
           tool: cargo-hack
 

@@ -40,11 +40,14 @@ use nautilus_model::{
     enums::OrderStatus,
     events::{OrderAccepted, OrderCanceled, OrderFillVoided, OrderFilled, OrderRejected},
     identifiers::{ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId},
+    instruments::Instrument,
     orders::Order,
     types::Quantity,
 };
 use nautilus_polymarket::{
-    common::consts::POLYMARKET, factories::PolymarketExecutionClientFactory,
+    common::consts::POLYMARKET,
+    config::{PolymarketDataClientConfig, PolymarketInstrumentProviderConfig},
+    factories::{PolymarketDataClientFactory, PolymarketExecutionClientFactory},
 };
 use nautilus_trading::{
     nautilus_strategy,
@@ -52,6 +55,7 @@ use nautilus_trading::{
 };
 use rstest::rstest;
 use rust_decimal::Decimal;
+use serde_json::json;
 
 use crate::{
     harness,
@@ -193,6 +197,122 @@ fn build_node_with_execution_config(
         .expect("Polymarket execution client")
         .on_instrument(instrument);
     node
+}
+
+#[rstest]
+#[tokio::test]
+#[expect(
+    clippy::await_holding_refcell_ref,
+    reason = "the node is stopped before the standalone report request"
+)]
+async fn startup_mass_status_loads_position_in_past_end_open_market() {
+    let state = TestServerState::default();
+    let market = load_json("gamma_market_past_end_date_open.json");
+    let condition_id = market["conditionId"].as_str().unwrap();
+    let tokens: Vec<String> =
+        serde_json::from_str(market["clobTokenIds"].as_str().unwrap()).unwrap();
+    let instrument_id = InstrumentId::from(format!("{condition_id}-{}.POLYMARKET", tokens[0]));
+    *state.positions_response_override.lock().await = Some(json!([{
+        "token_id": tokens[0],
+        "condition_id": condition_id,
+        "current_size": "7.1234",
+        "avg_price": "0.321",
+    }]));
+    *state.gamma_response.lock().await = Some(json!([market]));
+    *state.orders_response_override.lock().await = Some(json!({"data": [], "next_cursor": "LTE="}));
+    *state.trades_response_override.lock().await = Some(json!({"data": [], "next_cursor": "LTE="}));
+    let addr = start_mock_server(state.clone()).await;
+    let base_url = format!("http://{addr}");
+
+    let config = LiveNodeConfig {
+        environment: Environment::Live,
+        trader_id: TraderId::from(harness::TRADER_ID),
+        timeout_connection: DEADLINE,
+        timeout_reconciliation: DEADLINE,
+        delay_post_stop: Duration::from_millis(50),
+        ..Default::default()
+    };
+
+    let data_config = PolymarketDataClientConfig {
+        base_url_http: Some(base_url.clone()),
+        base_url_gamma: Some(base_url.clone()),
+        base_url_data_api: Some(base_url),
+        base_url_ws: Some(format!("ws://{addr}/ws")),
+        instrument_config: Some(PolymarketInstrumentProviderConfig {
+            load_ids: Some(vec![instrument_id]),
+            ..Default::default()
+        }),
+        resolve_poll_enabled: false,
+        ..Default::default()
+    };
+
+    let mut node = LiveNodeBuilder::from_config(config)
+        .unwrap()
+        .with_name("PolymarketPastEndStartup")
+        .add_data_client(
+            None,
+            Box::new(PolymarketDataClientFactory),
+            Box::new(data_config),
+        )
+        .unwrap()
+        .add_exec_client(
+            None,
+            Box::new(PolymarketExecutionClientFactory),
+            Box::new(execution_config(addr)),
+        )
+        .unwrap()
+        .build()
+        .unwrap();
+
+    let handle = node.handle();
+
+    let driver = async move {
+        wait_until_async(
+            || async { matches!(handle.state(), NodeState::Running | NodeState::Stopped) },
+            DEADLINE,
+        )
+        .await;
+        let running = handle.state();
+        handle.stop();
+        running
+    };
+
+    let (result, running) =
+        tokio::time::timeout(RUN_TIMEOUT, async { tokio::join!(node.run(), driver) })
+            .await
+            .unwrap();
+    result.expect("startup mass status");
+    let cached = node
+        .kernel()
+        .cache
+        .borrow()
+        .instrument(&instrument_id)
+        .cloned()
+        .unwrap();
+    let mass_status = node
+        .kernel()
+        .exec_engine
+        .borrow_mut()
+        .generate_mass_status(&ClientId::from(POLYMARKET), None)
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(running, NodeState::Running);
+    assert!(
+        cached.expiration_ns().unwrap()
+            < nautilus_core::time::get_atomic_clock_realtime().get_time_ns()
+    );
+    assert_eq!(mass_status.position_reports().len(), 1);
+    let positions = &mass_status.position_reports()[&instrument_id];
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].instrument_id, instrument_id);
+    assert_eq!(positions[0].quantity, Quantity::from("7.1234"));
+    assert_eq!(
+        positions[0].avg_px_open,
+        Some(Decimal::from_str_exact("0.321").unwrap())
+    );
+    assert_eq!(state.orders_get_count.load(Ordering::Acquire), 2);
 }
 
 #[rstest]

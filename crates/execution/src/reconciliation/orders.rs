@@ -18,6 +18,8 @@
 //! Event construction, order state reconciliation, and fill reconciliation. Venue-sourced
 //! reports become zero or more `OrderEventAny`s that are safe to apply to the local order model.
 
+use std::collections::HashSet;
+
 use nautilus_common::enums::LogColor;
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
@@ -38,6 +40,7 @@ use ustr::Ustr;
 use super::{
     ids::create_inferred_reconciliation_trade_id,
     positions::{cap_price_at_instrument_max, is_within_single_unit_tolerance},
+    reconciliation_price,
 };
 
 /// Generates reconciliation events for a live order status report.
@@ -49,7 +52,9 @@ use super::{
 /// when the venue increased the total quantity and reported a fill that would
 /// otherwise close the order under the stale local quantity. The `Updated`
 /// step is suppressed for pending venue states so a still-unconfirmed amend
-/// cannot mutate the local projection ahead of venue confirmation.
+/// cannot mutate the local projection ahead of venue confirmation. A confirmed `Filled`
+/// report whose filled quantity exceeds the local order quantity still raises that quantity
+/// while a cancel or modify is in flight, so the fill can apply.
 #[must_use]
 pub fn generate_reconciliation_order_events(
     order: &OrderAny,
@@ -104,7 +109,7 @@ fn generate_reconciliation_order_events_inner(
     allow_fill_decrease: bool,
     commission: Option<Money>,
 ) -> Vec<OrderEventAny> {
-    if is_superseded_cancel_report(order, report) {
+    if is_superseded_terminal_report(order, report) {
         let _ = reconcile_order_report(order, report, instrument, ts_now);
         return Vec::new();
     }
@@ -243,7 +248,7 @@ pub fn generate_reconciliation_order_pre_fill_events(
     report: &OrderStatusReport,
     ts_now: UnixNanos,
 ) -> Vec<OrderEventAny> {
-    if is_superseded_cancel_report(order, report) {
+    if is_superseded_terminal_report(order, report) {
         return Vec::new();
     }
 
@@ -286,14 +291,7 @@ fn prepare_reconciliation_order(
     }
 
     if report_is_confirmed_state(report)
-        && (local_accepts_amendment(&working)
-            || (matches!(
-                working.status(),
-                OrderStatus::PendingUpdate | OrderStatus::PendingCancel,
-            ) && matches!(
-                report.order_status,
-                OrderStatus::Canceled | OrderStatus::Expired,
-            )))
+        && (local_accepts_amendment(&working) || pending_terminal_quantity_update(&working, report))
         && should_reconciliation_update(&working, report)
     {
         let updated = create_reconciliation_updated(&working, report, ts_now);
@@ -320,9 +318,9 @@ fn prepare_reconciliation_order(
 /// regardless of local state, since an unconfirmed amend or cancel must not
 /// drive any local mutation until the venue surfaces a confirmed status.
 ///
-/// Returns `None` for a `Canceled` report that references a previously-promoted
-/// `venue_order_id` whose successor is still live in the cache (the cancel-half
-/// of a cancel-replace modify).
+/// Returns `None` for a `Canceled`, `Expired`, or `Filled` report on a known superseded
+/// `venue_order_id`. Its native terminal state does not change the logical order's current
+/// state or cumulative quantities; its companion fills reconcile separately.
 #[must_use]
 pub fn reconcile_order_report(
     order: &OrderAny,
@@ -362,11 +360,12 @@ pub fn reconcile_order_report_with_commission(
         return None;
     }
 
-    if is_superseded_cancel_report(order, report) {
+    if is_superseded_terminal_report(order, report) {
         let cached_venue_order_id = order.venue_order_id().unwrap_or(report.venue_order_id);
         log::info!(
-            "Suppressing Canceled for {} on previously-promoted venue_order_id {}: \
+            "Suppressing {:?} for {} on previously-promoted venue_order_id {}: \
              current venue_order_id is {}",
+            report.order_status,
             order.client_order_id(),
             report.venue_order_id,
             cached_venue_order_id,
@@ -599,11 +598,19 @@ fn create_reconciliation_fill_voids(
     let order_events = order.events();
     let mut corrections = Vec::new();
 
-    for candidate in order_events.iter().rev() {
-        let OrderEventAny::Filled(fill) = candidate else {
-            continue;
-        };
+    // A repeated `trade_id` in the event log restates that trade's price and carries no
+    // quantity; a void must price against the original fill so the order accepts it.
+    let mut seen = HashSet::new();
 
+    let quantity_fills: Vec<&OrderFilled> = order_events
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) if seen.insert(fill.trade_id) => Some(fill),
+            _ => None,
+        })
+        .collect();
+
+    for fill in quantity_fills.iter().rev() {
         if remaining.is_zero() {
             break;
         }
@@ -804,7 +811,13 @@ pub fn reconcile_fill_report(
     }
 
     let account_id = report.account_id;
-    let venue_order_id = order.venue_order_id().unwrap_or(report.venue_order_id);
+    let venue_order_id = if order.venue_order_id() == Some(report.venue_order_id)
+        || order.venue_order_ids().contains(&&report.venue_order_id)
+    {
+        report.venue_order_id
+    } else {
+        order.venue_order_id().unwrap_or(report.venue_order_id)
+    };
 
     log::info!(
         color = LogColor::Blue as u8;
@@ -1347,8 +1360,11 @@ fn report_is_working(report: &OrderStatusReport) -> bool {
     )
 }
 
-pub(crate) fn is_superseded_cancel_report(order: &OrderAny, report: &OrderStatusReport) -> bool {
-    if report.order_status != OrderStatus::Canceled {
+pub(crate) fn is_superseded_terminal_report(order: &OrderAny, report: &OrderStatusReport) -> bool {
+    if !matches!(
+        report.order_status,
+        OrderStatus::Canceled | OrderStatus::Expired | OrderStatus::Filled
+    ) {
         return false;
     }
 
@@ -1368,6 +1384,26 @@ fn local_accepts_amendment(order: &OrderAny) -> bool {
         order.status(),
         OrderStatus::Accepted | OrderStatus::Triggered | OrderStatus::PartiallyFilled
     )
+}
+
+fn pending_terminal_quantity_update(order: &OrderAny, report: &OrderStatusReport) -> bool {
+    if !matches!(
+        order.status(),
+        OrderStatus::PendingUpdate | OrderStatus::PendingCancel
+    ) {
+        return false;
+    }
+
+    if matches!(
+        report.order_status,
+        OrderStatus::Canceled | OrderStatus::Expired
+    ) {
+        return true;
+    }
+
+    report.order_status == OrderStatus::Filled
+        && report.filled_qty > order.quantity()
+        && report.quantity >= report.filled_qty
 }
 
 fn should_accept_before_reconciliation(order: &OrderAny, report: &OrderStatusReport) -> bool {
@@ -1554,7 +1590,7 @@ fn calculate_incremental_fill_price(
             }
         };
 
-        return Price::from_decimal_dp(last_px_decimal, instrument.price_precision())
+        return reconciliation_price(last_px_decimal, instrument)
             .inspect_err(|e| {
                 log::warn!(
                     "Cannot price {} from incremental {last_px_decimal}, falling back: {e}",
@@ -1581,7 +1617,7 @@ fn resolve_fill_price(
     report
         .avg_px
         .and_then(|avg_px| {
-            Price::from_decimal_dp(avg_px, instrument.price_precision())
+            reconciliation_price(avg_px, instrument)
                 .inspect_err(|e| {
                     log::warn!(
                         "Cannot price {} from venue average {avg_px}, trying next source: {e}",
@@ -1600,7 +1636,7 @@ fn resolve_fill_price(
 /// function for why reconciliation needs to bound synthetic fill prices.
 fn clamp_inferred_fill_price(price: Price, instrument: &InstrumentAny) -> Price {
     let px = cap_price_at_instrument_max(price.as_decimal(), instrument);
-    Price::from_decimal_dp(px, instrument.price_precision()).unwrap_or(price)
+    Price::from_decimal_dp(px, price.precision.max(instrument.price_precision())).unwrap_or(price)
 }
 
 fn reconciliation_position_id(

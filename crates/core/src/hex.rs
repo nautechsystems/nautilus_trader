@@ -82,7 +82,7 @@ pub fn encode_prefixed(data: impl AsRef<[u8]>) -> String {
 ///
 /// # Errors
 ///
-/// Returns [`DecodeError`] if the input length is odd or contains non-hex characters.
+/// Returns an error if the input length is odd or contains non-hex characters.
 pub fn decode(data: impl AsRef<[u8]>) -> Result<Vec<u8>, DecodeError> {
     let hex = data.as_ref();
     if hex.len() % 2 != 0 {
@@ -134,8 +134,7 @@ fn decode_pairs_into(hex: &[u8], out: &mut Vec<u8>) -> Result<(), DecodeError> {
 ///
 /// # Errors
 ///
-/// Returns [`DecodeError`] if the input length is not exactly `2 * N` or contains
-/// non-hex characters.
+/// Returns an error if the input length is not exactly `2 * N` or contains non-hex characters.
 pub fn decode_array<const N: usize>(data: impl AsRef<[u8]>) -> Result<[u8; N], DecodeError> {
     let hex = data.as_ref();
     if hex.len() != N * 2 {

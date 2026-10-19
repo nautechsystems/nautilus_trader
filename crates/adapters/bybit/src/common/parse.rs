@@ -124,6 +124,23 @@ pub(crate) fn deserialize_i64_or_string<'de, D: serde::Deserializer<'de>>(
     deserialize_int_or_string(d)
 }
 
+/// Deserializes an optional [`BybitSymbolType`], treating an empty string as `None`.
+///
+/// Bybit sends `symbolType: ""` for regular symbols, which would otherwise decode as
+/// [`BybitSymbolType::Other`].
+pub(crate) fn deserialize_optional_symbol_type<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> Result<Option<BybitSymbolType>, D::Error> {
+    let Some(value) = Option::<String>::deserialize(d)?.filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+
+    BybitSymbolType::deserialize(serde::de::IntoDeserializer::<D::Error>::into_deserializer(
+        value,
+    ))
+    .map(Some)
+}
+
 /// Round-trips `Option<bool>` as `0`/`1` integers for Bybit request bodies
 /// that advertise `readOnly` as an integer on the wire.
 pub mod opt_bool_as_int {
@@ -178,8 +195,9 @@ use nautilus_model::{
         Bar, BarType, BookOrder, FundingRateUpdate, OrderBookDelta, OrderBookDeltas, TradeTick,
     },
     enums::{
-        AccountType, AggressorSide, BarAggregation, BookAction, LiquiditySide, OptionKind,
-        OrderSide, OrderStatus, OrderType, PositionSide, RecordFlag, TimeInForce, TriggerType,
+        AccountType, AggressorSide, AssetClass, BarAggregation, BookAction, LiquiditySide,
+        OptionKind, OrderSide, OrderStatus, OrderType, PositionSide, RecordFlag, TimeInForce,
+        TriggerType,
     },
     events::account::state::AccountState,
     identifiers::{
@@ -188,6 +206,7 @@ use nautilus_model::{
     instruments::{
         Instrument, any::InstrumentAny, crypto_future::CryptoFuture, crypto_option::CryptoOption,
         crypto_perpetual::CryptoPerpetual, currency_pair::CurrencyPair,
+        perpetual_contract::PerpetualContract, tokenized_asset::TokenizedAsset,
     },
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
@@ -334,7 +353,8 @@ fn default_margin() -> Decimal {
     Decimal::new(1, 1)
 }
 
-/// Parses a spot instrument definition returned by Bybit into a Nautilus currency pair.
+/// Parses a spot instrument definition returned by Bybit into a Nautilus currency pair, or a
+/// tokenized asset for tokenized real-world assets (such as xStocks).
 ///
 /// # Panics
 ///
@@ -381,12 +401,44 @@ pub fn parse_spot_instrument(
     let mut info = build_instrument_info(
         definition.symbol_type,
         definition.xstock_multiplier.as_deref(),
+        None,
+        None,
     )
     .unwrap_or_default();
     info.insert(
         "margin_trading".to_string(),
         serde_json::Value::Bool(margin_trading_supported),
     );
+
+    let asset_class = definition
+        .symbol_type
+        .map_or(AssetClass::Cryptocurrency, AssetClass::from);
+
+    if asset_class != AssetClass::Cryptocurrency {
+        // `xstockMultiplier` converts token to stock price, not contract size, so it stays in
+        // `info` and the instrument multiplier remains 1
+        let instrument = TokenizedAsset::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(raw_symbol)
+            .asset_class(asset_class)
+            .base_currency(base_currency)
+            .quote_currency(quote_currency)
+            .price_precision(price_increment.precision)
+            .size_precision(size_increment.precision)
+            .price_increment(price_increment)
+            .size_increment(size_increment)
+            .maybe_lot_size(lot_size)
+            .maybe_max_quantity(max_quantity)
+            .maybe_min_quantity(min_quantity)
+            .maybe_min_notional(min_notional)
+            .margin_init(default_margin())
+            .margin_maint(default_margin())
+            .info(info)
+            .ts_event(ts_event)
+            .ts_init(ts_init)
+            .build()?;
+        return Ok(InstrumentAny::TokenizedAsset(instrument));
+    }
 
     let instrument = CurrencyPair::builder()
         .instrument_id(instrument_id)
@@ -474,9 +526,51 @@ pub fn parse_linear_instrument(
         "lotSizeFilter.minNotionalValue",
     )?;
 
-    let info = build_instrument_info(definition.symbol_type, None);
+    let info = build_instrument_info(
+        definition.symbol_type,
+        None,
+        definition.full_name.as_deref(),
+        definition.market_region.as_deref(),
+    );
+
+    let asset_class = definition
+        .symbol_type
+        .map_or(AssetClass::Cryptocurrency, AssetClass::from);
 
     match definition.contract_type {
+        BybitContractType::LinearPerpetual if asset_class != AssetClass::Cryptocurrency => {
+            // Bybit leaves `underlyingTicker` empty for commodity and forex
+            let underlying = definition
+                .underlying_ticker
+                .as_deref()
+                .unwrap_or(definition.base_coin.as_str());
+
+            let instrument = PerpetualContract::builder()
+                .instrument_id(instrument_id)
+                .raw_symbol(raw_symbol)
+                .underlying(Ustr::from(underlying))
+                .asset_class(asset_class)
+                .quote_currency(quote_currency)
+                .settlement_currency(settlement_currency)
+                .is_inverse(false)
+                .price_precision(price_increment.precision)
+                .size_precision(size_increment.precision)
+                .price_increment(price_increment)
+                .size_increment(size_increment)
+                .maybe_lot_size(lot_size)
+                .maybe_max_quantity(max_quantity)
+                .maybe_min_quantity(min_quantity)
+                .maybe_min_notional(min_notional)
+                .maybe_max_price(max_price)
+                .maybe_min_price(min_price)
+                .margin_init(default_margin())
+                .margin_maint(default_margin())
+                .maybe_info(info)
+                .ts_event(ts_event)
+                .ts_init(ts_init)
+                .build()?;
+            Ok(InstrumentAny::PerpetualContract(instrument))
+        }
         BybitContractType::LinearPerpetual => {
             let instrument = CryptoPerpetual::builder()
                 .instrument_id(instrument_id)
@@ -624,7 +718,7 @@ pub fn parse_inverse_instrument(
         "lotSizeFilter.minNotionalValue",
     )?;
 
-    let info = build_instrument_info(definition.symbol_type, None);
+    let info = build_instrument_info(definition.symbol_type, None, None, None);
 
     match definition.contract_type {
         BybitContractType::InversePerpetual => {
@@ -694,6 +788,8 @@ pub fn parse_inverse_instrument(
 fn build_instrument_info(
     symbol_type: Option<BybitSymbolType>,
     xstock_multiplier: Option<&str>,
+    full_name: Option<&str>,
+    market_region: Option<&str>,
 ) -> Option<Params> {
     let symbol_type = symbol_type?;
     let value = symbol_type.as_str()?;
@@ -710,6 +806,15 @@ fn build_instrument_info(
             "xstock_multiplier".to_string(),
             serde_json::Value::String(multiplier.to_string()),
         );
+    }
+
+    for (key, value) in [("full_name", full_name), ("market_region", market_region)] {
+        if let Some(value) = value {
+            info.insert(
+                key.to_string(),
+                serde_json::Value::String(value.to_string()),
+            );
+        }
     }
 
     Some(info)
@@ -1027,7 +1132,7 @@ pub fn resolve_position_idx(
 ///
 /// # Errors
 ///
-/// This function returns an error if:
+/// Returns an error if:
 /// - Required price or quantity fields cannot be parsed.
 /// - The execution timestamp cannot be parsed.
 /// - Numeric conversions fail.
@@ -1106,7 +1211,7 @@ pub fn parse_fill_report(
 ///
 /// # Errors
 ///
-/// This function returns an error if:
+/// Returns an error if:
 /// - Position quantity or price fields cannot be parsed.
 /// - The position timestamp cannot be parsed.
 /// - Numeric conversions fail.
@@ -1697,7 +1802,7 @@ pub fn get_price_str(params: &Params, key: &str) -> Option<String> {
 ///
 /// # Errors
 ///
-/// Returns an error for any value outside the four types Bybit accepts on an order.
+/// Returns an error if the value falls outside the four types Bybit accepts on an order.
 pub fn parse_smp_type(s: &str) -> anyhow::Result<BybitOrderSmpType> {
     match s.to_ascii_lowercase().as_str() {
         "none" => Ok(BybitOrderSmpType::None),
@@ -1717,7 +1822,7 @@ pub fn parse_smp_type(s: &str) -> anyhow::Result<BybitOrderSmpType> {
 ///
 /// # Errors
 ///
-/// Returns an error for any value outside the four types Bybit accepts on an order.
+/// Returns an error if the value falls outside the four types Bybit accepts on an order.
 pub fn deserialize_optional_smp_type<'de, D: serde::Deserializer<'de>>(
     d: D,
 ) -> Result<Option<BybitOrderSmpType>, D::Error> {
@@ -2048,15 +2153,45 @@ mod tests {
         let instrument = &response.result.list[0];
 
         let parsed = parse_spot_instrument(instrument, TS, TS).unwrap();
-        match parsed {
-            InstrumentAny::CurrencyPair(pair) => {
-                let info = pair.info.as_ref().unwrap();
-                assert_eq!(info.get_bool("margin_trading"), Some(false));
-                assert_eq!(info.get_str("symbol_type"), Some("xstocks"));
-                assert_eq!(info.get_str("xstock_multiplier"), Some("0.1"));
-                assert_eq!(info.len(), 3);
+        let InstrumentAny::TokenizedAsset(asset) = parsed else {
+            panic!("expected TokenizedAsset, was {parsed:?}");
+        };
+
+        assert_eq!(asset.id.to_string(), "AAPLUSDT-SPOT.BYBIT");
+        assert_eq!(asset.asset_class, AssetClass::Equity);
+        assert_eq!(asset.base_currency.code, "AAPL");
+        assert_eq!(asset.quote_currency, Currency::USDT());
+        assert_eq!(asset.multiplier, Quantity::from(1));
+
+        let info = asset.info.as_ref().unwrap();
+        assert_eq!(info.get_bool("margin_trading"), Some(false));
+        assert_eq!(info.get_str("symbol_type"), Some("xstocks"));
+        assert_eq!(info.get_str("xstock_multiplier"), Some("0.1"));
+        assert_eq!(info.len(), 3);
+    }
+
+    #[rstest]
+    #[case::absent(None, None)]
+    #[case::adventure(Some(BybitSymbolType::Adventure), None)]
+    #[case::xstocks(Some(BybitSymbolType::Xstocks), Some(AssetClass::Equity))]
+    #[case::mstocks(Some(BybitSymbolType::Mstocks), Some(AssetClass::Equity))]
+    #[case::unknown(Some(BybitSymbolType::Other), Some(AssetClass::Alternative))]
+    fn parse_spot_instrument_selects_tokenized_asset_for_non_crypto(
+        #[case] symbol_type: Option<BybitSymbolType>,
+        #[case] expected_asset_class: Option<AssetClass>,
+    ) {
+        let json = load_test_json("http_get_instruments_spot.json");
+        let response: BybitInstrumentSpotResponse = serde_json::from_str(&json).unwrap();
+        let mut instrument = response.result.list[0].clone();
+        instrument.symbol_type = symbol_type;
+
+        let parsed = parse_spot_instrument(&instrument, TS, TS).unwrap();
+        match (parsed, expected_asset_class) {
+            (InstrumentAny::TokenizedAsset(asset), Some(expected)) => {
+                assert_eq!(asset.asset_class, expected);
             }
-            other => panic!("unexpected instrument variant: {other:?}"),
+            (InstrumentAny::CurrencyPair(_), None) => {}
+            (other, _) => panic!("unexpected instrument variant: {other:?}"),
         }
     }
 
@@ -2077,16 +2212,12 @@ mod tests {
         instrument.xstock_multiplier = Some(xstock_multiplier.to_string());
 
         let parsed = parse_spot_instrument(&instrument, TS, TS).unwrap();
-        match parsed {
-            InstrumentAny::CurrencyPair(pair) => {
-                let info = pair.info.as_ref().unwrap();
-                assert_eq!(info.get_bool("margin_trading"), Some(true));
-                assert_eq!(info.get_str("symbol_type"), expected_symbol_type);
-                assert_eq!(info.get("xstock_multiplier"), None);
-                assert_eq!(info.len(), expected_len);
-            }
-            other => panic!("unexpected instrument variant: {other:?}"),
-        }
+        let info = parsed.info().unwrap();
+
+        assert_eq!(info.get_bool("margin_trading"), Some(true));
+        assert_eq!(info.get_str("symbol_type"), expected_symbol_type);
+        assert_eq!(info.get("xstock_multiplier"), None);
+        assert_eq!(info.len(), expected_len);
     }
 
     #[rstest]
@@ -2146,7 +2277,7 @@ mod tests {
 
         let parsed = parse_linear_instrument(&instrument, TS, TS).unwrap();
         let info = match (contract_type, parsed) {
-            (BybitContractType::LinearPerpetual, InstrumentAny::CryptoPerpetual(perp)) => {
+            (BybitContractType::LinearPerpetual, InstrumentAny::PerpetualContract(perp)) => {
                 perp.info.unwrap()
             }
             (BybitContractType::LinearFutures, InstrumentAny::CryptoFuture(future)) => {
@@ -2156,7 +2287,79 @@ mod tests {
         };
 
         assert_eq!(info.get_str("symbol_type"), Some("stock"));
-        assert_eq!(info.len(), 1);
+        assert_eq!(info.get_str("full_name"), Some("Advanced Micro Devices"));
+        assert_eq!(info.get_str("market_region"), Some("US"));
+        assert_eq!(info.len(), 3);
+    }
+
+    #[rstest]
+    #[case::stock(BybitSymbolType::Stock, "AMD", Some("AMD"), AssetClass::Equity)]
+    #[case::etf(BybitSymbolType::Etf, "ARKK", Some("ARKK"), AssetClass::Equity)]
+    #[case::commodity(BybitSymbolType::Commodity, "XAU", None, AssetClass::Commodity)]
+    #[case::forex(BybitSymbolType::Forex, "EURUSD", None, AssetClass::FX)]
+    #[case::unknown(BybitSymbolType::Other, "NEWTHING", None, AssetClass::Alternative)]
+    fn parse_linear_tradfi_perpetual_builds_perpetual_contract(
+        #[case] symbol_type: BybitSymbolType,
+        #[case] base_coin: &str,
+        #[case] underlying_ticker: Option<&str>,
+        #[case] expected_asset_class: AssetClass,
+    ) {
+        let json = load_test_json("http_get_instruments_linear_symbol_type.json");
+        let response: BybitInstrumentLinearResponse = serde_json::from_str(&json).unwrap();
+        let mut instrument = response.result.list[0].clone();
+        instrument.symbol_type = Some(symbol_type);
+        instrument.base_coin = Ustr::from(base_coin);
+        instrument.underlying_ticker = underlying_ticker.map(str::to_string);
+
+        let parsed = parse_linear_instrument(&instrument, TS, TS).unwrap();
+        let InstrumentAny::PerpetualContract(perp) = parsed else {
+            panic!("expected PerpetualContract, was {parsed:?}");
+        };
+
+        assert_eq!(perp.id.to_string(), "AMDSTOCKUSDT-LINEAR.BYBIT");
+        assert_eq!(perp.underlying.as_str(), base_coin);
+        assert_eq!(perp.asset_class, expected_asset_class);
+        assert_eq!(perp.base_currency, None);
+        assert_eq!(perp.quote_currency, Currency::USDT());
+        assert_eq!(perp.settlement_currency, Currency::USDT());
+        assert!(!perp.is_inverse);
+        assert_eq!(perp.price_increment, Price::from("0.01"));
+        assert_eq!(perp.size_increment, Quantity::from("0.001"));
+        assert_eq!(perp.min_notional, Some(Money::new(1.0, Currency::USDT())));
+    }
+
+    #[rstest]
+    fn parse_linear_tradfi_perpetual_uses_underlying_ticker_over_base_coin() {
+        let json = load_test_json("http_get_instruments_linear_symbol_type.json");
+        let response: BybitInstrumentLinearResponse = serde_json::from_str(&json).unwrap();
+        let instrument = &response.result.list[0];
+
+        let parsed = parse_linear_instrument(instrument, TS, TS).unwrap();
+        let InstrumentAny::PerpetualContract(perp) = parsed else {
+            panic!("expected PerpetualContract, was {parsed:?}");
+        };
+
+        assert_eq!(instrument.base_coin.as_str(), "AMDSTOCK");
+        assert_eq!(perp.underlying.as_str(), "AMD");
+    }
+
+    #[rstest]
+    #[case::innovation(Some(BybitSymbolType::Innovation))]
+    #[case::absent(None)]
+    fn parse_linear_crypto_perpetual_keeps_crypto_perpetual(
+        #[case] symbol_type: Option<BybitSymbolType>,
+    ) {
+        let json = load_test_json("http_get_instruments_linear.json");
+        let response: BybitInstrumentLinearResponse = serde_json::from_str(&json).unwrap();
+        let mut instrument = response.result.list[0].clone();
+        instrument.symbol_type = symbol_type;
+
+        let parsed = parse_linear_instrument(&instrument, TS, TS).unwrap();
+
+        assert!(
+            matches!(parsed, InstrumentAny::CryptoPerpetual(_)),
+            "expected CryptoPerpetual, was {parsed:?}"
+        );
     }
 
     #[rstest]

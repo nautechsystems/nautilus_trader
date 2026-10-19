@@ -1804,7 +1804,7 @@ fn test_dispatch_positions_channel_emits_position_report() {
             assert_eq!(report.quantity, Quantity::from("0.500"));
             assert_eq!(
                 report.venue_position_id,
-                Some(PositionId::new("12345-LONG"))
+                Some(PositionId::new("BTC-USDT-SWAP.OKX-LONG"))
             );
         }
         other => panic!("Expected position report, was {other:?}"),
@@ -3017,12 +3017,17 @@ async fn create_query_order_test_client() -> (
 }
 
 fn create_exec_test_router() -> Router {
-    Router::new().route(
-        "/api/v5/account/balance",
-        get(|_headers: HeaderMap| async {
-            axum::Json(load_test_data("http_get_account_balance.json")).into_response()
-        }),
-    )
+    Router::new()
+        .route(
+            "/api/v5/account/config",
+            get(|| async { Json(load_test_data("http_get_account_configuration.json")) }),
+        )
+        .route(
+            "/api/v5/account/balance",
+            get(|_headers: HeaderMap| async {
+                axum::Json(load_test_data("http_get_account_balance.json")).into_response()
+            }),
+        )
 }
 
 #[derive(Clone, Default)]
@@ -3088,6 +3093,14 @@ async fn handle_exec_ws_socket(mut socket: WebSocket, state: Arc<WsTeardownState
 async fn start_exec_session_failure_server() -> (SocketAddr, Arc<WsTeardownState>) {
     let ws_state = Arc::new(WsTeardownState::default());
     let router = Router::new()
+        .route(
+            "/api/v5/account/config",
+            get(|| async { Json(load_test_data("http_get_account_configuration.json")) }),
+        )
+        .route(
+            "/api/v5/account/positions",
+            get(|| async { Json(json!({"code": "0", "msg": "", "data": []})) }),
+        )
         .route(
             "/ws/v5/private",
             get(handle_exec_ws_upgrade).with_state(Arc::clone(&ws_state)),
@@ -4071,6 +4084,7 @@ async fn test_generate_order_status_reports_honors_open_only(
     )
     .with_price(Price::from("103500"));
     expected_pending.avg_px = Some(dec!(0));
+    expected_pending.venue_position_id = Some(PositionId::from("BTC-USDT-SWAP.OKX-LONG"));
     assert_eq!(pending, &expected_pending);
 
     if !open_only {
@@ -4093,6 +4107,7 @@ async fn test_generate_order_status_reports_honors_open_only(
             Some(historical.report_id),
         );
         expected_historical.avg_px = Some(dec!(103698.9));
+        expected_historical.venue_position_id = Some(PositionId::from("BTC-USDT-SWAP.OKX-LONG"));
         assert_eq!(historical, &expected_historical);
     }
 }
@@ -7097,7 +7112,12 @@ impl BootstrapServer {
             ..Default::default()
         });
         let (tx, requests) = tokio::sync::mpsc::unbounded_channel();
+
         let router = create_exec_test_router()
+            .route(
+                "/api/v5/account/positions",
+                get(|| async { Json(json!({"code": "0", "msg": "", "data": []})) }),
+            )
             .route(
                 "/ws/v5/private",
                 get(handle_exec_ws_upgrade).with_state(Arc::clone(&ws)),

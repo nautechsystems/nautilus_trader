@@ -19,7 +19,9 @@ use std::sync::Arc;
 
 #[cfg(test)]
 use nautilus_core::string::secret::REDACTED;
-use nautilus_core::string::secret::SecretString;
+use nautilus_core::{
+    serialization::deserialize_empty_string_as_none, string::secret::SecretString,
+};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
@@ -144,6 +146,9 @@ pub struct PolymarketOpenOrder {
 
 /// A trade report returned by REST GET /trades.
 ///
+/// Missing, null, and empty `transaction_hash` values deserialize as `None` and are
+/// omitted on serialization.
+///
 /// References: <https://docs.polymarket.com/#get-trades>
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PolymarketTradeReport {
@@ -174,7 +179,12 @@ pub struct PolymarketTradeReport {
     pub bucket_index: u64,
     pub owner: String,
     pub maker_address: String,
-    pub transaction_hash: String,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_empty_string_as_none",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub transaction_hash: Option<String>,
     pub maker_orders: Vec<PolymarketMakerOrder>,
     pub trader_side: PolymarketLiquiditySide,
 }
@@ -551,20 +561,12 @@ pub struct TickSizeResponse {
 
 /// Fee rate response from CLOB `GET /fee-rate`.
 ///
-/// Returns the taker fee rate in basis points for a given token.
+/// This legacy base fee is distinct from the effective `FeeSchedule::rate`.
 #[derive(Clone, Debug, Deserialize)]
 pub struct FeeRateResponse {
-    /// Fee rate in basis points.
+    /// Base fee in basis points.
     #[serde(deserialize_with = "deserialize_decimal_from_json")]
     pub base_fee: Decimal,
-}
-
-impl FeeRateResponse {
-    /// Converts the basis-points fee to a decimal taker rate.
-    #[must_use]
-    pub fn to_rate(&self) -> Decimal {
-        self.base_fee / Decimal::from(10_000)
-    }
 }
 
 /// A single price level from the CLOB order book.
@@ -890,6 +892,10 @@ mod tests {
         assert_eq!(trade.bucket_index, 0);
         assert_eq!(trade.trader_side, PolymarketLiquiditySide::Taker);
         assert_eq!(trade.maker_orders.len(), 2);
+        assert_eq!(
+            trade.transaction_hash.as_deref(),
+            Some("0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab")
+        );
     }
 
     #[rstest]
@@ -911,6 +917,54 @@ mod tests {
         let json = serde_json::to_string(&trade).unwrap();
         let trade2: PolymarketTradeReport = serde_json::from_str(&json).unwrap();
         assert_eq!(trade, trade2);
+    }
+
+    #[rstest]
+    #[case::failed_missing("FAILED", None)]
+    #[case::failed_null("FAILED", Some(serde_json::Value::Null))]
+    #[case::failed_empty("FAILED", Some(serde_json::json!("")))]
+    #[case::not_broadcast_missing("TRADE_STATUS_MATCHED_NOT_BROADCASTED", None)]
+    #[case::not_broadcast_null(
+        "TRADE_STATUS_MATCHED_NOT_BROADCASTED",
+        Some(serde_json::Value::Null)
+    )]
+    #[case::not_broadcast_empty("TRADE_STATUS_MATCHED_NOT_BROADCASTED", Some(serde_json::json!("")))]
+    fn test_trade_report_unavailable_transaction_hash(
+        #[case] status: &str,
+        #[case] hash: Option<serde_json::Value>,
+    ) {
+        let baseline: PolymarketTradeReport = load("http_trade_report.json");
+        let mut expected = serde_json::to_value(baseline).unwrap();
+        expected["status"] = serde_json::to_value(
+            serde_json::from_value::<PolymarketTradeStatus>(serde_json::json!(status)).unwrap(),
+        )
+        .unwrap();
+        expected.as_object_mut().unwrap().remove("transaction_hash");
+        let mut payload = expected.clone();
+        payload["status"] = serde_json::json!(status);
+        if let Some(hash) = hash {
+            payload["transaction_hash"] = hash;
+        }
+
+        let trade: PolymarketTradeReport = serde_json::from_value(payload).unwrap();
+
+        assert_eq!(serde_json::to_value(trade).unwrap(), expected);
+    }
+
+    #[rstest]
+    #[case::number(serde_json::json!(123))]
+    #[case::boolean(serde_json::json!(false))]
+    #[case::array(serde_json::json!([]))]
+    #[case::object(serde_json::json!({}))]
+    fn test_trade_report_rejects_invalid_transaction_hash(#[case] hash: serde_json::Value) {
+        let baseline: PolymarketTradeReport = load("http_trade_report.json");
+        let mut payload = serde_json::to_value(baseline).unwrap();
+        payload["transaction_hash"] = hash;
+
+        let error = serde_json::from_value::<PolymarketTradeReport>(payload).unwrap_err();
+
+        assert_eq!(error.classify(), serde_json::error::Category::Data);
+        assert!(error.to_string().contains("expected a string"));
     }
 
     #[rstest]
@@ -1562,6 +1616,14 @@ mod tests {
     }
 
     #[rstest]
+    fn test_fee_rate_response_numeric() {
+        let response: FeeRateResponse =
+            serde_json::from_value(serde_json::json!({"base_fee": 1000})).unwrap();
+
+        assert_eq!(response.base_fee, dec!(1000));
+    }
+
+    #[rstest]
     fn test_data_api_position_deserialization() {
         let positions: Vec<DataApiPosition> =
             load::<DataApiPage<DataApiPosition>>("data_api_positions_response.json").data;
@@ -1747,16 +1809,5 @@ mod tests {
         let tags = events[0].tags.as_ref().unwrap();
 
         assert!(tags.iter().any(|tag| tag.slug.as_deref() == Some("sports")));
-    }
-
-    #[rstest]
-    fn test_fee_rate_response_to_rate() {
-        let zero: FeeRateResponse = load("clob_fee_rate_response_zero.json");
-        let nonzero: FeeRateResponse = load("clob_fee_rate_response_nonzero.json");
-        let numeric: FeeRateResponse = serde_json::from_str(r#"{"base_fee":700}"#).unwrap();
-
-        assert_eq!(zero.to_rate(), Decimal::ZERO);
-        assert_eq!(nonzero.to_rate(), dec!(0.015));
-        assert_eq!(numeric.to_rate(), dec!(0.07));
     }
 }

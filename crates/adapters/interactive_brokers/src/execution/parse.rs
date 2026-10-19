@@ -17,7 +17,7 @@
 
 use std::str::FromStr;
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
 use ibapi::orders::{Execution, Liquidity, OrderData, OrderStatus};
 use jiff::{
@@ -43,7 +43,7 @@ use crate::{
         enums::{IbAction, IbOrderStatus, IbOrderType, IbTimeInForce},
         spreads::is_spread_instrument_id,
     },
-    execution::transform::ib_trigger_method_to_trigger_type,
+    execution::transform::{from_ib_price, ib_trigger_method_to_trigger_type},
     providers::instruments::InteractiveBrokersInstrumentProvider,
 };
 
@@ -62,6 +62,7 @@ pub(super) fn parse_order_data_to_report(
         "IB order {} has invalid quantities",
         data.order_id
     );
+
     let mut report = parse_order_status_to_report(
         &OrderStatus {
             order_id: data.order_id,
@@ -134,60 +135,205 @@ pub(crate) fn fill_missing_avg_px(
     }
 }
 
+/// Fill reports for an execution window, with the evidence an entry price rebuild needs.
+#[derive(Debug, Default)]
+pub(crate) struct FillEvidence {
+    pub(crate) reports: Vec<FillReport>,
+    /// Leg executions of combo orders, which `reports` drops in favor of the spread fill. They
+    /// still change the leg positions.
+    pub(crate) combo_leg_reports: Vec<FillReport>,
+    /// Whether an execution of an unknown instrument could not be turned into a fill report.
+    pub(crate) missing_all: bool,
+    /// Instruments with an execution that could not be turned into a fill report.
+    pub(crate) missing_instruments: AHashSet<InstrumentId>,
+}
+
+impl FillEvidence {
+    fn is_complete_for(&self, instrument_id: &InstrumentId) -> bool {
+        !self.missing_all && !self.missing_instruments.contains(instrument_id)
+    }
+}
+
 /// Replaces IB's position average cost with the entry price of the fills that built the position.
 ///
 /// IB's `avgCost` includes commissions, while a position rebuilt from fills has the average of
-/// their prices. When the fills of an instrument net to exactly the reported quantity, the
-/// position was flat before them, so they hold its whole history and give its entry price.
-/// Other positions keep IB's average cost, which position recovery prices from.
+/// their prices. The fills in the mass status cover only the current window, so the replay
+/// starts from the quantity the position must have held before the window: the reported
+/// quantity minus the window's net quantity. Once that replay passes through flat, or flips,
+/// every later fill is known, and the entry price is the netting average of the fills after the
+/// last flat crossing. Fill reports arrive in commission order, so fills sharing a timestamp
+/// have no known execution order: when they include opposite sides or flip the position, the
+/// entry price is unknown until a later fill opens from flat or flips.
+///
+/// The replay infers the pre-window quantity, so a missing execution would be read as part of
+/// it. The entry price therefore replaces IB's average cost only when every execution of the
+/// instrument was parsed and the entry price plus the opening commissions per unit reproduces
+/// IB's average cost, within the rounding of the average cost and of each commission. Otherwise
+/// the position keeps IB's average cost, which position recovery prices from.
 pub(crate) fn fill_position_avg_px_from_fills(
     position_reports: &mut [PositionStatusReport],
-    fill_reports: &[FillReport],
+    evidence: &FillEvidence,
+    instrument_provider: &InteractiveBrokersInstrumentProvider,
 ) {
     for report in position_reports
         .iter_mut()
         .filter(|report| !report.signed_decimal_qty.is_zero())
     {
-        let mut fills: Vec<_> = fill_reports
+        let instrument_id = report.instrument_id;
+        let Some(venue_avg_px) = report.avg_px_open else {
+            continue;
+        };
+        let Some(instrument) = instrument_provider.find(&instrument_id) else {
+            continue;
+        };
+
+        if !evidence.is_complete_for(&instrument_id) {
+            continue;
+        }
+
+        let mut fills: Vec<_> = evidence
+            .reports
             .iter()
+            .chain(&evidence.combo_leg_reports)
             .filter(|fill| {
-                fill.account_id == report.account_id && fill.instrument_id == report.instrument_id
+                fill.account_id == report.account_id && fill.instrument_id == instrument_id
             })
             .collect();
+
+        // IB's average cost is in the instrument's quote currency
+        if fills
+            .iter()
+            .any(|fill| fill.commission.currency != instrument.quote_currency())
+        {
+            continue;
+        }
+
         fills.sort_by_key(|fill| fill.ts_event);
 
-        if let Some((quantity, avg_px)) = netting_entry(&fills)
-            && quantity == report.signed_decimal_qty
-        {
-            report.avg_px_open = Some(avg_px);
+        let window_qty: Decimal = fills.iter().map(|fill| signed_fill_qty(fill)).sum();
+        let pre_window_qty = report.signed_decimal_qty - window_qty;
+
+        let Some(lot) = entry_after_window(pre_window_qty, &fills) else {
+            continue;
+        };
+
+        let units = report.signed_decimal_qty.abs() * instrument.multiplier().as_decimal();
+        let commission_px = lot.commission / units;
+        let venue_avg_px_expected = if report.signed_decimal_qty.is_sign_positive() {
+            lot.avg_px + commission_px
+        } else {
+            lot.avg_px - commission_px
+        };
+
+        // IB's average cost is rounded to the price precision, and each opening commission is
+        // rounded to its currency's precision, which moves the expected average cost by up to
+        // half an increment per retained commission over the lot's units
+        let tick = Decimal::new(1, u32::from(instrument.price_precision()));
+        let half_increment = Decimal::new(5, u32::from(instrument.quote_currency().precision) + 1);
+        let tolerance = tick + half_increment * lot.commissions / units;
+
+        if (venue_avg_px - venue_avg_px_expected).abs() <= tolerance {
+            report.avg_px_open = Some(lot.avg_px);
+        } else {
+            tracing::debug!(
+                "Keeping IB average cost {venue_avg_px} for {instrument_id}: fills give entry \
+                 {} with average cost {venue_avg_px_expected}",
+                lot.avg_px,
+            );
         }
     }
 }
 
-// Replays fills with netting semantics: fills on the open side average in, reducing fills
-// keep the entry price, and a flip opens at the flipping fill's price
-fn netting_entry(fills: &[&FillReport]) -> Option<(Decimal, Decimal)> {
-    let mut quantity = Decimal::ZERO;
-    let mut avg_px = Decimal::ZERO;
+fn signed_fill_qty(fill: &FillReport) -> Decimal {
+    let last_qty = fill.last_qty.as_decimal();
 
-    for fill in fills {
-        let last_qty = fill.last_qty.as_decimal();
-        let last_px = fill.last_px.as_decimal();
-        let signed_qty = match fill.order_side {
-            OrderSide::Buy => last_qty,
-            OrderSide::Sell => -last_qty,
-        };
+    match fill.order_side {
+        OrderSide::Buy => last_qty,
+        OrderSide::Sell => -last_qty,
+    }
+}
 
-        if quantity.is_zero() || quantity.is_sign_negative() == signed_qty.is_sign_negative() {
-            let open_qty = quantity.abs();
-            avg_px = (avg_px * open_qty + last_px * last_qty) / (open_qty + last_qty);
-        } else if last_qty > quantity.abs() {
-            avg_px = last_px;
+// The open lot left by the replay: its netting average price, the commissions IB includes in
+// its average cost, and how many fill commissions that sum carries, both scaled down as the lot
+// is reduced
+struct EntryLot {
+    avg_px: Decimal,
+    commission: Decimal,
+    commissions: Decimal,
+}
+
+// Replays the window fills with netting semantics from `pre_window_qty` and returns the lot
+// left at the end, when that lot was opened within the window. Fills on the open side average
+// in, reducing fills keep the entry price, and a flip opens at the flipping fill's price; a lot
+// that predates the window is unknown until the replay passes through flat. IB leaves the
+// commission of a flipping fill out of the new lot's average cost, so that lot starts with none. Fills sharing a timestamp have no known order, so a
+// group of them that mixes sides or flips the position leaves the lot unknown until a later
+// fill opens from flat or flips.
+fn entry_after_window(pre_window_qty: Decimal, fills: &[&FillReport]) -> Option<EntryLot> {
+    let mut quantity = pre_window_qty;
+    let mut lot: Option<EntryLot> = None;
+
+    for group in fills.chunk_by(|a, b| a.ts_event == b.ts_event) {
+        if group.len() > 1 {
+            let group_qty: Decimal = group.iter().map(|fill| signed_fill_qty(fill)).sum();
+            let end_qty = quantity + group_qty;
+            let mixes_sides = group
+                .iter()
+                .any(|fill| fill.order_side != group[0].order_side);
+            let flips = !quantity.is_zero()
+                && !end_qty.is_zero()
+                && quantity.is_sign_negative() != end_qty.is_sign_negative();
+
+            if mixes_sides || flips {
+                quantity = end_qty;
+                lot = None;
+                continue;
+            }
         }
-        quantity += signed_qty;
+
+        for fill in group {
+            let last_qty = fill.last_qty.as_decimal();
+            let last_px = fill.last_px.as_decimal();
+            let commission = fill.commission.as_decimal();
+            let signed_qty = signed_fill_qty(fill);
+            let open_qty = quantity.abs();
+
+            if quantity.is_zero() {
+                lot = Some(EntryLot {
+                    avg_px: last_px,
+                    commission,
+                    commissions: Decimal::ONE,
+                });
+            } else if quantity.is_sign_negative() == signed_qty.is_sign_negative() {
+                lot = lot.map(|lot| EntryLot {
+                    avg_px: (lot.avg_px * open_qty + last_px * last_qty) / (open_qty + last_qty),
+                    commission: lot.commission + commission,
+                    commissions: lot.commissions + Decimal::ONE,
+                });
+            } else if last_qty > open_qty {
+                lot = Some(EntryLot {
+                    avg_px: last_px,
+                    commission: Decimal::ZERO,
+                    commissions: Decimal::ZERO,
+                });
+            } else if last_qty < open_qty {
+                let retained = (open_qty - last_qty) / open_qty;
+                lot = lot.map(|lot| EntryLot {
+                    avg_px: lot.avg_px,
+                    commission: lot.commission * retained,
+                    commissions: lot.commissions * retained,
+                });
+            }
+
+            quantity += signed_qty;
+        }
     }
 
-    (!quantity.is_zero()).then_some((quantity, avg_px))
+    if quantity.is_zero() {
+        return None;
+    }
+
+    lot
 }
 
 /// Returns whether an execution is the combo-level (BAG) execution of a spread order.
@@ -206,6 +352,7 @@ pub(crate) fn link_order_contingencies(
     orders: &[ibapi::orders::Order],
 ) {
     debug_assert_eq!(reports.len(), orders.len());
+
     let order_ids: Vec<ClientOrderId> = reports
         .iter()
         .map(|report| {
@@ -252,6 +399,7 @@ pub(crate) fn link_order_contingencies(
                 | ibapi::orders::OcaType::ReduceWithoutBlock => Some(ContingencyType::Ouo),
                 _ => None,
             };
+
             let linked: Vec<ClientOrderId> = members
                 .iter()
                 .filter(|member| **member != index)
@@ -329,10 +477,10 @@ pub fn parse_execution_to_fill_report(
     avg_px: Option<Price>,
 ) -> anyhow::Result<FillReport> {
     // Get price magnifier from instrument provider
-    let price_magnifier = instrument_provider.get_price_magnifier(&instrument_id) as f64;
+    let price_magnifier = instrument_provider.get_price_magnifier(&instrument_id);
 
     // Convert execution price
-    let execution_price = execution.price * price_magnifier;
+    let execution_price = from_ib_price(execution.price, price_magnifier);
 
     // Determine order side
     let order_side = IbAction::from_str(execution.side.as_str())?.order_side();
@@ -414,7 +562,7 @@ pub fn parse_order_status_to_report(
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderStatusReport> {
     // Get price magnifier from instrument provider
-    let price_magnifier = instrument_provider.get_price_magnifier(&instrument_id) as f64;
+    let price_magnifier = instrument_provider.get_price_magnifier(&instrument_id);
 
     let mut nautilus_status = match IbOrderStatus::from_str(order_status.status.as_str()) {
         Ok(status) => status.nautilus_status(),
@@ -447,6 +595,7 @@ pub fn parse_order_status_to_report(
 
     // Get quantity
     let total_quantity = order.map_or(0.0, |order| order.total_quantity);
+
     let quantity = Quantity::new(
         total_quantity.max(order_status.filled + order_status.remaining),
         size_precision,
@@ -458,10 +607,13 @@ pub fn parse_order_status_to_report(
     // Get average price
     let average_fill_price = order_status.average_fill_price.unwrap_or(0.0);
     let include_avg_px = should_use_avg_fill_price(average_fill_price, &instrument_id);
-    let avg_px_value = if include_avg_px {
-        average_fill_price * price_magnifier
+    let avg_px = if include_avg_px {
+        let avg_px = decimal_from_f64(average_fill_price)?
+            .checked_div(Decimal::from(price_magnifier.max(1)))
+            .context("IB average fill price out of range")?;
+        Some(avg_px)
     } else {
-        0.0
+        None
     };
 
     if order_status.filled > 0.0
@@ -548,7 +700,7 @@ pub fn parse_order_status_to_report(
                     | OrderType::MarketToLimit
             )
         {
-            let converted = limit_price * price_magnifier;
+            let converted = from_ib_price(limit_price, price_magnifier);
             report = report.with_price(Price::new(converted, price_precision));
         }
 
@@ -585,8 +737,8 @@ pub fn parse_order_status_to_report(
         }
     }
 
-    if include_avg_px {
-        report = report.with_avg_px(decimal_from_f64(avg_px_value)?);
+    if let Some(avg_px) = avg_px {
+        report = report.with_avg_px(avg_px);
     }
 
     if let Some(display_size) = order
@@ -612,7 +764,7 @@ fn map_ib_order_type(order_type: &str, limit_price: Option<f64>) -> OrderType {
 fn parse_ib_order_pricing_fields(
     order: &ibapi::orders::Order,
     order_type: OrderType,
-    price_magnifier: f64,
+    price_magnifier: i32,
     price_precision: u8,
 ) -> anyhow::Result<(
     Option<Price>,
@@ -631,13 +783,13 @@ fn parse_ib_order_pricing_fields(
     ) {
         if let Some(trail_stop_price) = order.trail_stop_price {
             trigger_price = Some(Price::new(
-                trail_stop_price * price_magnifier,
+                from_ib_price(trail_stop_price, price_magnifier),
                 price_precision,
             ));
         }
 
         if let Some(aux_price) = order.aux_price {
-            trailing_offset = Some(decimal_from_f64(aux_price)?);
+            trailing_offset = Some(decimal_from_f64(aux_price)? / Decimal::from(price_magnifier));
             trailing_offset_type = Some(TrailingOffsetType::Price);
         } else if let Some(trailing_percent) = order.trailing_percent {
             trailing_offset = Some(decimal_from_f64(trailing_percent)? * Decimal::from(100));
@@ -647,7 +799,8 @@ fn parse_ib_order_pricing_fields(
         if order_type == OrderType::TrailingStopLimit
             && let Some(limit_price_offset) = order.limit_price_offset
         {
-            limit_offset = Some(decimal_from_f64(limit_price_offset)?);
+            limit_offset =
+                Some(decimal_from_f64(limit_price_offset)? / Decimal::from(price_magnifier));
             trailing_offset_type = Some(trailing_offset_type.unwrap_or(TrailingOffsetType::Price));
         }
 
@@ -660,7 +813,10 @@ fn parse_ib_order_pricing_fields(
     }
 
     if let Some(aux_price) = order.aux_price {
-        trigger_price = Some(Price::new(aux_price * price_magnifier, price_precision));
+        trigger_price = Some(Price::new(
+            from_ib_price(aux_price, price_magnifier),
+            price_precision,
+        ));
     }
 
     Ok((
@@ -705,9 +861,11 @@ pub fn parse_execution_time(time_str: &str) -> anyhow::Result<UnixNanos> {
     // Hyphenated, space-less form (e.g. "20250225-15:15:00") is always UTC.
     if !time_str.contains(' ') {
         let normalized = time_str.replace('-', " ");
+
         let dt = DateTime::strptime(NAIVE_FORMAT, &normalized).map_err(|e| {
             anyhow::anyhow!("Failed to parse execution timestamp '{time_str}': {e}")
         })?;
+
         return datetime_to_unix_nanos(Offset::UTC.to_timestamp(dt)?, time_str);
     }
 
@@ -715,9 +873,11 @@ pub fn parse_execution_time(time_str: &str) -> anyhow::Result<UnixNanos> {
     // The timezone token itself never contains a space, so `splitn(3, ' ')`
     // correctly groups IANA names such as "America/New_York".
     let mut parts = time_str.splitn(3, ' ');
+
     let (Some(date), Some(time)) = (parts.next(), parts.next()) else {
         anyhow::bail!("Invalid execution time format: {time_str}");
     };
+
     let tz_str = parts.next().unwrap_or("").trim();
 
     let naive_str = format!("{date} {time}");
@@ -749,6 +909,7 @@ fn localize_with_zone(dt: DateTime, tz_str: &str, time_str: &str) -> anyhow::Res
             "Unrecognized execution timezone '{tz_str}' in '{time_str}'. Configure TWS / IB Gateway to emit a standard timezone (e.g. UTC)"
         )
     })?;
+
     let ambiguous = zone.to_ambiguous_timestamp(dt);
     match ambiguous.offset() {
         AmbiguousOffset::Unambiguous { .. } => Ok(ambiguous.unambiguous()?),
@@ -775,15 +936,19 @@ mod tests {
         orders::{Action, ExecutionSide, Liquidity, Order, OrderStatusKind},
     };
     use nautilus_model::{
-        enums::{PositionSide, TrailingOffsetType, TriggerType},
+        enums::{AssetClass, PositionSide, TrailingOffsetType, TriggerType},
         identifiers::{Symbol, Venue},
-        instruments::{InstrumentAny, stubs::equity_aapl},
+        instruments::{
+            CurrencyPair, FuturesContract, InstrumentAny,
+            stubs::{equity_aapl, equity_aapl_itch},
+        },
     };
     use rust_decimal::Decimal;
+    use ustr::Ustr;
 
     use super::*;
     use crate::{
-        config::InteractiveBrokersInstrumentProviderConfig,
+        config::InteractiveBrokersInstrumentProviderConfig, execution::reports::IbReportContext,
         providers::instruments::InteractiveBrokersInstrumentProvider,
     };
 
@@ -798,46 +963,141 @@ mod tests {
 
     use rstest::rstest;
 
+    fn create_test_avg_px_provider() -> InteractiveBrokersInstrumentProvider {
+        let provider = InteractiveBrokersInstrumentProvider::new(
+            crate::config::InteractiveBrokersInstrumentProviderConfig::default(),
+        );
+        provider.insert_test_instrument(InstrumentAny::Equity(equity_aapl()), 265_598, 1);
+        provider
+    }
+
+    // A fill with a 1.00 commission, so IB's average cost differs from the entry price and a
+    // test tells an accepted entry price from a kept average cost
+    fn create_test_entry_fill(
+        side: OrderSide,
+        qty: &str,
+        px: &str,
+        trade_id: &str,
+        ts_event: u64,
+    ) -> FillReport {
+        FillReport::new(
+            AccountId::from("IB-DU001"),
+            equity_aapl().id,
+            VenueOrderId::new(format!("PERM-{trade_id}")),
+            TradeId::new(trade_id),
+            side,
+            Quantity::from(qty),
+            Price::from(px),
+            Money::from("1.00 USD"),
+            LiquiditySide::Taker,
+            None,
+            None,
+            UnixNanos::from(ts_event),
+            UnixNanos::default(),
+            None,
+        )
+    }
+
+    fn create_test_entry_position_report(
+        side: PositionSide,
+        qty: &str,
+        venue_avg_px: &str,
+    ) -> PositionStatusReport {
+        PositionStatusReport::new(
+            AccountId::from("IB-DU001"),
+            equity_aapl().id,
+            side,
+            Quantity::from(qty),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            None,
+            None,
+            Some(Decimal::from_str(venue_avg_px).unwrap()),
+        )
+    }
+
+    fn rebuild_avg_px_open(
+        position_report: PositionStatusReport,
+        evidence: &FillEvidence,
+    ) -> Option<Decimal> {
+        let mut position_reports = vec![position_report];
+        fill_position_avg_px_from_fills(
+            &mut position_reports,
+            evidence,
+            &create_test_avg_px_provider(),
+        );
+        position_reports[0].avg_px_open
+    }
+
     #[rstest]
-    #[case::fills_open_position(PositionSide::Long, vec![(OrderSide::Buy, 7, "229.67")], "229.67")]
+    // IB's average cost is the entry price plus the opening commissions per unit for a long,
+    // minus them for a short, rounded to the price precision
+    #[case::fills_open_position(
+        PositionSide::Long,
+        vec![(OrderSide::Buy, "7", "229.67")],
+        "229.81",
+        "229.67"
+    )]
     #[case::fills_average_in(
         PositionSide::Long,
-        vec![(OrderSide::Buy, 5, "229.00"), (OrderSide::Buy, 2, "232.50")],
+        vec![(OrderSide::Buy, "5", "229.00"), (OrderSide::Buy, "2", "232.50")],
+        "230.29",
         "230.00"
     )]
     #[case::reduce_keeps_entry(
         PositionSide::Long,
-        vec![(OrderSide::Buy, 4, "229.00"), (OrderSide::Buy, 4, "231.00"), (OrderSide::Sell, 1, "235.00")],
+        vec![(OrderSide::Buy, "4", "229.00"), (OrderSide::Buy, "4", "231.00"), (OrderSide::Sell, "1", "235.00")],
+        "230.25",
         "230.00"
     )]
-    #[case::flip_opens_at_fill(
+    #[case::flip_carries_no_commission(
         PositionSide::Short,
-        vec![(OrderSide::Buy, 2, "230.00"), (OrderSide::Sell, 9, "228.00")],
-        "228.00"
+        vec![(OrderSide::Buy, "2", "230.00"), (OrderSide::Sell, "8", "228.00"), (OrderSide::Sell, "1", "221.00")],
+        "226.86",
+        "227.00"
     )]
-    #[case::fills_partial_history(PositionSide::Long, vec![(OrderSide::Buy, 2, "230.00")], "229.81")]
-    #[case::no_fills(PositionSide::Long, vec![], "229.81")]
+    #[case::fills_partial_history(
+        PositionSide::Long,
+        vec![(OrderSide::Buy, "2", "230.00")],
+        "229.81",
+        "229.81"
+    )]
+    #[case::remnant_closed_then_reopened(
+        PositionSide::Long,
+        vec![(OrderSide::Sell, "7", "229.00"), (OrderSide::Buy, "7", "231.00")],
+        "231.14",
+        "231.00"
+    )]
+    #[case::remnant_flipped_in_window(
+        PositionSide::Short,
+        vec![(OrderSide::Sell, "7", "228.00"), (OrderSide::Sell, "1", "221.00")],
+        "226.86",
+        "227.00"
+    )]
+    #[case::remnant_reduced_in_window(
+        PositionSide::Long,
+        vec![(OrderSide::Sell, "2", "235.00")],
+        "229.81",
+        "229.81"
+    )]
+    #[case::no_fills(PositionSide::Long, vec![], "229.81", "229.81")]
+    // A missing execution that IB never returned leaves no parse gap, but the fills then
+    // disagree with IB's average cost
+    #[case::average_cost_disagrees(
+        PositionSide::Long,
+        vec![(OrderSide::Buy, "7", "229.67")],
+        "230.50",
+        "230.50"
+    )]
     fn test_fill_position_avg_px_from_fills(
         #[case] position_side: PositionSide,
-        #[case] fills: Vec<(OrderSide, u64, &str)>,
+        #[case] fills: Vec<(OrderSide, &str, &str)>,
+        #[case] venue_avg_px: &str,
         #[case] expected: &str,
     ) {
-        let instrument_id = InstrumentId::from("NVDA.NASDAQ");
-        let account_id = AccountId::from("IB-DU001");
-        let mut reports = vec![PositionStatusReport::new(
-            account_id,
-            instrument_id,
-            position_side,
-            Quantity::from(7),
-            UnixNanos::default(),
-            UnixNanos::default(),
-            None,
-            None,
-            Some(Decimal::from_str("229.81").unwrap()),
-        )];
         let other_fill = FillReport::new(
-            account_id,
-            InstrumentId::from("AAPL.NASDAQ"),
+            AccountId::from("IB-DU001"),
+            InstrumentId::from("MSFT.NASDAQ"),
             VenueOrderId::new("PERM-9"),
             TradeId::new("T-OTHER"),
             OrderSide::Sell,
@@ -851,20 +1111,187 @@ mod tests {
             UnixNanos::default(),
             None,
         );
-        let mut fill_reports: Vec<_> = fills
+        let mut reports: Vec<_> = fills
             .into_iter()
             .enumerate()
             .rev()
             .map(|(index, (side, qty, px))| {
+                create_test_entry_fill(side, qty, px, &format!("T-{index}"), index as u64 + 10)
+            })
+            .collect();
+        reports.push(other_fill);
+        let evidence = FillEvidence {
+            reports,
+            ..Default::default()
+        };
+
+        let avg_px_open = rebuild_avg_px_open(
+            create_test_entry_position_report(position_side, "7", venue_avg_px),
+            &evidence,
+        );
+
+        assert_eq!(avg_px_open, Some(Decimal::from_str(expected).unwrap()));
+    }
+
+    // A ZC-like contract: IB prices it in cents (magnifier 100) and its multiplier is 5000
+    #[rstest]
+    fn test_fill_position_avg_px_from_fills_for_magnified_contract() {
+        let instrument = InstrumentAny::from(
+            FuturesContract::builder()
+                .instrument_id(InstrumentId::from("ZCZ6.CBOT"))
+                .raw_symbol(Symbol::from("ZCZ6"))
+                .asset_class(AssetClass::Commodity)
+                .exchange(Ustr::from("CBOT"))
+                .underlying(Ustr::from("ZC"))
+                .activation_ns(UnixNanos::default())
+                .expiration_ns(UnixNanos::from(1_800_000_000_000_000_000_u64))
+                .currency(Currency::USD())
+                .price_precision(4)
+                .price_increment(Price::from("0.0025"))
+                .multiplier(Quantity::from(5000))
+                .lot_size(Quantity::from(1))
+                .ts_event(UnixNanos::default())
+                .ts_init(UnixNanos::default())
+                .build()
+                .unwrap(),
+        );
+        let instrument_id = instrument.id();
+        let provider = create_test_instrument_provider();
+        provider.insert_test_instrument(instrument.clone(), 265_598, 100);
+
+        // IB's average cost is the price in the contract's currency times the multiplier, so the
+        // multiplier alone converts it, and the magnifier does not
+        let avg_px_open = IbReportContext::position_avg_px_open(&instrument, 24_340.51);
+        assert_eq!(avg_px_open, Some(Decimal::from_str("4.8681").unwrap()));
+
+        let fill = FillReport::new(
+            AccountId::from("IB-DU001"),
+            instrument_id,
+            VenueOrderId::new("PERM-1"),
+            TradeId::new("T-1"),
+            OrderSide::Buy,
+            Quantity::from(1),
+            Price::from("4.8675"),
+            Money::from("3.01 USD"),
+            LiquiditySide::Taker,
+            None,
+            None,
+            UnixNanos::from(10),
+            UnixNanos::default(),
+            None,
+        );
+        let mut position_reports = vec![PositionStatusReport::new(
+            AccountId::from("IB-DU001"),
+            instrument_id,
+            PositionSide::Long,
+            Quantity::from(1),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            None,
+            None,
+            avg_px_open,
+        )];
+
+        let evidence = FillEvidence {
+            reports: vec![fill],
+            ..Default::default()
+        };
+
+        fill_position_avg_px_from_fills(&mut position_reports, &evidence, &provider);
+
+        // The fill price plus 3.01 / 5000 = 0.000602 reproduces IB's 4.868102, within the rounding
+        // of the average cost, so the entry price replaces it
+        assert_eq!(
+            position_reports[0].avg_px_open,
+            Some(Decimal::from_str("4.8675").unwrap())
+        );
+    }
+
+    #[rstest]
+    fn test_fill_position_avg_px_from_fills_keeps_venue_average_for_other_commission_currency() {
+        let mut fill = create_test_entry_fill(OrderSide::Buy, "7", "229.67", "T-1", 10);
+        fill.commission = Money::from("1.00 EUR");
+        let evidence = FillEvidence {
+            reports: vec![fill],
+            ..Default::default()
+        };
+
+        let avg_px_open = rebuild_avg_px_open(
+            create_test_entry_position_report(PositionSide::Long, "7", "229.81"),
+            &evidence,
+        );
+
+        assert_eq!(avg_px_open, Some(Decimal::from_str("229.81").unwrap()));
+    }
+
+    #[rstest]
+    // A small PAXOS crypto lot: IB's average cost includes the 0.20031 USD commission, while the
+    // fill report carries it rounded to 0.20, which moves the expected average cost by 0.039,
+    // several ticks, so only a tolerance sized to that rounding accepts the entry price
+    #[case::commission_rounded_to_cents(
+        vec![(OrderSide::Buy, "0.00795734", "2507.10")],
+        "0.00795734",
+        "2532.27",
+        "2507.10"
+    )]
+    #[case::average_cost_disagrees(
+        vec![(OrderSide::Buy, "0.00795734", "2507.10")],
+        "0.00795734",
+        "2540.00",
+        "2540.00"
+    )]
+    // Closing 0.0099 of 0.01 ETH retains 1% of the opening commission, so the rounding allowance
+    // shrinks with it to 0.51 per ETH instead of staying at 50.01, and an average cost 10 away
+    // from the fills still keeps the venue average
+    #[case::partial_close_agrees(
+        vec![(OrderSide::Buy, "0.01", "2500.00"), (OrderSide::Sell, "0.0099", "2510.00")],
+        "0.0001",
+        "2520.00",
+        "2500.00"
+    )]
+    #[case::partial_close_disagrees(
+        vec![(OrderSide::Buy, "0.01", "2500.00"), (OrderSide::Sell, "0.0099", "2510.00")],
+        "0.0001",
+        "2530.00",
+        "2530.00"
+    )]
+    fn test_fill_position_avg_px_from_fills_allows_commission_rounding(
+        #[case] fills: Vec<(OrderSide, &str, &str)>,
+        #[case] position_qty: &str,
+        #[case] venue_avg_px: &str,
+        #[case] expected: &str,
+    ) {
+        let instrument = CurrencyPair::builder()
+            .instrument_id(InstrumentId::from("ETH/USD.PAXOS"))
+            .raw_symbol(Symbol::from("ETH.USD"))
+            .base_currency(Currency::from("ETH"))
+            .quote_currency(Currency::USD())
+            .price_precision(2)
+            .size_precision(8)
+            .price_increment(Price::from("0.01"))
+            .size_increment(Quantity::from("0.00000001"))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap();
+        let instrument_id = instrument.id;
+        let provider = InteractiveBrokersInstrumentProvider::new(
+            crate::config::InteractiveBrokersInstrumentProviderConfig::default(),
+        );
+        provider.insert_test_instrument(InstrumentAny::CurrencyPair(instrument), 495_759_171, 1);
+        let reports = fills
+            .into_iter()
+            .enumerate()
+            .map(|(index, (side, qty, px))| {
                 FillReport::new(
-                    account_id,
+                    AccountId::from("IB-DU001"),
                     instrument_id,
                     VenueOrderId::new(format!("PERM-{index}")),
                     TradeId::new(format!("T-{index}")),
                     side,
                     Quantity::from(qty),
                     Price::from(px),
-                    Money::from("1.00 USD"),
+                    Money::from("0.20 USD"),
                     LiquiditySide::Taker,
                     None,
                     None,
@@ -874,20 +1301,186 @@ mod tests {
                 )
             })
             .collect();
-        fill_reports.push(other_fill);
+        let evidence = FillEvidence {
+            reports,
+            ..Default::default()
+        };
+        let mut position_reports = vec![PositionStatusReport::new(
+            AccountId::from("IB-DU001"),
+            instrument_id,
+            PositionSide::Long,
+            Quantity::from(position_qty),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            None,
+            None,
+            Some(Decimal::from_str(venue_avg_px).unwrap()),
+        )];
 
-        fill_position_avg_px_from_fills(&mut reports, &fill_reports);
+        fill_position_avg_px_from_fills(&mut position_reports, &evidence, &provider);
 
         assert_eq!(
-            reports[0].avg_px_open,
+            position_reports[0].avg_px_open,
             Some(Decimal::from_str(expected).unwrap())
         );
+    }
+
+    #[rstest]
+    // Long 1 before the window, then BUY 1 at 100 and a SELL 1 that failed to parse. Without
+    // the SELL the replay infers a flat start and a lot opened at 100, which matches an average
+    // cost of 101.00, so only the parse gap keeps the venue average
+    #[case::instrument_missing(false, vec![equity_aapl().id], "101.00")]
+    #[case::all_missing(true, vec![], "101.00")]
+    #[case::other_instrument_missing(false, vec![InstrumentId::from("MSFT.NASDAQ")], "100.00")]
+    fn test_fill_position_avg_px_from_fills_keeps_venue_average_for_missing_executions(
+        #[case] missing_all: bool,
+        #[case] missing_instruments: Vec<InstrumentId>,
+        #[case] expected: &str,
+    ) {
+        let evidence = FillEvidence {
+            reports: vec![create_test_entry_fill(
+                OrderSide::Buy,
+                "1",
+                "100.00",
+                "T-1",
+                10,
+            )],
+            combo_leg_reports: Vec::new(),
+            missing_all,
+            missing_instruments: missing_instruments.into_iter().collect(),
+        };
+
+        let avg_px_open = rebuild_avg_px_open(
+            create_test_entry_position_report(PositionSide::Long, "1", "101.00"),
+            &evidence,
+        );
+
+        assert_eq!(avg_px_open, Some(Decimal::from_str(expected).unwrap()));
+    }
+
+    #[rstest]
+    // Fill reports arrive in commission order, so fills sharing a timestamp have no known
+    // execution order. In each case one delivery order would reconstruct an entry price that
+    // matches IB's average cost; with the tied group made ambiguous the venue average stands,
+    // and a later fill from flat sets the entry again
+    #[case::opposite_sides(
+        PositionSide::Long,
+        "2",
+        vec![(OrderSide::Buy, "2", "110.00"), (OrderSide::Sell, "2", "120.00")],
+        vec![(OrderSide::Buy, "1", "100.00")],
+        "105.50",
+        "105.50"
+    )]
+    #[case::same_side_flip(
+        PositionSide::Long,
+        "2",
+        vec![(OrderSide::Buy, "1", "100.00"), (OrderSide::Buy, "2", "110.00")],
+        vec![],
+        "110.50",
+        "110.50"
+    )]
+    #[case::same_side_from_flat(
+        PositionSide::Long,
+        "2",
+        vec![(OrderSide::Buy, "1", "100.00"), (OrderSide::Buy, "1", "110.00")],
+        vec![],
+        "106.00",
+        "105.00"
+    )]
+    #[case::reopened_after_ambiguous_group(
+        PositionSide::Long,
+        "1",
+        vec![(OrderSide::Buy, "1", "100.00"), (OrderSide::Sell, "1", "105.00")],
+        vec![(OrderSide::Buy, "1", "110.00")],
+        "111.00",
+        "110.00"
+    )]
+    fn test_fill_position_avg_px_from_fills_same_timestamp_fills_ignore_delivery_order(
+        #[case] position_side: PositionSide,
+        #[case] quantity: &str,
+        #[case] tied: Vec<(OrderSide, &str, &str)>,
+        #[case] later: Vec<(OrderSide, &str, &str)>,
+        #[case] venue_avg_px: &str,
+        #[case] expected: &str,
+        #[values(false, true)] reversed: bool,
+    ) {
+        let mut reports: Vec<_> = tied
+            .into_iter()
+            .enumerate()
+            .map(|(index, (side, qty, px))| {
+                create_test_entry_fill(side, qty, px, &format!("T-{index}"), 10)
+            })
+            .collect();
+
+        if reversed {
+            reports.reverse();
+        }
+
+        reports.extend(
+            later
+                .into_iter()
+                .enumerate()
+                .map(|(index, (side, qty, px))| {
+                    create_test_entry_fill(side, qty, px, &format!("L-{index}"), 20 + index as u64)
+                }),
+        );
+        let evidence = FillEvidence {
+            reports,
+            ..Default::default()
+        };
+
+        let avg_px_open = rebuild_avg_px_open(
+            create_test_entry_position_report(position_side, quantity, venue_avg_px),
+            &evidence,
+        );
+
+        assert_eq!(avg_px_open, Some(Decimal::from_str(expected).unwrap()));
+    }
+
+    #[rstest]
+    #[case::with_combo_legs(true, "4.00")]
+    #[case::without_combo_legs(false, "3.00")]
+    fn test_fill_position_avg_px_from_fills_counts_combo_leg_fills(
+        #[case] with_combo_legs: bool,
+        #[case] expected: &str,
+    ) {
+        // Starting flat, SELL 2 at 5 and BUY 1 at 3 leave short 1, then a combo leg BUY 2 at 4
+        // flips to long 1 at 4 with no commission in IB's average cost. Without the leg the
+        // replay reads a pre-window long 2 and a lot opened at 3, whose 1.00 commission also
+        // gives an average cost of 4.00, so only the leg fill gives the right entry
+        let combo_leg_reports = if with_combo_legs {
+            vec![create_test_entry_fill(
+                OrderSide::Buy,
+                "2",
+                "4.00",
+                "T-3",
+                30,
+            )]
+        } else {
+            Vec::new()
+        };
+        let evidence = FillEvidence {
+            reports: vec![
+                create_test_entry_fill(OrderSide::Sell, "2", "5.00", "T-1", 10),
+                create_test_entry_fill(OrderSide::Buy, "1", "3.00", "T-2", 20),
+            ],
+            combo_leg_reports,
+            ..Default::default()
+        };
+
+        let avg_px_open = rebuild_avg_px_open(
+            create_test_entry_position_report(PositionSide::Long, "1", "4.00"),
+            &evidence,
+        );
+
+        assert_eq!(avg_px_open, Some(Decimal::from_str(expected).unwrap()));
     }
 
     #[rstest]
     fn test_fill_missing_avg_px_uses_fill_reports() {
         let instrument_id = InstrumentId::from("ESZ6.XCME");
         let account_id = AccountId::from("IB-DU001");
+
         let order_report = |venue_order_id: &str, avg_px: Option<Decimal>| {
             let mut report = OrderStatusReport::new(
                 account_id,
@@ -908,6 +1501,7 @@ mod tests {
             report.avg_px = avg_px;
             report
         };
+
         let fill = |venue_order_id: &str, trade_id: &str, qty: u64, px: &str| {
             FillReport::new(
                 account_id,
@@ -926,6 +1520,7 @@ mod tests {
                 None,
             )
         };
+
         let mut reports = vec![
             order_report("PERM-1", None),
             order_report("PERM-2", Some(Decimal::from(7))),
@@ -1158,6 +1753,7 @@ mod tests {
     #[rstest]
     fn test_parse_order_status_to_report_spread_allows_negative_avg_fill_price() {
         let instrument_provider = create_test_instrument_provider();
+
         let instrument_id = InstrumentId::new(
             Symbol::from("(1)SPY C400___((1))SPY C410"),
             Venue::from("SMART"),
@@ -1243,6 +1839,7 @@ mod tests {
             why_held: String::new(),
             market_cap_price: Some(0.0),
         };
+
         let order = Order {
             action: Action::Buy,
             total_quantity: 10.0,
@@ -1274,12 +1871,14 @@ mod tests {
     fn test_parse_order_status_to_report_recovers_completed_order_quantity() {
         let instrument_provider = create_test_instrument_provider();
         let instrument_id = create_test_instrument_id();
+
         let order_status = OrderStatus {
             status: OrderStatusKind::Filled,
             filled: 3.0,
             remaining: 0.0,
             ..Default::default()
         };
+
         let order = Order {
             total_quantity: 0.0,
             filled_quantity: 3.0,
@@ -1304,11 +1903,13 @@ mod tests {
     fn test_parse_order_status_to_report_sets_stop_trigger_type() {
         let instrument_provider = create_test_instrument_provider();
         let instrument_id = create_test_instrument_id();
+
         let order_status = OrderStatus {
             status: OrderStatusKind::Cancelled,
             remaining: 1.0,
             ..Default::default()
         };
+
         let order = Order {
             total_quantity: 1.0,
             order_type: "STP".to_string(),
@@ -1355,11 +1956,13 @@ mod tests {
     ) {
         let instrument_provider = create_test_instrument_provider();
         let instrument_id = create_test_instrument_id();
+
         let order_status = OrderStatus {
             status: OrderStatusKind::Filled,
             filled: 1.0,
             ..Default::default()
         };
+
         let order = Order {
             total_quantity: 1.0,
             order_type: "LMT".to_string(),
@@ -1398,11 +2001,13 @@ mod tests {
     ) {
         let instrument_provider = create_test_instrument_provider();
         let instrument_id = create_test_instrument_id();
+
         let order_status = OrderStatus {
             status: OrderStatusKind::Filled,
             filled: 1.0,
             ..Default::default()
         };
+
         let order = Order {
             total_quantity: 1.0,
             order_type: ib_order_type.to_string(),
@@ -1932,6 +2537,7 @@ mod tests {
                 )
             })
             .collect::<Vec<_>>();
+
         assert_eq!(
             links,
             vec![
@@ -2005,6 +2611,7 @@ mod tests {
         #[case] expected: Option<Quantity>,
     ) {
         let instrument_provider = create_test_instrument_provider();
+
         let order = Order {
             total_quantity: 5.0,
             order_type: "LMT".to_string(),
@@ -2012,6 +2619,7 @@ mod tests {
             display_size,
             ..Default::default()
         };
+
         let order_status = OrderStatus {
             status: OrderStatusKind::Submitted,
             remaining: 5.0,
@@ -2039,6 +2647,7 @@ mod tests {
         #[case] expected_ts_last: u64,
     ) {
         let instrument_provider = create_test_instrument_provider();
+
         let mut data = OrderData {
             order_id: 1,
             order: Order {
@@ -2048,6 +2657,7 @@ mod tests {
             },
             ..Default::default()
         };
+
         data.order_state.completed_time = completed_time.to_string();
 
         let report = parse_order_data_to_report(
@@ -2060,5 +2670,156 @@ mod tests {
         .unwrap();
 
         assert_eq!(report.ts_last, UnixNanos::from(expected_ts_last));
+    }
+
+    // A 4-decimal instrument whose contract IB prices in a sub-unit 100 times the currency
+    fn create_magnified_provider() -> (InteractiveBrokersInstrumentProvider, InstrumentId) {
+        let provider = create_test_instrument_provider();
+        let instrument = equity_aapl_itch();
+        let instrument_id = instrument.id();
+        provider.insert_test_instrument(InstrumentAny::from(instrument), 265_598, 100);
+        (provider, instrument_id)
+    }
+
+    fn create_test_order_status(average_fill_price: Option<f64>) -> OrderStatus {
+        OrderStatus {
+            order_id: 12345,
+            status: OrderStatusKind::Submitted,
+            filled: 3.0,
+            remaining: 7.0,
+            average_fill_price,
+            perm_id: 0,
+            parent_id: 0,
+            last_fill_price: average_fill_price,
+            client_id: 0,
+            why_held: String::new(),
+            market_cap_price: Some(0.0),
+        }
+    }
+
+    #[rstest]
+    fn test_parse_execution_to_fill_report_divides_magnified_price() {
+        let (provider, instrument_id) = create_magnified_provider();
+
+        let execution = Execution {
+            order_id: 12345,
+            client_id: 0,
+            execution_id: String::from("EXEC-001"),
+            time: String::from("20230223 00:43:36 Universal"),
+            account_number: String::new(),
+            exchange: String::new(),
+            side: ExecutionSide::Bought,
+            shares: 1.0,
+            price: 425.25,
+            perm_id: 0,
+            liquidation: 0,
+            cumulative_quantity: 1.0,
+            average_price: 425.25,
+            order_reference: String::from("ORDER-REF-001"),
+            ev_rule: String::new(),
+            ev_multiplier: None,
+            model_code: String::new(),
+            last_liquidity: Liquidity::None,
+            pending_price_revision: false,
+            submitter: String::new(),
+        };
+
+        let fill = parse_execution_to_fill_report(
+            &execution,
+            &Contract::default(),
+            1.0,
+            "USD",
+            instrument_id,
+            AccountId::from("IB-001"),
+            &provider,
+            UnixNanos::new(0),
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(fill.last_px, Price::from("4.2525"));
+    }
+
+    #[rstest]
+    fn test_parse_order_status_to_report_divides_magnified_prices() {
+        let (provider, instrument_id) = create_magnified_provider();
+
+        let order = Order {
+            action: Action::Buy,
+            total_quantity: 10.0,
+            order_type: "STP LMT".to_string(),
+            limit_price: Some(425.25),
+            aux_price: Some(430.25),
+            ..Default::default()
+        };
+
+        let report = parse_order_status_to_report(
+            &create_test_order_status(Some(425.5)),
+            Some(&order),
+            instrument_id,
+            AccountId::from("IB-001"),
+            &provider,
+            UnixNanos::new(0),
+        )
+        .unwrap();
+
+        assert_eq!(report.price, Some(Price::from("4.2525")));
+        assert_eq!(report.trigger_price, Some(Price::from("4.3025")));
+        assert_eq!(report.avg_px, Some(Decimal::from_str("4.255").unwrap()));
+    }
+
+    #[rstest]
+    #[case(400.02, "4.0002")]
+    #[case(486.75, "4.8675")]
+    #[case(117.3, "1.173")]
+    #[case(0.07, "0.0007")]
+    fn test_parse_order_status_to_report_divides_magnified_avg_px_exactly(
+        #[case] ib_avg_fill_price: f64,
+        #[case] expected: &str,
+    ) {
+        let (provider, instrument_id) = create_magnified_provider();
+
+        let report = parse_order_status_to_report(
+            &create_test_order_status(Some(ib_avg_fill_price)),
+            None,
+            instrument_id,
+            AccountId::from("IB-001"),
+            &provider,
+            UnixNanos::new(0),
+        )
+        .unwrap();
+
+        assert_eq!(report.avg_px, Some(Decimal::from_str(expected).unwrap()));
+    }
+
+    #[rstest]
+    fn test_parse_order_status_to_report_divides_magnified_trailing_prices() {
+        let (provider, instrument_id) = create_magnified_provider();
+
+        let order = Order {
+            action: Action::Sell,
+            total_quantity: 10.0,
+            order_type: "TRAIL".to_string(),
+            trail_stop_price: Some(481.25),
+            aux_price: Some(5.25),
+            ..Default::default()
+        };
+
+        let report = parse_order_status_to_report(
+            &create_test_order_status(Some(0.0)),
+            Some(&order),
+            instrument_id,
+            AccountId::from("IB-001"),
+            &provider,
+            UnixNanos::new(0),
+        )
+        .unwrap();
+
+        assert_eq!(report.trigger_price, Some(Price::from("4.8125")));
+        assert_eq!(
+            report.trailing_offset,
+            Some(Decimal::from_str("0.0525").unwrap())
+        );
+        assert_eq!(report.trailing_offset_type, Some(TrailingOffsetType::Price));
     }
 }

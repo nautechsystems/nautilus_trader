@@ -35,8 +35,8 @@ use nautilus_common::{
     messages::{
         ExecutionReport,
         execution::{
-            BatchModifyOrders, CancelAllOrders, CancelOrder, ModifyOrder, QueryAccount,
-            SubmitOrder, SubmitOrderList, TradingCommand,
+            BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder, ModifyOrder,
+            QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList, TradingCommand,
         },
     },
     msgbus::{
@@ -74,7 +74,7 @@ use nautilus_model::{
         order::spec::{
             OrderCancelRejectedSpec, OrderCanceledSpec, OrderExpiredSpec, OrderFillVoidedSpec,
             OrderFilledSpec, OrderModifyRejectedSpec, OrderPendingCancelSpec,
-            OrderPendingUpdateSpec, OrderRejectedSpec, OrderUpdatedSpec,
+            OrderPendingUpdateSpec, OrderRejectedSpec, OrderTriggeredSpec, OrderUpdatedSpec,
         },
     },
     identifiers::{
@@ -90,10 +90,10 @@ use nautilus_model::{
         builder::OrderTestBuilder,
         stubs::{OrderFilledTestBuilder, TestOrderEventStubs},
     },
-    position::Position,
+    position::{Position, PositionReplayEvent},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     stubs::{TestDefault, stub_position_long, stub_position_short},
-    types::{AccountBalance, Currency, Money, Price, Quantity},
+    types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
 use rstest::*;
 use rust_decimal::Decimal;
@@ -5686,57 +5686,240 @@ fn test_process_order_event_publishes_instrument_order_event_topic(
 }
 
 #[rstest]
-fn test_process_cancel_rejected_after_acceptance_publishes_event(
+#[case::submitted(&[], OrderStatus::Submitted, false)]
+#[case::accepted(&[OrderStatus::Accepted], OrderStatus::Accepted, false)]
+#[case::pending_submitted(&[OrderStatus::PendingCancel], OrderStatus::Submitted, false)]
+#[case::pending_accepted(&[OrderStatus::Accepted, OrderStatus::PendingCancel], OrderStatus::Accepted, false)]
+#[case::acceptance_overtakes_submitted_cancel(&[OrderStatus::PendingCancel, OrderStatus::Accepted], OrderStatus::Accepted, false)]
+#[case::acceptance_overtakes_accepted_cancel(&[OrderStatus::Accepted, OrderStatus::PendingCancel, OrderStatus::Accepted], OrderStatus::Accepted, false)]
+#[case::triggered(&[OrderStatus::Accepted, OrderStatus::Triggered], OrderStatus::Triggered, false)]
+#[case::partially_filled(&[OrderStatus::Accepted, OrderStatus::PartiallyFilled], OrderStatus::PartiallyFilled, false)]
+#[case::pending_triggered(&[OrderStatus::Accepted, OrderStatus::Triggered, OrderStatus::PendingCancel], OrderStatus::Triggered, false)]
+#[case::pending_partially_filled(&[OrderStatus::Accepted, OrderStatus::PartiallyFilled, OrderStatus::PendingCancel], OrderStatus::PartiallyFilled, false)]
+#[case::fill_overtakes_cancel(&[OrderStatus::Accepted, OrderStatus::PendingCancel, OrderStatus::PartiallyFilled], OrderStatus::PartiallyFilled, false)]
+#[case::pending_update_accepted_updated(&[OrderStatus::Accepted, OrderStatus::PendingUpdate], OrderStatus::PendingUpdate, false)]
+#[case::pending_update_accepted_rejected(&[OrderStatus::Accepted, OrderStatus::PendingUpdate], OrderStatus::PendingUpdate, true)]
+#[case::pending_update_triggered_updated(&[OrderStatus::Accepted, OrderStatus::Triggered, OrderStatus::PendingUpdate], OrderStatus::PendingUpdate, false)]
+#[case::pending_update_triggered_rejected(&[OrderStatus::Accepted, OrderStatus::Triggered, OrderStatus::PendingUpdate], OrderStatus::PendingUpdate, true)]
+#[case::pending_update_partially_filled_updated(&[OrderStatus::Accepted, OrderStatus::PartiallyFilled, OrderStatus::PendingUpdate], OrderStatus::PendingUpdate, false)]
+#[case::pending_update_partially_filled_rejected(&[OrderStatus::Accepted, OrderStatus::PartiallyFilled, OrderStatus::PendingUpdate], OrderStatus::PendingUpdate, true)]
+fn test_process_cancel_rejected_publishes_event(
     mut execution_engine: ExecutionEngine,
+    #[case] statuses: &[OrderStatus],
+    #[case] expected_status: OrderStatus,
+    #[case] modify_rejected: bool,
 ) {
     let account_id = AccountId::test_default();
     let venue_order_id = VenueOrderId::from("V-001");
-    let (instrument, order) = prepare_initialized_market_order_with_account(
+
+    let order_type = if statuses.contains(&OrderStatus::Triggered) {
+        OrderType::StopLimit
+    } else {
+        OrderType::Market
+    };
+
+    let (instrument, order) = prepare_initialized_order_with_account(
         &execution_engine,
         CashAccount::default().into(),
+        order_type,
     );
     execution_engine.process(&TestOrderEventStubs::submitted(&order, account_id));
-    execution_engine.process(&OrderEventAny::PendingCancel(build_order_pending_cancel(
-        order.trader_id(),
-        order.strategy_id(),
-        instrument.id(),
-        order.client_order_id(),
-        account_id,
-        None,
-    )));
-    execution_engine.process(&TestOrderEventStubs::accepted(
-        &order,
-        account_id,
-        venue_order_id,
-    ));
+
+    for status in statuses {
+        let cached = cached_order_or(&execution_engine, &order);
+
+        let event = match status {
+            OrderStatus::Accepted => {
+                TestOrderEventStubs::accepted(&order, account_id, venue_order_id)
+            }
+            OrderStatus::Triggered => OrderEventAny::Triggered(
+                OrderTriggeredSpec::builder()
+                    .trader_id(order.trader_id())
+                    .strategy_id(order.strategy_id())
+                    .instrument_id(instrument.id())
+                    .client_order_id(order.client_order_id())
+                    .account_id(account_id)
+                    .venue_order_id(venue_order_id)
+                    .build(),
+            ),
+            OrderStatus::PartiallyFilled => OrderEventAny::Filled(
+                OrderFilledSpec::builder()
+                    .trader_id(order.trader_id())
+                    .strategy_id(order.strategy_id())
+                    .instrument_id(instrument.id())
+                    .client_order_id(order.client_order_id())
+                    .account_id(account_id)
+                    .venue_order_id(venue_order_id)
+                    .order_side(order.order_side())
+                    .order_type(order_type)
+                    .last_qty(Quantity::from(40_000))
+                    .last_px(Price::from("1.00000"))
+                    .currency(instrument.quote_currency())
+                    .build(),
+            ),
+            OrderStatus::PendingUpdate => OrderEventAny::PendingUpdate(build_order_pending_update(
+                order.trader_id(),
+                order.strategy_id(),
+                instrument.id(),
+                order.client_order_id(),
+                account_id,
+                cached.venue_order_id(),
+            )),
+            OrderStatus::PendingCancel => OrderEventAny::PendingCancel(build_order_pending_cancel(
+                order.trader_id(),
+                order.strategy_id(),
+                instrument.id(),
+                order.client_order_id(),
+                account_id,
+                cached.venue_order_id(),
+            )),
+            _ => panic!("Unsupported setup status: {status}"),
+        };
+
+        execution_engine.process(&event);
+
+        let expected = if *status == OrderStatus::PartiallyFilled
+            && cached.status() == OrderStatus::PendingCancel
+        {
+            OrderStatus::PendingCancel
+        } else {
+            *status
+        };
+
+        assert_eq!(
+            cached_order_or(&execution_engine, &order).status(),
+            expected
+        );
+    }
+
+    let before_rejection = cached_order_or(&execution_engine, &order);
 
     let order_topic = switchboard::get_event_order_topic(order.strategy_id());
     let cancel_topic = switchboard::get_order_cancel_rejected_topic(instrument.id());
-    let received = Rc::new(RefCell::new(Vec::<OrderEventAny>::new()));
-    let handler = TypedHandler::from({
-        let received = received.clone();
-        move |event: &OrderEventAny| received.borrow_mut().push(event.clone())
+
+    let subscriptions = [order_topic, cancel_topic].map(|topic| {
+        let received = Rc::new(RefCell::new(Vec::<OrderEventAny>::new()));
+
+        let handler = TypedHandler::from({
+            let received = received.clone();
+            move |event: &OrderEventAny| received.borrow_mut().push(event.clone())
+        });
+
+        msgbus::subscribe_order_events(topic.into(), handler.clone(), None);
+        (topic, received, handler)
     });
-    msgbus::subscribe_order_events(order_topic.into(), handler.clone(), None);
-    msgbus::subscribe_order_events(cancel_topic.into(), handler.clone(), None);
+
     let event = OrderEventAny::CancelRejected(build_order_cancel_rejected(
         order.trader_id(),
         order.strategy_id(),
         instrument.id(),
         order.client_order_id(),
         account_id,
-        Some(venue_order_id),
+        before_rejection.venue_order_id(),
     ));
 
     execution_engine.process(&event);
-    msgbus::unsubscribe_order_events(order_topic.into(), &handler);
-    msgbus::unsubscribe_order_events(cancel_topic.into(), &handler);
+
+    for (topic, received, handler) in subscriptions {
+        msgbus::unsubscribe_order_events(topic.into(), &handler);
+        assert_eq!(received.borrow().as_slice(), std::slice::from_ref(&event));
+    }
 
     let cached = cached_order_or(&execution_engine, &order);
-    assert_eq!(cached.status(), OrderStatus::Accepted);
-    assert_eq!(cached.venue_order_id(), Some(venue_order_id));
+    assert_eq!(cached.status(), expected_status);
+    assert_eq!(cached.previous_status(), before_rejection.previous_status());
+    assert_eq!(cached.quantity(), before_rejection.quantity());
+    assert_eq!(cached.filled_qty(), before_rejection.filled_qty());
+    assert_eq!(cached.leaves_qty(), before_rejection.leaves_qty());
+    assert_eq!(cached.venue_order_id(), before_rejection.venue_order_id());
+    assert_eq!(cached.events().len(), before_rejection.events().len() + 1);
     assert_eq!(cached.last_event(), &event);
-    assert_eq!(received.borrow().as_slice(), &[event.clone(), event]);
+
+    if expected_status == OrderStatus::Submitted {
+        execution_engine.process(&TestOrderEventStubs::accepted(
+            &order,
+            account_id,
+            venue_order_id,
+        ));
+        assert_eq!(
+            cached_order_or(&execution_engine, &order).status(),
+            OrderStatus::Accepted
+        );
+    }
+
+    if expected_status == OrderStatus::PendingUpdate {
+        let resolution = if modify_rejected {
+            OrderEventAny::ModifyRejected(build_order_modify_rejected(
+                order.trader_id(),
+                order.strategy_id(),
+                instrument.id(),
+                order.client_order_id(),
+                account_id,
+                Some(venue_order_id),
+            ))
+        } else {
+            OrderEventAny::Updated(build_order_updated(
+                order.trader_id(),
+                order.strategy_id(),
+                instrument.id(),
+                order.client_order_id(),
+                Quantity::from(80_000),
+                Some(venue_order_id),
+                Some(account_id),
+                order.price(),
+                order.trigger_price(),
+                None,
+                false,
+            ))
+        };
+
+        execution_engine.process(&resolution);
+
+        let resolved = cached_order_or(&execution_engine, &order);
+        assert_eq!(
+            resolved.status(),
+            before_rejection.previous_status().unwrap()
+        );
+        assert_eq!(
+            resolved.previous_status(),
+            before_rejection.previous_status()
+        );
+        assert_eq!(
+            resolved.quantity(),
+            if modify_rejected {
+                before_rejection.quantity()
+            } else {
+                Quantity::from(80_000)
+            }
+        );
+        assert_eq!(resolved.filled_qty(), before_rejection.filled_qty());
+        assert_eq!(
+            resolved.leaves_qty(),
+            resolved.quantity() - resolved.filled_qty()
+        );
+        assert_eq!(resolved.venue_order_id(), Some(venue_order_id));
+    }
+
+    let cancellable = cached_order_or(&execution_engine, &order);
+    assert_eq!(cancellable.venue_order_id(), Some(venue_order_id));
+    execution_engine.process(&OrderEventAny::PendingCancel(build_order_pending_cancel(
+        order.trader_id(),
+        order.strategy_id(),
+        instrument.id(),
+        order.client_order_id(),
+        account_id,
+        Some(venue_order_id),
+    )));
+    execution_engine.process(&TestOrderEventStubs::canceled(
+        &cancellable,
+        account_id,
+        Some(venue_order_id),
+    ));
+
+    assert_eq!(
+        cached_order_or(&execution_engine, &order).status(),
+        OrderStatus::Canceled,
+    );
 }
 
 fn prepare_accepted_order(execution_engine: &mut ExecutionEngine) -> (InstrumentAny, OrderAny) {
@@ -5746,6 +5929,14 @@ fn prepare_accepted_order(execution_engine: &mut ExecutionEngine) -> (Instrument
 fn prepare_initialized_market_order_with_account(
     execution_engine: &ExecutionEngine,
     account: AccountAny,
+) -> (InstrumentAny, OrderAny) {
+    prepare_initialized_order_with_account(execution_engine, account, OrderType::Market)
+}
+
+fn prepare_initialized_order_with_account(
+    execution_engine: &ExecutionEngine,
+    account: AccountAny,
+    order_type: OrderType,
 ) -> (InstrumentAny, OrderAny) {
     let trader_id = TraderId::test_default();
     let strategy_id = StrategyId::test_default();
@@ -5763,13 +5954,16 @@ fn prepare_initialized_market_order_with_account(
         .add_account(account)
         .unwrap();
 
-    let order = OrderTestBuilder::new(OrderType::Market)
+    let order = OrderTestBuilder::new(order_type)
         .trader_id(trader_id)
         .strategy_id(strategy_id)
         .instrument_id(instrument.id())
         .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
         .side(OrderSide::Buy)
         .quantity(Quantity::from(100_000))
+        .price(Price::from("1.00000"))
+        .trigger_price(Price::from("1.00000"))
+        .trigger_type(TriggerType::LastPrice)
         .build();
 
     execution_engine
@@ -8327,6 +8521,305 @@ fn test_handle_order_fill_event_skips_duplicate_fill(mut execution_engine: Execu
         cache.positions_total_count(None, None, None, None, None),
         position_count
     );
+}
+
+#[rstest]
+fn test_fill_price_restatement_keeps_quantity_and_updates_averages(
+    mut execution_engine: ExecutionEngine,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    let portfolio_events = Rc::new(RefCell::new(Vec::<OrderEventAny>::new()));
+
+    let handler = TypedIntoHandler::from({
+        let portfolio_events = portfolio_events.clone();
+        move |event: OrderEventAny| {
+            portfolio_events.borrow_mut().push(event);
+        }
+    });
+
+    msgbus::register_order_event_endpoint(MessagingSwitchboard::portfolio_update_order(), handler);
+
+    let trader_id = TraderId::test_default();
+    let strategy_id = StrategyId::test_default();
+    let instrument = audusd_sim();
+    let trade_id = TradeId::new("E-19700101-000000-001-001-1");
+    let original_px = Price::from("12");
+    let restated_px = Price::from("9.47");
+
+    let stub_client = StubExecutionClient::new(
+        ClientId::from("STUB"),
+        AccountId::test_default(),
+        Venue::test_default(),
+        OmsType::Netting,
+        None,
+    );
+    execution_engine
+        .register_client(Box::new(stub_client))
+        .unwrap();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_account(CashAccount::default().into())
+        .unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id)
+        .quantity(Quantity::from(2))
+        .build();
+    let client_order_id = order.client_order_id();
+    let order_side = order.order_side();
+    let order_type = order.order_type();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(ClientId::from("STUB")), true)
+        .unwrap();
+    execution_engine.process(&TestOrderEventStubs::submitted(
+        &order,
+        AccountId::test_default(),
+    ));
+
+    let fill = OrderEventAny::Filled(build_order_filled(
+        order.trader_id(),
+        order.strategy_id(),
+        instrument.id(),
+        client_order_id,
+        VenueOrderId::from("V-001"),
+        AccountId::test_default(),
+        trade_id,
+        order.order_side(),
+        order.order_type(),
+        Quantity::from(2),
+        original_px,
+        instrument.quote_currency(),
+        LiquiditySide::Maker,
+        None,
+        None,
+    ));
+    execution_engine.process(&fill);
+
+    let restatement = OrderEventAny::Filled(
+        OrderFilledSpec::builder()
+            .trader_id(order.trader_id())
+            .strategy_id(order.strategy_id())
+            .instrument_id(instrument.id())
+            .client_order_id(client_order_id)
+            .venue_order_id(VenueOrderId::from("V-001"))
+            .account_id(AccountId::test_default())
+            .trade_id(trade_id)
+            .order_side(order.order_side())
+            .order_type(order.order_type())
+            .last_qty(Quantity::from(2))
+            .last_px(restated_px)
+            .currency(instrument.quote_currency())
+            .liquidity_side(LiquiditySide::Maker)
+            .event_id(UUID4::new())
+            .build(),
+    );
+    execution_engine.process(&restatement);
+
+    {
+        let cache = execution_engine.cache().borrow();
+        let order = cache.order(&client_order_id).unwrap();
+        let position = cache.position(&order.position_id().unwrap()).unwrap();
+
+        let stored_px = order.events().iter().find_map(|event| match event {
+            OrderEventAny::Filled(fill) if fill.last_px == original_px => Some(fill.last_px),
+            _ => None,
+        });
+
+        assert_eq!(order.status(), OrderStatus::Filled);
+        assert_eq!(order.filled_qty().as_decimal(), Decimal::from(2));
+        assert!(order.leaves_qty().is_zero());
+        assert_eq!(order.avg_px(), Some(dec!(9.47)));
+        assert_eq!(stored_px, Some(original_px));
+        assert_eq!(position.quantity.as_decimal(), Decimal::from(2));
+        assert_eq!(position.avg_px_open, restated_px.as_f64());
+        let portfolio_fills = portfolio_events
+            .borrow()
+            .iter()
+            .filter(|event| matches!(event, OrderEventAny::Filled(_)))
+            .count();
+        assert_eq!(portfolio_fills, 1);
+    }
+
+    execution_engine.process(&OrderEventAny::Filled(
+        OrderFilledSpec::builder()
+            .trader_id(trader_id)
+            .strategy_id(strategy_id)
+            .instrument_id(instrument.id())
+            .client_order_id(client_order_id)
+            .venue_order_id(VenueOrderId::from("V-001"))
+            .account_id(AccountId::test_default())
+            .trade_id(trade_id)
+            .order_side(order_side)
+            .order_type(order_type)
+            .last_qty(Quantity::from(2))
+            .last_px(original_px)
+            .currency(instrument.quote_currency())
+            .liquidity_side(LiquiditySide::Maker)
+            .event_id(UUID4::new())
+            .build(),
+    ));
+
+    let cache = execution_engine.cache().borrow();
+    let order = cache.order(&client_order_id).unwrap();
+    let position = cache.position(&order.position_id().unwrap()).unwrap();
+    assert_eq!(order.filled_qty().as_decimal(), Decimal::from(2));
+    assert_eq!(order.avg_px(), Some(dec!(12)));
+    assert_eq!(position.quantity.as_decimal(), Decimal::from(2));
+    assert_eq!(position.avg_px_open, original_px.as_f64());
+}
+
+#[rstest]
+fn test_fill_price_restatement_does_not_flip_netting_position(
+    mut execution_engine: ExecutionEngine,
+) {
+    let trader_id = TraderId::test_default();
+    let strategy_id = StrategyId::test_default();
+    let instrument = audusd_sim();
+    let buy_trade_id = TradeId::new("E-19700101-000000-001-001-1");
+    let sell_trade_id = TradeId::new("E-19700101-000000-001-002-1");
+
+    let stub_client = StubExecutionClient::new(
+        ClientId::from("STUB"),
+        AccountId::test_default(),
+        Venue::test_default(),
+        OmsType::Netting,
+        None,
+    );
+    execution_engine
+        .register_client(Box::new(stub_client))
+        .unwrap();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_account(CashAccount::default().into())
+        .unwrap();
+
+    let buy = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id)
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-1"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(2))
+        .build();
+    let sell = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id)
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-002-1"))
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from(3))
+        .build();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(buy.clone(), None, Some(ClientId::from("STUB")), true)
+        .unwrap();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(sell.clone(), None, Some(ClientId::from("STUB")), true)
+        .unwrap();
+    execution_engine.process(&TestOrderEventStubs::submitted(
+        &buy,
+        AccountId::test_default(),
+    ));
+    execution_engine.process(&TestOrderEventStubs::submitted(
+        &sell,
+        AccountId::test_default(),
+    ));
+
+    let buy_fill = OrderEventAny::Filled(build_order_filled(
+        buy.trader_id(),
+        buy.strategy_id(),
+        instrument.id(),
+        buy.client_order_id(),
+        VenueOrderId::from("V-001"),
+        AccountId::test_default(),
+        buy_trade_id,
+        OrderSide::Buy,
+        buy.order_type(),
+        Quantity::from(2),
+        Price::from("12"),
+        instrument.quote_currency(),
+        LiquiditySide::Maker,
+        None,
+        None,
+    ));
+    execution_engine.process(&buy_fill);
+
+    let sell_fill = OrderEventAny::Filled(build_order_filled(
+        sell.trader_id(),
+        sell.strategy_id(),
+        instrument.id(),
+        sell.client_order_id(),
+        VenueOrderId::from("V-002"),
+        AccountId::test_default(),
+        sell_trade_id,
+        OrderSide::Sell,
+        sell.order_type(),
+        Quantity::from(3),
+        Price::from("10"),
+        instrument.quote_currency(),
+        LiquiditySide::Maker,
+        None,
+        None,
+    ));
+    execution_engine.process(&sell_fill);
+
+    let position_id = {
+        let cache = execution_engine.cache().borrow();
+        let position_id = cache.order(&buy.client_order_id()).unwrap().position_id();
+        let position = cache.position(&position_id.unwrap()).unwrap();
+        assert_eq!(position.side, PositionSide::Short);
+        assert_eq!(position.quantity.as_decimal(), Decimal::from(1));
+        position.id
+    };
+
+    let restatement = OrderEventAny::Filled(
+        OrderFilledSpec::builder()
+            .trader_id(buy.trader_id())
+            .strategy_id(buy.strategy_id())
+            .instrument_id(instrument.id())
+            .client_order_id(buy.client_order_id())
+            .venue_order_id(VenueOrderId::from("V-001"))
+            .account_id(AccountId::test_default())
+            .trade_id(buy_trade_id)
+            .order_side(OrderSide::Buy)
+            .order_type(buy.order_type())
+            .last_qty(Quantity::from(2))
+            .last_px(Price::from("10.2"))
+            .currency(instrument.quote_currency())
+            .liquidity_side(LiquiditySide::Maker)
+            .event_id(UUID4::new())
+            .build(),
+    );
+    execution_engine.process(&restatement);
+
+    let cache = execution_engine.cache().borrow();
+    let position = cache.position(&position_id).unwrap();
+    let buy_order = cache.order(&buy.client_order_id()).unwrap();
+
+    assert_eq!(position.side, PositionSide::Short);
+    assert_eq!(position.quantity.as_decimal(), Decimal::from(1));
+    assert_eq!(position.avg_px_open, Price::from("10").as_f64());
+    assert_eq!(buy_order.filled_qty().as_decimal(), Decimal::from(2));
+    assert_eq!(buy_order.avg_px(), Some(dec!(10.2)));
 }
 
 #[rstest]
@@ -16136,9 +16629,11 @@ fn test_hedging_flip_remainders_require_matching_orders(
     #[case] expected_filled_qty: u64,
     #[case] expected_position_qty: u64,
     #[case] expected_status: OrderStatus,
+    #[values(false, true)] rebuild_index: bool,
 ) {
     let trader_id = TraderId::test_default();
     let strategy_id = StrategyId::test_default();
+    execution_engine.register_oms_type(strategy_id, OmsType::Hedging);
     let instrument = audusd_sim();
 
     let stub_client = StubExecutionClient::new(
@@ -16194,7 +16689,7 @@ fn test_hedging_flip_remainders_require_matching_orders(
         VenueOrderId::from("V-1"),
     ));
     execution_engine.process(&TestOrderEventStubs::filled(
-        &opening_order,
+        &cached_order_or(&execution_engine, &opening_order),
         &instrument.clone().into(),
         Some(TradeId::new("T-OPEN")),
         Some(position_id),
@@ -16235,7 +16730,7 @@ fn test_hedging_flip_remainders_require_matching_orders(
         VenueOrderId::from("V-FLIP"),
     ));
     execution_engine.process(&TestOrderEventStubs::filled(
-        &reversal_order,
+        &cached_order_or(&execution_engine, &reversal_order),
         &instrument.clone().into(),
         Some(TradeId::new("T-FLIP")),
         Some(position_id),
@@ -16254,16 +16749,39 @@ fn test_hedging_flip_remainders_require_matching_orders(
             .position_id(&reversal_order.client_order_id())
             .unwrap();
 
+        if rebuild_index {
+            cache.clear_index();
+            cache.build_index();
+            assert_eq!(
+                cache.position_id(&reversal_order.client_order_id()),
+                Some(&flipped_position_id)
+            );
+        }
+
         if ClientOrderId::from(opening_order_id) != reversal_order.client_order_id() {
-            cache
-                .position_mut(&flipped_position_id)
-                .unwrap()
-                .opening_order_id = ClientOrderId::from(opening_order_id);
+            let mut position = cache.position_mut(&flipped_position_id).unwrap();
+            position.opening_order_id = ClientOrderId::from(opening_order_id);
+
+            let PositionReplayEvent::Filled(fill) = position.replay_events.last_mut().unwrap()
+            else {
+                unreachable!()
+            };
+
+            assert_eq!(fill.trade_id, TradeId::from("T-FLIP"));
+            fill.client_order_id = ClientOrderId::from(opening_order_id);
         }
 
         if ClientOrderId::from(closing_order_id) != reversal_order.client_order_id() {
-            cache.position_mut(&position_id).unwrap().closing_order_id =
-                Some(ClientOrderId::from(closing_order_id));
+            let mut position = cache.position_mut(&position_id).unwrap();
+            position.closing_order_id = Some(ClientOrderId::from(closing_order_id));
+
+            let PositionReplayEvent::Filled(fill) = position.replay_events.last_mut().unwrap()
+            else {
+                unreachable!()
+            };
+
+            assert_eq!(fill.trade_id, TradeId::from("T-FLIP"));
+            fill.client_order_id = ClientOrderId::from(closing_order_id);
         }
         flipped_position_id
     };
@@ -16275,6 +16793,17 @@ fn test_hedging_flip_remainders_require_matching_orders(
     let second_remainder_trade_id = TradeId::new("T-REMAINDER-2");
 
     for trade_id in [first_remainder_trade_id, second_remainder_trade_id] {
+        if expected_status == OrderStatus::Filled {
+            assert_eq!(
+                execution_engine
+                    .cache()
+                    .borrow()
+                    .hedging_flip_position_ids(reversal_order.client_order_id())
+                    .unwrap(),
+                Some([position_id, flipped_position_id]),
+            );
+        }
+
         let partially_filled_order = cached_order_or(&execution_engine, &reversal_order);
         execution_engine.process(&TestOrderEventStubs::filled(
             &partially_filled_order,
@@ -16336,6 +16865,7 @@ fn test_hedging_flip_remainder_reopens_a_closed_flipped_position(
 ) {
     let trader_id = TraderId::test_default();
     let strategy_id = StrategyId::test_default();
+    execution_engine.register_oms_type(strategy_id, OmsType::Hedging);
     let instrument = audusd_sim();
 
     let stub_client = StubExecutionClient::new(
@@ -16391,7 +16921,7 @@ fn test_hedging_flip_remainder_reopens_a_closed_flipped_position(
         VenueOrderId::from("V-1"),
     ));
     execution_engine.process(&TestOrderEventStubs::filled(
-        &opening_order,
+        &cached_order_or(&execution_engine, &opening_order),
         &instrument.clone().into(),
         Some(TradeId::new("T-OPEN")),
         Some(position_id),
@@ -16432,7 +16962,7 @@ fn test_hedging_flip_remainder_reopens_a_closed_flipped_position(
         VenueOrderId::from("V-FLIP"),
     ));
     execution_engine.process(&TestOrderEventStubs::filled(
-        &reversal_order,
+        &cached_order_or(&execution_engine, &reversal_order),
         &instrument.clone().into(),
         Some(TradeId::new("T-FLIP")),
         Some(position_id),
@@ -16482,7 +17012,7 @@ fn test_hedging_flip_remainder_reopens_a_closed_flipped_position(
         VenueOrderId::from("V-CLOSE"),
     ));
     execution_engine.process(&TestOrderEventStubs::filled(
-        &closing_order,
+        &cached_order_or(&execution_engine, &closing_order),
         &instrument.clone().into(),
         Some(TradeId::new("T-CLOSE")),
         Some(flipped_position_id),
@@ -16498,11 +17028,39 @@ fn test_hedging_flip_remainder_reopens_a_closed_flipped_position(
     let partially_filled_order = cached_order_or(&execution_engine, &reversal_order);
     execution_engine.process(&TestOrderEventStubs::filled(
         &partially_filled_order,
-        &instrument.into(),
+        &instrument.clone().into(),
         Some(remainder_trade_id),
         Some(position_id),
         Some(Price::from("1.00006")),
-        Some(Quantity::from(50_000)),
+        Some(Quantity::from(25_000)),
+        None,
+        Some(Money::from("0 USD")),
+        None,
+        Some(AccountId::test_default()),
+    ));
+    {
+        let mut cache = execution_engine.cache().borrow_mut();
+        cache.clear_index();
+        cache.build_index();
+    }
+
+    assert_eq!(
+        execution_engine
+            .cache()
+            .borrow()
+            .hedging_flip_position_ids(reversal_order.client_order_id())
+            .unwrap(),
+        Some([position_id, flipped_position_id]),
+    );
+    let second_remainder_trade_id = TradeId::new("T-REMAINDER-2");
+    let partially_filled_order = cached_order_or(&execution_engine, &reversal_order);
+    execution_engine.process(&TestOrderEventStubs::filled(
+        &partially_filled_order,
+        &instrument.into(),
+        Some(second_remainder_trade_id),
+        Some(position_id),
+        Some(Price::from("1.00006")),
+        Some(Quantity::from(25_000)),
         None,
         Some(Money::from("0 USD")),
         None,
@@ -16520,6 +17078,8 @@ fn test_hedging_flip_remainder_reopens_a_closed_flipped_position(
     assert_eq!(reopened.side, PositionSide::Short);
     assert_eq!(reopened.quantity, Quantity::from(50_000));
     assert!(reopened.trade_ids.contains(&remainder_trade_id));
+    assert!(reopened.trade_ids.contains(&second_remainder_trade_id));
+    assert!(reopened.requires_replay_state());
     assert!(cache.position(&position_id).unwrap().is_closed());
 
     // The closed flipped cycle is archived before its ID is reused: short 50,000 opened at
@@ -16555,6 +17115,647 @@ fn setup_netting_snapshot_engine(
         .borrow_mut()
         .add_account(CashAccount::default().into())
         .unwrap();
+}
+
+#[rstest]
+#[case::opening_fragment((25_000, false, 0, 25_000, false, false))]
+#[case::entire_opening_fragment((50_000, false, 0, 0, false, false))]
+#[case::closing_fragment((75_000, false, 25_000, 0, false, false))]
+#[case::entire_split((150_000, false, 100_000, 0, false, false))]
+#[case::ambiguous_partial((75_000, true, 25_000, 50_000, true, false))]
+#[case::ambiguous_full((150_000, true, 100_000, 50_000, true, false))]
+#[case::ambiguous_missing_source((150_000, true, 100_000, 50_000, true, true))]
+fn test_hedging_flip_void_recomputes_route(
+    mut execution_engine: ExecutionEngine,
+    #[case] correction: (u64, bool, u64, u64, bool, bool),
+    #[values("source", "destination", "absent")] supplied_position: &str,
+    #[values(false, true)] rebuild_index: bool,
+) {
+    let (voided_qty, add_remainders, source_qty, destination_qty, ambiguous, source_proof_missing) =
+        correction;
+    let (source_id, destination_id) = run_hedging_flip(&mut execution_engine);
+    let order_id = ClientOrderId::from("O-DURABLE-FLIP");
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+
+    if add_remainders {
+        for trade_id in ["T-DURABLE-REMAINDER-1", "T-DURABLE-REMAINDER-2"] {
+            let order = execution_engine
+                .cache()
+                .borrow()
+                .order(&order_id)
+                .unwrap()
+                .clone();
+            execution_engine.process(&TestOrderEventStubs::filled(
+                &order,
+                &instrument,
+                Some(TradeId::from(trade_id)),
+                Some(source_id),
+                Some(Price::from("1.00010")),
+                Some(Quantity::from(25_000)),
+                None,
+                Some(Money::from("0.25 USD")),
+                None,
+                Some(AccountId::test_default()),
+            ));
+        }
+    }
+
+    let mut correction = build_fill_void_from_cached_fill(
+        &execution_engine,
+        "O-DURABLE-FLIP",
+        "T-DURABLE-FLIP",
+        Quantity::from(voided_qty),
+    );
+
+    let OrderEventAny::FillVoided(voided) = &mut correction else {
+        unreachable!()
+    };
+
+    voided.is_reopened = true;
+    voided.commission_voided = Some(
+        Money::from_decimal(Decimal::from(voided_qty) / dec!(100_000), Currency::USD()).unwrap(),
+    );
+    execution_engine.process(&correction);
+
+    let (order_before, source_before, destination_before) = {
+        let mut cache = execution_engine.cache().borrow_mut();
+        if source_proof_missing {
+            cache.position_mut(&source_id).unwrap().replay_events.retain(|event| {
+                !matches!(event, PositionReplayEvent::Filled(fill) if fill.client_order_id == order_id && fill.trade_id == TradeId::from("T-DURABLE-FLIP"))
+            });
+        }
+
+        if rebuild_index {
+            cache.clear_index();
+            cache.build_index();
+        }
+
+        let source = cache.position(&source_id).unwrap().cloned();
+        let destination = cache.position(&destination_id).unwrap().cloned();
+        let order = cache.order(&order_id).unwrap().clone();
+        assert_eq!(source.quantity, Quantity::from(source_qty));
+        assert_eq!(destination.quantity, Quantity::from(destination_qty));
+        assert_eq!(order.voided_qty(), Quantity::from(voided_qty));
+        assert_eq!(
+            order.filled_qty(),
+            Quantity::from(if add_remainders { 200_000 } else { 150_000 } - voided_qty)
+        );
+        assert_eq!(
+            cache.position_id(&order_id).copied(),
+            if ambiguous {
+                None
+            } else if source_qty != 0 {
+                Some(source_id)
+            } else {
+                Some(destination_id)
+            }
+        );
+        (order, source, destination)
+    };
+
+    let supplied_id = match supplied_position {
+        "source" => Some(source_id),
+        "destination" => Some(destination_id),
+        _ => None,
+    };
+
+    let mut fill_after_void = TestOrderEventStubs::filled(
+        &order_before,
+        &instrument,
+        Some(TradeId::from("T-DURABLE-AFTER-VOID")),
+        supplied_id,
+        Some(Price::from("1.00020")),
+        Some(Quantity::from(10_000)),
+        None,
+        Some(Money::from("0.10 USD")),
+        None,
+        Some(AccountId::test_default()),
+    );
+
+    let OrderEventAny::Filled(fill) = &mut fill_after_void else {
+        unreachable!()
+    };
+
+    fill.position_id = supplied_id;
+    execution_engine.process(&fill_after_void);
+
+    let cache = execution_engine.cache().borrow();
+    let order_after = cache.order(&order_id).unwrap();
+    let source_after = cache.position(&source_id).unwrap();
+    let destination_after = cache.position(&destination_id).unwrap();
+
+    if ambiguous {
+        assert_eq!(
+            serde_json::to_value(&*order_after).unwrap(),
+            serde_json::to_value(&order_before).unwrap()
+        );
+        assert_eq!(
+            serde_json::to_value(&*source_after).unwrap(),
+            serde_json::to_value(&source_before).unwrap()
+        );
+        assert_eq!(
+            serde_json::to_value(&*destination_after).unwrap(),
+            serde_json::to_value(&destination_before).unwrap()
+        );
+    } else {
+        assert_eq!(
+            order_after.filled_qty(),
+            order_before.filled_qty() + Quantity::from(10_000)
+        );
+        assert_eq!(
+            source_after.quantity,
+            Quantity::from(source_qty.saturating_sub(10_000))
+        );
+        assert_eq!(
+            destination_after.quantity,
+            Quantity::from(destination_qty + if source_qty == 0 { 10_000 } else { 0 })
+        );
+    }
+}
+
+#[rstest]
+#[case::partial_closing(75_000, 25_000)]
+#[case::entire_split(150_000, 100_000)]
+fn test_hedging_flip_remainders_after_void_and_second_flip(
+    mut execution_engine: ExecutionEngine,
+    #[case] voided_qty: u64,
+    #[case] restored_qty: u64,
+    #[values("source", "destination", "absent")] supplied_position: &str,
+    #[values(false, true)] rebuild_index: bool,
+) {
+    let (source_id, destination_id) = run_hedging_flip(&mut execution_engine);
+    let order_id = ClientOrderId::from("O-DURABLE-FLIP");
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+    let mut correction = build_fill_void_from_cached_fill(
+        &execution_engine,
+        "O-DURABLE-FLIP",
+        "T-DURABLE-FLIP",
+        Quantity::from(voided_qty),
+    );
+
+    let OrderEventAny::FillVoided(voided) = &mut correction else {
+        unreachable!()
+    };
+
+    voided.is_reopened = true;
+    voided.commission_voided = Some(
+        Money::from_decimal(Decimal::from(voided_qty) / dec!(100_000), Currency::USD()).unwrap(),
+    );
+    execution_engine.process(&correction);
+
+    let order = execution_engine
+        .cache()
+        .borrow()
+        .order(&order_id)
+        .unwrap()
+        .clone();
+    execution_engine.process(&TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::from("T-DURABLE-SECOND-FLIP")),
+        Some(source_id),
+        Some(Price::from("1.00020")),
+        Some(Quantity::from(restored_qty + 25_000)),
+        None,
+        Some(
+            Money::from_decimal(
+                Decimal::from(restored_qty + 25_000) / dec!(100_000),
+                Currency::USD(),
+            )
+            .unwrap(),
+        ),
+        None,
+        Some(AccountId::test_default()),
+    ));
+
+    let current_id = *execution_engine
+        .cache()
+        .borrow()
+        .position_id(&order_id)
+        .unwrap();
+
+    if rebuild_index {
+        let mut cache = execution_engine.cache().borrow_mut();
+        cache.clear_index();
+        cache.build_index();
+    }
+
+    let order = execution_engine
+        .cache()
+        .borrow()
+        .order(&order_id)
+        .unwrap()
+        .clone();
+
+    let supplied_id = match supplied_position {
+        "source" => Some(source_id),
+        "destination" => Some(current_id),
+        _ => None,
+    };
+
+    let mut remainder = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::from("T-DURABLE-SECOND-REMAINDER")),
+        supplied_id,
+        Some(Price::from("1.00030")),
+        Some(Quantity::from(25_000)),
+        None,
+        Some(Money::from("0.25 USD")),
+        None,
+        Some(AccountId::test_default()),
+    );
+
+    let OrderEventAny::Filled(fill) = &mut remainder else {
+        unreachable!()
+    };
+
+    fill.position_id = supplied_id;
+    execution_engine.process(&remainder);
+
+    let cache = execution_engine.cache().borrow();
+    let current = cache.position(&current_id).unwrap();
+    let order = cache.order(&order_id).unwrap();
+    assert_ne!(current_id, source_id);
+    assert_ne!(current_id, destination_id);
+    assert_eq!(order.filled_qty(), Quantity::from(150_000));
+    assert_eq!(order.voided_qty(), Quantity::from(voided_qty));
+    assert_eq!(current.side, PositionSide::Short);
+    assert_eq!(current.quantity, Quantity::from(50_000));
+    assert_eq!(current.events.len(), 2);
+    assert_eq!(current.events[1].position_id, Some(current_id));
+    assert_eq!(
+        current.events[1].trade_id,
+        TradeId::from("T-DURABLE-SECOND-REMAINDER")
+    );
+    assert_eq!(current.events[1].last_qty, Quantity::from(25_000));
+    assert_eq!(current.events[1].commission, Some(Money::from("0.25 USD")));
+    assert!(cache.position(&source_id).unwrap().is_closed());
+    assert_eq!(
+        cache.position(&destination_id).unwrap().quantity,
+        Quantity::from(0)
+    );
+    assert_eq!(cache.position_id(&order_id), Some(&current_id));
+    assert_eq!(
+        cache.hedging_flip_position_ids(order_id).unwrap(),
+        Some([source_id, current_id])
+    );
+}
+
+#[rstest]
+fn test_hedging_flip_rejects_uncorrected_second_split(mut execution_engine: ExecutionEngine) {
+    let (source_id, destination_id) = run_hedging_flip(&mut execution_engine);
+    let order_id = ClientOrderId::from("O-DURABLE-FLIP");
+    let instrument = audusd_sim();
+
+    for (action, quantity) in [("CLOSE", 50_000), ("REOPEN", 10_000)] {
+        process_filled_order(
+            &mut execution_engine,
+            TraderId::test_default(),
+            StrategyId::test_default(),
+            &instrument,
+            &format!("O-SECOND-{action}"),
+            &format!("V-SECOND-{action}"),
+            &format!("T-SECOND-{action}"),
+            OrderSide::Buy,
+            quantity,
+            destination_id,
+        );
+    }
+
+    let order = execution_engine
+        .cache()
+        .borrow()
+        .order(&order_id)
+        .unwrap()
+        .clone();
+    execution_engine.process(&TestOrderEventStubs::filled(
+        &order,
+        &instrument.clone().into(),
+        Some(TradeId::from("T-UNCORRECTED-SECOND-FLIP")),
+        Some(destination_id),
+        Some(Price::from("1.00020")),
+        Some(Quantity::from(25_000)),
+        None,
+        Some(Money::from("0.25 USD")),
+        None,
+        Some(AccountId::test_default()),
+    ));
+
+    let cache = execution_engine.cache().borrow();
+    let current_id = *cache.position_id(&order_id).unwrap();
+    let order_before = cache.order(&order_id).unwrap().clone();
+    let position_ids = [source_id, destination_id, current_id];
+    let positions_before =
+        position_ids.map(|id| serde_json::to_value(&*cache.position(&id).unwrap()).unwrap());
+    assert_ne!(current_id, source_id);
+    assert_ne!(current_id, destination_id);
+    assert_eq!(order_before.filled_qty(), Quantity::from(175_000));
+    assert_eq!(order_before.voided_qty(), Quantity::from(0));
+    assert_eq!(
+        cache.position(&current_id).unwrap().quantity,
+        Quantity::from(15_000)
+    );
+    assert!(
+        cache
+            .hedging_flip_position_ids(order_id)
+            .unwrap_err()
+            .to_string()
+            .contains("ambiguous virtual flip history")
+    );
+    drop(cache);
+
+    execution_engine.process(&TestOrderEventStubs::filled(
+        &order_before,
+        &instrument.into(),
+        Some(TradeId::from("T-UNCORRECTED-SECOND-REMAINDER")),
+        Some(current_id),
+        Some(Price::from("1.00030")),
+        Some(Quantity::from(25_000)),
+        None,
+        Some(Money::from("0.25 USD")),
+        None,
+        Some(AccountId::test_default()),
+    ));
+
+    let cache = execution_engine.cache().borrow();
+    let positions_after =
+        position_ids.map(|id| serde_json::to_value(&*cache.position(&id).unwrap()).unwrap());
+    assert_eq!(
+        serde_json::to_value(&*cache.order(&order_id).unwrap()).unwrap(),
+        serde_json::to_value(&order_before).unwrap()
+    );
+    assert_eq!(positions_after, positions_before);
+    assert_eq!(cache.position_id(&order_id), Some(&current_id));
+}
+
+#[rstest]
+#[case::missing("missing", "missing virtual flip fragment")]
+#[case::unrelated("unrelated", "missing virtual flip fragment")]
+#[case::duplicate("duplicate", "ambiguous virtual flip fragments")]
+fn test_hedging_flip_rejects_unproven_causation(
+    mut execution_engine: ExecutionEngine,
+    #[case] causation: &str,
+    #[case] expected_error: &str,
+    #[values("source", "destination", "absent", "unrelated")] supplied_position: &str,
+) {
+    let (source_id, destination_id) = run_hedging_flip(&mut execution_engine);
+    let order_id = ClientOrderId::from("O-DURABLE-FLIP");
+    {
+        let mut cache = execution_engine.cache().borrow_mut();
+
+        let PositionReplayEvent::Filled(mut opening) =
+            cache.position(&destination_id).unwrap().replay_events[0].clone()
+        else {
+            unreachable!()
+        };
+
+        if causation == "duplicate" {
+            opening.position_id = Some(PositionId::from("P-DUPLICATE"));
+            opening.event_id = UUID4::new();
+            let duplicate = Position::new(&audusd_sim().into(), opening);
+            cache.add_position(&duplicate, OmsType::Hedging).unwrap();
+        } else {
+            opening.causation_id = if causation == "missing" {
+                None
+            } else {
+                Some(UUID4::new())
+            };
+
+            cache.position_mut(&destination_id).unwrap().replay_events[0] =
+                PositionReplayEvent::Filled(opening);
+        }
+    }
+
+    let cache = execution_engine.cache().borrow();
+    assert_eq!(
+        cache
+            .hedging_flip_position_ids(order_id)
+            .unwrap_err()
+            .to_string(),
+        format!("{expected_error} for order {order_id}"),
+    );
+    let order = cache.order(&order_id).unwrap().cloned();
+    let before_order = serde_json::to_value(&order).unwrap();
+    let before_source = serde_json::to_value(cache.position(&source_id).unwrap().cloned()).unwrap();
+    let before_destination =
+        serde_json::to_value(cache.position(&destination_id).unwrap().cloned()).unwrap();
+    drop(cache);
+
+    let supplied_id = match supplied_position {
+        "source" => Some(source_id),
+        "destination" => Some(destination_id),
+        "absent" => None,
+        "unrelated" => Some(PositionId::from("P-UNRELATED")),
+        _ => unreachable!(),
+    };
+
+    let mut event = TestOrderEventStubs::filled(
+        &order,
+        &audusd_sim().into(),
+        Some(TradeId::from("T-UNPROVEN")),
+        supplied_id,
+        Some(Price::from("1.00020")),
+        Some(Quantity::from(10_000)),
+        None,
+        Some(Money::from("0.10 USD")),
+        None,
+        Some(AccountId::test_default()),
+    );
+
+    let OrderEventAny::Filled(fill) = &mut event else {
+        unreachable!()
+    };
+
+    fill.position_id = supplied_id;
+    execution_engine.process(&event);
+    let cache = execution_engine.cache().borrow();
+    assert_eq!(
+        serde_json::to_value(cache.order(&order_id).unwrap().cloned()).unwrap(),
+        before_order
+    );
+    assert_eq!(
+        serde_json::to_value(cache.position(&source_id).unwrap().cloned()).unwrap(),
+        before_source
+    );
+    assert_eq!(
+        serde_json::to_value(cache.position(&destination_id).unwrap().cloned()).unwrap(),
+        before_destination
+    );
+}
+
+#[rstest]
+#[case::source("source", 10_000, 75_000)]
+#[case::destination("destination", 0, 35_000)]
+fn test_hedging_flip_route_survives_other_orders(
+    mut execution_engine: ExecutionEngine,
+    #[case] reopen: &str,
+    #[case] source_qty: u64,
+    #[case] destination_qty: u64,
+    #[values("source", "destination", "absent")] supplied_position: &str,
+    #[values(false, true)] rebuild_index: bool,
+) {
+    let (source_id, destination_id) = run_hedging_flip(&mut execution_engine);
+    let instrument = audusd_sim();
+    let order_id = ClientOrderId::from("O-DURABLE-FLIP");
+
+    let other_id = if reopen == "source" {
+        source_id
+    } else {
+        destination_id
+    };
+
+    process_filled_order(
+        &mut execution_engine,
+        TraderId::test_default(),
+        StrategyId::test_default(),
+        &instrument,
+        "O-OTHER-CLOSE",
+        "V-OTHER-CLOSE",
+        "T-OTHER-CLOSE",
+        OrderSide::Buy,
+        if reopen == "source" { 10_000 } else { 50_000 },
+        other_id,
+    );
+
+    if reopen == "destination" {
+        process_filled_order(
+            &mut execution_engine,
+            TraderId::test_default(),
+            StrategyId::test_default(),
+            &instrument,
+            "O-OTHER-OPEN",
+            "V-OTHER-OPEN",
+            "T-OTHER-OPEN",
+            OrderSide::Sell,
+            10_000,
+            destination_id,
+        );
+    }
+
+    if rebuild_index {
+        let mut cache = execution_engine.cache().borrow_mut();
+        cache.clear_index();
+        cache.build_index();
+    }
+
+    let order = execution_engine
+        .cache()
+        .borrow()
+        .order(&order_id)
+        .unwrap()
+        .cloned();
+
+    let supplied_id = match supplied_position {
+        "source" => Some(source_id),
+        "destination" => Some(destination_id),
+        _ => None,
+    };
+
+    let mut fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument.clone().into(),
+        Some(TradeId::from("T-AFTER-OTHER-ORDER")),
+        supplied_id,
+        Some(Price::from("1.00020")),
+        Some(Quantity::from(25_000)),
+        None,
+        Some(Money::from("0.25 USD")),
+        None,
+        Some(AccountId::test_default()),
+    );
+
+    let OrderEventAny::Filled(event) = &mut fill else {
+        unreachable!()
+    };
+
+    event.position_id = supplied_id;
+    execution_engine.process(&fill);
+
+    let cache = execution_engine.cache().borrow();
+    assert_eq!(
+        cache.order(&order_id).unwrap().filled_qty(),
+        Quantity::from(175_000)
+    );
+    assert_eq!(
+        cache.position(&source_id).unwrap().quantity,
+        Quantity::from(source_qty)
+    );
+    assert_eq!(
+        cache.position(&destination_id).unwrap().quantity,
+        Quantity::from(destination_qty)
+    );
+    assert_eq!(cache.position_id(&order_id), Some(&destination_id));
+    assert_eq!(
+        cache.hedging_flip_position_ids(order_id).unwrap(),
+        Some([source_id, destination_id])
+    );
+}
+
+fn run_hedging_flip(execution_engine: &mut ExecutionEngine) -> (PositionId, PositionId) {
+    let instrument = audusd_sim();
+    let source_id = PositionId::from("P-DURABLE-SOURCE");
+    execution_engine.register_oms_type(StrategyId::test_default(), OmsType::Hedging);
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_account(CashAccount::default().into())
+        .unwrap();
+    process_filled_order(
+        execution_engine,
+        TraderId::test_default(),
+        StrategyId::test_default(),
+        &instrument,
+        "O-DURABLE-OPEN",
+        "V-DURABLE-OPEN",
+        "T-DURABLE-OPEN",
+        OrderSide::Buy,
+        100_000,
+        source_id,
+    );
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id)
+        .client_order_id(ClientOrderId::from("O-DURABLE-FLIP"))
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from(200_000))
+        .build();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, None, true)
+        .unwrap();
+    execution_engine.process(&TestOrderEventStubs::submitted(
+        &order,
+        AccountId::test_default(),
+    ));
+    execution_engine.process(&TestOrderEventStubs::accepted(
+        &order,
+        AccountId::test_default(),
+        VenueOrderId::from("V-DURABLE-FLIP"),
+    ));
+    execution_engine.process(&TestOrderEventStubs::filled(
+        &order,
+        &instrument.into(),
+        Some(TradeId::from("T-DURABLE-FLIP")),
+        Some(source_id),
+        Some(Price::from("1.00010")),
+        Some(Quantity::from(150_000)),
+        None,
+        Some(Money::from("1.50 USD")),
+        None,
+        Some(AccountId::test_default()),
+    ));
+    let destination_id = *execution_engine
+        .cache()
+        .borrow()
+        .position_id(&order.client_order_id())
+        .unwrap();
+    (source_id, destination_id)
 }
 
 #[expect(clippy::too_many_arguments)]
@@ -18733,6 +19934,168 @@ fn test_reconcile_execution_mass_status_applies_real_fill_before_terminal_order_
 }
 
 #[rstest]
+#[case::partial(OrderStatus::PartiallyFilled, 20, 50, dec!(1.4))]
+#[case::filled(OrderStatus::Filled, 120, 150, dec!(1.8))]
+fn test_reconcile_mass_status_applies_replacement_alias_fills_before_inference(
+    mut execution_engine: ExecutionEngine,
+    #[case] status: OrderStatus,
+    #[case] child_quantity: u64,
+    #[case] cumulative_quantity: u64,
+    #[case] average: Decimal,
+    #[values(false, true)] parent_label: bool,
+    #[values(false, true)] duplicate_parent: bool,
+) {
+    let instrument = audusd_sim();
+    let client_order_id = ClientOrderId::from("O-REPLACEMENT-MASS");
+    let parent_id = VenueOrderId::from("V-REPLACEMENT-PARENT");
+    let current_id = VenueOrderId::from("V-REPLACEMENT-CURRENT");
+    let parent_trade = TradeId::from("T-REPLACEMENT-PARENT");
+    let child_trade = TradeId::from("T-REPLACEMENT-CURRENT");
+    let account_id = AccountId::test_default();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(instrument.clone()))
+        .unwrap();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_account(cash_account_for(account_id).into())
+        .unwrap();
+    let mut restored = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100))
+        .price(Price::from("1.00000"))
+        .build();
+    restored
+        .apply(TestOrderEventStubs::submitted(&restored, account_id))
+        .unwrap();
+    restored
+        .apply(TestOrderEventStubs::accepted(
+            &restored, account_id, parent_id,
+        ))
+        .unwrap();
+    restored
+        .apply(OrderEventAny::Updated(build_order_updated(
+            restored.trader_id(),
+            restored.strategy_id(),
+            instrument.id(),
+            client_order_id,
+            Quantity::from(150),
+            Some(current_id),
+            Some(account_id),
+            Some(Price::from("2.00000")),
+            None,
+            None,
+            false,
+        )))
+        .unwrap();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(restored, None, Some(ClientId::from("STUB")), true)
+        .unwrap();
+    let mut report = create_order_status_report(
+        Some(client_order_id),
+        current_id,
+        instrument.id(),
+        status,
+        Quantity::from(150),
+        Quantity::from(cumulative_quantity),
+    );
+    report.price = Some(Price::from("2.00000"));
+    report.avg_px = Some(average);
+    let mut parent_fill = create_fill_report(
+        instrument.id(),
+        parent_label.then_some(client_order_id),
+        parent_id,
+        parent_trade,
+        Quantity::from(30),
+        Price::from("1.00000"),
+    );
+    parent_fill.commission = Money::from("0.03 USD");
+    let mut child_fill = create_fill_report(
+        instrument.id(),
+        Some(client_order_id),
+        current_id,
+        child_trade,
+        Quantity::from(child_quantity),
+        Price::from("2.00000"),
+    );
+    child_fill.commission = Money::from("0.05 USD");
+    child_fill.ts_event = UnixNanos::from(2_000_000);
+    child_fill.ts_init = UnixNanos::from(2_000_000);
+
+    let mut mass_status = ExecutionMassStatus::new(
+        ClientId::from("SIM"),
+        account_id,
+        Venue::from("SIM"),
+        UnixNanos::from(10_000_000),
+        None,
+    );
+    let mut parent_report = create_order_status_report(
+        Some(client_order_id),
+        parent_id,
+        instrument.id(),
+        OrderStatus::Canceled,
+        Quantity::from(100),
+        Quantity::from(30),
+    );
+    parent_report.price = Some(Price::from("1.00000"));
+    parent_report.avg_px = Some(dec!(1));
+    mass_status.add_order_reports(vec![parent_report, report]);
+    mass_status.add_fill_reports(if duplicate_parent {
+        vec![child_fill, parent_fill.clone(), parent_fill]
+    } else {
+        vec![child_fill, parent_fill]
+    });
+
+    execution_engine.reconcile_execution_mass_status(&mass_status);
+    execution_engine.reconcile_execution_mass_status(&mass_status);
+    let cache = execution_engine.cache().borrow();
+    let order = cache.order(&client_order_id).unwrap();
+    assert_eq!(order.quantity(), Quantity::from(150));
+    assert_eq!(order.filled_qty(), Quantity::from(cumulative_quantity));
+    assert_eq!(order.status(), status);
+    assert_eq!(order.venue_order_id(), Some(current_id));
+    assert_eq!(order.avg_px(), Some(average));
+    assert_eq!(order.trade_ids().len(), 2);
+    assert!(order.trade_ids().contains(&&parent_trade));
+    assert!(order.trade_ids().contains(&&child_trade));
+    assert_eq!(
+        order.commissions().get(&Currency::USD()),
+        Some(&Money::from("0.08 USD"))
+    );
+
+    let fills: Vec<_> = order
+        .events()
+        .into_iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(fills.len(), 2);
+    assert_eq!(fills[0].venue_order_id, parent_id);
+    assert_eq!(fills[0].trade_id, parent_trade);
+    assert_eq!(fills[0].last_qty, Quantity::from(30));
+    assert_eq!(fills[0].last_px, Price::from("1.00000"));
+    assert_eq!(fills[0].commission, Some(Money::from("0.03 USD")));
+    assert_eq!(fills[1].venue_order_id, current_id);
+    assert_eq!(fills[1].trade_id, child_trade);
+    assert_eq!(fills[1].last_qty, Quantity::from(child_quantity));
+    assert_eq!(fills[1].last_px, Price::from("2.00000"));
+    assert_eq!(fills[1].commission, Some(Money::from("0.05 USD")));
+    let positions = cache.positions_open(None, Some(&instrument.id()), None, None, None);
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].quantity, Quantity::from(cumulative_quantity));
+    assert_eq!(positions[0].commissions(), vec![Money::from("0.08 USD")]);
+}
+
+#[rstest]
 fn test_reconcile_execution_mass_status_accepts_submitted_order_before_real_fill(
     mut execution_engine: ExecutionEngine,
 ) {
@@ -19853,6 +21216,7 @@ fn test_submit_order_list_adds_missing_orders_then_claims_origin_atomically(
 
 #[rstest]
 fn test_submit_order_list_denies_when_client_submit_fails(mut execution_engine: ExecutionEngine) {
+    capture_reconciliation_logs();
     let trader_id = TraderId::test_default();
     let strategy_id = StrategyId::test_default();
     let instrument = audusd_sim();
@@ -19864,7 +21228,7 @@ fn test_submit_order_list_denies_when_client_submit_fails(mut execution_engine: 
         OmsType::Netting,
         None,
     )
-    .with_submit_order_list_error("transport closed");
+    .with_submit_order_list_error("password=SYN-password token=SYN-token");
     let submitted_order_ids = client.submitted_order_ids();
     execution_engine.register_client(Box::new(client)).unwrap();
 
@@ -19929,16 +21293,28 @@ fn test_submit_order_list_denies_when_client_submit_fails(mut execution_engine: 
         causation_id: None,
     };
 
+    take_reconciliation_logs();
     execution_engine.execute(TradingCommand::SubmitOrderList(submit_order_list));
 
+    assert_eq!(
+        take_reconciliation_logs(),
+        vec![(
+            Level::Error,
+            "Error submitting order list to client SIM_CLIENT".to_string()
+        )]
+    );
     let cache = execution_engine.cache().borrow();
     for order in &orders {
         let cached_order = cache
             .order(&order.client_order_id())
             .expect("Order should be retrievable from cache");
         assert_eq!(cached_order.status(), OrderStatus::Denied);
+
         if let OrderEventAny::Denied(denied) = cached_order.last_event() {
-            assert_eq!(denied.reason, "SUBMIT_FAILED: transport closed");
+            assert_eq!(
+                denied.reason,
+                "SUBMIT_FAILED: password=SYN-password token=SYN-token"
+            );
         } else {
             panic!("Expected OrderDenied event");
         }
@@ -23226,4 +24602,389 @@ fn test_zero_quantity_fill_does_not_create_external_order(mut execution_engine: 
     let cache = execution_engine.cache().borrow();
     assert!(!cache.order_exists(&client_order_id));
     assert_eq!(cache.positions_total_count(None, None, None, None, None), 0);
+}
+
+struct LifecycleExecutionClient {
+    client_id: ClientId,
+    error_message: Option<&'static str>,
+    calls: Rc<RefCell<Vec<(ClientId, &'static str)>>>,
+    connected: bool,
+}
+
+impl LifecycleExecutionClient {
+    fn record(&self, operation: &'static str) -> anyhow::Result<()> {
+        self.calls.borrow_mut().push((self.client_id, operation));
+
+        if let Some(error_message) = self.error_message {
+            anyhow::bail!("{error_message}");
+        }
+
+        Ok(())
+    }
+}
+
+#[async_trait::async_trait(?Send)]
+impl ExecutionClient for LifecycleExecutionClient {
+    fn client_id(&self) -> ClientId {
+        self.client_id
+    }
+
+    fn account_id(&self) -> AccountId {
+        AccountId::from("SYN-001")
+    }
+
+    fn venue(&self) -> Venue {
+        Venue::from("SYN")
+    }
+
+    fn oms_type(&self) -> OmsType {
+        OmsType::Netting
+    }
+
+    fn get_account(&self) -> Option<AccountAny> {
+        None
+    }
+
+    fn is_connected(&self) -> bool {
+        self.connected
+    }
+
+    fn generate_account_state(
+        &self,
+        _: Vec<AccountBalance>,
+        _: Vec<MarginBalance>,
+        _: bool,
+        _: UnixNanos,
+        _: Option<Params>,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn modify_order(&self, _: ModifyOrder) -> anyhow::Result<()> {
+        self.record("modify")
+    }
+
+    fn batch_modify_orders(&self, _: BatchModifyOrders) -> anyhow::Result<()> {
+        self.record("batch_modify")
+    }
+
+    fn cancel_order(&self, _: CancelOrder) -> anyhow::Result<()> {
+        self.record("cancel")
+    }
+
+    fn cancel_all_orders(&self, _: CancelAllOrders) -> anyhow::Result<()> {
+        self.record("cancel_all")
+    }
+
+    fn batch_cancel_orders(&self, _: BatchCancelOrders) -> anyhow::Result<()> {
+        self.record("batch_cancel")
+    }
+
+    fn query_order(&self, _: QueryOrder) -> anyhow::Result<()> {
+        self.record("query_order")
+    }
+
+    fn query_account(&self, _: QueryAccount) -> anyhow::Result<()> {
+        self.record("query")
+    }
+
+    fn start(&mut self) -> anyhow::Result<()> {
+        self.record("start")
+    }
+
+    fn stop(&mut self) -> anyhow::Result<()> {
+        self.record("stop")
+    }
+
+    fn reset(&mut self) -> anyhow::Result<()> {
+        self.record("reset")
+    }
+
+    fn dispose(&mut self) -> anyhow::Result<()> {
+        self.record("dispose")
+    }
+
+    async fn connect(&mut self) -> anyhow::Result<()> {
+        self.record("connect")
+            .map_err(|e| e.context("provider context"))?;
+        self.connected = true;
+        Ok(())
+    }
+
+    async fn disconnect(&mut self) -> anyhow::Result<()> {
+        self.record("disconnect")?;
+        self.connected = false;
+        Ok(())
+    }
+}
+
+#[rstest]
+#[case(Some("password=SYN-password bearer=SYN-token"))]
+#[case(Some("https://SYN-user:SYN-password@example.invalid/SYN-path?token=SYN-token"))]
+#[case(None)]
+fn test_execution_client_lifecycle_logging(
+    mut execution_engine: ExecutionEngine,
+    #[case] error_message: Option<&'static str>,
+) {
+    capture_reconciliation_logs();
+    let calls = Rc::new(RefCell::new(Vec::new()));
+
+    for (client_id, error) in [
+        (ClientId::from("FIRST"), error_message),
+        (ClientId::from("SECOND"), None),
+    ] {
+        execution_engine
+            .register_client(Box::new(LifecycleExecutionClient {
+                client_id,
+                error_message: error,
+                calls: Rc::clone(&calls),
+                connected: false,
+            }))
+            .unwrap();
+    }
+
+    take_reconciliation_logs();
+    poll_to_completion(execution_engine.connect());
+
+    let expected = if error_message.is_some() {
+        vec![(
+            Level::Error,
+            "Failed to connect execution client FIRST: connection failed".to_string(),
+        )]
+    } else {
+        vec![]
+    };
+
+    assert_eq!(take_reconciliation_logs(), expected);
+    assert_eq!(execution_engine.check_connected(), error_message.is_none());
+
+    for (operation, action) in [
+        ("start", ExecutionEngine::start as fn(&mut ExecutionEngine)),
+        ("stop", ExecutionEngine::stop),
+        ("stop", ExecutionEngine::stop_clients),
+        ("reset", ExecutionEngine::reset),
+        ("dispose", ExecutionEngine::dispose),
+    ] {
+        action(&mut execution_engine);
+
+        let expected = if error_message.is_some() {
+            vec![(
+                Level::Error,
+                format!("Failed to {operation} execution client FIRST"),
+            )]
+        } else {
+            vec![]
+        };
+
+        assert_eq!(take_reconciliation_logs(), expected);
+    }
+
+    let result = poll_to_completion(execution_engine.disconnect());
+
+    if error_message.is_some() {
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Failed to disconnect execution clients: FIRST"
+        );
+    } else {
+        result.unwrap();
+    }
+
+    let expected_calls: Vec<_> = [
+        "connect",
+        "start",
+        "stop",
+        "stop",
+        "reset",
+        "dispose",
+        "disconnect",
+    ]
+    .into_iter()
+    .flat_map(|op| {
+        [
+            (ClientId::from("FIRST"), op),
+            (ClientId::from("SECOND"), op),
+        ]
+    })
+    .collect();
+
+    assert_eq!(*calls.borrow(), expected_calls);
+    assert_eq!(take_reconciliation_logs(), vec![]);
+    assert!(
+        !execution_engine
+            .get_clients_mut()
+            .iter()
+            .find(|c| c.client_id() == ClientId::from("SECOND"))
+            .unwrap()
+            .is_connected()
+    );
+}
+
+#[rstest]
+#[case(Some("password=SYN-password token=SYN-token"))]
+#[case(None)]
+fn test_execution_command_logging(
+    mut execution_engine: ExecutionEngine,
+    #[case] error_message: Option<&'static str>,
+    #[values(
+        "modify",
+        "batch_modify",
+        "cancel",
+        "cancel_all",
+        "batch_cancel",
+        "query",
+        "query_order"
+    )]
+    operation: &'static str,
+) {
+    capture_reconciliation_logs();
+    let client_id = ClientId::from("QUERIES");
+    let command_id = UUID4::new();
+    let calls = Rc::new(RefCell::new(Vec::new()));
+    execution_engine
+        .register_client(Box::new(LifecycleExecutionClient {
+            client_id,
+            error_message,
+            calls: Rc::clone(&calls),
+            connected: false,
+        }))
+        .unwrap();
+
+    take_reconciliation_logs();
+    let trader_id = TraderId::test_default();
+    let strategy_id = StrategyId::test_default();
+    let instrument_id = audusd_sim().id();
+    let client_order_id = ClientOrderId::from("O-QUERY-001");
+    let ts_init = UnixNanos::from(1);
+
+    let modify = ModifyOrder::new(
+        trader_id,
+        Some(client_id),
+        strategy_id,
+        instrument_id,
+        client_order_id,
+        None,
+        Some(Quantity::from("10")),
+        Some(Price::from("1.25")),
+        None,
+        command_id,
+        ts_init,
+        None,
+        None,
+    );
+
+    let cancel = CancelOrder::new(
+        trader_id,
+        Some(client_id),
+        strategy_id,
+        instrument_id,
+        client_order_id,
+        None,
+        command_id,
+        ts_init,
+        None,
+        None,
+    );
+
+    let (command, description, level) = match operation {
+        "modify" => (
+            TradingCommand::ModifyOrder(modify),
+            "modifying order",
+            Level::Error,
+        ),
+        "batch_modify" => (
+            TradingCommand::ModifyOrders(BatchModifyOrders::new(
+                trader_id,
+                Some(client_id),
+                strategy_id,
+                instrument_id,
+                vec![modify],
+                command_id,
+                ts_init,
+                None,
+                None,
+            )),
+            "batch modifying orders",
+            Level::Error,
+        ),
+        "cancel" => (
+            TradingCommand::CancelOrder(cancel),
+            "canceling order",
+            Level::Error,
+        ),
+        "cancel_all" => (
+            TradingCommand::CancelAllOrders(CancelAllOrders::new(
+                trader_id,
+                Some(client_id),
+                strategy_id,
+                instrument_id,
+                None,
+                command_id,
+                ts_init,
+                None,
+                None,
+            )),
+            "canceling all orders",
+            Level::Error,
+        ),
+        "batch_cancel" => (
+            TradingCommand::CancelOrders(BatchCancelOrders::new(
+                trader_id,
+                Some(client_id),
+                strategy_id,
+                instrument_id,
+                vec![cancel],
+                command_id,
+                ts_init,
+                None,
+                None,
+            )),
+            "batch canceling orders",
+            Level::Error,
+        ),
+        "query" => (
+            TradingCommand::QueryAccount(QueryAccount::new(
+                trader_id,
+                Some(client_id),
+                AccountId::from("SYN-001"),
+                command_id,
+                ts_init,
+                None,
+                None,
+            )),
+            "querying account",
+            Level::Warn,
+        ),
+        "query_order" => (
+            TradingCommand::QueryOrder(QueryOrder::new(
+                trader_id,
+                Some(client_id),
+                strategy_id,
+                instrument_id,
+                client_order_id,
+                None,
+                command_id,
+                ts_init,
+                None,
+                None,
+            )),
+            "querying order",
+            Level::Warn,
+        ),
+        _ => unreachable!(),
+    };
+
+    execution_engine.execute(command);
+
+    let expected = if error_message.is_some() {
+        vec![(
+            level,
+            format!("Error {description}: client QUERIES, command {command_id}"),
+        )]
+    } else {
+        vec![]
+    };
+
+    assert_eq!(take_reconciliation_logs(), expected);
+    assert_eq!(*calls.borrow(), vec![(client_id, operation)]);
 }

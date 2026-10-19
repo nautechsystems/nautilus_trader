@@ -14,7 +14,75 @@ use nautilus_common::live::sender::EventSender;
 use super::{core::*, incarnations::duplicate_client_order_id};
 use crate::common::spreads::parse_spread_instrument_id_to_legs;
 
+impl TrackedOrder {
+    pub(super) fn new(
+        client_order_id: ClientOrderId,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        order_side: OrderSide,
+        order_type: OrderType,
+    ) -> Self {
+        Self {
+            client_order_id,
+            trader_id,
+            strategy_id,
+            instrument_id,
+            order_side,
+            order_type,
+            accepted: false,
+            avg_px: None,
+            pending_cancel: false,
+            pending_modify: None,
+            perm_id: 0,
+            spread_fill_ids: ahash::AHashSet::new(),
+            spread_fills_held: HeldSpreadFills::default(),
+            last_update: None,
+        }
+    }
+}
+
 impl OrderTrackerState {
+    pub(super) fn track_order(&mut self, ib_order_id: i32, order: TrackedOrder) {
+        self.order_id_map.insert(order.client_order_id, ib_order_id);
+        self.venue_order_id_map
+            .insert(ib_order_id, order.client_order_id);
+        self.terminal_orders.remove(&ib_order_id);
+        self.active_orders.insert(ib_order_id, order);
+    }
+
+    /// Takes an order awaiting submission, which stops its submission before IB.
+    pub(super) fn take_awaiting_submission(
+        &mut self,
+        client_order_id: ClientOrderId,
+    ) -> Option<AwaitingSubmission> {
+        self.awaiting_submission.remove(&client_order_id)
+    }
+
+    /// Takes the orders awaiting submission for an instrument, on one side when given.
+    pub(super) fn take_awaiting_submissions(
+        &mut self,
+        instrument_id: InstrumentId,
+        order_side: Option<OrderSide>,
+    ) -> Vec<(ClientOrderId, AwaitingSubmission)> {
+        let mut taken: Vec<_> = self
+            .awaiting_submission
+            .iter()
+            .filter(|(_, submission)| {
+                submission.instrument_id == instrument_id
+                    && order_side.is_none_or(|side| side == submission.order_side)
+            })
+            .map(|(client_order_id, submission)| (*client_order_id, *submission))
+            .collect();
+        taken.sort_by_key(|(client_order_id, _)| client_order_id.to_string());
+
+        for (client_order_id, _) in &taken {
+            self.awaiting_submission.remove(client_order_id);
+        }
+
+        taken
+    }
+
     // Holds `fill` for `target` and returns whether the caller starts the resolution
     pub(super) fn hold_fill(&mut self, target: IbOrderSelector, fill: Option<FillReport>) -> bool {
         let starts = !self.fills_held.contains_key(&target);
@@ -37,6 +105,7 @@ impl OrderTrackerState {
                 reference.is_none_or(|id| id == context.client_order_id || id == child_id),
                 "IB permanent ID {perm_id} has a conflicting order reference {order_ref}"
             );
+
             return if perm_id == context.perm_id {
                 Ok(OrderCorrelation::Tracked {
                     order_id: primary_order_id,
@@ -53,6 +122,7 @@ impl OrderTrackerState {
         let raw = (client_id == self.client_id)
             .then(|| self.order(order_id).map(|order| (order_id, order.clone())))
             .flatten();
+
         let by_perm = if perm_id > 0 {
             self.active_orders
                 .iter()
@@ -62,6 +132,7 @@ impl OrderTrackerState {
         } else {
             None
         };
+
         let by_ref = reference.and_then(|reference| {
             self.order_id_map
                 .get(&reference)
@@ -74,6 +145,7 @@ impl OrderTrackerState {
                         .map(|(id, order)| (*id, order.clone()))
                 })
         });
+
         let identities: Vec<_> = [raw.as_ref(), by_perm.as_ref(), by_ref.as_ref()]
             .into_iter()
             .flatten()
@@ -98,6 +170,7 @@ impl OrderTrackerState {
                 client_order_id: None,
             });
         }
+
         let Some((tracking_id, mut context)) = by_ref.or(by_perm).or(raw) else {
             return Ok(OrderCorrelation::Untracked {
                 client_order_id: reference,
@@ -114,6 +187,7 @@ impl OrderTrackerState {
         if context.perm_id == 0 && perm_id > 0 {
             context.perm_id = perm_id;
         }
+
         Ok(OrderCorrelation::Tracked {
             order_id: tracking_id,
             context,
@@ -142,15 +216,32 @@ impl InteractiveBrokersExecutionClient {
                 if order.account_id().is_some_and(|id| id != account_id) {
                     continue;
                 }
+
                 let instrument_id = order.instrument_id();
                 if instrument_provider.find(&instrument_id).is_none() {
                     instrument_ids.insert(instrument_id);
                 }
             }
         }
+
         let mut instrument_ids: Vec<_> = instrument_ids.into_iter().collect();
         instrument_ids.sort_unstable();
         instrument_ids
+    }
+
+    // Instruments the data client loads at runtime reach the cache but not this provider,
+    // so seed them before an order on one resolves its contract or its updates
+    pub(super) fn seed_instruments_from_cache(
+        &self,
+        instrument_ids: impl IntoIterator<Item = InstrumentId>,
+    ) {
+        let cache = self.core.cache();
+        let instruments: Vec<_> = instrument_ids
+            .into_iter()
+            .filter(|instrument_id| self.instrument_provider.find(instrument_id).is_none())
+            .filter_map(|instrument_id| cache.instrument(&instrument_id).cloned())
+            .collect();
+        self.instrument_provider.add_cached_instruments(instruments);
     }
 
     pub(super) async fn preload_cached_instruments(&self, client: &Client) {
@@ -191,6 +282,7 @@ impl InteractiveBrokersExecutionClient {
     pub(super) async fn publish_combo_order_instruments(&self, client: &Client) {
         let mut contracts = Vec::new();
         let timeout_dur = Duration::from_secs(self.config.request_timeout);
+
         let queries = tokio::time::timeout(timeout_dur, async {
             let mut open = client.all_open_orders().await?;
             while let Some(item) = open.next().await {
@@ -198,12 +290,14 @@ impl InteractiveBrokersExecutionClient {
                     contracts.push(data.contract);
                 }
             }
+
             let mut completed = client.completed_orders(false).await?;
             while let Some(item) = completed.next().await {
                 if let SubscriptionItem::Data(Orders::OrderData(data)) = item? {
                     contracts.push(data.contract);
                 }
             }
+
             Ok::<_, anyhow::Error>(())
         })
         .await;
@@ -215,7 +309,6 @@ impl InteractiveBrokersExecutionClient {
         }
 
         let mut loaded = AHashSet::new();
-
         for contract in contracts
             .iter()
             .filter(|contract| contract.security_type == SecurityType::Spread)
@@ -250,6 +343,7 @@ impl InteractiveBrokersExecutionClient {
                     exchange: Exchange::from(combo_leg.exchange.as_str()),
                     ..Default::default()
                 };
+
                 self.instrument_provider
                     .get_instrument(client, &leg_contract)
                     .await?
@@ -348,6 +442,7 @@ impl InteractiveBrokersExecutionClient {
         orders: &OrderTracker,
     ) -> anyhow::Result<(TraderId, StrategyId)> {
         let state = orders.lock()?;
+
         let order = state.active_orders.get(&order_id).with_context(|| {
             format!("Tracked state not found for Interactive Brokers order {order_id}")
         })?;
@@ -388,44 +483,93 @@ impl InteractiveBrokersExecutionClient {
         Ok(contract)
     }
 
-    #[allow(clippy::too_many_arguments)] // The fields form one tracked order record.
-    pub(super) fn cache_order_tracking(
-        ib_order_id: i32,
+    /// Records an order whose submission is under way, so a cancel that arrives before the
+    /// order is tracked stops its submission.
+    pub(super) fn register_awaiting_submission(
         client_order_id: ClientOrderId,
-        instrument_id: InstrumentId,
-        trader_id: TraderId,
-        strategy_id: StrategyId,
-        order_side: OrderSide,
-        order_type: OrderType,
+        submission: AwaitingSubmission,
         orders: &OrderTracker,
     ) -> anyhow::Result<()> {
-        let mut state = orders.lock()?;
-        state.order_id_map.insert(client_order_id, ib_order_id);
-        state
-            .venue_order_id_map
-            .insert(ib_order_id, client_order_id);
-        state.terminal_orders.remove(&ib_order_id);
-        state.active_orders.insert(
-            ib_order_id,
-            TrackedOrder {
-                client_order_id,
-                trader_id,
-                strategy_id,
-                instrument_id,
-                order_side,
-                order_type,
-                accepted: false,
-                avg_px: None,
-                pending_cancel: false,
-                pending_modify: None,
-                perm_id: 0,
-                spread_fill_ids: ahash::AHashSet::new(),
-                spread_fills_held: HeldSpreadFills::default(),
-                last_update: None,
-            },
-        );
+        orders
+            .lock()?
+            .awaiting_submission
+            .insert(client_order_id, submission);
 
         Ok(())
+    }
+
+    /// Moves an order from awaiting submission into tracking, in one step so a cancel finds it
+    /// in one or the other. Returns `false`, tracking nothing, when a cancel already took it.
+    pub(super) fn track_awaiting_submission(
+        ib_order_id: i32,
+        order: TrackedOrder,
+        orders: &OrderTracker,
+    ) -> anyhow::Result<bool> {
+        let mut state = orders.lock()?;
+        if state
+            .take_awaiting_submission(order.client_order_id)
+            .is_none()
+        {
+            return Ok(false);
+        }
+
+        state.track_order(ib_order_id, order);
+        Ok(true)
+    }
+
+    /// Moves every order of a list from awaiting submission into tracking, in one step, or none
+    /// of them when a cancel already took any. Returns the orders a cancel took; when there are
+    /// any, the others leave awaiting submission too, for the caller to deny.
+    pub(super) fn track_awaiting_order_list(
+        tracked: Vec<(i32, TrackedOrder)>,
+        orders: &OrderTracker,
+    ) -> anyhow::Result<Vec<ClientOrderId>> {
+        let mut state = orders.lock()?;
+        let canceled: Vec<_> = tracked
+            .iter()
+            .map(|(_, order)| order.client_order_id)
+            .filter(|client_order_id| !state.awaiting_submission.contains_key(client_order_id))
+            .collect();
+
+        for (_, order) in &tracked {
+            state.take_awaiting_submission(order.client_order_id);
+        }
+
+        if canceled.is_empty() {
+            for (ib_order_id, order) in tracked {
+                state.track_order(ib_order_id, order);
+            }
+        }
+
+        Ok(canceled)
+    }
+
+    /// Sends `OrderCanceled` for an order a cancel took while it awaited submission, so it
+    /// never reached IB.
+    pub(super) fn send_awaiting_order_canceled(
+        client_order_id: ClientOrderId,
+        submission: AwaitingSubmission,
+        account_id: AccountId,
+        exec_sender: &EventSender<ExecutionEvent>,
+        ts_event: UnixNanos,
+    ) -> anyhow::Result<()> {
+        let event = OrderCanceled::new(
+            submission.trader_id,
+            submission.strategy_id,
+            submission.instrument_id,
+            client_order_id,
+            UUID4::new(),
+            ts_event,
+            ts_event,
+            false,
+            None,
+            Some(account_id),
+            None,
+        );
+
+        exec_sender
+            .send(ExecutionEvent::Order(OrderEventAny::Canceled(event)))
+            .map_err(|e| anyhow::anyhow!("Failed to send order canceled event: {e}"))
     }
 
     pub(super) fn cache_recovered_order_tracking(
@@ -436,6 +580,7 @@ impl InteractiveBrokersExecutionClient {
         let client_order_id = target_order.client_order_id();
         // Publish the raw IB route only after the recovered identity is complete.
         let mut state = orders.lock()?;
+
         let perm_id = target_order
             .venue_order_id()
             .and_then(|id| IbOrderSelector::from_venue_order_id(&id).ok())
@@ -471,9 +616,11 @@ impl InteractiveBrokersExecutionClient {
                         spread_fills_held: HeldSpreadFills::default(),
                         last_update: None,
                     });
+
                 return Ok(());
             }
         }
+
         state.order_id_map.insert(client_order_id, ib_order_id);
         state.terminal_orders.remove(&ib_order_id);
         state
@@ -499,6 +646,7 @@ impl InteractiveBrokersExecutionClient {
                     target_order.trigger_price(),
                 )),
             });
+
         state
             .venue_order_id_map
             .insert(ib_order_id, client_order_id);
@@ -527,6 +675,7 @@ impl InteractiveBrokersExecutionClient {
         exec_sender: &EventSender<ExecutionEvent>,
     ) -> anyhow::Result<bool> {
         let mut state = orders.lock()?;
+
         let Some(context) = state.active_orders.get_mut(&ib_order_id) else {
             return Ok(false);
         };
@@ -543,6 +692,7 @@ impl InteractiveBrokersExecutionClient {
         exec_sender: &EventSender<ExecutionEvent>,
     ) -> anyhow::Result<bool> {
         let mut state = orders.lock()?;
+
         let context = if let Some(context) = state.active_orders.get_mut(&ib_order_id) {
             context
         } else if let Some(context) = state.terminal_orders.get_mut(&ib_order_id) {

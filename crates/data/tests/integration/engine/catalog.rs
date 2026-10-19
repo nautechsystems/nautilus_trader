@@ -32,12 +32,12 @@ fn test_continuous_future_request_serves_segments_from_catalog(
     let esm = add_es_contract(&cache, "ESM24.GLBX", "ESM24");
 
     let venue = Venue::from("GLBX");
-    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+    let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), None);
     let test_clock: Rc<RefCell<VirtualClock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
         test_clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         None,
@@ -649,7 +649,7 @@ fn test_time_range_pipeline_child_uses_catalog_client_fanin(
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
     advance_test_clock_to(&clock, 10_000_000_000);
-    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let mut data_engine = DataEngine::new(Rc::clone(&clock), Rc::clone(&cache), None);
 
     let _catalog_dir = register_quote_catalog_with_quotes(
         &mut data_engine,
@@ -803,7 +803,7 @@ fn test_request_quotes_client_only_when_catalog_has_no_data(
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
     advance_clock_to(&clock, 10_000_000_000);
-    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let mut data_engine = DataEngine::new(Rc::clone(&clock), Rc::clone(&cache), None);
 
     let _catalog_dir = register_empty_catalog(&mut data_engine, "empty-quotes-only");
 
@@ -813,7 +813,7 @@ fn test_request_quotes_client_only_when_catalog_has_no_data(
         cache,
         client_id,
         Some(venue),
-        Some(recorder.clone()),
+        Some(Rc::clone(&recorder)),
     );
     let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
     data_engine.register_client(adapter, None);
@@ -851,7 +851,7 @@ fn test_request_quotes_catalog_plus_client_split(
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
     advance_clock_to(&clock, 10_000_000_000);
-    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let mut data_engine = DataEngine::new(Rc::clone(&clock), Rc::clone(&cache), None);
 
     let _catalog_dir = register_quote_catalog_with_quotes(
         &mut data_engine,
@@ -866,7 +866,7 @@ fn test_request_quotes_catalog_plus_client_split(
         cache,
         client_id,
         Some(venue),
-        Some(recorder.clone()),
+        Some(Rc::clone(&recorder)),
     );
     let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
     data_engine.register_client(adapter, None);
@@ -956,7 +956,7 @@ fn test_request_quotes_skip_catalog_data_param_honored(
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
     advance_clock_to(&clock, 10_000_000_000);
-    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let mut data_engine = DataEngine::new(Rc::clone(&clock), Rc::clone(&cache), None);
 
     let _catalog_dir = register_quote_catalog_with_quotes(
         &mut data_engine,
@@ -971,7 +971,7 @@ fn test_request_quotes_skip_catalog_data_param_honored(
         cache,
         client_id,
         Some(venue),
-        Some(recorder.clone()),
+        Some(Rc::clone(&recorder)),
     );
     let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
     data_engine.register_client(adapter, None);
@@ -1104,7 +1104,7 @@ fn test_request_trades_catalog_plus_client_split(
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
     advance_clock_to(&clock, 10_000_000_000);
-    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let mut data_engine = DataEngine::new(Rc::clone(&clock), Rc::clone(&cache), None);
 
     let _catalog_dir = register_trade_catalog_with_trades(
         &mut data_engine,
@@ -1119,7 +1119,7 @@ fn test_request_trades_catalog_plus_client_split(
         cache,
         client_id,
         Some(venue),
-        Some(recorder.clone()),
+        Some(Rc::clone(&recorder)),
     );
     let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
     data_engine.register_client(adapter, None);
@@ -1188,7 +1188,7 @@ fn test_request_quotes_dispatches_straight_to_client_with_no_catalog_registered(
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
     advance_clock_to(&clock, 10_000_000_000);
-    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let mut data_engine = DataEngine::new(Rc::clone(&clock), Rc::clone(&cache), None);
 
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     let mock_client = MockDataClient::new_with_recorder(
@@ -1196,7 +1196,7 @@ fn test_request_quotes_dispatches_straight_to_client_with_no_catalog_registered(
         cache,
         client_id,
         Some(venue),
-        Some(recorder.clone()),
+        Some(Rc::clone(&recorder)),
     );
     let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
     data_engine.register_client(adapter, None);
@@ -1244,7 +1244,7 @@ fn test_request_pipeline_count_resets_after_catalog_split_fanin(
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
     advance_clock_to(&clock, 10_000_000_000);
-    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let mut data_engine = DataEngine::new(Rc::clone(&clock), Rc::clone(&cache), None);
 
     let _catalog_dir = register_quote_catalog_with_quotes(
         &mut data_engine,
@@ -1259,7 +1259,7 @@ fn test_request_pipeline_count_resets_after_catalog_split_fanin(
         cache,
         client_id,
         Some(venue),
-        Some(recorder.clone()),
+        Some(Rc::clone(&recorder)),
     );
     let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
     data_engine.register_client(adapter, None);
@@ -1310,7 +1310,7 @@ fn test_request_bars_catalog_plus_client_split(
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
     advance_clock_to(&clock, 10_000_000_000);
-    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let mut data_engine = DataEngine::new(Rc::clone(&clock), Rc::clone(&cache), None);
 
     let _catalog_dir = register_bar_catalog_with_bars(
         &mut data_engine,
@@ -1325,7 +1325,7 @@ fn test_request_bars_catalog_plus_client_split(
         cache,
         client_id,
         Some(venue),
-        Some(recorder.clone()),
+        Some(Rc::clone(&recorder)),
     );
     let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
     data_engine.register_client(adapter, None);
@@ -1457,7 +1457,7 @@ fn test_request_funding_rates_catalog_plus_client_split(
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
     advance_clock_to(&clock, 10_000_000_000);
-    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let mut data_engine = DataEngine::new(Rc::clone(&clock), Rc::clone(&cache), None);
 
     let _catalog_dir = register_funding_catalog_with_rates(
         &mut data_engine,
@@ -1472,7 +1472,7 @@ fn test_request_funding_rates_catalog_plus_client_split(
         cache,
         client_id,
         Some(venue),
-        Some(recorder.clone()),
+        Some(Rc::clone(&recorder)),
     );
     let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
     data_engine.register_client(adapter, None);
@@ -1576,7 +1576,7 @@ fn test_request_funding_rates_dispatches_straight_to_client_with_no_catalog_regi
     let instrument_id = audusd_sim.id;
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
-    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let mut data_engine = DataEngine::new(Rc::clone(&clock), Rc::clone(&cache), None);
 
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     let mock_client = MockDataClient::new_with_recorder(
@@ -1584,7 +1584,7 @@ fn test_request_funding_rates_dispatches_straight_to_client_with_no_catalog_regi
         cache,
         client_id,
         Some(venue),
-        Some(recorder.clone()),
+        Some(Rc::clone(&recorder)),
     );
     let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
     data_engine.register_client(adapter, None);
@@ -1737,7 +1737,7 @@ fn test_request_custom_data_catalog_plus_client_split(
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
     advance_clock_to(&clock, 10_000_000_000);
-    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let mut data_engine = DataEngine::new(Rc::clone(&clock), Rc::clone(&cache), None);
 
     let _catalog_dir = register_custom_catalog_with_data(
         &mut data_engine,
@@ -1752,7 +1752,7 @@ fn test_request_custom_data_catalog_plus_client_split(
         cache,
         client_id,
         Some(venue),
-        Some(recorder.clone()),
+        Some(Rc::clone(&recorder)),
     );
     let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
     data_engine.register_client(adapter, None);
@@ -1852,7 +1852,7 @@ fn test_request_custom_data_dispatches_straight_to_client_with_no_catalog_regist
     let data_type = rust_test_custom_data_type("RUST.TEST");
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
-    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let mut data_engine = DataEngine::new(Rc::clone(&clock), Rc::clone(&cache), None);
 
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     let mock_client = MockDataClient::new_with_recorder(
@@ -1860,7 +1860,7 @@ fn test_request_custom_data_dispatches_straight_to_client_with_no_catalog_regist
         cache,
         client_id,
         Some(venue),
-        Some(recorder.clone()),
+        Some(Rc::clone(&recorder)),
     );
     let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
     data_engine.register_client(adapter, None);
@@ -2107,7 +2107,7 @@ fn test_request_instrument_dispatches_straight_to_client_with_no_catalog_registe
     let instrument_id = audusd_sim.id;
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
-    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let mut data_engine = DataEngine::new(Rc::clone(&clock), Rc::clone(&cache), None);
 
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     let mock_client = MockDataClient::new_with_recorder(
@@ -2115,7 +2115,7 @@ fn test_request_instrument_dispatches_straight_to_client_with_no_catalog_registe
         cache,
         client_id,
         Some(venue),
-        Some(recorder.clone()),
+        Some(Rc::clone(&recorder)),
     );
     let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
     data_engine.register_client(adapter, None);
@@ -2148,7 +2148,7 @@ fn test_request_instruments_dispatches_straight_to_client_with_no_catalog_regist
     let _ = stub_msgbus;
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
-    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let mut data_engine = DataEngine::new(Rc::clone(&clock), Rc::clone(&cache), None);
 
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     let mock_client = MockDataClient::new_with_recorder(
@@ -2156,7 +2156,7 @@ fn test_request_instruments_dispatches_straight_to_client_with_no_catalog_regist
         cache,
         client_id,
         Some(venue),
-        Some(recorder.clone()),
+        Some(Rc::clone(&recorder)),
     );
     let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
     data_engine.register_client(adapter, None);
@@ -2191,7 +2191,7 @@ fn test_request_instrument_force_update_dispatches_to_client_with_catalog_regist
     let instrument_id = audusd_sim.id;
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
-    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let mut data_engine = DataEngine::new(Rc::clone(&clock), Rc::clone(&cache), None);
 
     let _catalog_dir = register_instrument_catalog_with_instruments(
         &mut data_engine,
@@ -2205,7 +2205,7 @@ fn test_request_instrument_force_update_dispatches_to_client_with_catalog_regist
         cache,
         client_id,
         Some(venue),
-        Some(recorder.clone()),
+        Some(Rc::clone(&recorder)),
     );
     let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
     data_engine.register_client(adapter, None);
@@ -2240,7 +2240,7 @@ fn test_request_instruments_update_catalog_dispatches_to_client_with_catalog_reg
     let _ = stub_msgbus;
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
-    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let mut data_engine = DataEngine::new(Rc::clone(&clock), Rc::clone(&cache), None);
 
     let _catalog_dir = register_instrument_catalog_with_instruments(
         &mut data_engine,
@@ -2254,7 +2254,7 @@ fn test_request_instruments_update_catalog_dispatches_to_client_with_catalog_reg
         cache,
         client_id,
         Some(venue),
-        Some(recorder.clone()),
+        Some(Rc::clone(&recorder)),
     );
     let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
     data_engine.register_client(adapter, None);
@@ -2293,7 +2293,7 @@ fn test_subscription_name_param_disables_now_clamping(
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
     advance_clock_to(&clock, 1_000);
-    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let mut data_engine = DataEngine::new(Rc::clone(&clock), Rc::clone(&cache), None);
 
     let _catalog_dir = register_empty_catalog(&mut data_engine, "subscription-name");
 
@@ -2303,7 +2303,7 @@ fn test_subscription_name_param_disables_now_clamping(
         cache,
         client_id,
         Some(venue),
-        Some(recorder.clone()),
+        Some(Rc::clone(&recorder)),
     );
     let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
     data_engine.register_client(adapter, None);
@@ -2402,7 +2402,7 @@ fn test_request_book_deltas_catalog_plus_client_split(
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
     advance_clock_to(&clock, 10_000_000_000);
-    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let mut data_engine = DataEngine::new(Rc::clone(&clock), Rc::clone(&cache), None);
 
     let _catalog_dir = register_deltas_catalog_with_deltas(
         &mut data_engine,
@@ -2417,7 +2417,7 @@ fn test_request_book_deltas_catalog_plus_client_split(
         cache,
         client_id,
         Some(venue),
-        Some(recorder.clone()),
+        Some(Rc::clone(&recorder)),
     );
     let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
     data_engine.register_client(adapter, None);
@@ -2581,7 +2581,7 @@ fn test_request_book_depth_catalog_plus_client_split(
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
     advance_clock_to(&clock, 10_000_000_000);
-    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+    let mut data_engine = DataEngine::new(Rc::clone(&clock), Rc::clone(&cache), None);
 
     let _catalog_dir = register_depth_catalog_with_depths(
         &mut data_engine,
@@ -2596,7 +2596,7 @@ fn test_request_book_depth_catalog_plus_client_split(
         cache,
         client_id,
         Some(venue),
-        Some(recorder.clone()),
+        Some(Rc::clone(&recorder)),
     );
     let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
     data_engine.register_client(adapter, None);

@@ -1695,9 +1695,9 @@ impl BlockchainDataClientCore {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - Event streaming from HyperSync fails
-    /// - Event parsing or processing fails
-    /// - DEX configuration is invalid
+    /// - Event streaming from HyperSync fails.
+    /// - Event parsing or processing fails.
+    /// - DEX configuration is invalid.
     async fn construct_pool_profiler_from_hypersync_rpc(
         &mut self,
         mut profiler: PoolProfiler,

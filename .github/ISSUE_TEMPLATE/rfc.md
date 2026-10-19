@@ -21,9 +21,14 @@ for adapter tiers and support boundaries.
 
 ## Before you proceed
 
+Check the [open-source scope](https://github.com/nautechsystems/nautilus_trader/blob/develop/ROADMAP.md#open-source-scope)
+before opening an RFC. Topics excluded there are also out of scope for proposals and discussion.
+
 - [ ] I've searched existing issues and discussions to avoid duplicates.
-- [ ] I have no other RFC open. Please keep to one at a time so each proposal gets the attention it
-      deserves.
+- [ ] I have no other RFC open, unless maintainers requested this RFC. This limit helps
+      each proposal get the attention it deserves.
+- [ ] I've disclosed any commercial relationships relevant to this RFC and stated whether I'm
+      submitting it on another party's behalf.
 
 ## Context
 

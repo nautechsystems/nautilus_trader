@@ -304,7 +304,8 @@ impl CatalogMigrationPlan {
     ///
     /// # Errors
     ///
-    /// Returns one summary error containing every schema conflict and unresolved schema.
+    /// Returns an error if any schema conflicts or unresolved schemas remain. The error summarizes
+    /// every schema conflict and unresolved schema.
     pub fn ensure_ready(&self) -> anyhow::Result<()> {
         if !self.has_errors() {
             return Ok(());
@@ -453,8 +454,8 @@ pub fn read_planned_migration_file(
 ///
 /// # Errors
 ///
-/// Returns an error when an identifier column is not string-like, a batch cannot be sliced or
-/// rebuilt with current identifier metadata, or a built-in batch fails its current decoder.
+/// Returns an error if an identifier column is not string-like, a batch cannot be sliced or rebuilt
+/// with current identifier metadata, or a built-in batch fails its current decoder.
 pub fn prepare_migration_parts(
     file: &PlannedMigrationFile,
     batches: Vec<RecordBatch>,
@@ -493,7 +494,7 @@ pub fn prepare_migration_parts(
 ///
 /// # Errors
 ///
-/// Returns an error when the separator or either side is absent.
+/// Returns an error if the separator or either side is absent.
 pub fn parse_storage_option(option: &str) -> Result<(String, String), String> {
     let (key, value) = option
         .split_once('=')
@@ -1244,13 +1245,13 @@ fn normalize_legacy_parquet_columns(batch: &RecordBatch) -> anyhow::Result<Recor
             ))));
         }
 
-        let batch = normalize_legacy_info_column(batch)?;
+        let batch = normalize_dictionary_string_columns(batch)?;
+        let batch = normalize_legacy_info_column(&batch)?;
         let instruments = decode_instrument_any_batch(&metadata, &batch)?;
         return Ok(InstrumentAny::encode_batch(&metadata, &instruments)?);
     }
 
-    let normalize_legacy = is_nautilus_legacy_schema(batch.schema_ref());
-
+    let normalize_legacy = uses_legacy_string_encoding(batch.schema_ref());
     let batch = if normalize_legacy {
         normalize_dictionary_string_columns(batch)?
     } else {
@@ -1274,14 +1275,20 @@ fn normalize_legacy_parquet_schema(schema: &Schema) -> Schema {
     }
 
     let normalize_fixed = is_nautilus_legacy_schema(schema);
+    let normalize_strings = uses_legacy_string_encoding(schema);
     let normalize_timestamps = is_nautilus_timestamp_schema(schema);
 
     let fields = schema
         .fields()
         .iter()
         .map(|field| {
-            let data_type =
-                normalized_legacy_data_type(field.name(), field.data_type(), normalize_fixed);
+            let data_type = if normalize_strings {
+                normalized_dictionary_data_type(field.data_type())
+            } else {
+                field.data_type().clone()
+            };
+
+            let data_type = normalized_legacy_data_type(field.name(), &data_type, normalize_fixed);
 
             let data_type = if schema.metadata().contains_key("type_name")
                 && matches!(field.name().as_str(), "ts_event" | "ts_init")
@@ -1310,6 +1317,14 @@ fn normalize_legacy_parquet_schema(schema: &Schema) -> Schema {
         .collect::<Vec<_>>();
 
     normalize_legacy_depth_schema(Schema::new_with_metadata(fields, schema.metadata().clone()))
+}
+
+fn uses_legacy_string_encoding(schema: &Schema) -> bool {
+    is_nautilus_legacy_schema(schema)
+        || (is_nautilus_timestamp_schema(schema)
+            && schema
+                .field_with_name("ts_init")
+                .is_ok_and(|field| field.data_type() == &ArrowDataType::UInt64))
 }
 
 fn normalize_legacy_record_schema(schema: &Schema) -> Option<Schema> {
@@ -2646,7 +2661,11 @@ mod tests {
     }
 
     #[rstest]
-    fn normalize_open_custom_columns_preserves_dictionary_with_type_metadata() {
+    #[case::without_ts_init(false)]
+    #[case::timestamp_ts_init(true)]
+    fn normalize_open_custom_columns_preserves_dictionary_with_type_metadata(
+        #[case] has_ts_init: bool,
+    ) {
         let mut builder = StringDictionaryBuilder::<Int8Type>::new();
         builder.append("alpha").unwrap();
         let dictionary = Arc::new(builder.finish()) as ArrayRef;
@@ -2656,31 +2675,29 @@ mod tests {
                 .unwrap(),
         ) as ArrayRef;
 
+        let mut fields = vec![
+            Field::new("label", dictionary.data_type().clone(), false),
+            Field::new("price", decimal.data_type().clone(), false),
+            Field::new("ts_recv", DataType::UInt64, false),
+        ];
+        let mut columns = vec![dictionary, decimal, Arc::new(UInt64Array::from(vec![7]))];
+
+        if has_ts_init {
+            fields.push(Field::new("ts_init", timestamp_data_type(), false));
+            columns.push(Arc::new(timestamp_array([13]).unwrap()));
+        }
+
         let schema = Arc::new(Schema::new_with_metadata(
-            vec![
-                Field::new("label", dictionary.data_type().clone(), false),
-                Field::new("price", decimal.data_type().clone(), false),
-                Field::new("ts_recv", DataType::UInt64, false),
-            ],
+            fields,
             HashMap::from([("type_name".to_string(), "CustomData".to_string())]),
         ));
-        let batch = RecordBatch::try_new(
-            schema,
-            vec![dictionary, decimal, Arc::new(UInt64Array::from(vec![7]))],
-        )
-        .unwrap();
+        let batch = RecordBatch::try_new(schema, columns).unwrap();
 
         let normalized = normalize_legacy_parquet_columns(&batch).unwrap();
         let normalized_schema = normalize_legacy_parquet_schema(batch.schema_ref());
 
         assert_eq!(normalized, batch);
-        assert_eq!(
-            normalized_schema
-                .field_with_name("label")
-                .unwrap()
-                .data_type(),
-            batch.schema().field_with_name("label").unwrap().data_type(),
-        );
+        assert_eq!(&normalized_schema, batch.schema_ref().as_ref());
     }
 
     #[rstest]

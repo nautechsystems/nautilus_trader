@@ -1,10 +1,9 @@
 # Configuration
 
-NautilusTrader uses typed configuration objects for data clients, execution clients, engines, and
-strategies. Higher-level configs compose these component configs. For example, `LiveNodeConfig`
-owns the node's core component settings; register adapter clients through `LiveNode.builder(...)`.
-Adapters keep separate data and execution client configs when their capabilities or credentials
-differ.
+NautilusTrader uses typed configuration objects for data clients, execution clients, engines, and strategies.
+Higher-level configs compose these component configs. For example, `LiveNodeConfig` owns the node's core
+component settings. Register adapter clients through `LiveNode.builder(...)`. Adapters keep separate data and
+execution client configs when their capabilities or credentials differ.
 
 ## Design principles
 
@@ -42,12 +41,14 @@ guarantees it.
 
 ### Unknown-field handling depends on the construction path
 
-Rust deserialization and Python constructor binding enforce unknown fields independently.
-`BybitDataClientConfig`, for example, uses `#[serde(deny_unknown_fields)]` and rejects extra
-serialized keys. A Rust type without that attribute may accept them. Fixed Python config
-constructors raise `TypeError` for unsupported keywords. `DataActorConfig`, `StrategyConfig`, and
-`ExecutionAlgorithmConfig` accept additional keywords for Python subclasses. Do not infer one
-construction path's strictness from another.
+Rust deserialization and Python constructor binding enforce unknown fields independently:
+
+- **Rust**: `BybitDataClientConfig`, for example, uses `#[serde(deny_unknown_fields)]` and rejects extra
+  serialized keys. A Rust type without that attribute may accept them.
+- **Python**: fixed config constructors raise `TypeError` for unsupported keywords. `DataActorConfig`,
+  `StrategyConfig`, and `ExecutionAlgorithmConfig` accept additional keywords for Python subclasses.
+
+Do not infer one construction path's strictness from another.
 
 ## Python configs
 
@@ -60,12 +61,13 @@ The wrapper then either selects the Rust default or preserves an absent optional
 the field. Check the field documentation rather than inferring its behavior from the Python
 annotation.
 
-Properties expose selected config values. Configs that hold secrets can omit their values or expose
-only presence checks; consult the config API before displaying or logging a config. Mutability is
-type-specific: many configs expose only read-only getters, while extensible component configs and
-some adapter configs expose documented setters. `DataActorConfig`, `StrategyConfig`, and
-`ExecutionAlgorithmConfig` also accept extra fields for Python subclasses. Python-owned analysis
-configs retain their documented dataclass behavior.
+Properties expose selected config values. Configs that hold secrets can omit their values or expose only
+presence checks. Consult the config API before displaying or logging a config.
+
+Mutability is type-specific: many configs expose only read-only getters, while extensible component configs
+and some adapter configs expose documented setters. `DataActorConfig`, `StrategyConfig`, and
+`ExecutionAlgorithmConfig` also accept extra fields for Python subclasses. Python-owned analysis configs keep
+their documented dataclass behavior.
 
 ```python
 from nautilus_trader.adapters.bybit import BybitDataClientConfig
@@ -85,10 +87,10 @@ config = BybitDataClientConfig(http_timeout_secs=30)
 assert config.http_timeout_secs == 30
 ```
 
-When a wrapper maps `None` to a non-`None` Rust default, Python cannot use that parameter to store
-Rust `None`. For example, passing `instrument_status_poll_secs=None` to `BybitDataClientConfig`
-retains its 60-second default. Rust callers can set `instrument_poll_interval_secs` to `None` to
-disable periodic instrument and status polling.
+When a wrapper maps `None` to a non-`None` Rust default, Python cannot use that parameter to store Rust
+`None`. For example, passing `instrument_status_poll_secs=None` to `BybitDataClientConfig` keeps its 60-second
+default. Rust callers can set `instrument_poll_interval_secs` to `None` to disable periodic instrument and
+status polling.
 
 ## Rust configs
 
@@ -96,9 +98,8 @@ Many Rust config structs derive [`bon::Builder`](https://bon-rs.com), which gene
 builder with compile-time checks for required fields. A builder can omit fields that declare a
 builder default.
 
-Use the construction style documented for the config type. For `DataEngineConfig`, the builder and
-struct update forms below both enable delta buffering and retain the declared defaults for other
-fields:
+Use the construction style documented for the config type. For `DataEngineConfig`, the builder and struct
+update forms below both enable delta buffering and keep the declared defaults for other fields:
 
 ```rust
 use nautilus_data::engine::config::DataEngineConfig;
@@ -167,15 +168,14 @@ assert config.open_check_lookback_mins == 60
 assert config.position_check_interval_secs is None  # Disabled by default
 ```
 
-After the live node completes startup, an available execution client lets this config schedule
-open-order report requests every 30 seconds and limit each request to the previous 60 minutes. It
-does not schedule periodic position report requests. Supplied periodic intervals must be positive,
-finite values of at least one nanosecond.
+After startup, an available execution client lets this config schedule open-order report requests each 30
+seconds. Each request covers only the previous 60 minutes. It does not schedule periodic position report
+requests. Supplied periodic intervals must be positive, finite values of at least one nanosecond.
 
-The separate `reconciliation` field enables startup reconciliation and defaults to `True`; the
-interval fields control periodic checks independently. When startup reconciliation is enabled,
-`reconciliation_startup_delay_secs` also delays the first periodic check after startup.
-The delay must be finite and in [0, 86400] seconds.
+The separate `reconciliation` field enables startup reconciliation and defaults to `True`. The interval fields
+control periodic checks independently. When startup reconciliation is enabled,
+`reconciliation_startup_delay_secs` also delays the first periodic check after startup. The delay must be
+finite and in [0, 86400] seconds.
 
 For the full set of live engine options, see
 [ExecutionEngine configuration](../how_to/configure_live_trading.md#executionengine-configuration).

@@ -111,8 +111,9 @@ impl BollingerBands {
     ///
     /// # Panics
     ///
-    /// - If `period` is `0` or greater than `MAX_PERIOD`.
-    /// - If `k` is *not finite* or *≤ 0*.
+    /// Panics if:
+    /// - `period` is `0` or greater than `MAX_PERIOD`.
+    /// - `k` is *not finite* or *≤ 0*.
     #[must_use]
     pub fn new(period: usize, k: f64, ma_type: Option<MovingAverageType>) -> Self {
         Self::new_checked(period, k, ma_type).expect(FAILED)

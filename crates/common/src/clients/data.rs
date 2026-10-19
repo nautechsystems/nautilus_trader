@@ -117,7 +117,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the subscribe operation fails.
     fn subscribe(&mut self, cmd: SubscribeCustomData) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), &cmd);
         Ok(())
     }
 
@@ -127,7 +127,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the subscribe operation fails.
     fn subscribe_instruments(&mut self, cmd: SubscribeInstruments) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), &cmd);
         Ok(())
     }
 
@@ -137,7 +137,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the subscribe operation fails.
     fn subscribe_instrument(&mut self, cmd: SubscribeInstrument) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), &cmd);
         Ok(())
     }
 
@@ -147,7 +147,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the subscribe operation fails.
     fn subscribe_book_deltas(&mut self, cmd: SubscribeBookDeltas) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), &cmd);
         Ok(())
     }
 
@@ -157,7 +157,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the subscribe operation fails.
     fn subscribe_book_depth(&mut self, cmd: SubscribeBookDepth) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), &cmd);
         Ok(())
     }
 
@@ -167,7 +167,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the subscribe operation fails.
     fn subscribe_quotes(&mut self, cmd: SubscribeQuotes) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), &cmd);
         Ok(())
     }
 
@@ -177,7 +177,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the subscribe operation fails.
     fn subscribe_trades(&mut self, cmd: SubscribeTrades) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), &cmd);
         Ok(())
     }
 
@@ -187,7 +187,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the subscribe operation fails.
     fn subscribe_mark_prices(&mut self, cmd: SubscribeMarkPrices) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), &cmd);
         Ok(())
     }
 
@@ -197,7 +197,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the subscribe operation fails.
     fn subscribe_index_prices(&mut self, cmd: SubscribeIndexPrices) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), &cmd);
         Ok(())
     }
 
@@ -207,7 +207,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the subscribe operation fails.
     fn subscribe_funding_rates(&mut self, cmd: SubscribeFundingRates) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), &cmd);
         Ok(())
     }
 
@@ -217,7 +217,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the subscribe operation fails.
     fn subscribe_bars(&mut self, cmd: SubscribeBars) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), &cmd);
         Ok(())
     }
 
@@ -230,7 +230,7 @@ pub trait DataClient {
         &mut self,
         cmd: SubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), &cmd);
         Ok(())
     }
 
@@ -240,7 +240,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the subscription operation fails.
     fn subscribe_instrument_close(&mut self, cmd: SubscribeInstrumentClose) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), &cmd);
         Ok(())
     }
 
@@ -250,7 +250,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the subscription operation fails.
     fn subscribe_option_greeks(&mut self, cmd: SubscribeOptionGreeks) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), &cmd);
         Ok(())
     }
 
@@ -261,7 +261,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the subscription operation fails.
     fn subscribe_blocks(&mut self, cmd: SubscribeBlocks) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), &cmd);
         Ok(())
     }
 
@@ -272,7 +272,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the subscription operation fails.
     fn subscribe_pool(&mut self, cmd: SubscribePool) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), &cmd);
         Ok(())
     }
 
@@ -283,7 +283,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the subscription operation fails.
     fn subscribe_pool_swaps(&mut self, cmd: SubscribePoolSwaps) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), &cmd);
         Ok(())
     }
 
@@ -297,7 +297,7 @@ pub trait DataClient {
         &mut self,
         cmd: SubscribePoolLiquidityUpdates,
     ) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), &cmd);
         Ok(())
     }
 
@@ -308,7 +308,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the subscription operation fails.
     fn subscribe_pool_fee_collects(&mut self, cmd: SubscribePoolFeeCollects) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), &cmd);
         Ok(())
     }
 
@@ -319,7 +319,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the subscription operation fails.
     fn subscribe_pool_flash_events(&mut self, cmd: SubscribePoolFlashEvents) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), &cmd);
         Ok(())
     }
 
@@ -329,7 +329,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the unsubscribe operation fails.
     fn unsubscribe(&mut self, cmd: &UnsubscribeCustomData) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), cmd);
         Ok(())
     }
 
@@ -339,7 +339,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the unsubscribe operation fails.
     fn unsubscribe_instruments(&mut self, cmd: &UnsubscribeInstruments) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), cmd);
         Ok(())
     }
 
@@ -349,7 +349,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the unsubscribe operation fails.
     fn unsubscribe_instrument(&mut self, cmd: &UnsubscribeInstrument) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), cmd);
         Ok(())
     }
 
@@ -359,7 +359,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the unsubscribe operation fails.
     fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), cmd);
         Ok(())
     }
 
@@ -369,7 +369,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the unsubscribe operation fails.
     fn unsubscribe_book_depth(&mut self, cmd: &UnsubscribeBookDepth) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), cmd);
         Ok(())
     }
 
@@ -379,7 +379,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the unsubscribe operation fails.
     fn unsubscribe_quotes(&mut self, cmd: &UnsubscribeQuotes) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), cmd);
         Ok(())
     }
 
@@ -389,7 +389,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the unsubscribe operation fails.
     fn unsubscribe_trades(&mut self, cmd: &UnsubscribeTrades) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), cmd);
         Ok(())
     }
 
@@ -399,7 +399,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the unsubscribe operation fails.
     fn unsubscribe_mark_prices(&mut self, cmd: &UnsubscribeMarkPrices) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), cmd);
         Ok(())
     }
 
@@ -409,7 +409,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the unsubscribe operation fails.
     fn unsubscribe_index_prices(&mut self, cmd: &UnsubscribeIndexPrices) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), cmd);
         Ok(())
     }
 
@@ -419,7 +419,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the unsubscribe operation fails.
     fn unsubscribe_funding_rates(&mut self, cmd: &UnsubscribeFundingRates) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), cmd);
         Ok(())
     }
 
@@ -429,7 +429,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the unsubscribe operation fails.
     fn unsubscribe_bars(&mut self, cmd: &UnsubscribeBars) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), cmd);
         Ok(())
     }
 
@@ -442,7 +442,7 @@ pub trait DataClient {
         &mut self,
         cmd: &UnsubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), cmd);
         Ok(())
     }
 
@@ -455,7 +455,7 @@ pub trait DataClient {
         &mut self,
         cmd: &UnsubscribeInstrumentClose,
     ) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), cmd);
         Ok(())
     }
 
@@ -465,7 +465,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the unsubscribe operation fails.
     fn unsubscribe_option_greeks(&mut self, cmd: &UnsubscribeOptionGreeks) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), cmd);
         Ok(())
     }
 
@@ -476,7 +476,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the subscription operation fails.
     fn unsubscribe_blocks(&mut self, cmd: &UnsubscribeBlocks) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), cmd);
         Ok(())
     }
 
@@ -487,7 +487,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the subscription operation fails.
     fn unsubscribe_pool(&mut self, cmd: &UnsubscribePool) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), cmd);
         Ok(())
     }
 
@@ -498,7 +498,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the subscription operation fails.
     fn unsubscribe_pool_swaps(&mut self, cmd: &UnsubscribePoolSwaps) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), cmd);
         Ok(())
     }
 
@@ -512,7 +512,7 @@ pub trait DataClient {
         &mut self,
         cmd: &UnsubscribePoolLiquidityUpdates,
     ) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), cmd);
         Ok(())
     }
 
@@ -526,7 +526,7 @@ pub trait DataClient {
         &mut self,
         cmd: &UnsubscribePoolFeeCollects,
     ) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), cmd);
         Ok(())
     }
 
@@ -540,7 +540,7 @@ pub trait DataClient {
         &mut self,
         cmd: &UnsubscribePoolFlashEvents,
     ) -> anyhow::Result<()> {
-        log_not_implemented(&cmd);
+        log_not_implemented(self.client_id(), cmd);
         Ok(())
     }
 
@@ -550,7 +550,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the data request fails.
     fn request_data(&self, request: RequestCustomData) -> anyhow::Result<()> {
-        log_not_implemented(&request);
+        log_not_implemented(self.client_id(), &request);
         Ok(())
     }
 
@@ -560,7 +560,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the instruments request fails.
     fn request_instruments(&self, request: RequestInstruments) -> anyhow::Result<()> {
-        log_not_implemented(&request);
+        log_not_implemented(self.client_id(), &request);
         Ok(())
     }
 
@@ -570,7 +570,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the instrument request fails.
     fn request_instrument(&self, request: RequestInstrument) -> anyhow::Result<()> {
-        log_not_implemented(&request);
+        log_not_implemented(self.client_id(), &request);
         Ok(())
     }
 
@@ -580,7 +580,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the book snapshot request fails.
     fn request_book_snapshot(&self, request: RequestBookSnapshot) -> anyhow::Result<()> {
-        log_not_implemented(&request);
+        log_not_implemented(self.client_id(), &request);
         Ok(())
     }
 
@@ -590,7 +590,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the quotes request fails.
     fn request_quotes(&self, request: RequestQuotes) -> anyhow::Result<()> {
-        log_not_implemented(&request);
+        log_not_implemented(self.client_id(), &request);
         Ok(())
     }
 
@@ -600,7 +600,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the trades request fails.
     fn request_trades(&self, request: RequestTrades) -> anyhow::Result<()> {
-        log_not_implemented(&request);
+        log_not_implemented(self.client_id(), &request);
         Ok(())
     }
 
@@ -610,7 +610,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the trades request fails.
     fn request_funding_rates(&self, request: RequestFundingRates) -> anyhow::Result<()> {
-        log_not_implemented(&request);
+        log_not_implemented(self.client_id(), &request);
         Ok(())
     }
 
@@ -623,7 +623,7 @@ pub trait DataClient {
         &self,
         request: RequestOptionChainReferencePrice,
     ) -> anyhow::Result<()> {
-        log_not_implemented(&request);
+        log_not_implemented(self.client_id(), &request);
         anyhow::bail!("option-chain reference price requests are not supported")
     }
 
@@ -633,7 +633,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the bars request fails.
     fn request_bars(&self, request: RequestBars) -> anyhow::Result<()> {
-        log_not_implemented(&request);
+        log_not_implemented(self.client_id(), &request);
         Ok(())
     }
 
@@ -643,7 +643,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the order book depths request fails.
     fn request_book_depth(&self, request: RequestBookDepth) -> anyhow::Result<()> {
-        log_not_implemented(&request);
+        log_not_implemented(self.client_id(), &request);
         Ok(())
     }
 
@@ -653,7 +653,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the order book deltas request fails.
     fn request_book_deltas(&self, request: RequestBookDeltas) -> anyhow::Result<()> {
-        log_not_implemented(&request);
+        log_not_implemented(self.client_id(), &request);
         Ok(())
     }
 
@@ -664,7 +664,7 @@ pub trait DataClient {
     ///
     /// Returns an error if the pool snapshot request fails.
     fn request_pool_snapshot(&self, request: RequestPoolSnapshot) -> anyhow::Result<()> {
-        log_not_implemented(&request);
+        log_not_implemented(self.client_id(), &request);
         Ok(())
     }
 }

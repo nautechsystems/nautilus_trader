@@ -50,6 +50,7 @@ impl GcraReference {
     fn new(quota: Quota, keys: usize) -> Self {
         let cell_ns = quota.replenish_interval().as_nanos();
         let burst_ns = cell_ns * u128::from(quota.burst_size().get());
+
         Self {
             now_ns: 0,
             cell_ns,

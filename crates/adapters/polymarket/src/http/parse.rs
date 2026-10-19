@@ -223,13 +223,22 @@ pub(crate) fn resolve_maker_rebate_rate(market: &GammaMarket) -> Decimal {
     }
 }
 
-// Ensures the market carries a fee schedule with a category-resolved rebate.
-// Existing schedules keep their rate and have their rebate overwritten.
-// Missing schedules are created for fee-enabled markets with a zero rate
-// for the CLOB fallback to fill. Fee-free and unclassifiable markets keep
-// a zero rebate and no invented schedule.
+// Create missing schedules only for a resolved fee-enabled category.
+// Keep unknown taker rates at zero; the legacy CLOB base fee cannot supply them.
 pub(crate) fn enrich_market_fee_schedule(market: &mut GammaMarket) {
     let rebate = resolve_maker_rebate_rate(market);
+    if (market.fees_enabled == Some(true) || !rebate.is_zero())
+        && market
+            .fee_schedule
+            .as_ref()
+            .is_none_or(|schedule| schedule.rate.is_zero())
+    {
+        log::warn!(
+            "Missing or zero Gamma taker fee rate for fee-enabled market {}, using zero",
+            market.id
+        );
+    }
+
     match market.fee_schedule.as_mut() {
         Some(schedule) => {
             schedule.rebate_rate = rebate;

@@ -47,8 +47,7 @@ pub mod sorted_hashset {
     ///
     /// # Errors
     ///
-    /// Returns any error produced by the underlying [`Serializer`] when writing
-    /// the sorted vector.
+    /// Returns an error if the underlying [`Serializer`] fails when writing the sorted vector.
     pub fn serialize<T, S>(set: &AHashSet<T>, s: S) -> Result<S::Ok, S::Error>
     where
         T: Serialize + Ord,
@@ -63,8 +62,7 @@ pub mod sorted_hashset {
     ///
     /// # Errors
     ///
-    /// Returns any error produced by the underlying [`Deserializer`] when reading
-    /// the source array.
+    /// Returns an error if the underlying [`Deserializer`] fails when reading the source array.
     pub fn deserialize<'de, T, D>(d: D) -> Result<AHashSet<T>, D::Error>
     where
         T: Deserialize<'de> + Eq + std::hash::Hash,
@@ -285,7 +283,9 @@ fn decimal_string_clamped_to_scale(value: &str, max_scale: usize) -> Option<Stri
     let (integer, fractional) = if point <= 0 {
         // Digits past the rounding position are leading zeros, so the cap
         // cannot change the result; bounds allocation for absurd exponents.
-        let zero_count = usize::try_from(-point).ok()?.min(max_scale + 1);
+        let zero_count = usize::try_from(point.checked_neg()?)
+            .ok()?
+            .min(max_scale + 1);
         (
             "0".to_string(),
             format!("{}{digits}", "0".repeat(zero_count)),
@@ -402,7 +402,7 @@ pub trait Serializable: Serialize + for<'de> Deserialize<'de> {
     ///
     /// # Errors
     ///
-    /// Returns serialization errors.
+    /// Returns an error if JSON deserialization fails.
     fn from_json_bytes(data: &[u8]) -> Result<Self, serde_json::Error> {
         serde_json::from_slice(data)
     }
@@ -411,7 +411,7 @@ pub trait Serializable: Serialize + for<'de> Deserialize<'de> {
     ///
     /// # Errors
     ///
-    /// Returns serialization errors.
+    /// Returns an error if JSON serialization fails.
     fn to_json_bytes(&self) -> Result<Bytes, serde_json::Error> {
         serde_json::to_vec(self).map(Bytes::from)
     }
@@ -435,7 +435,7 @@ pub mod msgpack {
         ///
         /// # Errors
         ///
-        /// Returns serialization errors.
+        /// Returns an error if MessagePack deserialization fails.
         fn from_msgpack_bytes(data: &[u8]) -> Result<Self, rmp_serde::decode::Error> {
             rmp_serde::from_slice(data)
         }
@@ -447,7 +447,7 @@ pub mod msgpack {
         ///
         /// # Errors
         ///
-        /// Returns serialization errors.
+        /// Returns an error if MessagePack serialization fails.
         fn to_msgpack_bytes(&self) -> Result<Bytes, rmp_serde::encode::Error> {
             rmp_serde::to_vec_named(self).map(Bytes::from)
         }
@@ -1773,6 +1773,38 @@ mod tests {
         assert_eq!(required.value.scale(), scale);
         assert_eq!(optional.value, Some(dec!(15)));
         assert_eq!(optional.value.unwrap().scale(), scale);
+    }
+
+    #[rstest]
+    #[case(".1e-2147483648")]
+    #[case("-.1E-2147483648")]
+    #[case("+.1e-2147483648")]
+    fn test_deserialize_decimal_rejects_min_exponent(
+        #[case] value: &str,
+        #[values("visitor", "token", "token_borrowed")] route: &str,
+        #[values(false, true)] optional: bool,
+    ) {
+        let json = serde_json::to_string(value).unwrap();
+        let mut deserializer = serde_json::Deserializer::from_str(&json);
+        let result = match (route, optional) {
+            ("visitor", false) => deserialize_decimal(&mut deserializer).map(Some),
+            ("visitor", true) => deserialize_optional_decimal(&mut deserializer),
+            ("token", false) => deserialize_decimal_token(&mut deserializer).map(Some),
+            ("token", true) => deserialize_optional_decimal_token(&mut deserializer),
+            ("token_borrowed", false) => {
+                deserialize_decimal_token_borrowed(&mut deserializer).map(Some)
+            }
+            ("token_borrowed", true) => {
+                deserialize_optional_decimal_token_borrowed(&mut deserializer)
+            }
+            _ => unreachable!(),
+        };
+
+        let error = result.unwrap_err();
+        let expected = "Scale exceeds the maximum precision allowed: 2147483648 > 28";
+
+        assert_eq!(error.classify(), serde_json::error::Category::Data);
+        assert_eq!(error.to_string().split(" at line ").next(), Some(expected));
     }
 
     #[rstest]

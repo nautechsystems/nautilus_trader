@@ -394,7 +394,7 @@ pub fn normalize_storage_location(path: &str) -> anyhow::Result<String> {
 ///
 /// # Errors
 ///
-/// Returns an error when the URI cannot be parsed or the requested storage service is not enabled.
+/// Returns an error if the URI cannot be parsed or the requested storage service is not enabled.
 #[cfg_attr(not(feature = "cloud"), allow(clippy::needless_pass_by_value))]
 pub fn create_storage_backend_from_path(
     path: &str,

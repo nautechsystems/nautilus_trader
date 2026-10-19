@@ -133,8 +133,7 @@ impl<S: socket_config_builder::IsComplete> SocketConfigBuilder<S> {
     ///
     /// # Errors
     ///
-    /// Returns a [`NetworkConfigError`] if any field fails validation
-    /// (see [`SocketConfig::validate`]).
+    /// Returns an error if any field fails validation (see [`SocketConfig::validate`]).
     pub fn build(self) -> NetworkConfigResult<SocketConfig> {
         let config = self.build_inner();
         config.validate()?;
@@ -147,13 +146,12 @@ impl SocketConfig {
     ///
     /// # Errors
     ///
-    /// Returns a [`NetworkConfigError`] if `url` is empty, the heartbeat interval or a
-    /// reconnection timing field is not positive, `reconnect_backoff_factor` is outside
-    /// `[1.0, 100.0]`, `reconnect_delay_initial_ms` exceeds `reconnect_delay_max_ms`, or
-    /// `writer_capacity` is outside `[1, Semaphore::MAX_PERMITS]`.
+    /// Returns an error if `url` is empty, the heartbeat interval or a reconnection timing field is
+    /// not positive, `reconnect_backoff_factor` is outside `[1.0, 100.0]`,
+    /// `reconnect_delay_initial_ms` exceeds `reconnect_delay_max_ms`, or `writer_capacity` is
+    /// outside `[1, Semaphore::MAX_PERMITS]`.
     pub fn validate(&self) -> NetworkConfigResult<()> {
         let mut errors = Vec::new();
-
         if let Err(e) = crate::writer::validate_capacity(self.writer_capacity) {
             errors.push(e);
         }
@@ -326,6 +324,7 @@ mod tests {
             interval_secs: 5,
             payload: b"ping".to_vec(),
         });
+
         config.heartbeat_timeout_secs = timeout_secs;
 
         assert_eq!(config.resolved_heartbeat_timeout(), expected);

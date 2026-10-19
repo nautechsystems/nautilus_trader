@@ -1165,7 +1165,7 @@ pub(crate) fn with_venue_position_id(
 ///
 /// # Errors
 ///
-/// Returns an error when position IDs are enabled but the position side is missing or unknown.
+/// Returns an error if position IDs are enabled but the position side is missing or unknown.
 pub(crate) fn make_venue_position_id(
     use_position_ids: bool,
     instrument_id: InstrumentId,
@@ -2348,6 +2348,7 @@ mod tests {
                 order_type: OrderType::Limit,
                 price: None,
                 quantity: Quantity::from("1"),
+                is_quote_quantity: false,
                 venue_position_id: None,
             },
         );
@@ -2462,6 +2463,7 @@ mod tests {
                 order_type: OrderType::Limit,
                 price,
                 quantity,
+                is_quote_quantity: false,
                 venue_position_id: None,
             },
         );

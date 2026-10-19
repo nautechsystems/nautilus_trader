@@ -37,10 +37,11 @@ use nautilus_common::{
             RequestCustomData, RequestFundingRates, RequestInstrument, RequestInstruments,
             RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth,
             SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
-            SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades, TradesResponse, UnsubscribeBars,
-            UnsubscribeBookDeltas, UnsubscribeBookDepth, UnsubscribeCustomData,
-            UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
-            UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
+            SubscribeInstrumentStatus, SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades,
+            TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth,
+            UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
+            UnsubscribeInstrument, UnsubscribeInstrumentStatus, UnsubscribeInstruments,
+            UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
 };
@@ -72,6 +73,7 @@ use crate::{
         consts::HYPERLIQUID_VENUE,
         credential::{Secrets, credential_env_vars},
         parse::{bar_type_to_interval, millis_to_nanos},
+        status::InstrumentStatusState,
     },
     config::HyperliquidDataClientConfig,
     data_types::register_hyperliquid_custom_data,
@@ -102,6 +104,7 @@ pub struct HyperliquidDataClient {
     coin_to_instrument_id: Arc<AtomicMap<Ustr, InstrumentId>>,
     // serializes instrument fetch-and-apply passes, see `refresh_instruments`
     instrument_update_lock: Arc<tokio::sync::Mutex<()>>,
+    instrument_status: Arc<Mutex<InstrumentStatusState>>,
     stream_health: Arc<Mutex<MarketDataStreamHealthMonitor>>,
     book_sync: BookSyncTracker,
 }
@@ -203,6 +206,7 @@ impl HyperliquidDataClient {
             instruments: Arc::new(AtomicMap::new()),
             coin_to_instrument_id: Arc::new(AtomicMap::new()),
             instrument_update_lock: Arc::new(tokio::sync::Mutex::new(())),
+            instrument_status: Arc::new(Mutex::new(InstrumentStatusState::default())),
             stream_health,
             book_sync: BookSyncTracker::default(),
         })
@@ -397,11 +401,12 @@ impl HyperliquidDataClient {
         // a pass that fetched before the bootstrap must not apply over its universe
         let _update_guard = self.instrument_update_lock.lock().await;
 
-        let instruments = self
+        let snapshot = self
             .http_client
-            .request_instruments()
+            .request_instruments_with_statuses()
             .await
             .context("failed to fetch instruments during bootstrap")?;
+        let instruments = snapshot.instruments;
 
         cache_instruments(
             &instruments,
@@ -410,6 +415,7 @@ impl HyperliquidDataClient {
             &self.http_client,
             &self.ws_client,
         );
+        self.instrument_status.lock().store(snapshot.statuses);
         rebuild_all_dex_asset_ctxs_mapping(&self.http_client, &self.ws_client).await;
 
         log::debug!(
@@ -440,6 +446,7 @@ impl HyperliquidDataClient {
         let instruments = Arc::clone(&self.instruments);
         let coin_to_instrument_id = Arc::clone(&self.coin_to_instrument_id);
         let instrument_update_lock = Arc::clone(&self.instrument_update_lock);
+        let instrument_status = Arc::clone(&self.instrument_status);
         let data_sender = self.data_sender.clone();
         let client_id = self.client_id;
 
@@ -468,6 +475,7 @@ impl HyperliquidDataClient {
                         &ws_client,
                         &instruments,
                         &coin_to_instrument_id,
+                        &instrument_status,
                         &data_sender,
                     ) => result,
                 };
@@ -674,6 +682,7 @@ impl DataClient for HyperliquidDataClient {
         self.is_connected.store(false, Ordering::Relaxed);
         self.instruments.store(AHashMap::new());
         self.coin_to_instrument_id.store(AHashMap::new());
+        self.instrument_status.lock().clear();
         Ok(())
     }
 
@@ -778,6 +787,7 @@ impl DataClient for HyperliquidDataClient {
     async fn disconnect(&mut self) -> anyhow::Result<()> {
         self.teardown_partial_connect().await?;
         self.instruments.store(AHashMap::new());
+        self.instrument_status.lock().clear();
         log::info!("Disconnected: client_id={}", self.client_id);
 
         Ok(())
@@ -1093,6 +1103,36 @@ impl DataClient for HyperliquidDataClient {
         Ok(())
     }
 
+    fn subscribe_instrument_status(
+        &mut self,
+        cmd: SubscribeInstrumentStatus,
+    ) -> anyhow::Result<()> {
+        log::debug!(
+            "Subscribing to instrument status: {} (detected by the instrument refresh)",
+            cmd.instrument_id,
+        );
+        let ts = self.clock.get_time_ns();
+        self.instrument_status
+            .lock()
+            .subscribe(cmd.instrument_id, &self.data_sender, ts);
+
+        Ok(())
+    }
+
+    fn unsubscribe_instrument_status(
+        &mut self,
+        cmd: &UnsubscribeInstrumentStatus,
+    ) -> anyhow::Result<()> {
+        log::debug!(
+            "Unsubscribing from instrument status: {}",
+            cmd.instrument_id
+        );
+        self.instrument_status
+            .lock()
+            .unsubscribe(&cmd.instrument_id);
+        Ok(())
+    }
+
     fn unsubscribe_instrument(&mut self, _cmd: &UnsubscribeInstrument) -> anyhow::Result<()> {
         // `subscribe_instrument` only emits the cached instrument; it opens no
         // venue channel, so there is nothing to tear down here.
@@ -1232,6 +1272,7 @@ impl DataClient for HyperliquidDataClient {
         let instruments_cache = self.instruments.clone();
         let coin_map = self.coin_to_instrument_id.clone();
         let update_lock = Arc::clone(&self.instrument_update_lock);
+        let instrument_status = Arc::clone(&self.instrument_status);
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
         let venue = self.venue();
@@ -1250,6 +1291,7 @@ impl DataClient for HyperliquidDataClient {
                 &ws,
                 &instruments_cache,
                 &coin_map,
+                &instrument_status,
                 &sender,
             )
             .await?;
@@ -1285,6 +1327,7 @@ impl DataClient for HyperliquidDataClient {
         let instruments_cache = self.instruments.clone();
         let coin_map = self.coin_to_instrument_id.clone();
         let update_lock = Arc::clone(&self.instrument_update_lock);
+        let instrument_status = Arc::clone(&self.instrument_status);
         let instrument_id = request.instrument_id;
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
@@ -1302,6 +1345,7 @@ impl DataClient for HyperliquidDataClient {
                 &ws,
                 &instruments_cache,
                 &coin_map,
+                &instrument_status,
                 &sender,
             )
             .await?;
@@ -1524,7 +1568,7 @@ impl DataClient for HyperliquidDataClient {
             anyhow::bail!("Funding rates are only available for perpetual instruments");
         }
 
-        let coin = instrument.raw_symbol().to_string();
+        let instrument = instrument.clone();
         let http = self.http_client.clone();
         let sender = self.data_sender.clone();
         let client_id = request.client_id.unwrap_or(self.client_id);
@@ -1537,32 +1581,11 @@ impl DataClient for HyperliquidDataClient {
         let start_nanos = datetime_to_unix_nanos(start_dt);
         let end_nanos = datetime_to_unix_nanos(end_dt);
 
-        let now_ms = Timestamp::now().as_millisecond() as u64;
-
-        // Hyperliquid requires a startTime; default to a 7-day lookback when none given
-        let default_lookback_ms: u64 = 7 * 86_400_000;
-        let start_ms = match start_dt {
-            Some(dt) => dt.as_millisecond().max(0) as u64,
-            None => now_ms.saturating_sub(default_lookback_ms),
-        };
-        let end_ms = end_dt.map(|dt| dt.as_millisecond().max(0) as u64);
-
         self.spawn_task("request_funding_rates", async move {
-            let entries = http
-                .info_funding_history(&coin, start_ms, end_ms)
+            let funding_rates = http
+                .request_funding_rates(&instrument, start_dt, end_dt, limit)
                 .await
                 .with_context(|| format!("funding rates request failed for {instrument_id}"))?;
-
-            let mut funding_rates: Vec<FundingRateUpdate> = entries
-                .iter()
-                .map(|entry| funding_entry_to_update(entry, instrument_id))
-                .collect();
-
-            if let Some(limit) = limit
-                && funding_rates.len() > limit
-            {
-                funding_rates.truncate(limit);
-            }
 
             log::debug!(
                 "Fetched {} funding rates for {instrument_id}",
@@ -1726,7 +1749,8 @@ impl InstrumentRefresh {
     }
 }
 
-/// Fetches the instrument universe and reconciles it against the caches.
+/// Fetches the instrument universe, reconciles it against the caches, and emits
+/// instrument status changes for subscribed instruments.
 ///
 /// Holds `update_lock` across the fetch and the reconcile so concurrent passes
 /// apply in the order they fetched. The diff only asks whether a definition
@@ -1739,24 +1763,34 @@ async fn refresh_instruments(
     ws_client: &HyperliquidWebSocketClient,
     instruments_by_id: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     coin_to_instrument_id: &Arc<AtomicMap<Ustr, InstrumentId>>,
+    instrument_status: &Mutex<InstrumentStatusState>,
     data_sender: &EventSender<DataEvent>,
 ) -> anyhow::Result<InstrumentRefresh> {
     let _update_guard = update_lock.lock().await;
 
-    let fetched = http_client
-        .request_instruments()
+    let snapshot = http_client
+        .request_instruments_with_statuses()
         .await
         .context("failed to fetch Hyperliquid instruments")?;
 
-    Ok(reconcile_instruments(
-        fetched,
+    // emit statuses after definitions, so a subscriber never sees a status for an
+    // instrument it has not received
+    let refresh = reconcile_instruments(
+        snapshot.instruments,
         http_client,
         ws_client,
         instruments_by_id,
         coin_to_instrument_id,
         data_sender,
     )
-    .await)
+    .await;
+
+    let ts = get_atomic_clock_realtime().get_time_ns();
+    instrument_status
+        .lock()
+        .apply(&snapshot.statuses, &snapshot.loaded, data_sender, ts);
+
+    Ok(refresh)
 }
 
 /// Reconciles the instrument caches against a fetched instrument universe.

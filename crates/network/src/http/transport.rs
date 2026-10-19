@@ -73,7 +73,7 @@ impl Client {
             .with_custom_certificate_verifier(verifier)
             .with_no_client_auth();
         let connector = Connector::new(tls.clone(), proxy, use_system_proxy, user_agent)?;
-        let proxies = connector.proxies.clone();
+        let proxies = Arc::clone(&connector.proxies);
         tls.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
         let connector = HttpsConnector::from((connector, tls));
 
@@ -102,6 +102,7 @@ impl Client {
             count: 0,
             previous: None,
         };
+
         FollowRedirect::with_policy(self.clone(), policy)
             .preserve_extensions(false)
             .call(request)
@@ -186,25 +187,32 @@ impl Policy<Full<Bytes>, HttpClientError> for Redirects {
         let Some(previous) = &self.previous else {
             return;
         };
+
         let Ok(next) = Url::parse(&request.uri().to_string()) else {
             return;
         };
 
         if previous.origin() != next.origin() {
-            for name in [AUTHORIZATION, COOKIE, PROXY_AUTHORIZATION, WWW_AUTHENTICATE] {
+            for name in [
+                AUTHORIZATION,
+                COOKIE,
+                PROXY_AUTHORIZATION,
+                REFERER,
+                WWW_AUTHENTICATE,
+            ] {
                 request.headers_mut().remove(name);
             }
+
             request.headers_mut().remove("cookie2");
+            return;
         }
 
-        if !(previous.scheme() == "https" && next.scheme() == "http") {
-            let mut referer = previous.clone();
-            let _ = referer.set_username("");
-            let _ = referer.set_password(None);
-            referer.set_fragment(None);
-            if let Ok(value) = referer.as_str().parse() {
-                request.headers_mut().insert(REFERER, value);
-            }
+        let mut referer = previous.clone();
+        let _ = referer.set_username("");
+        let _ = referer.set_password(None);
+        referer.set_fragment(None);
+        if let Ok(value) = referer.as_str().parse() {
+            request.headers_mut().insert(REFERER, value);
         }
     }
 
@@ -223,12 +231,12 @@ fn platform_verifier(
     let mut cached = VERIFIER.lock();
 
     if let Some(verifier) = &*cached {
-        return Ok(verifier.clone());
+        return Ok(Arc::clone(verifier));
     }
 
-    let verifier = rustls_platform_verifier::Verifier::new(provider.clone())
+    let verifier = rustls_platform_verifier::Verifier::new(Arc::clone(provider))
         .map_err(|e| HttpClientError::ClientBuildError(e.to_string()))?;
-    Ok(cached.insert(Arc::new(verifier)).clone())
+    Ok(Arc::clone(cached.insert(Arc::new(verifier))))
 }
 
 fn retryable(e: &(dyn Error + 'static)) -> bool {
@@ -239,7 +247,41 @@ fn retryable(e: &(dyn Error + 'static)) -> bool {
                 && ((e.is_go_away() && e.reason() == Some(h2::Reason::NO_ERROR))
                     || (e.is_reset() && e.reason() == Some(h2::Reason::REFUSED_STREAM)));
         }
+
         cause = e.source();
     }
+
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case::upgrade("http://example.com", "https://example.com")]
+    #[case::downgrade("https://example.com", "http://example.com")]
+    #[case::host("https://source.example", "https://destination.example")]
+    fn redirect_removes_referer_across_origins(#[case] previous: &str, #[case] next: &str) {
+        let previous = format!("{previous}/start?signature=SECRET");
+        let previous = Url::parse(&previous).unwrap();
+
+        let mut policy = Redirects {
+            policy: HttpRedirectPolicy::Follow,
+            count: 1,
+            previous: Some(previous),
+        };
+
+        let mut request = Request::builder()
+            .uri(format!("{next}/next"))
+            .header(REFERER, "https://private.example/signed?token=PRIOR_SECRET")
+            .body(Full::new(Bytes::new()))
+            .unwrap();
+
+        policy.on_request(&mut request);
+
+        assert_eq!(request.headers().get(REFERER), None);
+    }
 }

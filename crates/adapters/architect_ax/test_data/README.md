@@ -52,7 +52,7 @@ the fixture lists the recognized values, including their fallback.
 
 ## Compatibility and derived cases
 
-The top-level JSON files predate this capture set. Their original capture provenance is not recorded;
+Unless noted below, the top-level JSON files predate this capture set. Their original capture provenance is not recorded;
 use them as targeted examples or compatibility cases. Required account, post-only, position cost-basis,
 margin, and instrument metadata fields are aligned with the current schemas where applicable.
 
@@ -60,6 +60,10 @@ margin, and instrument metadata fields are aligned with the current schemas wher
 schema's `ro`-only form. `ws_order_filled_unknown_state.json` and `ws_order_filled_unknown_tif.json` substitute an unknown
 sibling classification to verify that a fill still reaches execution. Files containing `invalid` test obsolete or
 malformed shapes. Tests also derive missing, null, and future enum values from these fixtures.
+
+`http_get_orders_partial_canceled.json` and `http_get_fills_partial_canceled.json` are synthetic
+fixtures for a partially filled canceled IOC. The fills arrive out of timestamp order and include
+a later fill for an unrelated order.
 
 The captures preserve these observed differences from the published schemas:
 

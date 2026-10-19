@@ -16,6 +16,7 @@
 //! WebSocket lifecycle checks on the deterministic transport path.
 
 #![cfg(all(feature = "simulation", madsim))]
+#![warn(clippy::clone_on_ref_ptr)]
 
 use std::time::Duration;
 
@@ -67,6 +68,7 @@ async fn tungstenite_reconnect_preserves_payloads() {
                     .send(Message::text(format!("state-{generation}")))
                     .await
                     .unwrap();
+
                 if generation == 1 {
                     socket.close(None).await.unwrap();
                 } else {
@@ -76,8 +78,10 @@ async fn tungstenite_reconnect_preserves_payloads() {
                     ));
                 }
             }
+
             requests
         });
+
         let (handler, mut messages) = channel_message_handler();
         let config = WebSocketConfig::builder()
             .url("ws://127.0.0.1:18081/feed".into())
@@ -151,5 +155,6 @@ fn jitter_restarts_with_runtime_seed() {
             (0..8).map(|_| backoff.next_duration()).collect::<Vec<_>>()
         })
     };
+
     assert_eq!(sample(), sample());
 }

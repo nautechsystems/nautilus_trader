@@ -171,8 +171,7 @@ impl NonceManager {
     ///
     /// # Errors
     ///
-    /// Returns [`NonceError::NotInitialized`] if [`NonceManager::refresh`]
-    /// has not run for this key.
+    /// Returns an error if [`NonceManager::refresh`] has not run for this key.
     pub fn sync_from_venue(
         &self,
         account_index: i64,
@@ -235,8 +234,7 @@ impl NonceManager {
     ///
     /// # Errors
     ///
-    /// Returns [`NonceError::NotInitialized`] if [`NonceManager::refresh`]
-    /// has not run for this key.
+    /// Returns an error if [`NonceManager::refresh`] has not run for this key.
     pub fn ack_success(
         &self,
         account_index: i64,
@@ -299,8 +297,7 @@ impl NonceManager {
     ///
     /// # Errors
     ///
-    /// Returns [`NonceError::NotInitialized`] if [`NonceManager::refresh`]
-    /// has not run for this key.
+    /// Returns an error if [`NonceManager::refresh`] has not run for this key.
     pub fn ack_failure_if_latest(
         &self,
         account_index: i64,

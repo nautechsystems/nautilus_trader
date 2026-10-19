@@ -240,8 +240,7 @@ fn ws_book_side_to_order_side(side: WsBookSide) -> OrderSide {
 ///
 /// # Errors
 ///
-/// Returns an error when any numeric field cannot be parsed against the
-/// instrument precision.
+/// Returns an error if any numeric field cannot be parsed against the instrument precision.
 pub fn parse_ws_user_event_to_order_status_report(
     update: &WsOrderUpdate,
     instrument: &InstrumentAny,

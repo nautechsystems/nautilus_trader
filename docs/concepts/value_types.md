@@ -80,11 +80,13 @@ same type return `Decimal`:
 
 The same pattern applies to `Quantity` and `Money`.
 
-These operations do not return the original type because the result has different
-dimensional meaning. Multiplying a price by a price produces "price squared", not
-a price. Dividing a quantity by a quantity produces a dimensionless ratio, not a
-quantity. Returning `Decimal` makes the unit change explicit and prevents
-misinterpretation of the result as a value with the original unit.
+These operations return `Decimal` because the result has different dimensional meaning:
+
+- Multiplying a price by a price produces "price squared", not a price.
+- Dividing a quantity by a quantity produces a dimensionless ratio, not a quantity.
+
+Returning `Decimal` makes the unit change explicit and prevents misinterpretation of the result as a value
+with the original unit.
 
 ### Unary operations
 
@@ -123,9 +125,9 @@ print(type(+qty))  # <class 'nautilus_trader.model.Quantity'>
 ### Mixed-type operations
 
 When operating with other numeric types, the result type follows Python's
-[numeric tower](https://docs.python.org/3/library/numbers.html) conventions. The general
-principle is that operations widen to the more general type: `float` operations return
-`float`, while `int` and `Decimal` operations return `Decimal` for precision preservation.
+[numeric tower](https://docs.python.org/3/library/numbers.html) conventions. Operations widen to the more
+general type. `float` operations return `float`, while `int` and `Decimal` operations return `Decimal` for
+precision preservation.
 
 This applies to all six binary operators (`+`, `-`, `*`, `/`, `//`, `%`) and works
 in both directions (`value op scalar` and `scalar op value`):
@@ -161,17 +163,16 @@ print(type(result3))  # <class 'decimal.Decimal'>
 
 ## Precision handling
 
-Each value type carries a precision indicating the number of decimal places:
-`Price` and `Quantity` store an explicit `precision` field, while `Money` uses its
-currency's precision. Precision is set at construction and is immutable. There is
-no "unspecified" precision.
+Each value type carries a precision that indicates the number of decimal places. `Price` and `Quantity` store
+an explicit `precision` field, while `Money` uses its currency's precision. Precision is set at construction
+and is immutable. The types have no "unspecified" precision.
 
 ### Fixed-point representation
 
-Value types are stored internally as integers scaled to a global fixed precision
-(e.g., 10^16 in high-precision mode), not floating-point numbers. The precision
-tracks the number of decimal places used at construction, controlling display
-formatting and serialization, but the underlying raw value always uses the global scale.
+Value types are stored internally as integers scaled to a global fixed precision (for example, 10^16 in
+high-precision mode), not floating-point numbers. The precision tracks the number of decimal places used at
+construction and controls display formatting and serialization. But the underlying raw value always uses the
+global scale.
 
 ```python
 from nautilus_trader.model import Price
@@ -184,19 +185,17 @@ str(p1)  # "1.23"
 str(p2)  # "1.230"
 ```
 
-**Precision controls display, not identity.** Two prices with the same decimal value but
-different precisions are equal. The `precision` field determines string formatting and
-how many decimal places are shown, but equality is based on the underlying numeric value.
+**Precision and identity**: two prices with the same decimal value but different precisions are equal.
+Precision controls display, not identity. The `precision` field determines string formatting and how many
+decimal places are shown. Equality is based on the underlying numeric value.
 
-**Market data serialization uses precision metadata.** When market data types (quotes,
-trades, order book deltas) are written to Parquet or Arrow format, precision is stored in
-the file metadata so that values can be correctly decoded. All market data values within
-a single file must share the same precision.
+**Market data serialization**: when market data types (such as quotes, trades, and order book deltas) are
+written to Parquet or Arrow, file metadata stores their precision. This lets readers decode the values
+correctly. All market data values within a single file must share the same precision.
 
 :::warning
-If a venue changes an instrument's tick size (and thus its precision), data files written
-before and after the change will have different precision metadata and should not be
-consolidated into a single file.
+If a venue changes an instrument's tick size (and thus its precision), data files written before and after the
+change have different precision metadata. Do not consolidate them into a single file.
 :::
 
 For how instrument-level precision constrains valid prices and quantities, see the

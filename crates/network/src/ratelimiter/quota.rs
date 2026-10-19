@@ -58,6 +58,7 @@ impl Quota {
         if replenish_interval_ns == 0 {
             return None;
         }
+
         Some(Self {
             max_burst,
             replenish_1_per: Duration::from_nanos(replenish_interval_ns as u64),
@@ -69,6 +70,7 @@ impl Quota {
     #[must_use]
     pub const fn per_minute(max_burst: NonZeroU32) -> Self {
         let replenish_interval_ns = Duration::from_mins(1).as_nanos() / (max_burst.get() as u128);
+
         Self {
             max_burst,
             replenish_1_per: Duration::from_nanos(replenish_interval_ns as u64),
@@ -80,6 +82,7 @@ impl Quota {
     #[must_use]
     pub const fn per_hour(max_burst: NonZeroU32) -> Self {
         let replenish_interval_ns = Duration::from_hours(1).as_nanos() / (max_burst.get() as u128);
+
         Self {
             max_burst,
             replenish_1_per: Duration::from_nanos(replenish_interval_ns as u64),
@@ -164,6 +167,7 @@ impl Quota {
         let max_burst = NonZeroU32::new(division_result as u32)
             .expect("Division result should be non-zero after validation");
         let replenish_1_per = t.into();
+
         Self {
             max_burst,
             replenish_1_per,

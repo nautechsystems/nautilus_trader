@@ -9,7 +9,7 @@ type and supports the book types NautilusTrader uses for incremental updates:
 
 The source feed and target `BookType` determine which granularity a delta carries.
 
-Use it when a venue or data provider publishes incremental book changes and Nautilus
+Use it when a venue or data provider publishes incremental book changes and NautilusTrader
 should maintain the book state locally.
 
 ## Fields

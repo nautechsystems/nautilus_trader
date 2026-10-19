@@ -45,6 +45,7 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use nautilus_network::{
+    ConnectionUrl,
     http::create_standard_nautilus_headers,
     mode::ConnectionMode,
     websocket::{
@@ -128,7 +129,7 @@ impl From<&'static str> for AxOrdersWsClientError {
 /// and monitoring order status via WebSocket.
 pub struct AxOrdersWebSocketClient {
     clock: &'static AtomicTime,
-    url: String,
+    url: ConnectionUrl,
     heartbeat: Option<u64>,
     reconnect_headers: Arc<Mutex<Option<ReconnectHeaders>>>,
     connection_mode: Arc<ArcSwap<AtomicU8>>,
@@ -214,7 +215,7 @@ impl AxOrdersWebSocketClient {
 
         Self {
             clock: get_atomic_clock_realtime(),
-            url,
+            url: url.into(),
             heartbeat: Some(heartbeat),
             reconnect_headers: Arc::new(Mutex::new(None)),
             connection_mode,
@@ -250,7 +251,7 @@ impl AxOrdersWebSocketClient {
     /// Returns the WebSocket URL.
     #[must_use]
     pub fn url(&self) -> &str {
-        &self.url
+        self.url.expose()
     }
 
     /// Returns the account ID.
@@ -461,7 +462,7 @@ impl AxOrdersWebSocketClient {
         ));
 
         let config = WebSocketConfig {
-            url: self.url.clone(),
+            url: self.url.expose().to_owned(),
             headers,
             heartbeat_interval_secs: self.heartbeat,
             heartbeat_payload: None, // Ax server sends heartbeats
@@ -493,10 +494,14 @@ impl AxOrdersWebSocketClient {
             .connect()
             .await
             .map_err(|e| {
-                AxOrdersWsClientError::Transport(format!("Failed to connect to {}: {e}", self.url))
+                AxOrdersWsClientError::Transport(format!(
+                    "WebSocket connection failed: {}: {}",
+                    self.url.origin(),
+                    e.redacted_message()
+                ))
             })?;
 
-        self.connection_mode.store(client.connection_mode_atomic());
+        let connection_mode = client.connection_mode_atomic();
         let reconnect_handle = client.reconnect_handle();
         *self.reconnect_headers.lock() = Some(client.reconnect_headers());
 
@@ -504,11 +509,19 @@ impl AxOrdersWebSocketClient {
         self.out_rx = Some(Arc::new(out_rx));
 
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
-        *self.cmd_tx.write().await = cmd_tx.clone();
+        cmd_tx
+            .send(HandlerCommand::SetClient(client))
+            .map_err(|e| AxOrdersWsClientError::ChannelError(e.to_string()))?;
 
-        self.send_cmd(HandlerCommand::SetClient(client)).await?;
+        cmd_tx
+            .send(HandlerCommand::SessionAuthenticated)
+            .map_err(|e| AxOrdersWsClientError::ChannelError(e.to_string()))?;
 
-        self.send_cmd(HandlerCommand::SessionAuthenticated).await?;
+        {
+            let mut command_sender = self.cmd_tx.write().await;
+            *command_sender = cmd_tx.clone();
+            self.connection_mode.store(connection_mode);
+        }
 
         let signal = Arc::clone(&self.signal);
         let auth_tracker = self.auth_tracker.clone();
@@ -802,9 +815,85 @@ fn reserve_cid_mapping(
 mod tests {
     use std::sync::Arc;
 
+    use futures_util::StreamExt;
+    use nautilus_testkit::connection::race_command_with_publication;
     use rstest::rstest;
 
     use super::*;
+
+    #[tokio::test]
+    async fn command_during_sender_publication_reaches_initialized_handler() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (received_tx, mut received_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let server = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let mut socket = tokio_tungstenite::accept_async(socket).await.unwrap();
+            while let Some(Ok(message)) = socket.next().await {
+                if let tokio_tungstenite::tungstenite::Message::Text(text) = message {
+                    let payload: serde_json::Value = serde_json::from_str(text.as_str()).unwrap();
+                    let _ = received_tx.send(payload);
+                }
+            }
+        });
+
+        let url = format!("ws://{addr}");
+
+        let mut ws_client = AxOrdersWebSocketClient::new(
+            url,
+            AccountId::from("AX-001"),
+            TraderId::from("TRADER-001"),
+            30,
+            TransportBackend::default(),
+            None,
+        );
+        let observer = ws_client.clone();
+        let command = HandlerCommand::GetOpenOrders { request_id: 72 };
+        race_command_with_publication(
+            Arc::clone(&ws_client.cmd_tx),
+            ws_client.connect("startup-token"),
+            move || command,
+            || observer.is_active(),
+        )
+        .await
+        .expect("connect failed");
+        let received = tokio::time::timeout(Duration::from_secs(2), received_rx.recv()).await;
+        ws_client.close().await.expect("disconnect failed");
+        server.abort();
+
+        let payload = received
+            .expect("startup command must reach server")
+            .unwrap();
+        assert_eq!(
+            payload,
+            serde_json::json!({
+                "rid": 72,
+                "t": "o"
+            })
+        );
+    }
+
+    #[rstest]
+    #[case("wss://stream.example.com/feed", "wss://stream.example.com")]
+    #[case(
+        "wss://SYN-user:SYN-password@stream.example.com:9443/SYN-path?token=SYN-query#SYN-fragment",
+        "wss://stream.example.com:9443"
+    )]
+    fn test_debug_preserves_url_origin(#[case] url: &str, #[case] origin: &str) {
+        let client = AxOrdersWebSocketClient::new(
+            url.to_string(),
+            AccountId::from("AX-001"),
+            TraderId::from("TRADER-001"),
+            30,
+            TransportBackend::default(),
+            None,
+        );
+        let debug = format!("{client:?}");
+        assert!(debug.contains(&format!("url: {origin:?}")));
+        assert!(!debug.contains("SYN-"));
+        assert_eq!(client.url.expose(), url);
+    }
 
     #[tokio::test]
     async fn test_drop_aborts_handler_task() {

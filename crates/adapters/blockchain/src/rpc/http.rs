@@ -81,6 +81,7 @@ impl BlockchainHttpRpcClient {
             .maybe_default_quota(default_quota)
             .maybe_proxy_url(proxy_url)
             .redirect_policy(HttpRedirectPolicy::Reject)
+            .redact_url(true)
             .use_system_proxy(use_system_proxy)
             .build()
             .expect("Failed to create HTTP client");
@@ -115,7 +116,7 @@ impl BlockchainHttpRpcClient {
 
         let response = self
             .http_client
-            .request_with_url_redacted(
+            .request(
                 Method::POST,
                 self.http_rpc_url.clone(),
                 None,
@@ -858,8 +859,8 @@ impl BlockchainHttpRpcClient {
     ///
     /// # Errors
     ///
-    /// Returns a [`BroadcastError`] classifying the failure. Errors are sanitized: they carry
-    /// the numeric RPC code only, never the endpoint URL or the signed payload.
+    /// Returns an error if broadcasting fails. The error classifies the failure and is sanitized:
+    /// it carries the numeric RPC code only, never the endpoint URL or the signed payload.
     pub async fn send_raw_transaction(
         &self,
         raw_tx: &[u8],
@@ -1598,6 +1599,39 @@ pub(crate) mod tests {
         assert!(!debug.contains(PATH_SECRET));
         assert!(!debug.contains(QUERY_SECRET));
         assert!(!debug.contains(&http_rpc_url));
+    }
+
+    #[tokio::test]
+    async fn transport_errors_omit_rpc_origin() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let peer = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            drop(stream);
+        });
+
+        let client = BlockchainHttpRpcClient::new(
+            format!("http://{addr}/rpc-path-secret?api_key=rpc-query-secret"),
+            None,
+            None,
+        );
+
+        let error = client
+            .post_json_body(Vec::new(), Some(2))
+            .await
+            .unwrap_err();
+        peer.await.unwrap();
+
+        assert!(
+            matches!(error, HttpClientError::TransportError(_)),
+            "{error:?}"
+        );
+
+        for rendered in [error.to_string(), format!("{error:?}")] {
+            assert!(!rendered.contains(&addr.to_string()), "{rendered}");
+            assert!(!rendered.contains("rpc-path-secret"), "{rendered}");
+            assert!(!rendered.contains("rpc-query-secret"), "{rendered}");
+        }
     }
 
     #[tokio::test]

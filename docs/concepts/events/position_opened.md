@@ -7,9 +7,9 @@ a fill creates the position (see
 
 ## Fields
 
-See [Position event fields](index.md#position-event-fields) for the complete field matrix.
-`PositionOpened` contains the opening snapshot; later events expose additional aggregate and
-lifecycle fields. Its main state fields are:
+See [Position event fields](index.md#position-event-fields) for the complete field matrix. `PositionOpened`
+contains the opening snapshot. Later events expose additional aggregate and lifecycle fields. Its main state
+fields are:
 
 | Field          | Python type       | Description                                        |
 | -------------- | ----------------- | -------------------------------------------------- |
@@ -25,7 +25,8 @@ lifecycle fields. Its main state fields are:
 
 At opening, realized PnL subtracts the opening fill's commission when that commission is denominated
 in the instrument's [cost currency](../positions.md#currency-considerations). Otherwise, it is zero.
-A reopened `NETTING` position starts a new cycle; realized PnL from the prior cycle remains in the
+
+A reopened `NETTING` position starts a new cycle. Realized PnL from the prior cycle stays in the
 [closed position snapshot](../positions.md#position-snapshotting).
 
 ## Example

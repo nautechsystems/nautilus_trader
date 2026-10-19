@@ -28,7 +28,7 @@ Examples include `AAPL.XNAS`, `MSFT.XNAS`, and venue-specific ETF symbols.
 | `tick_scheme`     | `Option<Ustr>`     | `str \| None`      | `None`           | Registered variable tick scheme name.    |
 | `info`            | `Option<Params>`   | `dict \| None`     | `None`           | Adapter metadata.                        |
 
-*Note: Python constructors use `instrument_id`; Rust stores the same value as `id`.*
+**Note**: Python constructors use `instrument_id`. Rust stores the same value as `id`.
 
 ## Behavior
 
@@ -91,7 +91,7 @@ aapl = Equity(
 
 ## Adapters
 
-Representative adapters that create or consume `Equity` instruments include:
+**Adapters that create or consume `Equity` instruments include**:
 
 - [Databento](../../integrations/databento.md) for listed US equities and ETFs.
 - [Interactive Brokers](../../integrations/interactive_brokers.md) for listed equity contracts.

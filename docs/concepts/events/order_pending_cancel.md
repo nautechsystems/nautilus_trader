@@ -1,9 +1,8 @@
 # OrderPendingCancel
 
-`OrderPendingCancel` represents a `CancelOrder` command having been sent to the trading
-venue. The `ExecutionEngine` applies it to the order, updates the `Cache`, and publishes
-it on the `MessageBus`. It fires when the system dispatches a cancel request and awaits
-venue acknowledgement.
+`OrderPendingCancel` records that the system has sent a `CancelOrder` request to the trading venue
+and awaits acknowledgement. The `ExecutionEngine` applies it to the order, updates the `Cache`,
+and publishes it on the `MessageBus`.
 
 Typical transition: `ACCEPTED` -> `PENDING_CANCEL`. Handler: `on_order_pending_cancel`.
 

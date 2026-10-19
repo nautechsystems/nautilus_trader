@@ -691,8 +691,8 @@ pub fn resolution_to_bar_type(
 /// # Errors
 ///
 /// Returns an error if:
-/// - Price or volume values are invalid
-/// - Bar construction fails validation
+/// - Price or volume values are invalid.
+/// - Bar construction fails validation.
 pub fn parse_chart_msg(
     chart_msg: &DeribitChartMsg,
     bar_type: BarType,

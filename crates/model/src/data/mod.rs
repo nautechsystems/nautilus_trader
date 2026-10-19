@@ -81,9 +81,11 @@ pub use depth::{DEPTH_INLINE_LEN, DEPTH10_LEN, OrderBookDepth};
 pub use funding::FundingRateUpdate;
 pub use greeks::{
     BlackScholesGreeksResult, GreeksData, HasGreeks, OptionGreekValues, PortfolioGreeks,
-    YieldCurveData, black_scholes_greeks, imply_vol_and_greeks, refine_vol_and_greeks,
+    YieldCurve, black_scholes_greeks, imply_vol_and_greeks, refine_vol_and_greeks,
 };
-pub use option_chain::{OptionChainSlice, OptionGreeks, OptionStrikeData, StrikeRange};
+pub use option_chain::{
+    OptionChainSlice, OptionGreeks, OptionStrikeData, StrikeRange, StrikeSearchProfile,
+};
 pub use order::{BookOrder, NULL_ORDER};
 pub use prices::{IndexPriceUpdate, MarkPriceUpdate};
 pub use quote::QuoteTick;
@@ -368,6 +370,7 @@ impl DataRef<'_> {
 }
 
 impl HasTsInit for DataRef<'_> {
+    #[inline]
     fn ts_init(&self) -> UnixNanos {
         match self {
             Self::Custom(custom) => custom.data.ts_init(),
@@ -881,6 +884,8 @@ pub enum NautilusRecordType {
     ExecutionMassStatus,
     #[cfg(feature = "defi")]
     Defi,
+    GreeksData,
+    PortfolioGreeks,
 }
 
 impl FromStr for NautilusRecordType {
@@ -916,6 +921,8 @@ impl FromStr for NautilusRecordType {
             "FillReport" | "fill_report" => Ok(Self::FillReport),
             "PositionStatusReport" | "position_status_report" => Ok(Self::PositionStatusReport),
             "ExecutionMassStatus" | "execution_mass_status" => Ok(Self::ExecutionMassStatus),
+            "GreeksData" | "greeks_data" => Ok(Self::GreeksData),
+            "PortfolioGreeks" | "portfolio_greeks" => Ok(Self::PortfolioGreeks),
             "custom" | "CustomData" => {
                 anyhow::bail!("custom data queries require NautilusDataType::Custom")
             }
@@ -1374,6 +1381,8 @@ mod tests {
     #[case(NautilusRecordType::OrderFilled, "OrderFilled")]
     #[case(NautilusRecordType::OrderFillVoided, "OrderFillVoided")]
     #[case(NautilusRecordType::ExecutionMassStatus, "ExecutionMassStatus")]
+    #[case(NautilusRecordType::GreeksData, "GreeksData")]
+    #[case(NautilusRecordType::PortfolioGreeks, "PortfolioGreeks")]
     fn nautilus_record_type_display_from_str_roundtrips(
         #[case] record_type: NautilusRecordType,
         #[case] expected: &str,
@@ -1387,6 +1396,8 @@ mod tests {
     #[case("order_filled", NautilusRecordType::OrderFilled)]
     #[case("order_fill_voided", NautilusRecordType::OrderFillVoided)]
     #[case("position_snapshot", NautilusRecordType::PositionSnapshot)]
+    #[case("greeks_data", NautilusRecordType::GreeksData)]
+    #[case("portfolio_greeks", NautilusRecordType::PortfolioGreeks)]
     fn nautilus_record_type_storage_names_parse(
         #[case] value: &str,
         #[case] expected: NautilusRecordType,

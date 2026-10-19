@@ -29,6 +29,7 @@ use std::{
 };
 
 use ahash::{AHashMap, AHashSet};
+use anyhow::Context;
 use arc_swap::ArcSwap;
 use jiff::Timestamp;
 use nautilus_common::cache::InstrumentLookupError;
@@ -156,9 +157,9 @@ impl CursorWalk {
     ///
     /// # Errors
     ///
-    /// Returns an error when the cursor stops advancing or repeats one already followed. Stopping
-    /// with the rows gathered so far would hand the caller a truncated result it cannot
-    /// distinguish from a complete one.
+    /// Returns an error if the cursor stops advancing or repeats one already followed. Stopping
+    /// with the rows gathered so far would hand the caller a truncated result it cannot distinguish
+    /// from a complete one.
     fn advance(
         &mut self,
         endpoint: &str,
@@ -1590,7 +1591,7 @@ impl BybitRawHttpClient {
     ///
     /// # Errors
     ///
-    /// This function returns an error if:
+    /// Returns an error if:
     /// - Credentials are missing.
     /// - The request fails.
     /// - The API returns an error.
@@ -4475,7 +4476,7 @@ impl BybitHttpClient {
     ///
     /// # Errors
     ///
-    /// This function returns an error if the request fails.
+    /// Returns an error if the request fails.
     ///
     /// # References
     ///
@@ -4585,12 +4586,20 @@ impl BybitHttpClient {
 
     /// Fetches position information for the account and returns a list of [`PositionStatusReport`]s.
     ///
-    /// Positions for instruments not currently loaded in cache will be skipped.
+    /// Derivative position reports fail as a set if any row cannot be resolved or parsed.
+    /// When SPOT position reports are enabled, an uncached instrument yields no report.
     ///
     /// # Errors
     ///
-    /// This function returns an error if the request fails, or if SPOT position reports are enabled
-    /// and no instrument is specified, because wallet balances carry no pair identity.
+    /// Returns an error if:
+    /// - The request fails.
+    /// - The instrument ID is invalid.
+    /// - Pagination cannot advance.
+    /// - A derivative position row has no symbol.
+    /// - A derivative position's instrument is not cached.
+    /// - A derivative position row cannot be parsed.
+    /// - SPOT position reports are enabled and no instrument is specified, because wallet balances
+    ///   carry no pair identity.
     ///
     /// # References
     ///
@@ -4634,123 +4643,73 @@ impl BybitHttpClient {
         };
 
         // For LINEAR category, the API requires either symbol OR settleCoin
-        // When querying all positions (no symbol), we must iterate through settle coins
-        if product_type == BybitProductType::Linear && symbol.is_none() {
-            // Query positions for each known settle coin with pagination
-            for settle_coin in ["USDT", "USDC"] {
-                let mut cursor: Option<String> = None;
-                let mut cursor_walk = CursorWalk::default();
+        let settle_coins: &[Option<&str>] =
+            if product_type == BybitProductType::Linear && symbol.is_none() {
+                &[Some("USDT"), Some("USDC")]
+            } else {
+                &[None]
+            };
 
-                loop {
-                    let params = BybitPositionListParams {
-                        category: product_type,
-                        symbol: None,
-                        base_coin: None,
-                        settle_coin: Some(settle_coin.to_string()),
-                        limit: Some(200), // Max 200 per request
-                        cursor: cursor.clone(),
-                    };
+        for settle_coin in settle_coins {
+            let params = BybitPositionListParams {
+                category: product_type,
+                symbol: symbol.clone(),
+                base_coin: None,
+                settle_coin: settle_coin.map(str::to_string),
+                limit: Some(200), // Max 200 per request
+                cursor: None,
+            };
 
-                    let response = self.inner.get_positions(&params).await?;
-
-                    for position in response.result.list {
-                        if position.symbol.is_empty() {
-                            continue;
-                        }
-
-                        let symbol_with_product = Symbol::new(format!(
-                            "{}{}",
-                            position.symbol.as_str(),
-                            product_type.suffix()
-                        ));
-
-                        let Ok(instrument) = self.instrument_from_cache(&symbol_with_product)
-                        else {
-                            log::debug!(
-                                "Skipping position report for instrument not in cache: symbol={}, full_symbol={}",
-                                position.symbol,
-                                symbol_with_product
-                            );
-                            continue;
-                        };
-
-                        match parse_position_status_report(
-                            &position,
-                            account_id,
-                            &instrument,
-                            ts_init,
-                        ) {
-                            Ok(report) => reports.push(report),
-                            Err(e) => {
-                                log::error!("Failed to parse position status report: {e}");
-                            }
-                        }
-                    }
-
-                    cursor = cursor_walk
-                        .advance(BYBIT_POSITION_LIST, response.result.next_page_cursor)?;
-
-                    if cursor.is_none() {
-                        break;
-                    }
-                }
-            }
-        } else {
-            // For other product types or when a specific symbol is requested with pagination
-            let mut cursor: Option<String> = None;
-            let mut cursor_walk = CursorWalk::default();
-
-            loop {
-                let params = BybitPositionListParams {
-                    category: product_type,
-                    symbol: symbol.clone(),
-                    base_coin: None,
-                    settle_coin: None,
-                    limit: Some(200), // Max 200 per request
-                    cursor: cursor.clone(),
-                };
-
-                let response = self.inner.get_positions(&params).await?;
-
-                for position in response.result.list {
-                    if position.symbol.is_empty() {
-                        continue;
-                    }
-
-                    let symbol_with_product = Symbol::new(format!(
-                        "{}{}",
-                        position.symbol.as_str(),
-                        product_type.suffix()
-                    ));
-
-                    let Ok(instrument) = self.instrument_from_cache(&symbol_with_product) else {
-                        log::debug!(
-                            "Skipping position report for instrument not in cache: symbol={}, full_symbol={}",
-                            position.symbol,
-                            symbol_with_product
-                        );
-                        continue;
-                    };
-
-                    match parse_position_status_report(&position, account_id, &instrument, ts_init)
-                    {
-                        Ok(report) => reports.push(report),
-                        Err(e) => {
-                            log::error!("Failed to parse position status report: {e}");
-                        }
-                    }
-                }
-
-                cursor =
-                    cursor_walk.advance(BYBIT_POSITION_LIST, response.result.next_page_cursor)?;
-
-                if cursor.is_none() {
-                    break;
-                }
-            }
+            self.request_position_pages(account_id, params, ts_init, &mut reports)
+                .await?;
         }
 
         Ok(reports)
+    }
+
+    async fn request_position_pages(
+        &self,
+        account_id: AccountId,
+        mut params: BybitPositionListParams,
+        ts_init: UnixNanos,
+        reports: &mut Vec<PositionStatusReport>,
+    ) -> anyhow::Result<()> {
+        let mut cursor_walk = CursorWalk::default();
+
+        loop {
+            let response = self.inner.get_positions(&params).await?;
+
+            for position in response.result.list {
+                if position.symbol.is_empty() {
+                    anyhow::bail!(
+                        "Position symbol is empty, category={:?}, symbol={:?}, settle_coin={:?}",
+                        params.category,
+                        params.symbol,
+                        params.settle_coin,
+                    );
+                }
+
+                let symbol = Symbol::new(format!(
+                    "{}{}",
+                    position.symbol.as_str(),
+                    params.category.suffix()
+                ));
+                let instrument = self.instrument_from_cache(&symbol)?;
+                let report =
+                    parse_position_status_report(&position, account_id, &instrument, ts_init)
+                        .with_context(|| format!("failed to parse position report for {symbol}"))?;
+                reports.push(report);
+            }
+
+            params.cursor =
+                cursor_walk.advance(BYBIT_POSITION_LIST, response.result.next_page_cursor)?;
+
+            if params.cursor.is_none() {
+                break;
+            }
+        }
+
+        Ok(())
     }
 
     async fn query_order_by_id(

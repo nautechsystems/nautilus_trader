@@ -160,7 +160,7 @@ impl BookLadder {
     ///
     /// # Errors
     ///
-    /// Returns an error for an unknown state code or a batch state on a non-L1 ladder.
+    /// Returns an error if the state code is unknown or a batch state appears on a non-L1 ladder.
     #[cfg(feature = "python")]
     pub(crate) fn set_batch_state_code(&mut self, code: u8) -> CorrectnessResult<()> {
         let batch_state = match code {

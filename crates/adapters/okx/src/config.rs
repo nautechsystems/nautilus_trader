@@ -17,7 +17,7 @@
 
 use nautilus_core::string::secret::SecretString;
 use nautilus_live::book::DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS;
-use nautilus_model::identifiers::AccountId;
+use nautilus_model::{enums::OmsType, identifiers::AccountId};
 use nautilus_network::websocket::TransportBackend;
 use serde::{Deserialize, Serialize};
 
@@ -206,6 +206,9 @@ pub struct OKXExecutionClientConfig {
     /// The account ID for the client.
     #[builder(default = AccountId::from("OKX-001"))]
     pub account_id: AccountId,
+    /// Optional OMS override for the client.
+    /// Defaults to netting with any derivative instrument type, otherwise hedging.
+    pub oms_type: Option<OmsType>,
     /// Optional API key for authenticated endpoints.
     pub api_key: Option<SecretString>,
     /// Optional API secret for authenticated endpoints.
@@ -275,6 +278,7 @@ pub struct OKXExecutionClientConfig {
 #[cfg(feature = "python")]
 nautilus_core::impl_pyo3_config_getters!(OKXExecutionClientConfig {
     account_id: AccountId,
+    oms_type: Option<OmsType>,
     instrument_types: Vec<OKXInstrumentType>,
     environment: OKXEnvironment,
     region: OKXRegion,
@@ -511,7 +515,7 @@ load_spreads = true
 
         assert_eq!(config.region, OKXRegion::Global);
         assert_eq!(config.http_base_url(), "https://www.okx.com");
-        assert_eq!(config.ws_public_url(), "wss://ws.okx.com:8443/ws/v5/public");
+        assert_eq!(config.ws_public_url(), "wss://ws.okx.com/ws/v5/public");
     }
 
     #[rstest]
@@ -521,13 +525,10 @@ load_spreads = true
             .build();
 
         assert_eq!(config.http_base_url(), "https://eea.okx.com");
-        assert_eq!(
-            config.ws_public_url(),
-            "wss://wseea.okx.com:8443/ws/v5/public"
-        );
+        assert_eq!(config.ws_public_url(), "wss://wseea.okx.com/ws/v5/public");
         assert_eq!(
             config.ws_business_url(),
-            "wss://wseea.okx.com:8443/ws/v5/business"
+            "wss://wseea.okx.com/ws/v5/business"
         );
     }
 
@@ -538,13 +539,10 @@ load_spreads = true
             .build();
 
         assert_eq!(config.http_base_url(), "https://eea.okx.com");
-        assert_eq!(
-            config.ws_private_url(),
-            "wss://wseea.okx.com:8443/ws/v5/private"
-        );
+        assert_eq!(config.ws_private_url(), "wss://wseea.okx.com/ws/v5/private");
         assert_eq!(
             config.ws_business_url(),
-            "wss://wseea.okx.com:8443/ws/v5/business"
+            "wss://wseea.okx.com/ws/v5/business"
         );
     }
 
@@ -552,10 +550,40 @@ load_spreads = true
     fn test_config_region_override_takes_precedence() {
         let config = OKXDataClientConfig::builder()
             .region(OKXRegion::Eea)
+            .environment(OKXEnvironment::Demo)
             .base_url_http("https://custom.proxy".to_string())
+            .base_url_ws_public("wss://public.proxy:8443/ws/v5/public".to_string())
+            .base_url_ws_business("wss://data.proxy:9443/ws/v5/business".to_string())
             .build();
 
         assert_eq!(config.http_base_url(), "https://custom.proxy");
+        assert_eq!(
+            config.ws_public_url(),
+            "wss://public.proxy:8443/ws/v5/public"
+        );
+        assert_eq!(
+            config.ws_business_url(),
+            "wss://data.proxy:9443/ws/v5/business"
+        );
+    }
+
+    #[rstest]
+    fn test_exec_config_region_override_takes_precedence() {
+        let config = OKXExecutionClientConfig::builder()
+            .region(OKXRegion::Us)
+            .environment(OKXEnvironment::Demo)
+            .base_url_ws_private("wss://private.proxy:8443/ws/v5/private".to_string())
+            .base_url_ws_business("wss://execution.proxy:9443/ws/v5/business".to_string())
+            .build();
+
+        assert_eq!(
+            config.ws_private_url(),
+            "wss://private.proxy:8443/ws/v5/private"
+        );
+        assert_eq!(
+            config.ws_business_url(),
+            "wss://execution.proxy:9443/ws/v5/business"
+        );
     }
 
     #[rstest]

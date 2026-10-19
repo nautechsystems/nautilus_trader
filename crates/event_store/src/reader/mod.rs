@@ -82,7 +82,7 @@ impl<B: EventStore> EventStoreReader<B> {
     ///
     /// # Errors
     ///
-    /// Returns [`EventStoreError::Backend`] when no run is open.
+    /// Returns an error if no run is open.
     pub fn manifest(&self) -> Result<RunManifest, EventStoreError> {
         self.backend.manifest()
     }
@@ -91,7 +91,7 @@ impl<B: EventStore> EventStoreReader<B> {
     ///
     /// # Errors
     ///
-    /// Returns [`EventStoreError::Backend`] when no run is open.
+    /// Returns an error if no run is open.
     pub fn high_watermark(&self) -> Result<u64, EventStoreError> {
         self.backend.high_watermark()
     }
@@ -102,10 +102,8 @@ impl<B: EventStore> EventStoreReader<B> {
     ///
     /// # Errors
     ///
-    /// Returns [`EventStoreError::HashMismatch`] when the recomputed entry hash diverges
-    /// from the stored value, [`EventStoreError::Gap`] when the row is missing inside
-    /// the high-watermark, and [`EventStoreError::Backend`] for unclassified backend
-    /// failures.
+    /// Returns an error if the recomputed entry hash diverges from the stored value, if the row is
+    /// missing inside the high-watermark, or if the backend fails.
     pub fn scan_seq(&self, seq: u64) -> Result<Option<EventStoreEntry>, EventStoreError> {
         self.backend.scan_seq(seq)
     }
@@ -114,7 +112,7 @@ impl<B: EventStore> EventStoreReader<B> {
     ///
     /// # Errors
     ///
-    /// Returns [`EventStoreError::Backend`] for unclassified backend failures.
+    /// Returns an error if the backend fails.
     pub fn lookup(&self, kind: IndexKind, key: &str) -> Result<Option<u64>, EventStoreError> {
         self.backend.lookup(kind, key)
     }
@@ -125,9 +123,8 @@ impl<B: EventStore> EventStoreReader<B> {
     ///
     /// # Errors
     ///
-    /// Returns [`EventStoreError::Backend`] when no run is open or the backend does not
-    /// support snapshot anchors, and [`EventStoreError::Corrupted`] when a stored anchor
-    /// cannot decode.
+    /// Returns an error if no run is open or the backend does not support snapshot anchors, or if a
+    /// stored anchor cannot decode.
     pub fn latest_snapshot_anchor(&self) -> Result<Option<SnapshotAnchor>, EventStoreError> {
         self.backend.latest_snapshot_anchor()
     }
@@ -140,9 +137,8 @@ impl<B: EventStore> EventStoreReader<B> {
     ///
     /// # Errors
     ///
-    /// Returns [`EventStoreError::Backend`] when no run is open or the backend does not
-    /// support snapshot anchors, and [`EventStoreError::Corrupted`] when the stored
-    /// anchor points past the durable high-watermark.
+    /// Returns an error if no run is open or the backend does not support snapshot anchors, or if
+    /// the stored anchor points past the durable high-watermark.
     pub fn snapshot_replay_plan(&self) -> Result<SnapshotReplayPlan, EventStoreError> {
         let anchor = self.latest_snapshot_anchor()?;
         let to_seq = self.high_watermark()?;
@@ -172,7 +168,7 @@ impl<B: EventStore> EventStoreReader<B> {
     ///
     /// # Errors
     ///
-    /// See [`Self::snapshot_replay_plan`].
+    /// Returns an error if [`Self::snapshot_replay_plan`] fails.
     pub fn scan_snapshot_replay_tail(
         &self,
     ) -> Result<(SnapshotReplayPlan, RangeScan<'_>), EventStoreError> {

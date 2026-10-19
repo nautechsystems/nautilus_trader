@@ -38,9 +38,9 @@ async fn test_report_shutdown_timeout_preserves_observed_worker_failure(
     let command =
         GenerateOrderStatusReports::new(UUID4::new(), 0.into(), true, None, None, None, None, None);
     let (failed, failed_started, failed_completed) =
-        shutdown_report_client(Duration::from_millis(30), true, Duration::ZERO);
+        shutdown_report_client(Duration::from_millis(30), true, Duration::ZERO, None);
     let (pending, pending_started, _) =
-        shutdown_report_client(Duration::from_millis(200), false, Duration::ZERO);
+        shutdown_report_client(Duration::from_millis(200), false, Duration::ZERO, None);
     let mut failed_collection = Box::pin(failed.generate_order_status_reports(&command));
     tokio::select! {
         biased;
@@ -83,7 +83,7 @@ async fn test_report_shutdown_timeout_preserves_observed_worker_failure(
 }
 
 #[cfg(not(madsim))]
-#[tokio::test(flavor = "current_thread")]
+#[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn test_report_shutdown_timeout_preserves_disconnect_budget() {
     let config = LiveNodeConfig {
         timeout_disconnection: Duration::from_millis(50),
@@ -92,8 +92,14 @@ async fn test_report_shutdown_timeout_preserves_disconnect_budget() {
 
     let mut node =
         LiveNode::build("ReportShutdownDisconnectNode".to_string(), Some(config)).unwrap();
-    let (client, started, _) =
-        shutdown_report_client(Duration::from_millis(200), false, Duration::from_millis(15));
+
+    let (release, blocked) = std::sync::mpsc::channel();
+    let (client, started, _) = shutdown_report_client(
+        Duration::ZERO,
+        false,
+        Duration::from_millis(15),
+        Some(blocked),
+    );
     node.kernel
         .exec_engine
         .borrow_mut()
@@ -111,6 +117,11 @@ async fn test_report_shutdown_timeout_preserves_disconnect_budget() {
     node.exec_clients = vec![client.clone()];
     let failure = node.finalize_stop().await.unwrap_err();
     let disconnected = node.kernel.check_engines_disconnected();
+
+    // The report worker runs on a separate runtime, so bound its cleanup in real time
+    tokio::time::resume();
+    release.send(()).unwrap();
+
     let mut errors = Vec::new();
     tokio::time::timeout(
         Duration::from_secs(5),
@@ -136,6 +147,7 @@ fn shutdown_report_client(
     duration: Duration,
     fail: bool,
     disconnect_delay: Duration,
+    release: Option<std::sync::mpsc::Receiver<()>>,
 ) -> (
     LiveExecutionClient,
     tokio::sync::oneshot::Receiver<()>,
@@ -147,9 +159,14 @@ fn shutdown_report_client(
     let task = ExecutionReportTask::new(
         async move {
             started_sender.send(()).unwrap();
-            let deadline = std::time::Instant::now() + duration;
-            while std::time::Instant::now() < deadline {
-                std::hint::spin_loop();
+
+            if let Some(release) = release {
+                release.recv().unwrap();
+            } else {
+                let deadline = std::time::Instant::now() + duration;
+                while std::time::Instant::now() < deadline {
+                    std::hint::spin_loop();
+                }
             }
 
             let outcome = std::panic::catch_unwind(|| assert!(!fail, "report worker failed"));

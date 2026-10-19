@@ -143,9 +143,9 @@ impl Venue {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The venue string is not in the format "chain:dex"
-    /// - The chain name is not recognized
-    /// - The DEX name is not recognized
+    /// - The venue string is not in the format "chain:dex".
+    /// - The chain name is not recognized.
+    /// - The DEX name is not recognized.
     pub fn parse_dex(&self) -> anyhow::Result<(Blockchain, DexType)> {
         let venue_str = self.as_str();
         let Some((chain_name, dex_id)) = venue_str.split_once(':') else {
@@ -179,8 +179,8 @@ impl Display for Venue {
 /// # Errors
 ///
 /// Returns an error if:
-/// - Format is not "Chain:DexId" (missing colon or empty parts)
-/// - Chain or Dex is not recognized
+/// - Format is not "Chain:DexId" (missing colon or empty parts).
+/// - Chain or Dex is not recognized.
 #[cfg(feature = "defi")]
 pub fn validate_blockchain_venue(venue_part: &str) -> CorrectnessResult<()> {
     let invalid_format = || CorrectnessError::PredicateViolation {

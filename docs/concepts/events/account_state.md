@@ -1,10 +1,12 @@
 # AccountState
 
-`AccountState` carries a snapshot of an account's balances and margins. The system publishes it when
-the venue reports an account update through the execution client, or when the `Portfolio`
-recalculates account state after a position update (for margin accounts with
-`calculate_account_state` enabled). The `Portfolio` subscribes to these events internally
-to maintain exposure and balance tracking.
+`AccountState` carries a snapshot of an account's balances and margins. The system publishes it when:
+
+- The venue reports an account update through the execution client.
+- The `Portfolio` recalculates account state after a position update, for margin accounts with
+  `calculate_account_state` enabled.
+
+The `Portfolio` subscribes to these events internally to maintain exposure and balance tracking.
 
 The `is_reported` flag distinguishes venue-reported snapshots from system-calculated ones.
 

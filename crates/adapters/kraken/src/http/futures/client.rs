@@ -25,7 +25,8 @@ use std::{
     },
 };
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
+use indexmap::IndexMap;
 use jiff::Timestamp;
 use nautilus_common::cache::InstrumentLookupError;
 use nautilus_core::{
@@ -45,6 +46,7 @@ use nautilus_model::{
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
 use nautilus_network::{
+    ConnectionUrl,
     http::{
         HttpClient, HttpRedirectPolicy, HttpResponse, Method, create_standard_nautilus_headers,
     },
@@ -64,19 +66,21 @@ use crate::{
         credential::KrakenCredential,
         enums::{
             KrakenApiResult, KrakenEnvironment, KrakenFuturesOrderStatus, KrakenFuturesOrderType,
-            KrakenOrderSide, KrakenProductType, KrakenSendStatus, KrakenTriggerSignal,
+            KrakenFuturesQtyMode, KrakenOrderSide, KrakenProductType, KrakenSendStatus,
+            KrakenTriggerSignal, product_type_from_symbol,
         },
         parse::{
             bar_type_to_futures_resolution, normalize_asset_key, parse_bar,
             parse_futures_fill_report, parse_futures_instrument,
             parse_futures_order_event_status_report, parse_futures_order_status_details_report,
             parse_futures_order_status_report, parse_futures_position_status_report,
-            parse_futures_public_execution, truncate_cl_ord_id,
+            parse_futures_public_execution,
         },
         urls::get_kraken_http_base_url,
     },
     http::{
         apply_count_limit,
+        coverage::ReportCoverage,
         error::{
             KrakenBatchOrderError, KrakenHttpError, KrakenModifyOrderError, KrakenSubmitOrderError,
             kraken_http_should_retry,
@@ -96,12 +100,16 @@ const BATCH_CANCEL_LIMIT: usize = 50;
 /// Maximum operations per batch order request for Kraken Futures API.
 const BATCH_ORDER_LIMIT: usize = 10;
 
+/// The response header Kraken documents for the order history continuation token; the body's
+/// `continuationToken` is read first and this header stands in when the body carries none.
+const NEXT_CONTINUATION_TOKEN_HEADER: &str = "Next-Continuation-Token";
+
 /// Raw HTTP client for low-level Kraken Futures API operations.
 ///
 /// This client handles request/response operations with the Kraken Futures API,
 /// returning venue-specific response types. It does not parse to Nautilus domain types.
 pub struct KrakenFuturesRawHttpClient {
-    base_url: String,
+    base_url: ConnectionUrl,
     client: HttpClient,
     credential: Option<KrakenCredential>,
     retry_manager: RetryManager<KrakenHttpError>,
@@ -166,9 +174,10 @@ impl KrakenFuturesRawHttpClient {
         });
 
         Ok(Self {
-            base_url,
+            base_url: base_url.into(),
             client: HttpClient::builder()
                 .headers(Self::default_headers())
+                .header_keys(vec![NEXT_CONTINUATION_TOKEN_HEADER.to_string()])
                 .keyed_quotas(Self::rate_limiter_quotas(max_requests_per_second)?)
                 .default_quota(Self::default_quota(max_requests_per_second)?)
                 .timeout_secs(timeout_secs)
@@ -214,10 +223,11 @@ impl KrakenFuturesRawHttpClient {
         });
 
         Ok(Self {
-            base_url,
+            base_url: base_url.into(),
             client: HttpClient::builder()
                 .redirect_policy(HttpRedirectPolicy::Reject)
                 .headers(Self::default_headers())
+                .header_keys(vec![NEXT_CONTINUATION_TOKEN_HEADER.to_string()])
                 .keyed_quotas(Self::rate_limiter_quotas(max_requests_per_second)?)
                 .default_quota(Self::default_quota(max_requests_per_second)?)
                 .timeout_secs(timeout_secs)
@@ -242,7 +252,7 @@ impl KrakenFuturesRawHttpClient {
 
     /// Returns the base URL for this client.
     pub fn base_url(&self) -> &str {
-        &self.base_url
+        self.base_url.expose()
     }
 
     /// Returns the credential for this client, if set.
@@ -336,9 +346,9 @@ impl KrakenFuturesRawHttpClient {
                         KrakenHttpError::AuthenticationError(format!("Failed to sign request: {e}"))
                     })?;
 
-                    let base_url = &self.base_url;
                     log::debug!(
-                        "Kraken Futures auth: endpoint={endpoint}, nonce={nonce}, base_url={base_url}"
+                        "Kraken Futures auth: endpoint={endpoint}, nonce={nonce}, base_url={}",
+                        self.base_url.origin()
                     );
 
                     headers.insert("APIKey".to_string(), cred.api_key().to_string());
@@ -360,7 +370,12 @@ impl KrakenFuturesRawHttpClient {
                         Some(rate_limit_keys),
                     )
                     .await
-                    .map_err(|e| KrakenHttpError::NetworkError(e.to_string()))?;
+                    .map_err(|e| {
+                        KrakenHttpError::NetworkError(format!(
+                            "Request to {} failed: {e}",
+                            self.base_url.origin()
+                        ))
+                    })?;
 
                 let status = response.status.as_u16();
                 if status >= 400 {
@@ -410,6 +425,21 @@ impl KrakenFuturesRawHttpClient {
         url: String,
         query_string: &str,
     ) -> anyhow::Result<T, KrakenHttpError> {
+        let response = self
+            .send_get_with_query_raw(endpoint, url, query_string)
+            .await?;
+
+        Self::deserialize_body(&response)
+    }
+
+    /// Sends the authenticated GET of [`Self::send_get_with_query`] and hands back the whole
+    /// response, for an endpoint that answers in its headers as well as its body.
+    async fn send_get_with_query_raw(
+        &self,
+        endpoint: &str,
+        url: String,
+        query_string: &str,
+    ) -> anyhow::Result<HttpResponse, KrakenHttpError> {
         let _guard = self.auth_mutex.lock().await;
         let cancellation_token = self.cancellation_token();
 
@@ -455,7 +485,12 @@ impl KrakenFuturesRawHttpClient {
                 Some(rate_limit_keys),
             )
             .await
-            .map_err(|e| KrakenHttpError::NetworkError(e.to_string()))?;
+            .map_err(|e| {
+                KrakenHttpError::NetworkError(format!(
+                    "Request to {} failed: {e}",
+                    self.base_url.origin()
+                ))
+            })?;
 
         let status = response.status.as_u16();
         if status >= 400 {
@@ -471,11 +506,17 @@ impl KrakenFuturesRawHttpClient {
             )));
         }
 
-        let response_text = String::from_utf8(response.body.to_vec()).map_err(|e| {
+        Ok(response)
+    }
+
+    fn deserialize_body<T: DeserializeOwned>(
+        response: &HttpResponse,
+    ) -> anyhow::Result<T, KrakenHttpError> {
+        let response_text = std::str::from_utf8(&response.body).map_err(|e| {
             KrakenHttpError::ParseError(format!("Failed to parse response as UTF-8: {e}"))
         })?;
 
-        serde_json::from_str(&response_text).map_err(|e| {
+        serde_json::from_str(response_text).map_err(|e| {
             KrakenHttpError::ParseError(format!("Failed to deserialize futures response: {e}"))
         })
     }
@@ -541,7 +582,7 @@ impl KrakenFuturesRawHttpClient {
                 KrakenHttpError::RequestNotStarted(format!("Failed to sign request: {e}"))
             })?;
 
-        let url = format!("{}{endpoint}", self.base_url);
+        let url = format!("{}{endpoint}", self.base_url.expose());
         let mut headers = Self::default_headers();
         headers.insert(
             "Content-Type".to_string(),
@@ -626,7 +667,9 @@ impl KrakenFuturesRawHttpClient {
                 }
             }
             response = &mut request => response
-                .map_err(|e| KrakenHttpError::NetworkError(e.to_string())),
+                .map_err(|e| KrakenHttpError::NetworkError(
+                    format!("Request to {} failed: {e}", self.base_url.origin())
+                )),
         }
     }
 
@@ -635,7 +678,7 @@ impl KrakenFuturesRawHttpClient {
         &self,
     ) -> anyhow::Result<FuturesInstrumentsResponse, KrakenHttpError> {
         let endpoint = "/derivatives/api/v3/instruments";
-        let url = format!("{}{endpoint}", self.base_url);
+        let url = format!("{}{endpoint}", self.base_url.expose());
 
         self.send_request(Method::GET, endpoint, url, false).await
     }
@@ -643,7 +686,7 @@ impl KrakenFuturesRawHttpClient {
     /// Requests ticker information for all futures instruments.
     pub async fn get_tickers(&self) -> anyhow::Result<FuturesTickersResponse, KrakenHttpError> {
         let endpoint = "/derivatives/api/v3/tickers";
-        let url = format!("{}{endpoint}", self.base_url);
+        let url = format!("{}{endpoint}", self.base_url.expose());
 
         self.send_request(Method::GET, endpoint, url, false).await
     }
@@ -654,7 +697,7 @@ impl KrakenFuturesRawHttpClient {
         symbol: &str,
     ) -> anyhow::Result<FuturesOrderBookResponse, KrakenHttpError> {
         let endpoint = format!("/derivatives/api/v3/orderbook?symbol={symbol}");
-        let url = format!("{}{endpoint}", self.base_url);
+        let url = format!("{}{endpoint}", self.base_url.expose());
 
         self.send_request(Method::GET, &endpoint, url, false).await
     }
@@ -665,7 +708,7 @@ impl KrakenFuturesRawHttpClient {
         symbol: &str,
     ) -> anyhow::Result<FuturesHistoricalFundingRatesResponse, KrakenHttpError> {
         let endpoint = format!("/derivatives/api/v4/historicalfundingrates?symbol={symbol}");
-        let url = format!("{}{endpoint}", self.base_url);
+        let url = format!("{}{endpoint}", self.base_url.expose());
 
         self.send_request(Method::GET, &endpoint, url, false).await
     }
@@ -681,7 +724,7 @@ impl KrakenFuturesRawHttpClient {
     ) -> anyhow::Result<FuturesCandlesResponse, KrakenHttpError> {
         let endpoint = format!("/api/charts/v1/{tick_type}/{symbol}/{resolution}");
 
-        let mut url = format!("{}{endpoint}", self.base_url);
+        let mut url = format!("{}{endpoint}", self.base_url.expose());
 
         let mut query_params = Vec::new();
 
@@ -712,7 +755,7 @@ impl KrakenFuturesRawHttpClient {
     ) -> anyhow::Result<FuturesPublicExecutionsResponse, KrakenHttpError> {
         let endpoint = format!("/api/history/v3/market/{symbol}/executions");
 
-        let mut url = format!("{}{endpoint}", self.base_url);
+        let mut url = format!("{}{endpoint}", self.base_url.expose());
 
         let mut query_params = Vec::new();
 
@@ -751,7 +794,7 @@ impl KrakenFuturesRawHttpClient {
         }
 
         let endpoint = "/derivatives/api/v3/openorders";
-        let url = format!("{}{endpoint}", self.base_url);
+        let url = format!("{}{endpoint}", self.base_url.expose());
 
         self.send_request(Method::GET, endpoint, url, true).await
     }
@@ -769,7 +812,7 @@ impl KrakenFuturesRawHttpClient {
             ));
         }
 
-        let endpoint = "/api/history/v2/orders";
+        let endpoint = "/api/history/v3/orders";
         let mut query_params = Vec::new();
 
         if let Some(before_ts) = before {
@@ -784,17 +827,43 @@ impl KrakenFuturesRawHttpClient {
             query_params.push(format!("continuation_token={token}"));
         }
 
+        // A page that hands back a continuation token must hold the newest events, which the
+        // single-order lookup relies on to tell how far back the page reaches, so the order is
+        // pinned rather than left to the venue default
+        query_params.push("sort=desc".to_string());
+
         // Build URL with query params
         let query_string = query_params.join("&");
+
         let url = if query_string.is_empty() {
-            format!("{}{endpoint}", self.base_url)
+            format!("{}{endpoint}", self.base_url.expose())
         } else {
-            format!("{}{endpoint}?{query_string}", self.base_url)
+            format!("{}{endpoint}?{query_string}", self.base_url.expose())
         };
 
         // For signing: query params go in postData, not endpoint
         // Kraken: message = postData + nonce + endpoint
-        self.send_get_with_query(endpoint, url, &query_string).await
+        let response = self
+            .send_get_with_query_raw(endpoint, url, &query_string)
+            .await?;
+        let page: FuturesOrderHistoryResponse = Self::deserialize_body(&response)?;
+        let mut events = page.into_order_events()?;
+
+        // Kraken documents the token in the response header and shows it in the body, so a page
+        // that carries it in the header alone must not read as the last one.
+        if events
+            .continuation_token
+            .as_deref()
+            .is_none_or(str::is_empty)
+        {
+            events.continuation_token = response
+                .headers
+                .get(NEXT_CONTINUATION_TOKEN_HEADER)
+                .filter(|token| !token.is_empty())
+                .cloned();
+        }
+
+        Ok(events)
     }
 
     /// Requests the status of specific orders (requires authentication).
@@ -849,9 +918,9 @@ impl KrakenFuturesRawHttpClient {
             .unwrap_or_default();
 
         let url = if query_string.is_empty() {
-            format!("{}{endpoint}", self.base_url)
+            format!("{}{endpoint}", self.base_url.expose())
         } else {
-            format!("{}{endpoint}?{query_string}", self.base_url)
+            format!("{}{endpoint}?{query_string}", self.base_url.expose())
         };
 
         // Query params go in postData for signing
@@ -869,7 +938,7 @@ impl KrakenFuturesRawHttpClient {
         }
 
         let endpoint = "/derivatives/api/v3/openpositions";
-        let url = format!("{}{endpoint}", self.base_url);
+        let url = format!("{}{endpoint}", self.base_url.expose());
 
         self.send_request(Method::GET, endpoint, url, true).await
     }
@@ -883,7 +952,7 @@ impl KrakenFuturesRawHttpClient {
         }
 
         let endpoint = "/derivatives/api/v3/accounts";
-        let url = format!("{}{endpoint}", self.base_url);
+        let url = format!("{}{endpoint}", self.base_url.expose());
 
         self.send_request(Method::GET, endpoint, url, true).await
     }
@@ -1293,6 +1362,19 @@ impl KrakenFuturesHttpClient {
             .cloned()
     }
 
+    /// Resolves the contract a history row names, which the venue may spell in another case than
+    /// the listing (the documented example is `pi_xbtusd`), so the exact spelling is tried first
+    /// and a case-insensitive match second.
+    fn get_instrument_by_history_tradeable(&self, tradeable: &str) -> Option<InstrumentAny> {
+        self.get_instrument_by_raw_symbol(tradeable).or_else(|| {
+            self.instruments_cache
+                .load()
+                .values()
+                .find(|inst| inst.raw_symbol().as_str().eq_ignore_ascii_case(tradeable))
+                .cloned()
+        })
+    }
+
     fn generate_ts_init(&self) -> UnixNanos {
         self.clock.get_time_ns()
     }
@@ -1697,10 +1779,19 @@ impl KrakenFuturesHttpClient {
             .map(|(reports, _)| reports)
     }
 
-    /// Requests order status reports, also reporting whether the set is complete.
+    /// Requests order status reports, also reporting what the read covered.
     ///
-    /// The flag is `false` when a record was skipped because its instrument could not be resolved,
-    /// which `ExecutionMassStatus::set_report_window` records for bounded history.
+    /// An in-scope open order whose instrument cannot be resolved, or that cannot be parsed, fails
+    /// the read, except an untouched reduce-only trigger listed without an unfilled size that no
+    /// open position sizes, which is skipped, and an order a read scoped to one instrument cannot
+    /// resolve, which may be on another instrument and is skipped. The coverage records each such
+    /// skip, each history row that cannot be parsed, resolved or represented, and a continuation
+    /// token, which cuts the read short at the page's oldest event: the read takes one page, since
+    /// every Kraken `/history` endpoint draws on one pool of 100 tokens, replenished at 100 every
+    /// 10 minutes, at a token per page. A read scoped to an unheld futures instrument reads nothing
+    /// and rules out no order. `ExecutionMassStatus::set_report_window` records whether it is
+    /// complete for bounded history, and the single-order lookup whether it rules out an order it
+    /// did not return.
     pub(crate) async fn request_order_status_reports_checked(
         &self,
         account_id: AccountId,
@@ -1708,17 +1799,22 @@ impl KrakenFuturesHttpClient {
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         open_only: bool,
-    ) -> anyhow::Result<(Vec<OrderStatusReport>, bool)> {
-        let mut complete = true;
+    ) -> anyhow::Result<(Vec<OrderStatusReport>, ReportCoverage)> {
+        let mut coverage = ReportCoverage::default();
 
         // A scoped read for an instrument this client does not hold can match nothing, so
-        // return before the request rather than reporting every instrument's rows.
+        // return before the request rather than reporting every instrument's rows. A spot
+        // instrument names none of this client's orders, so that read is complete; a futures one
+        // the listing lacks read nothing, so it rules out none of its orders.
         if let Some(ref target_id) = instrument_id
             && self
                 .get_cached_instrument(&target_id.symbol.inner())
                 .is_none()
         {
-            return Ok((Vec::new(), complete));
+            if product_type_from_symbol(target_id.symbol.as_str()) == KrakenProductType::Futures {
+                coverage.truncate(None);
+            }
+            return Ok((Vec::new(), coverage));
         }
         let ts_init = self.generate_ts_init();
         let mut all_reports = Vec::new();
@@ -1742,39 +1838,46 @@ impl KrakenFuturesHttpClient {
             .any(|order| order.unfilled_size.is_none())
         {
             match self.inner.get_open_positions().await {
-                Ok(response) if response.result == KrakenApiResult::Success => response
+                Ok(response) if response.result == KrakenApiResult::Success => Ok(response
                     .open_positions
                     .into_iter()
                     .map(|position| (position.symbol, position.size))
-                    .collect::<AHashMap<_, _>>(),
+                    .collect::<AHashMap<_, _>>()),
                 Ok(response) => {
-                    let error = response
+                    let reason = response
                         .error
                         .unwrap_or_else(|| "Unknown error".to_string());
-                    log::warn!("Failed to get open positions for order quantities: {error}");
-                    AHashMap::new()
+                    log::warn!("Failed to get open positions for order quantities: {reason}");
+                    Err(reason)
                 }
                 Err(e) => {
                     log::warn!("Failed to get open positions for order quantities: {e}");
-                    AHashMap::new()
+                    Err(e.to_string())
                 }
             }
         } else {
-            AHashMap::new()
+            Ok(AHashMap::new())
         };
+        let mut skipped_open_order_ids = AHashSet::new();
 
         for order in &response.open_orders {
             // Resolve the row and compare instrument ids, so a scoped read cannot match on a
             // spelling and cannot fall through to every instrument when the id is not held.
             let resolved = self.get_instrument_by_raw_symbol(&order.symbol);
-            if let Some(ref target_id) = instrument_id
-                && resolved.as_ref().is_none_or(|inst| inst.id() != *target_id)
-            {
-                continue;
+            if let Some(ref target_id) = instrument_id {
+                match &resolved {
+                    Some(inst) if inst.id() != *target_id => continue,
+                    // Unresolved, the row may be the scoped instrument's own
+                    None => {
+                        coverage.skip(&order.order_id);
+                        continue;
+                    }
+                    Some(_) => {}
+                }
             }
 
             if let Some(instrument) = resolved {
-                let position_size = if order.unfilled_size.is_none()
+                let sized_by_position = order.unfilled_size.is_none()
                     && matches!(
                         order.order_type,
                         KrakenFuturesOrderType::Stop
@@ -1783,33 +1886,58 @@ impl KrakenFuturesHttpClient {
                             | KrakenFuturesOrderType::TakeProfit
                     )
                     && order.status == KrakenFuturesOrderStatus::Untouched
-                    && order.reduce_only == Some(true)
-                {
-                    position_sizes.get(&order.symbol).copied()
-                } else {
-                    None
+                    && order.reduce_only == Some(true);
+                let position_size = match &position_sizes {
+                    Ok(sizes) if sized_by_position => sizes.get(&order.symbol).copied(),
+                    _ => None,
                 };
 
-                match parse_futures_order_status_report(
+                // Such a trigger has no size of its own until it fires. With no open position on
+                // its contract it has none to report, and failing would fail every unscoped
+                // futures order read while it rests, so it is skipped, its history rows with it;
+                // a failed positions read leaves its size unknown instead, which fails the read.
+                if sized_by_position && position_size.is_none() {
+                    if let Err(reason) = &position_sizes {
+                        anyhow::bail!(
+                            "OpenOrders: futures order {} lists no unfilled size and the open \
+                             positions read failed: {reason}",
+                            order.order_id
+                        );
+                    }
+                    log::warn!(
+                        "Skipping futures order {} on {}: the venue lists no unfilled size and no \
+                         open position sizes it; the set is incomplete",
+                        order.order_id,
+                        order.symbol
+                    );
+                    coverage.skip(&order.order_id);
+                    skipped_open_order_ids.insert(VenueOrderId::new(order.order_id.as_str()));
+                    continue;
+                }
+
+                // An in-scope open order the client cannot parse fails the read: dropped, it reads
+                // to reconciliation as an order the venue does not have.
+                let report = parse_futures_order_status_report(
                     order,
                     &instrument,
                     account_id,
                     position_size,
                     ts_init,
-                ) {
-                    Ok(report) => all_reports.push(report),
-                    Err(e) => {
-                        let order_id = &order.order_id;
-                        log::warn!("Failed to parse futures order {order_id}: {e}");
-                        complete = false;
-                    }
-                }
+                )
+                .map_err(|e| {
+                    anyhow::anyhow!(
+                        "OpenOrders: failed to parse futures order {}: {e}",
+                        order.order_id
+                    )
+                })?;
+                all_reports.push(report);
             } else {
-                log::warn!(
-                    "Instrument not in cache for futures symbol {}, skipping order",
+                // An in-scope open order the client cannot resolve fails the read, as the spot
+                // client's does: dropped, it reads to reconciliation as an order the venue never had.
+                anyhow::bail!(
+                    "OpenOrders: instrument not in cache for futures symbol {}",
                     order.symbol
                 );
-                complete = false;
             }
         }
 
@@ -1817,22 +1945,77 @@ impl KrakenFuturesHttpClient {
             // Kraken Futures order events API expects Unix timestamp in milliseconds
             let start_ms = start.map(|dt| dt.as_millisecond());
             let end_ms = end.map(|dt| dt.as_millisecond());
+            // Typed, so the mass status can tell a refusal from a fault; the message repeats the
+            // cause for callers that print only the outermost context.
             let response = self
                 .inner
                 .get_order_events(end_ms, start_ms, None)
                 .await
-                .map_err(|e| anyhow::anyhow!("get_order_events failed: {e}"))?;
+                .map_err(|e| {
+                    let message = format!("get_order_events failed: {e}");
+                    anyhow::Error::new(e).context(message)
+                })?;
+
+            // A page that hands back a continuation token leaves events of the window unread.
+            if response
+                .continuation_token
+                .as_deref()
+                .is_some_and(|token| !token.is_empty())
+            {
+                log::warn!(
+                    "Order history window since={start_ms:?} before={end_ms:?} holds more events than one page; the events beyond it are not read, marking the set incomplete"
+                );
+                // The page holds the newest events, so it covers every event from its oldest one
+                // on; a page with no usable event time covers nothing it can place.
+                coverage.truncate(
+                    response
+                        .oldest_event_ms
+                        .and_then(UnixNanos::from_millis_checked),
+                );
+            }
+
+            // The history lists every lifecycle event, so an order appears once per event. Each
+            // report reconciles against the same cached state, so the read hands back one report
+            // per order: the open-order snapshot when the venue still lists it, else the latest
+            // history state. An open order the snapshot skips is not reported from its history.
+            let open_order_ids: AHashSet<VenueOrderId> = all_reports
+                .iter()
+                .map(|r| r.venue_order_id)
+                .chain(skipped_open_order_ids.iter().copied())
+                .collect();
+            let mut latest: IndexMap<VenueOrderId, OrderStatusReport> = IndexMap::new();
+
+            if response.skipped_rows > 0 {
+                log::warn!(
+                    "Order history page had {} row(s) the adapter could not represent; marking the set incomplete",
+                    response.skipped_rows
+                );
+
+                for order_id in &response.skipped_order_ids {
+                    coverage.skip(order_id);
+                }
+
+                if response.skipped_rows > response.skipped_order_ids.len() {
+                    coverage.skip_unidentified();
+                }
+            }
 
             for event_wrapper in response.order_events {
                 let event = &event_wrapper.order;
 
                 // Resolve the row and compare instrument ids, so a scoped read cannot match on a
                 // spelling and cannot fall through to every instrument when the id is not held.
-                let resolved = self.get_instrument_by_raw_symbol(&event.symbol);
-                if let Some(ref target_id) = instrument_id
-                    && resolved.as_ref().is_none_or(|inst| inst.id() != *target_id)
-                {
-                    continue;
+                let resolved = self.get_instrument_by_history_tradeable(&event.symbol);
+                if let Some(ref target_id) = instrument_id {
+                    match &resolved {
+                        Some(inst) if inst.id() != *target_id => continue,
+                        // Unresolved, the row may be the scoped instrument's own
+                        None => {
+                            coverage.skip(&event.order_id);
+                            continue;
+                        }
+                        Some(_) => {}
+                    }
                 }
 
                 if let Some(instrument) = resolved {
@@ -1843,11 +2026,22 @@ impl KrakenFuturesHttpClient {
                         account_id,
                         ts_init,
                     ) {
-                        Ok(report) => all_reports.push(report),
+                        Ok(report) => {
+                            if open_order_ids.contains(&report.venue_order_id) {
+                                continue;
+                            }
+
+                            match latest.get(&report.venue_order_id) {
+                                Some(existing) if !supersedes(&report, existing) => {}
+                                _ => {
+                                    latest.insert(report.venue_order_id, report);
+                                }
+                            }
+                        }
                         Err(e) => {
                             let order_id = &event.order_id;
                             log::warn!("Failed to parse futures order event {order_id}: {e}");
-                            complete = false;
+                            coverage.skip(order_id);
                         }
                     }
                 } else {
@@ -1855,12 +2049,14 @@ impl KrakenFuturesHttpClient {
                         "Instrument not in cache for futures symbol {}, skipping order event",
                         event.symbol
                     );
-                    complete = false;
+                    coverage.skip(&event.order_id);
                 }
             }
+
+            all_reports.extend(latest.into_values());
         }
 
-        Ok((all_reports, complete))
+        Ok((all_reports, coverage))
     }
 
     /// Requests order status reports from the venue's `/orders/status`
@@ -1937,7 +2133,8 @@ impl KrakenFuturesHttpClient {
 
     /// Requests fill reports, also reporting whether the set is complete.
     ///
-    /// See [`Self::request_order_status_reports_checked`] for what the flag means.
+    /// The flag is `false` when an in-scope fill cannot be resolved or parsed, which
+    /// `ExecutionMassStatus::set_report_window` records for bounded history.
     pub(crate) async fn request_fill_reports_checked(
         &self,
         account_id: AccountId,
@@ -2053,20 +2250,24 @@ impl KrakenFuturesHttpClient {
                 continue;
             }
 
-            if let Some(instrument) = resolved {
-                match parse_futures_position_status_report(
-                    &position,
-                    &instrument,
-                    account_id,
-                    ts_init,
-                ) {
-                    Ok(report) => all_reports.push(report),
-                    Err(e) => {
-                        let symbol = &position.symbol;
-                        log::warn!("Failed to parse futures position {symbol}: {e}");
-                    }
-                }
-            }
+            // An in-scope position the client cannot resolve or parse fails the read: dropped,
+            // it reads to reconciliation as flat.
+            let Some(instrument) = resolved else {
+                anyhow::bail!(
+                    "OpenPositions: instrument not in cache for futures symbol {}",
+                    position.symbol
+                );
+            };
+
+            let report =
+                parse_futures_position_status_report(&position, &instrument, account_id, ts_init)
+                    .map_err(|e| {
+                    anyhow::anyhow!(
+                        "OpenPositions: failed to parse futures position {}: {e}",
+                        position.symbol
+                    )
+                })?;
+            all_reports.push(report);
         }
 
         Ok(all_reports)
@@ -2128,7 +2329,7 @@ impl KrakenFuturesHttpClient {
 
         let mut builder = KrakenFuturesSendOrderParamsBuilder::default();
         builder
-            .cli_ord_id(truncate_cl_ord_id(&client_order_id))
+            .cli_ord_id(client_order_id.to_string())
             .broker(NAUTILUS_KRAKEN_BROKER_ID)
             .symbol(raw_symbol)
             .side(kraken_side)
@@ -2472,8 +2673,8 @@ impl KrakenFuturesHttpClient {
             .get_cached_instrument(&instrument_id.symbol.inner())
             .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
 
-        let order_id = venue_order_id.as_ref().map(|id| id.to_string());
-        let cli_ord_id = client_order_id.as_ref().map(truncate_cl_ord_id);
+        let (order_id, cli_ord_id) =
+            order_identifier(client_order_id.as_ref(), venue_order_id.as_ref());
 
         if order_id.is_none() && cli_ord_id.is_none() {
             anyhow::bail!("Either client_order_id or venue_order_id must be provided");
@@ -2808,8 +3009,8 @@ impl KrakenFuturesHttpClient {
             .get_cached_instrument(&instrument_id.symbol.inner())
             .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
 
-        let order_id = venue_order_id.as_ref().map(|id| id.to_string());
-        let cli_ord_id = client_order_id.as_ref().map(truncate_cl_ord_id);
+        let (order_id, cli_ord_id) =
+            order_identifier(client_order_id.as_ref(), venue_order_id.as_ref());
 
         if order_id.is_none() && cli_ord_id.is_none() {
             anyhow::bail!("Either client_order_id or venue_order_id must be provided");
@@ -2825,8 +3026,11 @@ impl KrakenFuturesHttpClient {
             builder.cli_ord_id(id.clone());
         }
 
+        // A Nautilus quantity is the order's total, fills included, while the venue reads a bare
+        // size as the open size
         if let Some(qty) = quantity {
             builder.size(qty.to_string());
+            builder.qty_mode(KrakenFuturesQtyMode::Absolute);
         }
 
         if let Some(p) = price {
@@ -2843,6 +3047,19 @@ impl KrakenFuturesHttpClient {
     }
 }
 
+/// The identifiers a cancel or edit names an order by, as `(order_id, cliOrdId)`: its venue order
+/// ID when known, else its full client order ID. An order sent with a shortened client order ID is
+/// held under that form, so its full ID beside the venue order ID could name no order.
+pub(crate) fn order_identifier(
+    client_order_id: Option<&ClientOrderId>,
+    venue_order_id: Option<&VenueOrderId>,
+) -> (Option<String>, Option<String>) {
+    match venue_order_id {
+        Some(venue_order_id) => (Some(venue_order_id.to_string()), None),
+        None => (None, client_order_id.map(ToString::to_string)),
+    }
+}
+
 pub(crate) fn is_futures_submit_rejection(status: &str) -> bool {
     matches!(
         status.parse::<KrakenSendStatus>(),
@@ -2852,7 +3069,11 @@ pub(crate) fn is_futures_submit_rejection(status: &str) -> bool {
             | KrakenSendStatus::WouldCauseLiquidation
             | KrakenSendStatus::PostWouldExecute
             | KrakenSendStatus::IocWouldNotExecute
-            | KrakenSendStatus::ReduceOnlyWouldIncreasePosition)
+            | KrakenSendStatus::ReduceOnlyWouldIncreasePosition
+            | KrakenSendStatus::ClientOrderIdAlreadyExist
+            | KrakenSendStatus::ClientOrderIdTooBig
+            | KrakenSendStatus::ClientOrderIdTooLong
+            | KrakenSendStatus::ClientOrderIdInvalid)
     )
 }
 
@@ -2891,14 +3112,14 @@ type AmountsByCode = AHashMap<Ustr, (Decimal, Decimal)>;
 /// reported at zero rather than left at its previous value: the engine only ever inserts
 /// balances, and nothing downstream can clear one.
 ///
-/// Margins are not combined. Single-collateral requirements are denominated in the wallet's own
-/// currency while flex requirements are in USD, so their raw amounts cannot be added under one
-/// code; they are pushed as reported, as before.
+/// Margins are summed per currency the same way. A single-collateral wallet's requirement is in
+/// its `currency` and a flex wallet's in USD, and `MarginAccount` keys account-wide margins by
+/// currency, so two entries under one code would collapse by iteration order.
 fn parse_account_entries(
     accounts: &AHashMap<String, FuturesAccount>,
 ) -> (Vec<AccountBalance>, Vec<MarginBalance>) {
     let mut balances: AmountsByCode = AHashMap::new();
-    let mut margins: Vec<MarginBalance> = Vec::new();
+    let mut margins: AmountsByCode = AHashMap::new();
 
     for account in accounts.values() {
         match account.account_type {
@@ -2907,8 +3128,20 @@ fn parse_account_entries(
                 parse_multi_collateral_margins(account, &mut margins);
             }
             KrakenFuturesAccountType::MarginAccount => {
-                parse_margin_account_balances(account, &mut balances);
-                parse_margin_account_margins(account, &mut margins);
+                let currency = margin_account_currency(account);
+
+                if currency.is_none() {
+                    // Labeling the requirement, or attributing the available funds, with a
+                    // guessed currency would misstate them.
+                    log::warn!(
+                        "Single-collateral wallet currency unresolved (currency {:?}): its margin requirement is skipped and none of its assets is reported as locked; balances {:?}",
+                        account.currency,
+                        account.balances.keys().collect::<Vec<_>>()
+                    );
+                }
+
+                parse_margin_account_balances(account, currency.as_deref(), &mut balances);
+                parse_margin_account_margins(account, currency.as_deref(), &mut margins);
             }
             KrakenFuturesAccountType::CashAccount => {
                 parse_cash_account_balances(account, &mut balances);
@@ -2919,18 +3152,17 @@ fn parse_account_entries(
         }
     }
 
-    (emit_balances(&balances), margins)
+    (emit_balances(&balances), emit_margins(&margins))
 }
 
-/// Resolves the currency a futures balance is emitted in.
+/// Resolves the currency a futures balance or margin requirement is emitted in.
 ///
-/// Every balance keeps the eight-decimal currency the wallet parsers have always built, so wallet
-/// amounts are never rounded; resolving USD to the registered two-decimal currency would round
-/// cash and single-collateral USD balances to cents. The one entry that previously used the
-/// two-decimal currency, the flex `portfolioValue`, now shares this precision, which widens it
-/// without loss.
-fn futures_balance_currency(code: &str) -> Currency {
-    Currency::new(code, 8, 0, code, CurrencyType::Crypto)
+/// Every balance and margin keeps an eight-decimal currency, so wallet amounts are never rounded;
+/// resolving USD to the registered two-decimal currency would round cash and single-collateral
+/// USD balances, and the flex USD requirement, to cents.
+fn futures_balance_currency(code: &str) -> anyhow::Result<Currency> {
+    Currency::new_checked(code, 8, 0, code, CurrencyType::Crypto)
+        .map_err(|e| anyhow::anyhow!("Invalid currency code {code:?}: {e}"))
 }
 
 /// Returns the codes of `amounts` in a stable order.
@@ -2945,7 +3177,9 @@ fn emit_balances(amounts: &AmountsByCode) -> Vec<AccountBalance> {
 
     for code in sorted_codes(amounts) {
         let (total, locked) = amounts[&code];
-        match aggregate_balance(total, locked, futures_balance_currency(code.as_str())) {
+        match futures_balance_currency(code.as_str())
+            .and_then(|currency| aggregate_balance(total, locked, currency))
+        {
             Ok(balance) => balances.push(balance),
             Err(e) => log::warn!("Skipping {code} balance: {e}"),
         }
@@ -3031,23 +3265,31 @@ fn parse_multi_collateral_balances(account: &FuturesAccount, balances: &mut Amou
     }
 }
 
-fn parse_multi_collateral_margins(account: &FuturesAccount, margins: &mut Vec<MarginBalance>) {
-    if let Some(initial_margin) = account.initial_margin
-        && initial_margin > Decimal::ZERO
-    {
-        let usd_currency = Currency::USD();
-        let maintenance = account
-            .margin_requirements
-            .as_ref()
-            .and_then(|mr| mr.mm)
-            .unwrap_or(Decimal::ZERO);
-        // Kraken Futures reports cross-margin aggregates in USD; emit as an
-        // account-wide entry keyed by USD.
-        push_margin(margins, initial_margin, maintenance, usd_currency);
+fn parse_multi_collateral_margins(account: &FuturesAccount, margins: &mut AmountsByCode) {
+    // The flex wallet reports its requirement in USD in `initialMargin` and `maintenanceMargin`;
+    // its schema carries no `marginRequirements`.
+    let initial_margin = account.initial_margin.unwrap_or(Decimal::ZERO);
+    let maintenance = account.maintenance_margin.unwrap_or(Decimal::ZERO);
+
+    // The same gate as the single-collateral wallet: a requirement counts when either figure is
+    // positive.
+    if initial_margin > Decimal::ZERO || maintenance > Decimal::ZERO {
+        accumulate_margin(margins, "USD", initial_margin, maintenance);
     }
 }
 
-fn parse_margin_account_balances(account: &FuturesAccount, balances: &mut AmountsByCode) {
+/// `wallet_currency` is the wallet's resolved `currency`, or `None` when it cannot be resolved.
+fn parse_margin_account_balances(
+    account: &FuturesAccount,
+    wallet_currency: Option<&str>,
+    balances: &mut AmountsByCode,
+) {
+    // `auxiliary.af` is the wallet's available funds in its `currency`, so it bounds that asset
+    // alone; another asset the wallet holds has nothing reserved against it. Locked is derived so
+    // that free equals the venue's available funds, which already net unrealized PnL. Without a
+    // resolved currency the figure cannot be attributed, and no asset is reported as locked.
+    let available = account.auxiliary.as_ref().and_then(|aux| aux.af);
+
     for (currency_code, &amount) in &account.balances {
         // The venue keys this map by contract symbol as well as by currency, for example
         // `FI_XBTUSD_171215`, and those entries are positions rather than balances. No Kraken
@@ -3059,44 +3301,78 @@ fn parse_margin_account_balances(account: &FuturesAccount, balances: &mut Amount
         // The venue keys these by its own spelling and casing, so map to the standard code.
         let code = normalize_asset_key(currency_code.as_str());
 
-        let available = account
-            .auxiliary
-            .as_ref()
-            .and_then(|aux| aux.af)
-            .unwrap_or(amount);
-        let locked = amount - available;
+        let locked = match available {
+            Some(af) if wallet_currency == Some(code.as_str()) => amount - af,
+            _ => Decimal::ZERO,
+        };
 
         accumulate_balance(balances, &code, amount, locked);
     }
 }
 
-fn parse_margin_account_margins(account: &FuturesAccount, margins: &mut Vec<MarginBalance>) {
-    if let Some(ref mr) = account.margin_requirements {
+/// Returns the currency a single-collateral wallet's figures are denominated in.
+///
+/// The wallet schema requires `currency` and states that `auxiliary` and `marginRequirements` are
+/// in it. Guessing it from the asset keys in `balances` could label a requirement with dust held in
+/// another asset, so a wallet without a usable field resolves to `None`.
+fn margin_account_currency(account: &FuturesAccount) -> Option<String> {
+    account
+        .currency
+        .as_deref()
+        .map(str::trim)
+        .filter(|code| !code.is_empty())
+        .map(normalize_asset_key)
+}
+
+/// `wallet_currency` is the wallet's resolved `currency`; a wallet without one contributes no
+/// margin entry, since labeling the requirement with a guess would misstate it.
+fn parse_margin_account_margins(
+    account: &FuturesAccount,
+    wallet_currency: Option<&str>,
+    margins: &mut AmountsByCode,
+) {
+    if let (Some(mr), Some(code)) = (account.margin_requirements.as_ref(), wallet_currency) {
         let im = mr.im.unwrap_or(Decimal::ZERO);
         let mm = mr.mm.unwrap_or(Decimal::ZERO);
+
         if im > Decimal::ZERO || mm > Decimal::ZERO {
-            let usd_currency = Currency::USD();
-            push_margin(margins, im, mm, usd_currency);
+            accumulate_margin(margins, code, im, mm);
         }
     }
 }
 
-fn push_margin(
-    margins: &mut Vec<MarginBalance>,
+/// Adds one wallet's requirement to the entry for `code`.
+fn accumulate_margin(
+    margins: &mut AmountsByCode,
+    code: &str,
     initial: Decimal,
     maintenance: Decimal,
-    currency: Currency,
 ) {
-    let initial = Money::from_decimal(initial, currency);
-    let maintenance = Money::from_decimal(maintenance, currency);
+    let entry = margins
+        .entry(Ustr::from(code))
+        .or_insert((Decimal::ZERO, Decimal::ZERO));
+    entry.0 += initial;
+    entry.1 += maintenance;
+}
 
-    match (initial, maintenance) {
-        (Ok(initial), Ok(maintenance)) => {
-            margins.push(MarginBalance::new(initial, maintenance, None));
+fn emit_margins(amounts: &AmountsByCode) -> Vec<MarginBalance> {
+    let mut margins = Vec::with_capacity(amounts.len());
+
+    for code in sorted_codes(amounts) {
+        let (initial, maintenance) = amounts[&code];
+        let margin = futures_balance_currency(code.as_str()).and_then(|currency| {
+            let initial = Money::from_decimal(initial, currency)?;
+            let maintenance = Money::from_decimal(maintenance, currency)?;
+            Ok(MarginBalance::new(initial, maintenance, None))
+        });
+
+        match margin {
+            Ok(margin) => margins.push(margin),
+            Err(e) => log::warn!("Skipping {code} margin: {e}"),
         }
-        (Err(e), _) => log::warn!("Skipping margin balance with invalid initial margin: {e}"),
-        (_, Err(e)) => log::warn!("Skipping margin balance with invalid maintenance margin: {e}"),
     }
+
+    margins
 }
 
 fn parse_cash_account_balances(account: &FuturesAccount, balances: &mut AmountsByCode) {
@@ -3108,12 +3384,30 @@ fn parse_cash_account_balances(account: &FuturesAccount, balances: &mut AmountsB
     }
 }
 
+/// Whether `candidate` describes a later state of the same order than `existing`.
+///
+/// A closed order does not reopen, so a closed state beats an open one whatever their stamps: an
+/// open state stamped later, such as a refused edit logged after a cancel, describes the order as
+/// it stood before it closed. Between two states of the same kind the later `ts_last` wins, and on
+/// a tie, which the venue's millisecond stamps allow, the larger filled quantity.
+pub(crate) fn supersedes(candidate: &OrderStatusReport, existing: &OrderStatusReport) -> bool {
+    match (
+        candidate.order_status.is_closed(),
+        existing.order_status.is_closed(),
+    ) {
+        (true, false) => true,
+        (false, true) => false,
+        _ if candidate.ts_last != existing.ts_last => candidate.ts_last > existing.ts_last,
+        _ => candidate.filled_qty > existing.filled_qty,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{sync::Arc, time::Duration};
 
     use ahash::AHashMap;
-    use nautilus_model::instruments::CryptoPerpetual;
+    use nautilus_model::{enums::OrderStatus, instruments::CryptoPerpetual};
     use nautilus_testkit::http::assert_http_redirect_rejected;
     use rstest::rstest;
     use rust_decimal_macros::dec;
@@ -3246,6 +3540,7 @@ mod tests {
     ) -> FuturesAccount {
         FuturesAccount {
             account_type: KrakenFuturesAccountType::MultiCollateralMarginAccount,
+            currency: None,
             balances: AHashMap::new(),
             currencies: currencies
                 .iter()
@@ -3266,6 +3561,7 @@ mod tests {
             portfolio_value,
             available_margin: portfolio_value,
             initial_margin: None,
+            maintenance_margin: None,
             pnl: None,
         }
     }
@@ -3273,6 +3569,7 @@ mod tests {
     fn cash_wallet(balances: &[(&str, Decimal)]) -> FuturesAccount {
         FuturesAccount {
             account_type: KrakenFuturesAccountType::CashAccount,
+            currency: None,
             balances: balances
                 .iter()
                 .map(|(code, amount)| ((*code).to_string(), *amount))
@@ -3283,6 +3580,7 @@ mod tests {
             portfolio_value: None,
             available_margin: None,
             initial_margin: None,
+            maintenance_margin: None,
             pnl: None,
         }
     }
@@ -3344,6 +3642,7 @@ mod tests {
     fn test_parse_account_entries_bounds_locked_per_wallet() {
         let single = FuturesAccount {
             account_type: KrakenFuturesAccountType::MarginAccount,
+            currency: Some("xbt".to_string()),
             balances: [("xbt".to_string(), dec!(1))].into_iter().collect(),
             currencies: AHashMap::new(),
             auxiliary: Some(FuturesAuxiliary {
@@ -3357,6 +3656,7 @@ mod tests {
             portfolio_value: None,
             available_margin: None,
             initial_margin: None,
+            maintenance_margin: None,
             pnl: None,
         };
 
@@ -3395,6 +3695,7 @@ mod tests {
     fn test_parse_account_entries_preserves_summed_amounts_across_mixed_sign_wallets() {
         let margin = FuturesAccount {
             account_type: KrakenFuturesAccountType::MarginAccount,
+            currency: Some("xbt".to_string()),
             balances: [("xbt".to_string(), dec!(-1))].into_iter().collect(),
             currencies: AHashMap::new(),
             auxiliary: Some(FuturesAuxiliary {
@@ -3408,6 +3709,7 @@ mod tests {
             portfolio_value: None,
             available_margin: None,
             initial_margin: None,
+            maintenance_margin: None,
             pnl: None,
         };
 
@@ -3438,6 +3740,7 @@ mod tests {
     fn test_parse_account_entries_passes_a_negative_total_through() {
         let account = FuturesAccount {
             account_type: KrakenFuturesAccountType::MarginAccount,
+            currency: Some("xbt".to_string()),
             balances: [("xbt".to_string(), dec!(-1))].into_iter().collect(),
             currencies: AHashMap::new(),
             auxiliary: Some(FuturesAuxiliary {
@@ -3451,6 +3754,7 @@ mod tests {
             portfolio_value: None,
             available_margin: None,
             initial_margin: None,
+            maintenance_margin: None,
             pnl: None,
         };
 
@@ -3475,53 +3779,104 @@ mod tests {
         assert_eq!(usd.total.as_decimal(), dec!(1234.56789012));
     }
 
-    /// Margins stay one entry per wallet: single-collateral requirements are denominated in the
-    /// wallet's currency and flex requirements in USD, so their amounts must not be added.
+    /// Margins are keyed by currency: a single-collateral wallet's in its `currency`, the flex
+    /// wallet's in USD, so requirements in different currencies stay apart.
     #[rstest]
-    fn test_parse_account_entries_keeps_margins_per_wallet() {
+    fn test_parse_account_entries_keeps_margins_per_currency() {
         let mut flex = flex_wallet(&[], Some(dec!(10000)));
         flex.initial_margin = Some(dec!(500));
-        flex.margin_requirements = Some(FuturesMarginRequirements {
-            im: Some(dec!(500)),
-            mm: Some(dec!(250)),
-            lt: None,
-            tt: None,
-        });
+        flex.maintenance_margin = Some(dec!(250));
 
         let single = FuturesAccount {
             account_type: KrakenFuturesAccountType::MarginAccount,
-            balances: AHashMap::new(),
+            currency: Some("xbt".to_string()),
+            balances: [("xbt".to_string(), dec!(2))].into_iter().collect(),
             currencies: AHashMap::new(),
             auxiliary: None,
             margin_requirements: Some(FuturesMarginRequirements {
-                im: Some(dec!(100)),
-                mm: Some(dec!(50)),
+                im: Some(dec!(0.1)),
+                mm: Some(dec!(0.05)),
                 lt: None,
                 tt: None,
             }),
             portfolio_value: None,
             available_margin: None,
             initial_margin: None,
+            maintenance_margin: None,
             pnl: None,
         };
 
         let (_, margins) = entries_for(&[("flex", flex), ("fi_xbtusd", single)]);
 
-        assert_eq!(margins.len(), 2, "one margin entry per wallet: {margins:?}");
-        let mut initials: Vec<Decimal> = margins.iter().map(|m| m.initial.as_decimal()).collect();
-        initials.sort();
-        assert_eq!(initials, vec![dec!(100), dec!(500)]);
+        assert_eq!(
+            margins.len(),
+            2,
+            "one margin entry per currency: {margins:?}"
+        );
+        let mut entries: Vec<(String, Decimal)> = margins
+            .iter()
+            .map(|m| (m.currency.code.to_string(), m.initial.as_decimal()))
+            .collect();
+        entries.sort();
+        assert_eq!(
+            entries,
+            vec![
+                ("BTC".to_string(), dec!(0.1)),
+                ("USD".to_string(), dec!(500))
+            ],
+            "each currency keeps its own entry"
+        );
     }
 
-    /// A single-collateral wallet keys positions by contract symbol, which are not balances.
+    /// The wallet's available funds bound its own currency alone; another asset it holds has
+    /// nothing reserved against it.
     #[rstest]
-    fn test_parse_account_entries_skips_contract_symbol_keys() {
-        let account = FuturesAccount {
+    fn test_parse_margin_account_balances_bound_locked_to_the_wallet_currency() {
+        let wallet = FuturesAccount {
             account_type: KrakenFuturesAccountType::MarginAccount,
+            currency: Some("xbt".to_string()),
+            balances: [("xbt".to_string(), dec!(0.3)), ("xrp".to_string(), dec!(5))]
+                .into_iter()
+                .collect(),
+            currencies: AHashMap::new(),
+            auxiliary: Some(FuturesAuxiliary {
+                usd: None,
+                pv: None,
+                pnl: None,
+                af: Some(dec!(0.1)),
+                funding: None,
+            }),
+            margin_requirements: None,
+            portfolio_value: None,
+            available_margin: None,
+            initial_margin: None,
+            maintenance_margin: None,
+            pnl: None,
+        };
+
+        let (balances, _) = entries_for(&[("fi_xbtusd", wallet)]);
+
+        let by_code = |code: &str| {
+            balances
+                .iter()
+                .find(|b| b.currency.code.as_str() == code)
+                .unwrap_or_else(|| panic!("{code} balance"))
+        };
+        assert_eq!(by_code("BTC").locked.as_decimal(), dec!(0.2));
+        assert_eq!(by_code("XRP").locked.as_decimal(), dec!(0));
+        assert_eq!(by_code("XRP").free.as_decimal(), dec!(5));
+    }
+
+    /// Contract-symbol keys in `balances` are positions, not balances, and are skipped.
+    #[rstest]
+    fn test_parse_margin_account_balances_skip_contract_symbol_keys() {
+        let wallet = FuturesAccount {
+            account_type: KrakenFuturesAccountType::MarginAccount,
+            currency: Some("xbt".to_string()),
             balances: [
+                ("xbt".to_string(), dec!(0.5)),
                 ("FI_XBTUSD_171215".to_string(), dec!(50000)),
                 ("FI_XBTUSD_180615".to_string(), dec!(-15000)),
-                ("xbt".to_string(), dec!(141.31756797)),
             ]
             .into_iter()
             .collect(),
@@ -3531,73 +3886,184 @@ mod tests {
             portfolio_value: None,
             available_margin: None,
             initial_margin: None,
+            maintenance_margin: None,
             pnl: None,
         };
 
-        let (balances, _) = entries_for(&[("fi_xbtusd", account)]);
+        let (balances, _) = entries_for(&[("fi_xbtusd", wallet)]);
 
-        assert_eq!(
-            balances.len(),
-            1,
-            "expected only the asset balance: {balances:?}"
-        );
+        assert_eq!(balances.len(), 1, "{balances:?}");
         assert_eq!(balances[0].currency.code.as_str(), "BTC");
-        assert_eq!(balances[0].total.as_decimal(), dec!(141.31756797));
     }
 
+    /// A flex wallet reports its requirement in USD in the top-level `initialMargin` and
+    /// `maintenanceMargin` fields, and both figures reach the account-wide entry.
+    ///
+    /// Kraken's documented `flex` wallet shape, with the two requirement figures set.
     #[rstest]
-    fn test_parse_multi_collateral_margins() {
-        let account = FuturesAccount {
-            account_type: KrakenFuturesAccountType::MultiCollateralMarginAccount,
-            balances: AHashMap::new(),
-            currencies: AHashMap::new(),
-            auxiliary: None,
-            margin_requirements: Some(FuturesMarginRequirements {
-                im: Some(dec!(500)),
-                mm: Some(dec!(250)),
+    fn test_parse_multi_collateral_margins_read_the_documented_fields() {
+        let json = r#"{
+            "type": "multiCollateralMarginAccount",
+            "currencies": {
+                "XBT": {"quantity": 0.1185308247, "value": 4998.721054420551, "collateral": 4886.49976674881, "available": 0.1185308247},
+                "USD": {"quantity": 5000, "value": 5000, "collateral": 5000, "available": 5000}
+            },
+            "balanceValue": 9998.72,
+            "portfolioValue": 9998.72,
+            "collateralValue": 9886.5,
+            "initialMargin": 500,
+            "initialMarginWithOrders": 500,
+            "maintenanceMargin": 250,
+            "pnl": 0,
+            "unrealizedFunding": 0,
+            "totalUnrealized": 0,
+            "totalUnrealizedAsMargin": 0,
+            "marginEquity": 9886.5,
+            "availableMargin": 9386.5
+        }"#;
+        let account: FuturesAccount = serde_json::from_str(json).unwrap();
+
+        let (_, margins) = entries_for(&[("flex", account)]);
+
+        assert_eq!(margins.len(), 1, "{margins:?}");
+        assert_eq!(margins[0].currency.code.as_str(), "USD");
+        assert_eq!(margins[0].initial.as_decimal(), dec!(500));
+        assert_eq!(margins[0].maintenance.as_decimal(), dec!(250));
+        assert_eq!(margins[0].instrument_id, None);
+    }
+
+    /// A flex wallet with no requirement contributes no entry; one with a requirement contributes
+    /// an account-wide USD entry, so the maintenance figure alone is enough as on the
+    /// single-collateral wallet.
+    #[rstest]
+    #[case::none(None, None, 0)]
+    #[case::initial_only(Some(dec!(100)), None, 1)]
+    #[case::maintenance_only(None, Some(dec!(40)), 1)]
+    fn test_parse_multi_collateral_margins_follow_the_requirement_gate(
+        #[case] initial_margin: Option<Decimal>,
+        #[case] maintenance: Option<Decimal>,
+        #[case] expected: usize,
+    ) {
+        let mut flex = flex_wallet(&[("USD", dec!(1000))], Some(dec!(1000)));
+        flex.initial_margin = initial_margin;
+        flex.maintenance_margin = maintenance;
+
+        let (_, margins) = entries_for(&[("flex", flex)]);
+
+        assert_eq!(margins.len(), expected, "{margins:?}");
+        for margin in &margins {
+            assert_eq!(margin.currency.code.as_str(), "USD");
+            assert_eq!(
+                margin.instrument_id, None,
+                "the requirement is account-wide"
+            );
+        }
+    }
+
+    /// A single-collateral wallet's requirement is denominated in the wallet's `currency`.
+    ///
+    /// Kraken's documented `fi_xbtusd` wallet: `currency: xbt`, a funded `xbt` key, an `xrp: 0` key
+    /// and two contract-symbol keys. The requirement is reported in BTC at eight decimals.
+    #[rstest]
+    fn test_parse_margin_account_margins_use_the_wallet_currency() {
+        let json = r#"{
+            "auxiliary": {"af": 100.73891563, "funding": 100.73891563, "pnl": 12.42134766, "pv": 153.73891563, "usd": 0},
+            "balances": {"FI_XBTUSD_171215": "50000", "FI_XBTUSD_180615": "-15000", "xbt": "141.31756797", "xrp": "0"},
+            "currency": "xbt",
+            "marginRequirements": {"im": 52.8, "lt": 39.6, "mm": 23.76, "tt": 15.84},
+            "triggerEstimates": {"im": 3110, "lt": 2890, "mm": 3000, "tt": 2830},
+            "type": "marginAccount"
+        }"#;
+        let account: FuturesAccount = serde_json::from_str(json).unwrap();
+
+        let (balances, margins) = entries_for(&[("fi_xbtusd", account)]);
+
+        assert_eq!(margins.len(), 1, "{margins:?}");
+        assert_eq!(margins[0].currency.code.as_str(), "BTC");
+        assert_eq!(margins[0].currency.precision, 8);
+        assert_eq!(margins[0].initial.as_decimal(), dec!(52.8));
+        assert_eq!(margins[0].maintenance.as_decimal(), dec!(23.76));
+        let btc = balances
+            .iter()
+            .find(|b| b.currency.code.as_str() == "BTC")
+            .expect("BTC balance");
+        assert_eq!(btc.total.as_decimal(), dec!(141.31756797));
+    }
+
+    /// A requirement whose currency cannot be resolved is skipped rather than labeled by a guess.
+    ///
+    /// Without the `currency` field, or with an empty one, the funded `xbt` key beside dust in
+    /// `xrp` is not evidence of the denomination, and an empty code must not reach the currency
+    /// constructor.
+    #[rstest]
+    #[case::absent(None)]
+    #[case::empty(Some(""))]
+    #[case::blank(Some("  "))]
+    fn test_parse_margin_account_margins_skip_a_wallet_whose_currency_is_unresolved(
+        #[case] currency: Option<&str>,
+    ) {
+        let mut wallet = cash_wallet(&[("xbt", dec!(1.5)), ("xrp", Decimal::ZERO)]);
+        wallet.account_type = KrakenFuturesAccountType::MarginAccount;
+        wallet.currency = currency.map(str::to_string);
+        wallet.margin_requirements = Some(FuturesMarginRequirements {
+            im: Some(dec!(0.05)),
+            mm: Some(dec!(0.025)),
+            lt: None,
+            tt: None,
+        });
+
+        let (_, margins) = entries_for(&[("fi_xbtusd", wallet)]);
+
+        assert!(margins.is_empty(), "no guessed denomination: {margins:?}");
+    }
+
+    /// Wallets sharing a currency sum into one margin entry.
+    ///
+    /// `MarginAccount` keys account-wide margins by currency, so two entries under one code would
+    /// survive by iteration order instead.
+    #[rstest]
+    fn test_parse_account_entries_sums_margins_of_wallets_sharing_a_currency() {
+        let requirement = |im: Decimal, mm: Decimal| {
+            Some(FuturesMarginRequirements {
+                im: Some(im),
+                mm: Some(mm),
                 lt: None,
                 tt: None,
-            }),
-            portfolio_value: Some(dec!(10000)),
-            available_margin: Some(dec!(9500)),
-            initial_margin: Some(dec!(500)),
-            pnl: None,
+            })
         };
+        let mut first = cash_wallet(&[("xbt", dec!(2))]);
+        first.account_type = KrakenFuturesAccountType::MarginAccount;
+        first.currency = Some("xbt".to_string());
+        first.margin_requirements = requirement(dec!(0.1), dec!(0.05));
+        let mut second = cash_wallet(&[("xbt", dec!(1))]);
+        second.account_type = KrakenFuturesAccountType::MarginAccount;
+        second.currency = Some("XBT".to_string());
+        second.margin_requirements = requirement(dec!(0.02), dec!(0.01));
 
-        let (_, margins) = entries_for(&[("wallet", account)]);
+        let (_, margins) = entries_for(&[("fi_a", first), ("fi_b", second)]);
 
-        assert_eq!(margins.len(), 1);
-        let margin = &margins[0];
-        assert!(margin.instrument_id.is_none());
-        assert_eq!(margin.currency.code, "USD");
-        assert_eq!(margin.initial.as_decimal(), dec!(500));
-        assert_eq!(margin.maintenance.as_decimal(), dec!(250));
+        assert_eq!(margins.len(), 1, "one entry per currency: {margins:?}");
+        assert_eq!(margins[0].currency.code.as_str(), "BTC");
+        assert_eq!(margins[0].initial.as_decimal(), dec!(0.12));
+        assert_eq!(margins[0].maintenance.as_decimal(), dec!(0.06));
     }
 
+    /// An asset key the currency constructor rejects is skipped, not a panic.
     #[rstest]
-    fn test_parse_multi_collateral_margins_zero_skipped() {
-        let account = FuturesAccount {
-            account_type: KrakenFuturesAccountType::MultiCollateralMarginAccount,
-            balances: AHashMap::new(),
-            currencies: AHashMap::new(),
-            auxiliary: None,
-            margin_requirements: None,
-            portfolio_value: None,
-            available_margin: None,
-            initial_margin: Some(Decimal::ZERO),
-            pnl: None,
-        };
+    fn test_parse_account_entries_skips_an_empty_asset_key() {
+        let (balances, _) =
+            entries_for(&[("cash", cash_wallet(&[("", dec!(1)), ("xbt", dec!(2))]))]);
 
-        let (_, margins) = entries_for(&[("wallet", account)]);
-
-        assert_eq!(margins.len(), 0);
+        assert_eq!(balances.len(), 1, "{balances:?}");
+        assert_eq!(balances[0].currency.code.as_str(), "BTC");
     }
 
     #[rstest]
     fn test_parse_margin_account_margins() {
         let account = FuturesAccount {
             account_type: KrakenFuturesAccountType::MarginAccount,
-            balances: AHashMap::new(),
+            currency: Some("xbt".to_string()),
+            balances: [("xbt".to_string(), dec!(2))].into_iter().collect(),
             currencies: AHashMap::new(),
             auxiliary: None,
             margin_requirements: Some(FuturesMarginRequirements {
@@ -3609,6 +4075,7 @@ mod tests {
             portfolio_value: None,
             available_margin: None,
             initial_margin: None,
+            maintenance_margin: None,
             pnl: None,
         };
 
@@ -3616,6 +4083,7 @@ mod tests {
 
         assert_eq!(margins.len(), 1);
         let margin = &margins[0];
+        assert_eq!(margin.currency.code.as_str(), "BTC");
         assert_eq!(margin.initial.as_decimal(), dec!(100));
         assert_eq!(margin.maintenance.as_decimal(), dec!(50));
     }
@@ -3624,6 +4092,7 @@ mod tests {
     fn test_parse_margin_account_margins_no_requirements() {
         let account = FuturesAccount {
             account_type: KrakenFuturesAccountType::MarginAccount,
+            currency: None,
             balances: AHashMap::new(),
             currencies: AHashMap::new(),
             auxiliary: None,
@@ -3631,6 +4100,7 @@ mod tests {
             portfolio_value: None,
             available_margin: None,
             initial_margin: None,
+            maintenance_margin: None,
             pnl: None,
         };
 
@@ -3654,6 +4124,7 @@ mod tests {
 
         let account = FuturesAccount {
             account_type: KrakenFuturesAccountType::MultiCollateralMarginAccount,
+            currency: None,
             balances: AHashMap::new(),
             currencies,
             auxiliary: None,
@@ -3661,6 +4132,7 @@ mod tests {
             portfolio_value: Some(dec!(50000)),
             available_margin: Some(dec!(45000)),
             initial_margin: None,
+            maintenance_margin: None,
             pnl: None,
         };
 
@@ -3677,6 +4149,7 @@ mod tests {
 
         let account = FuturesAccount {
             account_type: KrakenFuturesAccountType::MarginAccount,
+            currency: Some("xbt".to_string()),
             balances: bals,
             currencies: AHashMap::new(),
             auxiliary: Some(FuturesAuxiliary {
@@ -3690,6 +4163,7 @@ mod tests {
             portfolio_value: None,
             available_margin: None,
             initial_margin: None,
+            maintenance_margin: None,
             pnl: None,
         };
 
@@ -3711,6 +4185,7 @@ mod tests {
 
         let account = FuturesAccount {
             account_type: KrakenFuturesAccountType::CashAccount,
+            currency: None,
             balances: bals,
             currencies: AHashMap::new(),
             auxiliary: None,
@@ -3718,6 +4193,7 @@ mod tests {
             portfolio_value: None,
             available_margin: None,
             initial_margin: None,
+            maintenance_margin: None,
             pnl: None,
         };
 
@@ -3862,6 +4338,302 @@ mod tests {
                 .to_string()
                 .contains("Unsupported trigger type for Kraken Futures")
         );
+    }
+
+    /// A history page of two rows on `PF_XBTUSD`; the first row's order type is `first_order_type`
+    /// and the page hands back `continuation_token` when one is given.
+    fn history_page(first_order_type: &str, continuation_token: Option<&str>) -> String {
+        let token = continuation_token
+            .map(|token| format!(r#","continuationToken":"{token}""#))
+            .unwrap_or_default();
+        format!(
+            r#"{{"elements":[{{"uid":"e1","timestamp":1680876930250,"event":{{"OrderPlaced":{{"order":{{"uid":"H-SKIP-1","tradeable":"PF_XBTUSD","direction":"Sell","quantity":"3","filled":"1","limitPrice":"70000","orderType":"{first_order_type}","clientId":"cl-1","reduceOnly":false,"timestamp":1680876930250,"lastUpdateTimestamp":1680876930250}}}}}}}},{{"uid":"e2","timestamp":1680877245500,"event":{{"OrderPlaced":{{"order":{{"uid":"H-KEEP-2","tradeable":"PF_XBTUSD","direction":"Buy","quantity":"2","filled":"0.5","limitPrice":"69500","orderType":"Limit","clientId":"cl-2","reduceOnly":false,"timestamp":1680877245500,"lastUpdateTimestamp":1680877245500}}}}}}}}]{token}}}"#
+        )
+    }
+
+    /// A client against a mock venue with no open orders whose order history serves `history`,
+    /// with `header_token` in the `Next-Continuation-Token` header when one is given.
+    async fn history_test_client(
+        history: Arc<RwLock<String>>,
+        header_token: Option<&'static str>,
+    ) -> KrakenFuturesHttpClient {
+        use axum::{
+            Router, body::Body, extract::State, http::header, response::Response, routing::any,
+        };
+
+        let app = Router::new()
+            .route(
+                "/derivatives/api/v3/openorders",
+                any(|| async {
+                    (
+                        [(header::CONTENT_TYPE, "application/json")],
+                        r#"{"result":"success","openOrders":[]}"#,
+                    )
+                }),
+            )
+            .route(
+                "/api/history/v3/orders",
+                any(
+                    move |State(history): State<Arc<RwLock<String>>>| async move {
+                        let mut response =
+                            Response::builder().header(header::CONTENT_TYPE, "application/json");
+
+                        if let Some(token) = header_token {
+                            response = response.header(NEXT_CONTINUATION_TOKEN_HEADER, token);
+                        }
+                        response.body(Body::from(history.read().clone())).unwrap()
+                    },
+                ),
+            )
+            .with_state(history);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        KrakenFuturesHttpClient::with_credentials(
+            "test".to_string(),
+            "test".to_string(),
+            KrakenEnvironment::Live,
+            Some(format!("http://{addr}")),
+            10,
+            None,
+            None,
+            None,
+            None,
+            10,
+        )
+        .unwrap()
+    }
+
+    /// A page that hands back a continuation token, in the body or only in the
+    /// `Next-Continuation-Token` header, leaves events of the window unread, so the read reports
+    /// the page's rows and marks the set incomplete; without a token the same page reads complete.
+    #[rstest]
+    #[case::body_token(Some("c2ltYjE3OA=="), None, false)]
+    #[case::header_token(None, Some("c2ltYjE3OA=="), false)]
+    #[case::no_token(None, None, true)]
+    #[tokio::test]
+    async fn test_request_order_status_reports_marks_a_page_with_a_continuation_token_incomplete(
+        #[case] body_token: Option<&str>,
+        #[case] header_token: Option<&'static str>,
+        #[case] expected_complete: bool,
+    ) {
+        let history = Arc::new(RwLock::new(history_page("Limit", body_token)));
+        let client = history_test_client(history, header_token).await;
+        cache_test_futures_instrument(&client);
+
+        let (reports, coverage) = client
+            .request_order_status_reports_checked(
+                AccountId::from("KRAKEN-001"),
+                None,
+                None,
+                None,
+                false,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(coverage.is_complete(), expected_complete);
+        assert_eq!(
+            reports
+                .iter()
+                .map(|report| report.venue_order_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["H-SKIP-1", "H-KEEP-2"],
+            "the page's rows are reported either way"
+        );
+    }
+
+    /// An edit that resizes the order sends its size as the order's total, fills included, since
+    /// the venue reads a bare size as the open size, on the single and the batch edit alike; a
+    /// price-only edit sends no size and no mode.
+    #[rstest]
+    #[case::resize(Some("5"), Some("ABSOLUTE"))]
+    #[case::price_only(None, None)]
+    #[tokio::test]
+    async fn test_build_edit_order_params_sends_a_size_as_the_total(
+        #[case] size: Option<&str>,
+        #[case] expected_qty_mode: Option<&str>,
+    ) {
+        let client = history_test_client(Arc::new(RwLock::new(String::new())), None).await;
+        let instrument_id = cache_test_futures_instrument(&client);
+
+        let params = client
+            .build_edit_order_params(
+                instrument_id,
+                None,
+                Some(VenueOrderId::from("V-EDIT-1")),
+                size.map(Quantity::from),
+                Some(Price::from("70000")),
+                None,
+            )
+            .unwrap();
+
+        let form: Vec<(String, String)> =
+            serde_urlencoded::from_str(&serde_urlencoded::to_string(&params).unwrap()).unwrap();
+        let form_field = |name: &str| {
+            form.iter()
+                .find(|(key, _)| key == name)
+                .map(|(_, value)| value.as_str())
+        };
+        assert_eq!(form_field("size"), size, "{form:?}");
+        assert_eq!(form_field("qtyMode"), expected_qty_mode, "{form:?}");
+
+        let item =
+            serde_json::to_value(KrakenFuturesBatchEditItem::from_params(params, "tag-1")).unwrap();
+        let item_field = |name: &str| item.get(name).and_then(|value| value.as_str());
+        assert_eq!(item_field("size"), size, "{item}");
+        assert_eq!(item_field("qtyMode"), expected_qty_mode, "{item}");
+    }
+
+    /// A closed order does not reopen: a refused edit logged after the cancel carries the order as
+    /// it stood before the cancel, so the order is reported canceled although the refusal is
+    /// stamped later.
+    #[rstest]
+    #[tokio::test]
+    async fn test_request_order_status_reports_keep_a_closed_order_closed_after_a_refused_edit() {
+        let order = |last_update_ms: u64| {
+            format!(
+                r#"{{"uid":"H-CLOSED","tradeable":"PF_XBTUSD","direction":"Buy","quantity":"1","filled":"0","limitPrice":"70000","orderType":"Limit","clientId":"","reduceOnly":false,"timestamp":1680876930250,"lastUpdateTimestamp":{last_update_ms}}}"#
+            )
+        };
+        // Newest first, as the venue sorts: the refused edit at T2, the cancel at T1, the
+        // placement at T0.
+        let page = format!(
+            r#"{{"elements":[{{"uid":"e3","timestamp":1680877400000,"event":{{"OrderEditRejected":{{"oldOrder":{},"reason":"order_for_edit_not_found"}}}}}},{{"uid":"e2","timestamp":1680877300000,"event":{{"OrderCancelled":{{"order":{},"reason":"cancelled_by_user"}}}}}},{{"uid":"e1","timestamp":1680876930250,"event":{{"OrderPlaced":{{"order":{},"reason":"new_user_order"}}}}}}]}}"#,
+            order(1680876930250),
+            order(1680877300000),
+            order(1680876930250),
+        );
+        let client = history_test_client(Arc::new(RwLock::new(page)), None).await;
+        cache_test_futures_instrument(&client);
+
+        let (reports, coverage) = client
+            .request_order_status_reports_checked(
+                AccountId::from("KRAKEN-001"),
+                None,
+                None,
+                None,
+                false,
+            )
+            .await
+            .unwrap();
+
+        assert!(coverage.is_complete());
+        assert_eq!(reports.len(), 1, "{reports:?}");
+        assert_eq!(reports[0].venue_order_id, VenueOrderId::from("H-CLOSED"));
+        assert_eq!(reports[0].order_status, OrderStatus::Canceled);
+    }
+
+    /// A history row the projection cannot represent marks the checked read incomplete while
+    /// the rows it can represent are still reported.
+    #[rstest]
+    #[tokio::test]
+    async fn test_request_order_status_reports_marks_the_set_incomplete_for_a_skipped_history_row()
+    {
+        let history = Arc::new(RwLock::new(history_page("Limit", None)));
+        let client = history_test_client(history.clone(), None).await;
+        let instrument_id = cache_test_futures_instrument(&client);
+        let account_id = AccountId::from("KRAKEN-001");
+
+        // Control: the same page with a decodable type reads complete, so the flag below is
+        // driven by the undecodable type rather than by the page itself.
+        let (control, coverage) = client
+            .request_order_status_reports_checked(account_id, None, None, None, false)
+            .await
+            .unwrap();
+        assert!(
+            coverage.is_complete(),
+            "the control must be complete, or the skip proves nothing"
+        );
+        assert_eq!(control.len(), 2);
+
+        *history.write() = history_page("Unknown", None);
+        let (reports, coverage) = client
+            .request_order_status_reports_checked(account_id, None, None, None, false)
+            .await
+            .unwrap();
+
+        assert!(
+            !coverage.is_complete(),
+            "a skipped history row must leave the set incomplete"
+        );
+        assert_eq!(reports.len(), 1);
+        let report = &reports[0];
+        assert_eq!(report.venue_order_id, VenueOrderId::from("H-KEEP-2"));
+        assert_eq!(report.instrument_id, instrument_id);
+        assert_eq!(report.account_id, account_id);
+        assert_eq!(report.client_order_id, Some(ClientOrderId::from("cl-2")));
+        assert_eq!(report.order_side, Some(OrderSide::Buy));
+        assert_eq!(report.order_type, OrderType::Limit);
+        assert_eq!(report.quantity, Quantity::from("2"));
+        assert_eq!(report.filled_qty, Quantity::from("0.5"));
+        assert_eq!(report.price, Some(Price::from("69500")));
+    }
+
+    /// The order history request asks for the newest events first rather than relying on the
+    /// venue default, since a page with a continuation token is read as reaching back to its
+    /// oldest event.
+    #[rstest]
+    #[tokio::test]
+    async fn test_get_order_events_asks_for_the_newest_events_first() {
+        use axum::{Router, extract::RawQuery, routing::any};
+
+        let query: Arc<RwLock<Option<String>>> = Arc::new(RwLock::new(None));
+        let recorded = query.clone();
+        let app = Router::new().route(
+            "/api/history/v3/orders",
+            any(move |RawQuery(raw): RawQuery| {
+                let recorded = recorded.clone();
+                async move {
+                    *recorded.write() = raw;
+                    r#"{"elements":[]}"#
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let client = KrakenFuturesHttpClient::with_credentials(
+            "test".to_string(),
+            "test".to_string(),
+            KrakenEnvironment::Live,
+            Some(format!("http://{addr}")),
+            10,
+            None,
+            None,
+            None,
+            None,
+            10,
+        )
+        .unwrap();
+
+        client
+            .inner
+            .get_order_events(None, None, None)
+            .await
+            .unwrap();
+
+        let query = query.read().clone().unwrap_or_default();
+        assert!(
+            query.split('&').any(|param| param == "sort=desc"),
+            "{query}"
+        );
+    }
+
+    /// The venue refuses a client order ID it already holds, or one too long or otherwise invalid,
+    /// so these statuses reject the submission rather than leave it ambiguous.
+    #[rstest]
+    #[case::already_exists("clientOrderIdAlreadyExist")]
+    #[case::too_big("clientOrderIdTooBig")]
+    #[case::too_long("clientOrderIdTooLong")]
+    #[case::invalid("clientOrderIdInvalid")]
+    fn test_client_order_id_send_statuses_reject_the_submission(#[case] status: &str) {
+        assert!(is_futures_submit_rejection(status));
     }
 
     fn cache_test_futures_instrument(client: &KrakenFuturesHttpClient) -> InstrumentId {

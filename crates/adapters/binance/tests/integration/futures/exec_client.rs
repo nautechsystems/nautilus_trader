@@ -30,10 +30,11 @@ use std::{
 use axum::{
     Router,
     extract::{
-        Query, State,
+        Query, Request, State,
         ws::{Message, WebSocket, WebSocketUpgrade},
     },
-    http::{HeaderMap, StatusCode},
+    http::{HeaderMap, Method, StatusCode},
+    middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::{delete, get, post},
 };
@@ -65,7 +66,7 @@ use nautilus_common::{
         execution::{
             BatchCancelOrders, CancelAllOrders, CancelOrder, ExecutionReport, GenerateFillReports,
             GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
-            ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
+            ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList, TradingCommand,
         },
         system::SocketState,
     },
@@ -84,7 +85,8 @@ use nautilus_model::{
         TimeInForce, TrailingOffsetType, TriggerType,
     },
     events::{
-        AccountState, OrderAccepted, OrderEventAny, OrderUpdated, order::spec::OrderFilledSpec,
+        AccountState, OrderAccepted, OrderEventAny, OrderUpdated,
+        order::spec::{OrderFilledSpec, OrderPendingUpdateSpec},
     },
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId, TradeId,
@@ -2934,6 +2936,171 @@ async fn test_modify_order_http_and_stream_emit_once(#[case] stream_first: bool)
     assert_eq!(event.quantity, Quantity::from("0.002"));
     assert_eq!(event.price, Some(Price::from("51000.00")));
     client.disconnect().await.unwrap();
+}
+
+#[tokio::test]
+async fn test_late_modify_rejection_before_acceptance() {
+    let request_received = Arc::new(tokio::sync::Notify::new());
+    let release_rejection = Arc::new(tokio::sync::Notify::new());
+    let queries = Arc::new(Mutex::new(Vec::<HashMap<String, String>>::new()));
+
+    let router = create_exec_test_router().layer(middleware::from_fn({
+        let request_received = request_received.clone();
+        let release_rejection = release_rejection.clone();
+        let queries = queries.clone();
+        move |request: Request, next: Next| {
+            let request_received = request_received.clone();
+            let release_rejection = release_rejection.clone();
+            let queries = queries.clone();
+            async move {
+                if request.method() == Method::PUT && request.uri().path() == "/fapi/v1/order" {
+                    let Query(query) =
+                        Query::<HashMap<String, String>>::try_from_uri(request.uri()).unwrap();
+                    let first = queries.lock().is_empty();
+                    queries.lock().push(query.clone());
+
+                    if first {
+                        request_received.notify_one();
+                        release_rejection.notified().await;
+                        return command_response(
+                            CommandResponse::VenueReject {
+                                code: -4014,
+                                msg: "Price not increased by tick size",
+                            },
+                            &serde_json::Value::Null,
+                        );
+                    }
+
+                    let mut response = load_fixture("order_response.json");
+                    response["origQty"] = json!(query["quantity"]);
+                    response["price"] = json!(query["price"]);
+                    response["clientOrderId"] = json!(query["origClientOrderId"]);
+                    return json_response(&response);
+                }
+
+                next.run(request).await
+            }
+        }
+    }));
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+
+    let (mut client, mut rx, cache) =
+        create_test_execution_client(format!("http://{addr}"), format!("ws://{addr}/ws"));
+    let account_id = AccountId::from("BINANCE-001");
+    add_test_account_to_cache(&cache, account_id);
+    add_test_instrument_to_cache(&cache);
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    let cid = ClientOrderId::from("late-amend-submitted");
+    let order = add_limit_order_to_cache(&cache, cid);
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    let mut engine = ExecutionEngine::new(clock, cache.clone(), None);
+    engine.register_client(Box::new(client)).unwrap();
+    engine.execute(TradingCommand::SubmitOrder(submit_order_command(&order)));
+
+    let ExecutionEvent::Order(submitted) = recv_until(&mut rx, |event| {
+        matches!(event, ExecutionEvent::Order(OrderEventAny::Submitted(_)))
+    })
+    .await
+    else {
+        unreachable!()
+    };
+
+    engine.process(&submitted);
+    assert_eq!(
+        cache.borrow().order(&cid).unwrap().status(),
+        OrderStatus::Submitted
+    );
+    assert_eq!(cache.borrow().order(&cid).unwrap().venue_order_id(), None);
+    engine.process(&OrderEventAny::PendingUpdate(
+        OrderPendingUpdateSpec::builder()
+            .trader_id(order.trader_id())
+            .strategy_id(order.strategy_id())
+            .instrument_id(order.instrument_id())
+            .client_order_id(cid)
+            .account_id(account_id)
+            .build(),
+    ));
+
+    let mut first = modify_order_command(cid);
+    first.venue_order_id = None;
+    first.quantity = Some(Quantity::from("0.003"));
+    first.price = Some(Price::from("52000.00"));
+    engine.execute(TradingCommand::ModifyOrder(first));
+    tokio::time::timeout(Duration::from_secs(5), request_received.notified())
+        .await
+        .unwrap();
+    let mut second = modify_order_command(cid);
+    second.venue_order_id = None;
+    engine.execute(TradingCommand::ModifyOrder(second));
+
+    let ExecutionEvent::Order(updated) = recv_until(&mut rx, |event| {
+        matches!(event, ExecutionEvent::Order(OrderEventAny::Updated(_)))
+    })
+    .await
+    else {
+        unreachable!()
+    };
+
+    engine.process(&updated);
+    assert_eq!(
+        cache.borrow().order(&cid).unwrap().status(),
+        OrderStatus::Submitted
+    );
+    assert_eq!(cache.borrow().order(&cid).unwrap().last_event(), &updated);
+
+    release_rejection.notify_one();
+
+    let ExecutionEvent::Order(rejected) = recv_until(&mut rx, |event| {
+        matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::ModifyRejected(_))
+        )
+    })
+    .await
+    else {
+        unreachable!()
+    };
+
+    engine.process(&rejected);
+
+    {
+        let cache = cache.borrow();
+        let cached = cache.order(&cid).unwrap();
+        assert_eq!(cached.status(), OrderStatus::Submitted);
+        assert_eq!(cached.quantity(), Quantity::from("0.002"));
+        assert_eq!(cached.price(), Some(Price::from("51000.00")));
+        assert_eq!(
+            cached.venue_order_id(),
+            Some(VenueOrderId::from("12345678"))
+        );
+        assert_eq!(cached.last_event(), &rejected);
+        assert_eq!(cached.events().len(), 5);
+    }
+
+    let queries = queries.lock().clone();
+    assert_eq!(queries.len(), 2);
+    let encoded = encode_broker_id(&cid, BINANCE_NAUTILUS_FUTURES_BROKER_ID);
+
+    for (query, quantity, price) in [
+        (&queries[0], "0.003", "52000.00"),
+        (&queries[1], "0.002", "51000.00"),
+    ] {
+        assert_eq!(query.get("origClientOrderId"), Some(&encoded));
+        assert!(!query.contains_key("orderId"));
+        assert_eq!(query["quantity"], quantity);
+        assert_eq!(query["price"], price);
+    }
+
+    engine.disconnect().await.unwrap();
+    server.abort();
 }
 
 #[rstest]
@@ -6083,6 +6250,7 @@ async fn test_startup_reconciliation_preserves_both_hedge_legs(
     #[case] expected_short_quantity: &str,
     #[case] expected_fill_count: usize,
     #[case] expected_event_count: usize,
+    #[values(false, true)] generate_missing_orders: bool,
 ) {
     let (addr, _captured_queries) = start_exec_test_server_with_query_capture_and_responses(
         CommandResponses::default(),
@@ -6123,12 +6291,13 @@ async fn test_startup_reconciliation_preserves_both_hedge_legs(
     assert_eq!(mass_status.position_reports()[&instrument_id].len(), 2);
 
     let clock = Rc::new(RefCell::new(VirtualClock::new()));
-    let mut manager = ExecutionManager::new(
-        clock.clone(),
-        cache.clone(),
-        ExecutionManagerConfig::default(),
-    )
-    .unwrap();
+
+    let config = ExecutionManagerConfig {
+        generate_missing_orders,
+        ..Default::default()
+    };
+
+    let mut manager = ExecutionManager::new(clock.clone(), cache.clone(), config).unwrap();
     let mut engine = ExecutionEngine::new(clock, cache.clone(), None);
     engine.register_client(Box::new(client)).unwrap();
     engine.register_oms_type(StrategyId::from("EXTERNAL"), OmsType::Hedging);
@@ -6138,6 +6307,34 @@ async fn test_startup_reconciliation_preserves_both_hedge_legs(
 
     let long_position_id = PositionId::from("BTCUSDT-PERP.BINANCE-LONG");
     let short_position_id = PositionId::from("BTCUSDT-PERP.BINANCE-SHORT");
+    let long_qty = Quantity::from("0.005");
+    let short_qty = Quantity::from(expected_short_quantity);
+
+    if !generate_missing_orders {
+        let cache_ref = cache.borrow();
+
+        let expected_unresolved = [
+            (long_position_id, long_qty.as_decimal()),
+            (short_position_id, -short_qty.as_decimal()),
+        ]
+        .map(|(position_id, qty)| {
+            format!(
+                "account={account_id}, instrument={instrument_id}, venue_position_id={:?}, venue_quantity={qty}: generate_missing_orders is disabled",
+                Some(position_id),
+            )
+        });
+
+        assert!(result.events.is_empty());
+        assert!(result.external_orders.is_empty());
+        assert_eq!(
+            cache_ref.orders_total_count(None, None, None, None, None),
+            0
+        );
+        assert!(cache_ref.positions(None, None, None, None, None).is_empty());
+        assert_eq!(result.unresolved_positions, expected_unresolved);
+        return;
+    }
+
     assert_eq!(result.events.len(), expected_event_count);
     assert!(result.unresolved_positions.is_empty());
 
@@ -6151,26 +6348,15 @@ async fn test_startup_reconciliation_preserves_both_hedge_legs(
         assert_eq!(long_position.account_id, account_id);
         assert_eq!(long_position.instrument_id, instrument_id);
         assert_eq!(long_position.side, PositionSide::Long);
-        assert_eq!(long_position.quantity, Quantity::from("0.005"));
-        assert_eq!(
-            long_position.signed_decimal_qty(),
-            rust_decimal_macros::dec!(0.005)
-        );
+        assert_eq!(long_position.quantity, long_qty);
+        assert_eq!(long_position.signed_decimal_qty(), long_qty.as_decimal());
         assert_eq!(long_position.avg_px_open, 50000.0);
         assert_eq!(short_position.id, short_position_id);
         assert_eq!(short_position.account_id, account_id);
         assert_eq!(short_position.instrument_id, instrument_id);
         assert_eq!(short_position.side, PositionSide::Short);
-        assert_eq!(
-            short_position.quantity,
-            Quantity::from(expected_short_quantity),
-        );
-        assert_eq!(
-            short_position.signed_decimal_qty(),
-            -expected_short_quantity
-                .parse::<rust_decimal::Decimal>()
-                .unwrap(),
-        );
+        assert_eq!(short_position.quantity, short_qty);
+        assert_eq!(short_position.signed_decimal_qty(), -short_qty.as_decimal());
         assert_eq!(short_position.avg_px_open, 52000.0);
 
         if expected_fill_count > 0 {

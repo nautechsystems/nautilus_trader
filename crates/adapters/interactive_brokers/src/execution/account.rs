@@ -47,6 +47,8 @@ use nautilus_model::{
 use rust_decimal::{Decimal, prelude::ToPrimitive};
 use ustr::Ustr;
 
+use super::reports::IbReportContext;
+
 /// Derives the raw IB account code sent to TWS from the configured `account_id`.
 ///
 /// A configured bare code such as `DU123456` is used as is. A configured composite Nautilus
@@ -121,6 +123,7 @@ where
     on_snapshot(account_snapshot(client, ib_account, &accumulator).await?);
 
     let client = Arc::clone(client);
+
     let future = async move {
         while read_account_summary_cycle(
             &mut subscription,
@@ -135,11 +138,13 @@ where
                 Err(e) => tracing::warn!("Failed to build account snapshot: {}", e),
             }
         }
+
         tracing::warn!(
             "IB account summary stream ended for account: {}",
             ib_account
         );
     };
+
     session_tasks
         .spawn(future)
         .context("Failed to register IB account summary task")?;
@@ -330,6 +335,7 @@ fn merge_account_summary_margin(margins: &mut Vec<MarginBalance>, summary: &Acco
             return;
         }
     };
+
     let value = match parse_balance_decimal(&summary.value)
         .and_then(|d| Money::from_decimal(d, currency).map_err(|e| anyhow::anyhow!(e.to_string())))
     {
@@ -389,6 +395,7 @@ impl AccountSummaryBalance {
         else {
             return Ok(None);
         };
+
         let free = self
             .available_funds
             .or(self.buying_power)
@@ -423,6 +430,7 @@ fn merge_account_summary_balance(
 
     let currency = parse_currency(&summary.currency)?;
     let value = parse_balance_decimal(&summary.value)?;
+
     let balance = match balances.iter_mut().find(|b| b.currency == currency) {
         Some(balance) => balance,
         None => {
@@ -499,6 +507,7 @@ pub async fn subscribe_pnl(
             }
         }
     };
+
     session_tasks
         .spawn(future)
         .context("Failed to register IB PnL task")?;
@@ -532,10 +541,12 @@ pub async fn record_own_fill(
 ) -> anyhow::Result<bool> {
     let quantity = Decimal::from_f64_retain(quantity)
         .context("Failed to convert own fill quantity to Decimal")?;
+
     let signed_quantity = match side {
         ExecutionSide::Bought => quantity,
         ExecutionSide::Sold => -quantity,
     };
+
     let mut tracker = position_tracker.lock().await;
     if !tracker.own_fill_ids.insert(execution_id.to_string()) {
         return Ok(false);
@@ -710,6 +721,7 @@ pub async fn subscribe_positions(
                         {
                             Ok(Some(instrument)) => {
                                 let instrument_id = instrument.id();
+
                                 let position_side = if new_quantity.is_zero() {
                                     PositionSide::Flat
                                 } else if new_quantity > Decimal::ZERO {
@@ -723,22 +735,10 @@ pub async fn subscribe_positions(
                                     instrument.size_precision(),
                                 );
 
-                                let avg_px_open = if position.average_cost > 0.0 {
-                                    let price_magnifier = instrument_provider
-                                        .get_price_magnifier(&instrument_id)
-                                        as f64;
-                                    let multiplier = instrument.multiplier().as_f64();
-                                    let converted_avg_cost =
-                                        position.average_cost / (multiplier * price_magnifier);
-                                    let price_precision = instrument.price_precision();
-                                    Some(
-                                        Decimal::from_f64_retain(converted_avg_cost)
-                                            .map(|d| d.round_dp(price_precision as u32))
-                                            .unwrap_or_default(),
-                                    )
-                                } else {
-                                    None
-                                };
+                                let avg_px_open = IbReportContext::position_avg_px_open(
+                                    &instrument,
+                                    position.average_cost,
+                                );
 
                                 let ts_init = clock.get_time_ns();
 
@@ -800,6 +800,7 @@ pub async fn subscribe_positions(
             }
         }
     };
+
     session_tasks
         .spawn(future)
         .context("Failed to register IB position task")?;
@@ -865,6 +866,7 @@ mod tests {
         for summary in summaries {
             merge_account_summary_balance(&mut balances, summary).unwrap();
         }
+
         finalize_account_summary_balances(balances).unwrap()
     }
 
@@ -882,23 +884,6 @@ mod tests {
         let code = ib_account_code(configured, AccountId::from(account_id));
 
         assert_eq!(code.as_str(), expected);
-    }
-
-    /// Verifies the IB avg cost to Nautilus price conversion formula used in position parsing.
-    /// Python: converted_avg_cost = avg_cost / (multiplier * price_magnifier)
-    #[rstest]
-    fn test_ib_avg_cost_to_price_conversion() {
-        let avg_cost = 100.0;
-        let multiplier = 10.0;
-        let price_magnifier = 2.0;
-        let converted = avg_cost / (multiplier * price_magnifier);
-        assert_eq!(converted, 5.0);
-
-        let avg_cost2 = 1_500_000.0;
-        let multiplier2 = 50.0;
-        let price_magnifier2 = 10;
-        let converted2 = avg_cost2 / (multiplier2 * (price_magnifier2 as f64));
-        assert_eq!(converted2, 3000.0);
     }
 
     #[rstest]

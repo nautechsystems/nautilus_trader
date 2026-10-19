@@ -68,6 +68,7 @@ fn assert_data_factory_extracts_from_python_object(py: Python<'_>) {
     let factory = Py::new(py, InteractiveBrokersDataClientFactory::new())
         .expect("factory should convert to Python object")
         .into_any();
+
     let config = Py::new(
         py,
         InteractiveBrokersDataClientConfig {
@@ -77,6 +78,7 @@ fn assert_data_factory_extracts_from_python_object(py: Python<'_>) {
     )
     .expect("config should convert to Python object")
     .into_any();
+
     let registry = get_global_pyo3_registry();
 
     let extracted_factory = registry
@@ -115,6 +117,7 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
     let factory = Py::new(py, InteractiveBrokersExecutionClientFactory::new())
         .expect("factory should convert to Python object")
         .into_any();
+
     let config = Py::new(
         py,
         InteractiveBrokersExecutionClientConfig {
@@ -124,6 +127,7 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
     )
     .expect("config should convert to Python object")
     .into_any();
+
     let registry = get_global_pyo3_registry();
 
     let extracted_factory = registry

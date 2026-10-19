@@ -2,7 +2,7 @@
 
 Guidance on developing and extending NautilusTrader, or contributing back to the project.
 
-NautilusTrader uses a **Rust core with Python bindings** architecture:
+NautilusTrader has a **Rust core with Python bindings**:
 
 - **Rust** handles networking, data parsing, order matching, and other performance-critical operations.
 - **Python** provides the user-facing API for strategy development, configuration, and system integration.

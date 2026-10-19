@@ -25,10 +25,10 @@ The `ensure_test_data_exists()` function only checks for a local file. A test th
 fixture fails with a message naming the setup command, without downloading data. Setup and tests both
 honor `TEST_DATA_ROOT_PATH`.
 
-**User-fetched data** is used when a vendor license, entitlement model, or access control does not
-allow NautilusTrader to redistribute the data through the public repo or the public R2 bucket.
-In this model, the repo stores only a manifest, fetch instructions, and the transform code. Each
-user downloads the source data with their own vendor account and converts it locally.
+**User-fetched data** applies when a vendor license, entitlement model, or access control does not permit
+public redistribution by NautilusTrader. This restriction covers both the public repo and the public R2 bucket. In
+this model, the repo stores only a manifest, fetch instructions, and the transform code. Each user downloads
+the source data with their own vendor account and converts it locally.
 
 Use the user-fetched model when any of the following apply:
 
@@ -73,11 +73,13 @@ User-fetched datasets use the same metadata fields where they apply. They should
 | `redistribution`    | Short note describing redistribution limits for the dataset.         |
 | `public_mirror`     | Must be `false` for restricted vendor datasets.                      |
 
-For user-fetched datasets without a single committed or mirrored artifact, `file`, `sha256`, and
-`size_bytes` may be omitted from `metadata.json`. In that case, `target_files` in `manifest.json`
-is authoritative for the local output files. For user-fetched datasets, `original_url` may point
-to the vendor download entry point rather than the exact file URL when the exact file is generated
-per user account or per request.
+For user-fetched datasets:
+
+- Without a single committed or mirrored artifact, `file`, `sha256`, and `size_bytes` may be omitted
+  from `metadata.json`. In that case, `target_files` in `manifest.json` is authoritative for local
+  output files.
+- The vendor can generate the exact file per user account or request. In that case, `original_url` can point
+  to the vendor download entry point rather than the exact file URL.
 
 Other metadata fields remain recommended where they apply. In particular, `licence` and `added_at`
 should still be recorded for user-fetched datasets.
@@ -219,13 +221,12 @@ if not filepath.exists():
     pytest.skip(f"User-fetched test data not found: {filepath}")
 ```
 
-For Rust tests that require manual dataset preparation, prefer `#[ignore]` when the test is not
-expected to run in default CI.
+If default CI is not expected to run a Rust test with manual dataset preparation, prefer `#[ignore]`.
 
 ## Regenerating datasets
 
-When a schema change invalidates a large Parquet file, regenerate it from the
-original source data using the curation tests below. After regenerating:
+If a schema change invalidates a large Parquet file, regenerate it from the original source data. Use the
+curation tests below. After regenerating:
 
 1. `sha256sum /tmp/<output_file>.parquet`
 1. Update `test_data/large/checksums.json` with the new hash.

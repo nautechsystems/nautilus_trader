@@ -116,7 +116,7 @@ fn deribit_venue_config() -> BacktestVenueConfig {
 }
 
 fn series_id() -> OptionSeriesId {
-    OptionSeriesId::new(
+    OptionSeriesId::new_derived(
         Venue::new("DERIBIT"),
         Ustr::from("BTC"),
         Ustr::from("BTC"),

@@ -30,6 +30,7 @@ use std::{
 };
 
 use async_trait::async_trait;
+use indexmap::IndexMap;
 use nautilus_common::{
     clients::{ExecutionClient, ExecutionReportTask},
     live::dst::task::JoinHandle,
@@ -47,6 +48,7 @@ use nautilus_model::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Venue, VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny},
+    orders::OrderAny,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, MarginBalance, Money, Price, Quantity},
 };
@@ -312,6 +314,13 @@ impl ExecutionClient for LiveExecutionClient {
         self.client.borrow().retain_unresolved_submissions()
     }
 
+    fn venue_order_ids(
+        &self,
+        mass_status: &ExecutionMassStatus,
+    ) -> Option<IndexMap<ClientOrderId, Vec<VenueOrderId>>> {
+        self.client.borrow().venue_order_ids(mass_status)
+    }
+
     fn position_reconciliation_tolerance(&self) -> Decimal {
         self.client.borrow().position_reconciliation_tolerance()
     }
@@ -502,6 +511,12 @@ impl ExecutionClient for LiveExecutionClient {
             .borrow()
             .calculate_commission(instrument, last_qty, last_px, liquidity_side)
     }
+
+    fn allows_reconciliation_overfill(&self, order: &OrderAny, report: &FillReport) -> bool {
+        self.client
+            .borrow()
+            .allows_reconciliation_overfill(order, report)
+    }
 }
 
 #[cfg(test)]
@@ -525,6 +540,20 @@ mod tests {
 
     #[async_trait(?Send)]
     impl ExecutionClient for ReportExecutionClient {
+        fn venue_order_ids(
+            &self,
+            mass_status: &ExecutionMassStatus,
+        ) -> Option<IndexMap<ClientOrderId, Vec<VenueOrderId>>> {
+            assert_eq!(mass_status.client_id, self.client_id());
+            Some(IndexMap::from_iter([(
+                ClientOrderId::from("ORDER-001"),
+                vec![
+                    VenueOrderId::from("PREVIOUS"),
+                    VenueOrderId::from("CURRENT"),
+                ],
+            )]))
+        }
+
         fn is_connected(&self) -> bool {
             true
         }
@@ -565,6 +594,29 @@ mod tests {
         ) -> anyhow::Result<()> {
             Ok(())
         }
+    }
+
+    #[rstest]
+    fn venue_order_ids_survive_live_wrapper() {
+        let client = LiveExecutionClient::new(Box::new(ReportExecutionClient));
+
+        let mass_status = ExecutionMassStatus::new(
+            client.client_id(),
+            client.account_id(),
+            client.venue(),
+            UnixNanos::default(),
+            None,
+        );
+        assert_eq!(
+            client.venue_order_ids(&mass_status),
+            Some(IndexMap::from_iter([(
+                ClientOrderId::from("ORDER-001"),
+                vec![
+                    VenueOrderId::from("PREVIOUS"),
+                    VenueOrderId::from("CURRENT")
+                ]
+            )]))
+        );
     }
 
     #[tokio::test(flavor = "current_thread")]

@@ -7915,6 +7915,68 @@ fn quote_precisions(quotes: &[QuoteTick]) -> Vec<(u8, u8)> {
 }
 
 #[rstest]
+fn custom_catalog_rows_match_timestamp_aligned_batches(#[values(1, 2, 5)] chunk_size: usize) {
+    ensure_test_custom_data_registered();
+    let (_directory, mut catalog) = create_temp_catalog();
+    let id = InstrumentId::from("CUSTOM.REPLAY");
+    let ts = 1_700_000_000_000_000_123_u64;
+    let data_type = DataType::new("RustTestCustomData", None, Some(id.to_string()));
+
+    let rows = (0..4)
+        .map(|index| {
+            CustomData::new(
+                Arc::new(RustTestCustomData::new(
+                    id,
+                    1.25 + index as f64,
+                    index % 2 == 0,
+                    (ts - 20 - index).into(),
+                    (ts + index / 2).into(),
+                )),
+                data_type.clone(),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    catalog
+        .write_custom_data_batch(rows.clone(), None, None, Some(false))
+        .unwrap();
+
+    let query = CatalogQuery::new(NautilusDataType::Custom {
+        type_name: "RustTestCustomData".to_string(),
+    })
+    .with_identifiers(Some(vec![id.to_string()]));
+
+    let loaded = CatalogReader::query_batch(&mut catalog, &query)
+        .unwrap()
+        .to_data_vec_for_compat();
+    let mut session =
+        CatalogReader::query_batch_session(&mut catalog, &query, Some(chunk_size)).unwrap();
+    let mut batched = Vec::new();
+    while let Some(batch) = session.next_batch().unwrap() {
+        batched.extend(batch.to_data_vec_for_compat());
+    }
+
+    let expected = rows
+        .into_iter()
+        .map(|row| serde_json::to_value(Data::Custom(row)).unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        loaded
+            .iter()
+            .map(|row| serde_json::to_value(row).unwrap())
+            .collect::<Vec<_>>(),
+        expected
+    );
+    assert_eq!(
+        batched
+            .iter()
+            .map(|row| serde_json::to_value(row).unwrap())
+            .collect::<Vec<_>>(),
+        expected
+    );
+}
+
+#[rstest]
 fn test_data_catalog_query_custom_data_applies_where_clause() {
     ensure_test_custom_data_registered();
     let (_temp_dir, mut catalog) = create_temp_catalog();

@@ -44,7 +44,7 @@ impl CacheView {
     ///
     /// # Errors
     ///
-    /// Returns an error when the cache is mutably borrowed.
+    /// Returns an error if the cache is mutably borrowed.
     pub fn try_borrow(&self) -> Result<Ref<'_, Cache>, std::cell::BorrowError> {
         self.inner.try_borrow()
     }

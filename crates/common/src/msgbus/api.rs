@@ -1581,11 +1581,10 @@ mod tests {
     //! where `send_*` holds a borrow, calls the handler, and the handler needs to
     //! call `borrow_mut()` for topic getters or other operations.
 
-    #[cfg(feature = "defi")]
-    use std::sync::Arc;
     use std::{
         cell::{Cell, RefCell},
         rc::Rc,
+        sync::Arc,
         thread,
     };
 
@@ -1597,7 +1596,7 @@ mod tests {
     use nautilus_model::defi::{
         AmmType, Chain, Dex, DexType, PoolIdentifier, PoolLiquidityUpdateType, Token,
     };
-    #[cfg(any(feature = "sbe", feature = "capnp"))]
+    #[cfg(feature = "sbe")]
     use nautilus_model::{data::OptionGreekValues, enums::GreeksConvention};
     use nautilus_model::{
         data::{
@@ -1622,8 +1621,6 @@ mod tests {
     };
     #[cfg(feature = "sbe")]
     use nautilus_serialization::sbe::FromSbe;
-    #[cfg(feature = "capnp")]
-    use nautilus_serialization::{capnp::FromCapnp, market_capnp};
     use rstest::rstest;
     use rust_decimal::Decimal;
 
@@ -1803,7 +1800,7 @@ mod tests {
                 .expect("MsgPack payload must decode as QuoteTick"),
             SerializationEncoding::Json => serde_json::from_slice(&publications[0].payload)
                 .expect("JSON payload must decode as QuoteTick"),
-            SerializationEncoding::Sbe | SerializationEncoding::Capnp => {
+            SerializationEncoding::Sbe => {
                 unreachable!("schema encodings are tested separately")
             }
         };
@@ -1812,7 +1809,7 @@ mod tests {
                 .expect("MsgPack payload must decode as a value"),
             SerializationEncoding::Json => serde_json::from_slice(&publications[0].payload)
                 .expect("JSON payload must decode as a value"),
-            SerializationEncoding::Sbe | SerializationEncoding::Capnp => {
+            SerializationEncoding::Sbe => {
                 unreachable!("schema encodings are tested separately")
             }
         };
@@ -1876,12 +1873,6 @@ mod tests {
     #[rstest]
     fn republish_external_message_round_trips_quote_sbe() {
         assert_quote_round_trips(SerializationEncoding::Sbe);
-    }
-
-    #[cfg(feature = "capnp")]
-    #[rstest]
-    fn republish_external_message_round_trips_quote_capnp() {
-        assert_quote_round_trips(SerializationEncoding::Capnp);
     }
 
     fn assert_typed_external_round_trips<T>(
@@ -2003,7 +1994,7 @@ mod tests {
         )
     }
 
-    #[cfg(any(feature = "sbe", feature = "capnp"))]
+    #[cfg(feature = "sbe")]
     fn option_greeks() -> OptionGreeks {
         OptionGreeks {
             instrument_id: InstrumentId::from("BTC-30JUN23-40000-C.DERIBIT"),
@@ -2392,7 +2383,7 @@ mod tests {
     #[rstest]
     #[case(SerializationEncoding::Json)]
     #[case(SerializationEncoding::MsgPack)]
-    fn republish_external_message_round_trips_publishable_json_msgpack(
+    fn republish_external_message_round_trips_publishable_payloads(
         #[case] encoding: SerializationEncoding,
     ) {
         assert_publishable_json_msgpack_round_trips(encoding);
@@ -2402,7 +2393,7 @@ mod tests {
     #[rstest]
     #[case(SerializationEncoding::Json)]
     #[case(SerializationEncoding::MsgPack)]
-    fn republish_external_message_round_trips_publishable_defi_json_msgpack(
+    fn republish_external_message_round_trips_publishable_defi_payloads(
         #[case] encoding: SerializationEncoding,
     ) {
         assert_publishable_defi_json_msgpack_round_trips(encoding);
@@ -2686,7 +2677,7 @@ mod tests {
     #[rstest]
     #[case(SerializationEncoding::Json)]
     #[case(SerializationEncoding::MsgPack)]
-    fn typed_payloads_round_trip_json_and_msgpack(#[case] encoding: SerializationEncoding) {
+    fn typed_payloads_round_trip_supported_encodings(#[case] encoding: SerializationEncoding) {
         let trader_id = TraderId::from("TRADER-001");
         let client_id = ClientId::from("EXTERNAL");
         let venue = Venue::from("SIM");
@@ -2845,6 +2836,117 @@ mod tests {
     #[rstest]
     #[case(SerializationEncoding::Json)]
     #[case(SerializationEncoding::MsgPack)]
+    fn republish_external_message_rejects_reserved_custom_metadata(
+        #[case] encoding: SerializationEncoding,
+    ) {
+        let custom = stub_custom_data(317, 42, None, Some("catalog/317".to_string()));
+        let mut envelope = serde_json::to_value(custom).unwrap();
+        envelope["data_type"]["metadata"]["identifier"] = serde_json::json!("shadow");
+        let payload = match encoding {
+            SerializationEncoding::Json => serde_json::to_vec(&envelope).unwrap(),
+            SerializationEncoding::MsgPack => rmp_serde::to_vec_named(&envelope).unwrap(),
+            SerializationEncoding::Sbe => unreachable!("custom payloads require JSON or MsgPack"),
+        };
+
+        let payload_type = BusPayloadType::Custom(Ustr::from("StubCustomData"));
+        let message = BusMessage::with_str_topic(
+            "data.custom.StubCustomData",
+            payload_type,
+            Bytes::from(payload),
+            encoding,
+        );
+        let received = Rc::new(RefCell::new(Vec::<CustomData>::new()));
+        let received_handler = received.clone();
+        subscribe_any(
+            "data.custom.StubCustomData".into(),
+            ShareableMessageHandler::from_typed(move |value: &CustomData| {
+                received_handler.borrow_mut().push(value.clone());
+            }),
+            None,
+        );
+
+        republish_external_message(&message).unwrap();
+        get_message_bus()
+            .borrow_mut()
+            .add_streaming_type(payload_type);
+        let error = republish_external_message(&message).unwrap_err();
+
+        assert_eq!(
+            error.root_cause().to_string(),
+            "`identifier` is reserved for DataType catalog identity"
+        );
+        assert!(received.borrow().is_empty());
+        reset_message_bus();
+    }
+
+    #[rstest]
+    #[case(SerializationEncoding::Json)]
+    #[case(SerializationEncoding::MsgPack)]
+    fn typed_processor_rejects_reserved_nested_custom_metadata(
+        #[case] encoding: SerializationEncoding,
+        #[values(false, true)] batch: bool,
+    ) {
+        let custom = stub_custom_data(317, 42, None, Some("catalog/317".to_string()));
+
+        let data: Arc<dyn Any + Send + Sync> = if batch {
+            Arc::new(vec![custom.clone()])
+        } else {
+            Arc::new(custom.clone())
+        };
+
+        let response = DataResponse::Data(CustomDataResponse {
+            correlation_id: UUID4::new(),
+            client_id: ClientId::from("CLIENT-001"),
+            venue: Some(Venue::from("SIM")),
+            data_type: custom.data_type,
+            data,
+            start: Some(UnixNanos::from(301)),
+            end: Some(UnixNanos::from(313)),
+            ts_init: UnixNanos::from(319),
+            params: None,
+        });
+
+        let mut envelope = serde_json::to_value(response).unwrap();
+        let item = if batch {
+            &mut envelope["Data"]["data"]["Batch"][0]
+        } else {
+            &mut envelope["Data"]["data"]["Scalar"]
+        };
+
+        item["value"]["data_type"]["metadata"]["identifier"] = serde_json::Value::Null;
+
+        let payload = match encoding {
+            SerializationEncoding::Json => serde_json::to_vec(&envelope).unwrap(),
+            SerializationEncoding::MsgPack => rmp_serde::to_vec_named(&envelope).unwrap(),
+            SerializationEncoding::Sbe => unreachable!("custom payloads require JSON or MsgPack"),
+        };
+
+        let message = BusMessage::with_str_topic(
+            "data.responses",
+            BusPayloadType::DataResponse,
+            Bytes::from(payload),
+            encoding,
+        );
+        let mut processed = false;
+        let error = process_external_typed_message(&message, &mut |_, _| {
+            processed = true;
+            Ok(())
+        })
+        .unwrap_err();
+
+        assert!(
+            error
+                .root_cause()
+                .to_string()
+                .contains("`identifier` is reserved for DataType catalog identity")
+        );
+        assert!(!processed);
+        reset_message_bus();
+    }
+
+    #[rstest]
+    #[case(SerializationEncoding::Json)]
+    #[case(SerializationEncoding::MsgPack)]
     fn republish_external_message_skips_unregistered_custom_payload(
         #[case] encoding: SerializationEncoding,
     ) {
@@ -2852,7 +2954,7 @@ mod tests {
             "type": "UnregisteredCustomData",
             "data_type": {
                 "type_name": "UnregisteredCustomData",
-                "metadata": {},
+                "metadata": {"identifier": "shadow"},
             },
             "payload": {
                 "value": 1,
@@ -2865,7 +2967,7 @@ mod tests {
             SerializationEncoding::MsgPack => {
                 rmp_serde::to_vec_named(&envelope).expect("MsgPack envelope must serialize")
             }
-            SerializationEncoding::Sbe | SerializationEncoding::Capnp => {
+            SerializationEncoding::Sbe => {
                 unreachable!("schema encodings do not support custom payloads")
             }
         };
@@ -2918,7 +3020,7 @@ mod tests {
         reset_message_bus();
     }
 
-    #[cfg(any(feature = "sbe", feature = "capnp"))]
+    #[cfg(feature = "sbe")]
     fn assert_market_data_binary_round_trips(encoding: SerializationEncoding) {
         assert_typed_external_round_trips(
             encoding,
@@ -3009,12 +3111,6 @@ mod tests {
         assert_market_data_binary_round_trips(SerializationEncoding::Sbe);
     }
 
-    #[cfg(feature = "capnp")]
-    #[rstest]
-    fn republish_external_message_round_trips_market_data_capnp() {
-        assert_market_data_binary_round_trips(SerializationEncoding::Capnp);
-    }
-
     #[rstest]
     #[case(BusPayloadType::AccountState)]
     fn republish_external_message_skips_unsupported_binary_payload(
@@ -3032,18 +3128,16 @@ mod tests {
             None,
         );
 
-        for encoding in [SerializationEncoding::Sbe, SerializationEncoding::Capnp] {
-            let message = BusMessage::with_str_topic(
-                "events.unsupported.payload",
-                payload_type,
-                Bytes::from_static(b"malformed unsupported payload"),
-                encoding,
-            );
-            get_message_bus()
-                .borrow_mut()
-                .add_streaming_type(payload_type);
-            republish_external_message(&message).unwrap();
-        }
+        let message = BusMessage::with_str_topic(
+            "events.unsupported.payload",
+            payload_type,
+            Bytes::from_static(b"malformed unsupported payload"),
+            SerializationEncoding::Sbe,
+        );
+        get_message_bus()
+            .borrow_mut()
+            .add_streaming_type(payload_type);
+        republish_external_message(&message).unwrap();
 
         assert!(received.borrow().is_empty());
         reset_message_bus();
@@ -3156,70 +3250,6 @@ mod tests {
     #[rstest]
     fn publish_quote_sbe_without_feature_drops_payload() {
         let publications = install_capturing_external_egress(SerializationEncoding::Sbe);
-        let quote = QuoteTick::default();
-
-        publish_quote("data.quotes.TEST".into(), &quote);
-
-        assert!(publications.borrow().is_empty());
-        reset_message_bus();
-    }
-
-    #[cfg(feature = "capnp")]
-    #[rstest]
-    fn publish_quote_capnp_forwards_decodable_payload_to_external_egress() {
-        let publications = install_capturing_external_egress(SerializationEncoding::Capnp);
-        let quote = QuoteTick::default();
-
-        publish_quote("data.quotes.TEST".into(), &quote);
-
-        let publications = publications.borrow();
-        assert_eq!(publications.len(), 1);
-        assert_eq!(publications[0].topic, "data.quotes.TEST");
-        let reader = capnp::serialize::read_message(
-            &mut &publications[0].payload[..],
-            capnp::message::ReaderOptions::new(),
-        )
-        .expect("Cap'n Proto payload must be readable");
-        let root = reader
-            .get_root::<market_capnp::quote_tick::Reader>()
-            .expect("Cap'n Proto payload must have a QuoteTick root");
-        let decoded =
-            QuoteTick::from_capnp(root).expect("Cap'n Proto payload must decode as QuoteTick");
-        assert_eq!(decoded, quote);
-        drop(publications);
-        reset_message_bus();
-    }
-
-    #[cfg(feature = "capnp")]
-    #[rstest]
-    fn publish_option_greeks_capnp_forwards_decodable_payload_to_external_egress() {
-        let publications = install_capturing_external_egress(SerializationEncoding::Capnp);
-        let greeks = option_greeks();
-
-        publish_option_greeks("data.option_greeks.TEST".into(), &greeks);
-
-        let publications = publications.borrow();
-        assert_eq!(publications.len(), 1);
-        assert_eq!(publications[0].topic, "data.option_greeks.TEST");
-        let reader = capnp::serialize::read_message(
-            &mut &publications[0].payload[..],
-            capnp::message::ReaderOptions::new(),
-        )
-        .expect("Cap'n Proto payload must be readable");
-        let root = reader
-            .get_root::<market_capnp::option_greeks::Reader>()
-            .expect("Cap'n Proto payload must have an OptionGreeks root");
-        let decoded = OptionGreeks::from_capnp(root)
-            .expect("Cap'n Proto payload must decode as OptionGreeks");
-        assert_eq!(decoded, greeks);
-        drop(publications);
-        reset_message_bus();
-    }
-
-    #[cfg(not(feature = "capnp"))]
-    #[rstest]
-    fn publish_quote_capnp_without_feature_drops_payload() {
-        let publications = install_capturing_external_egress(SerializationEncoding::Capnp);
         let quote = QuoteTick::default();
 
         publish_quote("data.quotes.TEST".into(), &quote);
@@ -3933,7 +3963,7 @@ mod tests {
             &DataResponse::OptionChainReferencePrice(OptionChainReferencePriceResponse::new(
                 correlation_id,
                 client_id,
-                OptionSeriesId::new(
+                OptionSeriesId::new_derived(
                     venue,
                     Ustr::from("BTC"),
                     Ustr::from("BTC"),

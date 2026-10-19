@@ -1,0 +1,14 @@
+{
+  "v": 1,
+  "channel": "price.crypto.twap",
+  "seq": 2,
+  "ts": 1791355667000,
+  "payload": {
+    "full_accuracy_value": "84291.577380840025358336",
+    "source": "chainlink",
+    "symbol": "btcusd",
+    "timestamp": 1791355667000,
+    "value": 84291.57738084003,
+    "window_seconds": 60
+  }
+}

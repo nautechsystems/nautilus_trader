@@ -84,15 +84,14 @@ pub trait MarkerBackend: Debug + Send {
     ///
     /// # Errors
     ///
-    /// Returns [`EventStoreError::Backend`] for unclassified backend failures.
+    /// Returns an error if the backend fails.
     fn open_run(&mut self, manifest: MarkerManifest) -> Result<(), EventStoreError>;
 
     /// Appends a cursor snapshot with its precomputed integrity hash.
     ///
     /// # Errors
     ///
-    /// Returns [`EventStoreError::Closed`] when the run is sealed, and
-    /// [`EventStoreError::Backend`] when no run is open or for unclassified backend failures.
+    /// Returns an error if the run is sealed, no run is open, or the backend fails.
     fn append_snapshot(
         &mut self,
         snapshot: &DataCursorSnapshot,
@@ -103,7 +102,7 @@ pub trait MarkerBackend: Debug + Send {
     ///
     /// # Errors
     ///
-    /// See [`append_snapshot`](Self::append_snapshot).
+    /// Returns an error if [`append_snapshot`](Self::append_snapshot) fails.
     fn append_hifi(&mut self, marker: &HiFiMarker, hash: [u8; 32]) -> Result<(), EventStoreError>;
 
     /// Appends a gap covering a dropped range of marker sequences, with its precomputed integrity
@@ -111,7 +110,7 @@ pub trait MarkerBackend: Debug + Send {
     ///
     /// # Errors
     ///
-    /// See [`append_snapshot`](Self::append_snapshot).
+    /// Returns an error if [`append_snapshot`](Self::append_snapshot) fails.
     fn append_gap(&mut self, gap: &MarkerGap, hash: [u8; 32]) -> Result<(), EventStoreError>;
 
     /// Records a slot dictionary entry with its precomputed integrity hash, write-once by slot.
@@ -121,15 +120,14 @@ pub trait MarkerBackend: Debug + Send {
     ///
     /// # Errors
     ///
-    /// See [`append_snapshot`](Self::append_snapshot).
+    /// Returns an error if [`append_snapshot`](Self::append_snapshot) fails.
     fn put_dict(&mut self, entry: &StreamDictEntry, hash: [u8; 32]) -> Result<(), EventStoreError>;
 
     /// Scans all cursor snapshots in ascending `marker_seq` order.
     ///
     /// # Errors
     ///
-    /// Returns [`EventStoreError::Backend`] when no run is open or for unclassified backend
-    /// failures.
+    /// Returns an error if no run is open or the backend fails.
     fn scan_snapshots(&self) -> Result<Vec<DataCursorSnapshot>, EventStoreError>;
 
     /// Scans cursor snapshots with stored integrity hashes when the backend exposes them.
@@ -138,7 +136,7 @@ pub trait MarkerBackend: Debug + Send {
     ///
     /// # Errors
     ///
-    /// See [`scan_snapshots`](Self::scan_snapshots).
+    /// Returns an error if [`scan_snapshots`](Self::scan_snapshots) fails.
     fn scan_snapshot_records(
         &self,
     ) -> Result<Option<Vec<StoredMarkerRecord<DataCursorSnapshot>>>, EventStoreError> {
@@ -149,7 +147,7 @@ pub trait MarkerBackend: Debug + Send {
     ///
     /// # Errors
     ///
-    /// See [`scan_snapshots`](Self::scan_snapshots).
+    /// Returns an error if [`scan_snapshots`](Self::scan_snapshots) fails.
     fn scan_hifi(&self) -> Result<Vec<HiFiMarker>, EventStoreError>;
 
     /// Scans high-fidelity markers with stored integrity hashes when the backend exposes them.
@@ -158,7 +156,7 @@ pub trait MarkerBackend: Debug + Send {
     ///
     /// # Errors
     ///
-    /// See [`scan_hifi`](Self::scan_hifi).
+    /// Returns an error if [`scan_hifi`](Self::scan_hifi) fails.
     fn scan_hifi_records(
         &self,
     ) -> Result<Option<Vec<StoredMarkerRecord<HiFiMarker>>>, EventStoreError> {
@@ -169,7 +167,7 @@ pub trait MarkerBackend: Debug + Send {
     ///
     /// # Errors
     ///
-    /// See [`scan_snapshots`](Self::scan_snapshots).
+    /// Returns an error if [`scan_snapshots`](Self::scan_snapshots) fails.
     fn scan_gaps(&self) -> Result<Vec<MarkerGap>, EventStoreError>;
 
     /// Scans marker gaps with stored integrity hashes when the backend exposes them.
@@ -178,7 +176,7 @@ pub trait MarkerBackend: Debug + Send {
     ///
     /// # Errors
     ///
-    /// See [`scan_gaps`](Self::scan_gaps).
+    /// Returns an error if [`scan_gaps`](Self::scan_gaps) fails.
     fn scan_gap_records(
         &self,
     ) -> Result<Option<Vec<StoredMarkerRecord<MarkerGap>>>, EventStoreError> {
@@ -189,7 +187,7 @@ pub trait MarkerBackend: Debug + Send {
     ///
     /// # Errors
     ///
-    /// See [`scan_snapshots`](Self::scan_snapshots).
+    /// Returns an error if [`scan_snapshots`](Self::scan_snapshots) fails.
     fn scan_dict(&self) -> Result<Vec<StreamDictEntry>, EventStoreError>;
 
     /// Scans dictionary entries with stored integrity hashes when the backend exposes them.
@@ -198,7 +196,7 @@ pub trait MarkerBackend: Debug + Send {
     ///
     /// # Errors
     ///
-    /// See [`scan_dict`](Self::scan_dict).
+    /// Returns an error if [`scan_dict`](Self::scan_dict) fails.
     fn scan_dict_records(
         &self,
     ) -> Result<Option<Vec<StoredMarkerRecord<StreamDictEntry>>>, EventStoreError> {
@@ -209,15 +207,15 @@ pub trait MarkerBackend: Debug + Send {
     ///
     /// # Errors
     ///
-    /// Returns [`EventStoreError::Backend`] when `status` is [`RunStatus::Running`] or no run is
-    /// open, and [`EventStoreError::Closed`] when the run is already sealed.
+    /// Returns an error if `status` is [`RunStatus::Running`] or no run is open, or if the run is
+    /// already sealed.
     fn seal(&mut self, status: RunStatus) -> Result<(), EventStoreError>;
 
     /// Returns the current marker manifest.
     ///
     /// # Errors
     ///
-    /// Returns [`EventStoreError::Backend`] when no run is open.
+    /// Returns an error if no run is open.
     fn manifest(&self) -> Result<MarkerManifest, EventStoreError>;
 }
 

@@ -152,9 +152,7 @@ impl Currency {
     /// - If `overwrite` is `true`, any existing currency will be replaced.
     /// - If `overwrite` is `false` and the currency already exists, the operation is a no-op.
     ///
-    /// # Errors
-    ///
-    /// This function does not currently return an error.
+    /// This function does not return an error.
     #[staticmethod]
     #[pyo3(name = "register")]
     #[pyo3(signature = (currency, overwrite = false))]

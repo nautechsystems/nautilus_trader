@@ -43,9 +43,9 @@ Command support is derived from the parsers registered for each chain and DEX. T
 | Registered only | Metadata registration without command-capable event parsers. | Curve Finance, SushiSwap V2, and SushiSwap V3.      | Arbitrum.                                   |
 | Blocks only     | No DEX registration; `sync-blocks` remains available.        | -                                                   | Other configured chains, including Polygon. |
 
-`sync-dex` requires a pool-creation parser. `analyze-pool(s)` requires Initialize, Swap, Mint,
-Burn, and Collect parsers. Replay-ready integrations also parse `SetFeeProtocol`; integrations
-with a `CollectProtocol` parser can replay protocol-fee withdrawals.
+`sync-dex` requires a pool-creation parser. `analyze-pool(s)` requires Initialize, Swap, Mint, Burn, and
+Collect parsers. Replay-ready integrations also parse `SetFeeProtocol`. Integrations with a `CollectProtocol`
+parser can replay protocol-fee withdrawals.
 
 Aerodrome Slipstream has no pool-creation parser, and the CLI has no separate pool-registration
 command. Analysis works only when its pool and token metadata already exist in the cache through
@@ -116,10 +116,10 @@ Pool definitions bind the chain and DEX to a pool contract address or protocol p
 stable Nautilus instrument ID. The token pair, fee tier, tick spacing, and creation block remain
 pool metadata.
 
-When the data engine processes a pool definition, it caches and publishes a `CurrencyPair` under
-the same pool instrument ID. The instrument takes its base and quote from `Pool::get_base_token`
-and `Pool::get_quote_token`, the token-priority orientation that swap trade info and execution use,
-and derives price and size precision from token decimals up to `FIXED_PRECISION`. Distinct pool
+When the data engine processes a pool definition, it caches and publishes a `CurrencyPair` under the same pool
+instrument ID. The instrument takes its base and quote from `Pool::get_base_token` and
+`Pool::get_quote_token`. Swap trade info and execution use this same token-priority orientation. The
+instrument derives price and size precision from token decimals up to `FIXED_PRECISION`. Distinct pool
 identifiers let same-token pools coexist in the cache and on the message bus.
 
 Uniswap V3 and compatible concentrated-liquidity pools also use:
@@ -173,8 +173,7 @@ RPC_WSS_URL=wss://your-rpc.example
 - `ENVIO_API_TOKEN` is required by the Rust HyperSync client. Missing or malformed tokens fail
   client construction before any query is sent.
 - `RPC_HTTP_URL` or `--rpc-url` is required for contract reads and snapshot hydration.
-- `RPC_WSS_URL` is required when `use_hypersync_for_live_data = false`; that mode uses WSS RPC live
-  streams.
+- `RPC_WSS_URL` is required when `use_hypersync_for_live_data = false`. That mode uses WSS RPC live streams.
 
 Execution adds further variables (see [Execution](#execution)):
 
@@ -189,10 +188,9 @@ For token setup and quota details, see Envio's
 
 ### RPC provider requirements
 
-`RPC_HTTP_URL` or `--rpc-url` must point at an EVM JSON-RPC endpoint for the target chain.
-The data client uses it for contract reads, and first-time pool syncs read on-chain state through it.
-The client reads the HyperSync endpoint from `Chain::hypersync_url`; built-in chains default to
-`https://{chain_id}.hypersync.xyz`.
+`RPC_HTTP_URL` or `--rpc-url` must point at an EVM JSON-RPC endpoint for the target chain. The data client
+uses it for contract reads, and first-time pool syncs read on-chain state through it. The client reads the
+HyperSync endpoint from `Chain::hypersync_url`. Built-in chains default to `https://{chain_id}.hypersync.xyz`.
 
 Choose an RPC provider that supports the intended target blocks and Multicall workload. Provider
 labels are not sufficient evidence of archive access: verify an `eth_getCode` or `eth_call` against
@@ -206,8 +204,8 @@ Archive support affects validation, not whether event sync runs:
   `validation_state = on_chain`.
 - On a non-archive node, the historical read fails and the snapshot stays `validation_state = replay`,
   which is still usable as a replay start point.
-- A first-time sync on a non-archive node must use a recent `--to-block`, because bootstrap reads
-  on-chain state at the target block and non-archive nodes serve only recent state.
+- For a first-time sync on a non-archive node, use a recent `--to-block`. Bootstrap reads on-chain state at
+  the target block. Non-archive nodes serve only recent state.
 
 ## Local services
 
@@ -377,9 +375,13 @@ marking it valid.
 | Structural     | Current tick, active liquidity, per-tick liquidity, and position liquidity. | Store `invalid`; exclude from default loading. |
 | Non-structural | Sqrt price, fee protocol, and protocol-fee balances.                        | Warn and accept the snapshot as `on_chain`.    |
 
-Non-structural differences can arise because event replay is transaction-scoped while an RPC
-snapshot is block-scoped, a fork or replay range omits a fee-protocol update, or replay rounding
-differs from the on-chain fee accumulator. Accepting those fields matches backtest replay behavior.
+Non-structural differences can arise for these reasons:
+
+- Event replay is transaction-scoped, but an RPC snapshot is block-scoped.
+- A fork or replay range omits a fee-protocol update.
+- Replay rounding differs from the on-chain fee accumulator.
+
+Accepting those fields matches backtest replay behavior.
 
 ### Snapshot bootstrap guard
 
@@ -467,8 +469,8 @@ snapshot = load_pool_snapshot(
 
 Replay rules:
 
-- By default, snapshots marked `invalid` are excluded; both `on_chain` and `replay` snapshots can
-  be returned. Pass `require_valid=False` only when the caller also accepts `invalid` snapshots.
+- By default, snapshots marked `invalid` are excluded. Both `on_chain` and `replay` snapshots can be returned.
+  Pass `require_valid=False` only when the caller also accepts `invalid` snapshots.
 - Treat `None` as setup failure. Do not replay without profiler state.
 - Wrap the result as `DefiData.PoolSnapshot(snapshot)` and pass it to
   `BacktestEngine.add_defi_data` with the pool events.
@@ -532,8 +534,8 @@ within the provider's limits.
 
 ### Choose a target block the RPC provider can serve
 
-A first-time sync reads on-chain state at `--to-block`. Use a recent target with a non-archive RPC
-provider, or use a provider that serves contract state at the requested historical block. See
+A first-time sync reads on-chain state at `--to-block`. With a non-archive RPC provider, use a recent target.
+Alternatively, use a provider that serves contract state at the requested historical block. See
 [RPC provider requirements](#rpc-provider-requirements).
 
 ### Control HyperSync request volume
@@ -709,17 +711,19 @@ set of failure-domain IDs.
 
 #### Operator assumptions
 
-A failure domain represents any shared upstream, reseller, gateway, proxy, account, network path,
-or hosting control plane. Distinct URLs and distinct configured identities do not prove operational
-independence. The operator must verify that the three providers do not share a control or failure
-domain. The operator must also identify and monitor every party or governance mechanism that can
-change a manifest-pinned deployment's code or a manifest-pinned proxy's implementation. If such a
-deployment change or proxy upgrade is announced or suspected, stop execution and revoke every
-outstanding allowance whose spender is a router address in the affected deployment. Complete the
-revocations before the changed code or implementation is present at the decision block used for
-signing. Once it is, the pre-sign deployment check fails closed for every client transaction,
-including revocation. The operator must keep the signing key exclusive to one live client and
-control access to the host environment, database, replicas, backups, and exports.
+A failure domain represents any shared upstream, reseller, gateway, proxy, account, network path, or hosting
+control plane. Distinct URLs and distinct configured identities do not prove operational independence. The
+operator must verify that the three providers do not share a control or failure domain.
+
+The operator must also identify and monitor every party or governance mechanism that can change a
+manifest-pinned deployment's code or a manifest-pinned proxy's implementation. If such a deployment change or
+proxy upgrade is announced or suspected, stop execution and revoke every outstanding allowance whose spender
+is a router address in the affected deployment. Complete the revocations before the changed code or
+implementation is present at the decision block used for signing. Once it is, the pre-sign deployment check
+fails closed for every client transaction, including revocation.
+
+The operator must keep the signing key exclusive to one live client and control access to the host
+environment, database, replicas, backups, and exports.
 
 Connect completes these checks before it loads the signer:
 
@@ -781,37 +785,39 @@ The client accepts one market-order shape:
 | Orientation | Tokens with distinct model priorities.                                                          | A pair whose tokens have equal priority and are ambiguous.            |
 
 The `InstrumentId` selects the pool, for example
-`0xC6962004f452bE9203591991D15f6b388e09E8D0.Arbitrum:UniswapV3`. Its venue must parse as
-`<Chain>:<DexType>`, and its symbol must parse as an address `PoolIdentifier`.
-`Pool::get_base_token` and `Pool::get_quote_token` apply the model's token-priority convention:
-stablecoins are quote assets, wrapped native assets have the next priority, and other tokens become
-base assets against them. Equal `Token::get_token_priority` values are ambiguous and reject the
-order.
+`0xC6962004f452bE9203591991D15f6b388e09E8D0.Arbitrum:UniswapV3`. Its venue must parse as `<Chain>:<DexType>`,
+and its symbol must parse as an address `PoolIdentifier`. `Pool::get_base_token` and `Pool::get_quote_token`
+apply the model's token-priority convention:
+
+- Stablecoins are quote assets.
+- Wrapped native assets have the next priority.
+- Other tokens become base assets against them.
+
+Equal `Token::get_token_priority` values are ambiguous and reject the order.
 
 Venue routing admits Uniswap V3 on any configured chain whose venue matches. Swap preparation also
 requires a registered Uniswap V3 deployment and factory for that chain.
 
-Order lists deny each open order with `OrderDenied`; modify, cancel, and batch-cancel commands
-reject each referenced cached order with `OrderModifyRejected` or `OrderCancelRejected`; cancel-all
-commands and order queries log a warning without an event. Mass status returns `Ok(None)` so
-startup reconciliation logs and continues. Order, fill, and position report probes return an error
-so LiveNode does not treat an empty answer as absence. These paths never sign, broadcast, or persist
-an intent.
+Order lists deny each open order with `OrderDenied`. Modify, cancel, and batch-cancel commands reject each
+referenced cached order with `OrderModifyRejected` or `OrderCancelRejected`. Cancel-all commands and order
+queries log a warning without an event. Mass status returns `Ok(None)` so startup reconciliation logs and
+continues. Order, fill, and position report probes return an error so LiveNode does not treat an empty answer
+as absence. These paths never sign, broadcast, or persist an intent.
 
-A swap stays `Submitted` until finality, and venue status queries cannot resolve it. The client
-requires submission retention: when the in-flight check exhausts its retries, LiveNode logs a
-warning and keeps the swap `Submitted` instead of rejecting it, so the finalized fill or rejection
-still applies to that order. If the node stops before finality, shutdown reports incomplete
-submission recovery for each swap submitted during that run, and the persisted intent reconciles on
-the next connect. Leave open-order checks off.
+A swap stays `Submitted` until finality, and venue status queries cannot resolve it. The client requires
+submission retention. When the in-flight check exhausts its retries, LiveNode logs a warning and keeps the
+swap `Submitted` instead of rejecting it. Thus, the finalized fill or rejection still applies to that order.
+If the node stops before finality, shutdown reports incomplete submission recovery for each swap submitted
+during that run, and the persisted intent reconciles on the next connect. Leave open-order checks off.
 
-Execution routing follows Nautilus's multi-venue broker pattern because the client represents a
-wallet and RPC connection for one chain while each instrument venue identifies both its chain and
-DEX. A strategy may select the client explicitly through `client_id`; node configuration may instead
-register the client for instrument venues through `RoutingConfig.venues` or use it as the default
-execution client. After client selection, `ExecutionClient::handles_order_venue` accepts only a
-venue whose parsed chain matches the client configuration and whose DEX is supported by the client.
-The instrument retains its `<Chain>:<DexType>` venue rather than being rewritten to `BLOCKCHAIN`.
+Execution routing follows Nautilus's multi-venue broker pattern. The client represents a wallet and RPC
+connection for one chain. Each instrument venue identifies both its chain and DEX.
+
+A strategy may select the client explicitly through `client_id`. Node configuration may instead register the
+client for instrument venues through `RoutingConfig.venues` or use it as the default execution client. After
+client selection, `ExecutionClient::handles_order_venue` accepts only a venue whose parsed chain matches the
+client configuration and whose DEX is supported by the client. The instrument retains its `<Chain>:<DexType>`
+venue rather than being rewritten to `BLOCKCHAIN`.
 
 The order maps to a single `exactInputSingle` call on the original Uniswap SwapRouter (the
 deployment whose signature carries a deadline). `allowed_token_pairs` is directional
@@ -831,18 +837,21 @@ quote-to-base pair. Listing only one direction does not admit the other.
 
 ### BUY quote-spend limits
 
-Every BUY needs one `quote_spend_limits` entry for its directed quote-to-base pair. The entry repeats
-the quote-token address and decimals beside `max_amount`, a base-10 string in the token's raw units.
-Client construction rejects a second entry for the same directed pair, a `spend_token` that differs
-from `token_in`, a `max_amount` that is not a base-10 unsigned integer within the `U256` range, and
-pairs outside `allowed_token_pairs`. Order preparation also checks the configured token and decimals
-against the selected pool (see [Execution configuration](#execution-configuration) for an example
-entry).
+Every BUY needs one `quote_spend_limits` entry for its directed quote-to-base pair. The entry repeats the
+quote-token address and decimals beside `max_amount`, a base-10 string in the token's raw units. Client
+construction rejects these entries:
 
-The client compares the independently verified exact-output quote's `amountIn` with this limit
-before signing. Equality is accepted; a quote one raw unit above the limit is denied.
-`max_order_amount` remains a separate ceiling on the submitted base quantity, and SELL orders do
-not use `quote_spend_limits`.
+- A second entry for the same directed pair.
+- A `spend_token` that differs from `token_in`.
+- A `max_amount` that is not a base-10 unsigned integer within the `U256` range.
+- A pair outside `allowed_token_pairs`.
+
+Order preparation also checks the configured token and decimals against the selected pool (see
+[Execution configuration](#execution-configuration) for an example entry).
+
+The client compares the independently verified exact-output quote's `amountIn` with this limit before signing.
+Equality is accepted. A quote one raw unit above the limit is denied. `max_order_amount` remains a separate
+ceiling on the submitted base quantity, and SELL orders do not use `quote_spend_limits`.
 
 ### Slippage protection
 
@@ -862,10 +871,9 @@ not use `quote_spend_limits`.
    and use a supported pool-event signature.
 1. Verify one unanimous parent-linked ancestry from the profiler height through the decision
    height. The distance must not exceed `max_quote_age_blocks`, which must be in `1..=4095`.
-1. Call the manifest-pinned `IQuoterV2` contract at the decision height through all three sources.
-   SELL uses `quoteExactInputSingle`; BUY uses `quoteExactOutputSingle`. The full decoded result
-   must agree, including amount, resulting square-root price, initialized ticks crossed, and gas
-   estimate.
+1. Call the manifest-pinned `IQuoterV2` contract at the decision height through all three sources. SELL uses
+   `quoteExactInputSingle`. BUY uses `quoteExactOutputSingle`. The full decoded result must agree, including
+   amount, resulting square-root price, initialized ticks crossed, and gas estimate.
 1. Immediately before signing, reread the checkpoint, profiler header, decision header, ancestry,
    and quote. An unavailable or changed result blocks signing.
 1. For SELL, compute `amountOutMinimum` from the verified exact-input output. For BUY, use the
@@ -875,9 +883,9 @@ not use `quote_spend_limits`.
 Profiler divergence can request a data refresh, but it cannot override a verified quote or weaken
 the signed limits.
 
-The slippage comes from the `slippage_bps` configuration field, overridable per order through a
-`slippage_bps` entry in the submit command's `params`; an override above the `max_slippage_bps`
-ceiling is rejected before signing.
+The `slippage_bps` configuration field sets the slippage. A `slippage_bps` entry in the submit command's
+`params` overrides it for that order. An override above the `max_slippage_bps` ceiling is rejected before
+signing.
 
 Pre-upgrade event rows can lack an ingestion block hash because the schema migration does not
 backfill one. Such rows cannot authorize execution. Refresh the traded pool through the normal live
@@ -894,10 +902,14 @@ Preflight, WETH wrapping, and router approval are explicit operations on the cli
 | Wrap      | Calls WETH `deposit()` with value. | Verified decision ancestry, deployment, WETH balance, native balance, gas, fee, nonce, and explicit-height simulation.      | WETH balance increased by the exact wrapped amount. |
 | Approve   | Calls `approve(router, amount)`.   | Wrap checks plus router policy, factory and WETH identity, input-token membership, zero allowance, and approval simulation. | Allowance at the inclusion block equals the target. |
 
-Preflight resolves the pool from `Cache::pool`. Its report contains no RPC URL, private key, or raw
-signed transaction. It reports the expected and observed chain IDs, pool, router and token code
-checks, token balances and allowances, native balance, base and priority fees, the derived maximum
-fee, whether the fee stays within its ceiling, overall readiness, and every failed check.
+Preflight resolves the pool from `Cache::pool`. Its report contains no RPC URL, private key, or raw signed
+transaction. It reports these values and checks:
+
+- Expected and observed chain IDs.
+- Pool, router, and token code checks.
+- Token balances and allowances, and native balance.
+- Base and priority fees, the derived maximum fee, and whether that fee stays within its ceiling.
+- Overall readiness and every failed check.
 
 Approve rejects a standard `false` return and accepts tokens that return no data. A nonzero
 approval is limited to configured input tokens and requires the existing allowance to be zero.
@@ -905,11 +917,11 @@ With `unlimited_approval`, every nonzero request targets `U256::MAX`. The final 
 the target exactly. A zero request revokes an allowlisted router even when router deployment
 metadata is unavailable, so a broken router check cannot prevent revocation.
 
-During an uninterrupted call, wrap and approve use the shared EIP-1559 path, persist the intent and
-signed hash before broadcast, and return after stable finality and the operation's postcondition.
-Wrap compares the WETH balance immediately before and at the inclusion block, which avoids a stale
-pre-broadcast baseline. A failed postcondition returns an error after finality, so the transaction
-may still have changed on-chain state.
+During an uninterrupted call, wrap and approve use the shared EIP-1559 path. They persist the intent and
+signed hash before broadcast. They return after stable finality and the operation's postcondition. Wrap
+compares the WETH balance immediately before and at the inclusion block, which avoids a stale pre-broadcast
+baseline. A failed postcondition returns an error after finality, so the transaction may still have changed
+on-chain state.
 
 Before signing a swap, order submission requires exact agreement from all three sources for:
 
@@ -925,17 +937,17 @@ Before signing a swap, order submission requires exact agreement from all three 
 - Canonical and pending nonce observations that agree with the durable nonce ledger.
 - The maximum gas estimate, median priority fee, and local gas and fee ceilings.
 
-The decision header supplies the deadline, quote-age boundary, durable `created_block`, and
-EIP-1559 base fee. State, call, code, storage, gas, balance, and allowance reads use its explicit
-block number. Immediately before local signing, the client repeats the chain, header, ancestry,
-deployment, quote, canonical nonce, and pending nonce checks. It persists this evidence atomically
-with nonce assignment. A failure before signing produces `OrderDenied` and no broadcast. The
-client releases its preparation slot only after the durable recoverable transition succeeds; a
-failed transition keeps ownership for reconciliation.
+The decision header supplies the deadline, quote-age boundary, durable `created_block`, and EIP-1559 base fee.
+State, call, code, storage, gas, balance, and allowance reads use its explicit block number.
 
-The input token is the base token for a SELL and the quote token for a BUY. Preflight readiness
-still reports the base-token allowance used by SELL setup. A BUY needs a separate quote-token
-approval; submission denies the order if that allowance or balance is short.
+Immediately before local signing, the client repeats the chain, header, ancestry, deployment, quote, canonical
+nonce, and pending nonce checks. It persists this evidence atomically with nonce assignment. A failure before
+signing produces `OrderDenied` and no broadcast. The client releases its preparation slot only after the
+durable recoverable transition succeeds. A failed transition keeps ownership for reconciliation.
+
+The input token is the base token for a SELL and the quote token for a BUY. Preflight readiness still reports
+the base-token allowance used by SELL setup. A BUY needs a separate quote-token approval. Submission denies
+the order if that allowance or balance is short.
 
 Submission never wraps or approves. An insufficient allowance or balance emits `OrderDenied`.
 
@@ -980,9 +992,9 @@ Fee and gas policy also runs before signing:
 - All paths use the unanimous decision header's base fee. Three priority-fee values select the
   median before `base_fee_buffer_bps` is applied. The client rejects a derived fee above
   `max_fee_per_gas_wei`.
-- All three sources estimate the exact unsigned transaction at the decision height. The client
-  selects the maximum estimate, applies `gas_buffer_bps`, and rejects a result above `gas_limit`;
-  it does not clamp the estimate.
+- All three sources estimate the exact unsigned transaction at the decision height. The client selects the
+  maximum estimate, applies `gas_buffer_bps`, and rejects a result above `gas_limit`. It does not clamp the
+  estimate.
 
 #### Persist before broadcast
 
@@ -990,14 +1002,16 @@ The client reserves a durable intent before it assigns a nonce or signs. It then
 an authenticated signed-payload envelope, and the local hash before broadcast. A transaction
 cannot be submitted without a ready protected durable store.
 
-Immediately before sending, the client records the `broadcast` transition. Any outcome after that
-write, including a node rejection, is treated as uncertain until canonical nonce and receipt
-observation resolves it. A signed intent without a durable broadcast transition remains active and
-blocks connect pending explicit recovery. The adapter has no automated recovery command or client
-method for that state. An operator must inspect the durable `execution_intent` and
-`execution_transaction_hash` records and make an explicit, reviewed recovery decision; the adapter
-does not release the signer slot or resend the transaction automatically. A durable `broadcast`
-intent may resend only its exact persisted bytes before observation resumes.
+Immediately before sending, the client records the `broadcast` transition. Any outcome after that write,
+including a node rejection, is treated as uncertain until canonical nonce and receipt observation resolves it.
+
+A signed intent without a durable broadcast transition remains active and blocks connect pending explicit
+recovery. The adapter has no automated recovery command or client method for that state. An operator must
+inspect the durable `execution_intent` and `execution_transaction_hash` records. The operator must make an
+explicit, reviewed recovery decision. The adapter does not release the signer slot or resend the transaction
+automatically.
+
+A durable `broadcast` intent may resend only its exact persisted bytes before observation resumes.
 
 Broadcast and receipt handling follow these rules:
 
@@ -1080,14 +1094,15 @@ The schema keeps the legacy execution transaction table. Its connect-time migrat
 - Fences legacy writes after schema version 2 activates.
 - Preserves existing data.
 
-The first connection after enabling independent verification also classifies every retained
-execution intent. It authenticates every retained payload before remote reconstruction. An
-unsigned active `prepared` intent becomes inactive `recoverable`. A signed active intent at the
-canonical nonce remains active for reconciliation. A consumed nonce requires archive proof of its
-receipt, finalized ancestry, full transaction identity, call trace, deployment identity, and
-terminal status. Released history must already have a consistent marker and must not retain signed
-ownership. Duplicate nonce ownership, missing archive state, a payload mismatch, or changed history
-blocks migration before the signer loads.
+The first connection after enabling independent verification also classifies every retained execution intent.
+It authenticates every retained payload before remote reconstruction. An unsigned active `prepared` intent
+becomes inactive `recoverable`. A signed active intent at the canonical nonce remains active for
+reconciliation. A consumed nonce requires archive proof of its receipt, finalized ancestry, full transaction
+identity, call trace, deployment identity, and terminal status.
+
+Released history must already have a consistent marker and must not retain signed ownership. Duplicate nonce
+ownership, missing archive state, a payload mismatch, or changed history blocks migration before the signer
+loads.
 
 Partial unique indexes enforce one active intent per signer, one active owner per signer and nonce,
 and one intent per client order. An intent also stores separate acknowledgement, fill, and terminal
@@ -1126,23 +1141,24 @@ On connect, the client reloads the active signer intent before enabling new sign
 - A swap also requires its order, instrument, and pool to be restored in the engine cache. Missing
   or inconsistent state fails connect.
 
-When no receipt exists and the verified canonical signer nonce has advanced, the client scans
-unanimous canonical full blocks from the intent's creation height. Each attempt covers at most
-4,096 blocks. A finalized cursor commits with its verification evidence; the next attempt resumes
-there and rescans the unfinalized tail. A same-nonce transaction can attach only when its hash and
-full decoded identity match an authenticated retained envelope for that intent. An unknown or
-mismatched replacement remains quarantined, emits no order rejection, and does not release signer
-ownership. A disappearing receipt or changed canonical block records `reorged` and resumes
-observation. Poll timeout records `dropped` and keeps the signer slot occupied for the next connect
-attempt.
+When no receipt exists and the verified canonical signer nonce has advanced, the client scans unanimous
+canonical full blocks from the intent's creation height. Each attempt covers at most 4,096 blocks. A finalized
+cursor commits with its verification evidence. The next attempt resumes there and rescans the unfinalized
+tail.
+
+A same-nonce transaction can attach only when its hash and full decoded identity match an authenticated
+retained envelope for that intent. An unknown or mismatched replacement remains quarantined, emits no order
+rejection, and does not release signer ownership. A disappearing receipt or changed canonical block records
+`reorged` and resumes observation. Poll timeout records `dropped` and keeps the signer slot occupied for the
+next connect attempt.
 
 :::warning
-Keep the signing key exclusive to this client while an intent is active. On restart, a restored wrap
-or approve must match the persisted destination, calldata, and value, including a same-nonce
-replacement. The wrap then rereads WETH balances at the inclusion block and the previous block; the
-approve rereads router allowance at the inclusion block. A call-identity mismatch or a failed
-postcondition keeps the intent active, occupies the in-flight signer slot, and fails connect,
-including on a later process. A mismatched swap emits no terminal event and remains active.
+Keep the signing key exclusive to this client while an intent is active. On restart, a restored wrap or
+approve must match the persisted destination, calldata, and value, including a same-nonce replacement. The
+wrap then rereads WETH balances at the inclusion block and the previous block. The approve rereads router
+allowance at the inclusion block. A call-identity mismatch or a failed postcondition keeps the intent active,
+occupies the in-flight signer slot, and fails connect, including on a later process. A mismatched swap emits
+no terminal event and remains active.
 :::
 
 #### Finality and fills
@@ -1161,10 +1177,10 @@ count. The client:
 1. Rechecks the deployment manifest at inclusion, then commits finality evidence, receipt state,
    header ancestry, and canonical nonce advancement in one database transaction.
 
-After on-chain execution, deployment or call-trace drift detected by the final-inclusion checks
-leaves signer ownership quarantined. Those checks cannot reverse on-chain effects from a contract
-upgrade after the decision block used by the final pre-sign check, including an upgrade after that
-check completes and before transaction execution.
+After on-chain execution, deployment or call-trace drift detected by the final-inclusion checks leaves signer
+ownership quarantined. Those checks cannot reverse on-chain effects from a contract upgrade after the decision
+block used by the final pre-sign check. This includes an upgrade after that check completes and before
+transaction execution.
 
 All three RPC sources must support the `finalized` tag. An unsupported tag fails reconciliation
 closed.
@@ -1178,9 +1194,9 @@ the emitted last quantity.
 
 The fill contains:
 
-- The original order quantity for a SELL. For a BUY, the executed base output converted at
-  `FIXED_PRECISION`. A BUY can fill more than the submitted quantity when the pool price
-  improves; set `allow_overfills = true` on the live execution engine so that fill is applied.
+- The original order quantity for a SELL. For a BUY, the executed base output converted at `FIXED_PRECISION`.
+  A BUY can fill more than the submitted quantity when the pool price improves. Set `allow_overfills = true`
+  on the live execution engine so that fill is applied.
 - The average fill price. For a BUY, quote spent divided by the emitted last quantity.
 - The transaction hash as venue order ID.
 - A deterministic trade ID derived from the transaction hash and log index.
@@ -1199,9 +1215,9 @@ trade IDs are deterministic from the transaction hash and log index. These ident
 duplicates once the corresponding state is durable and let downstream consumers deduplicate a
 retry after a crash.
 
-Event publication and marker persistence are separate operations. A process crash between them can
-therefore cause an event to be delivered again after restart. Consumers must handle order events
-idempotently; this adapter does not provide an atomic exactly-once delivery guarantee.
+Event publication and marker persistence are separate operations. A process crash between them can therefore
+cause an event to be delivered again after restart. Consumers must handle order events idempotently. This
+adapter does not provide an atomic exactly-once delivery guarantee.
 
 ### Signed transaction storage
 
@@ -1210,10 +1226,9 @@ signed EIP-2718 transaction with AES-256-GCM and clears its live plaintext colum
 context binds the exact signed bytes to the deployment, chain, signer, intent, signer nonce, and
 transaction hash.
 
-Storage maintenance uses direct Rust methods on a disconnected `BlockchainExecutionClient`; Python
-and the CLI do not expose them. Connect never activates, resumes, or repairs protection implicitly.
-Every Postgres-backed connect requires ready protected state and authenticates every retained
-payload before loading the signer.
+Storage maintenance uses direct Rust methods on a disconnected `BlockchainExecutionClient`. Python and the CLI
+do not expose them. Connect never activates, resumes, or repairs protection implicitly. Every Postgres-backed
+connect requires ready protected state and authenticates every retained payload before loading the signer.
 
 Protected storage has these key and deployment constraints:
 
@@ -1228,14 +1243,16 @@ Protected storage has these key and deployment constraints:
 - Keep the complete key set available on every connect. A missing active or retired key, malformed
   envelope, failed authentication tag, durable-context mismatch, or unexpected plaintext row fails
   closed. Protected storage never falls back to `raw_transaction`.
-- Treat `2^32` seals as one lifetime budget for a raw key, not a limit that resets per database.
-  Rotate the active key before aggregate use reaches that ceiling. With the client disconnected,
-  configure the replacement as active, retain the old key as retired, and run the Rust rewrap
-  method before the next connect. A restored copy that becomes write-active with the original raw
-  key shares the same budget. Each database reserves and counts its own seals, including migration
-  and rewrap work, and rejects further local use when its counter exhausts the numeric ceiling, but
-  database-local counters cannot enforce the aggregate after copies diverge. The operator must
-  count shared pre-restore history once and every later seal from each copy once.
+- Treat `2^32` seals as one lifetime budget for a raw key, not a limit that resets per database. Rotate the
+  active key before aggregate use reaches that ceiling. With the client disconnected, configure the
+  replacement as active, retain the old key as retired, and run the Rust rewrap method before the next
+  connect.
+
+  A restored copy that becomes write-active with the original raw key shares the same budget. Each database
+  reserves and counts its own seals, including migration and rewrap work. It rejects further local use when
+  its counter exhausts the numeric ceiling. But database-local counters cannot enforce the aggregate after
+  copies diverge. The operator must count shared pre-restore history once and every later seal from each copy
+  once.
 
 | Method                                 | Requirement                                                   | Result                                                                                                    |
 | -------------------------------------- | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
@@ -1244,21 +1261,25 @@ Protected storage has these key and deployment constraints:
 | `rewrap_payload_storage(batch_size)`   | Protected storage, new active key, and all old keys retained. | Rewraps in bounded, resumable batches; a full check must pass before an old key is removed.               |
 | `rollback_payload_storage(batch_size)` | Incident recovery, disconnected clients, and every key.       | Restores and verifies exact plaintext, clears envelopes, and removes the protection marker last.          |
 
-Run the full check after protection, restore, rewrap, or rollback. Its role report includes direct
-table owners and roles with `SELECT` grants. The full report also contains protected status,
-deployment ID, plaintext, original, replacement, and authenticated row counts, and referenced key
-IDs. Superuser and inherited privileges still require a server-level review. Rewrap changes one
-database copy but cannot revoke a transaction or envelope copied before rewrap. Rollback leaves
-execution unavailable until storage is protected and passes a full protected check again, and it
-does not remove signed bytes from WAL, replicas, backups, snapshots, or earlier exports.
+Run the full check after protection, restore, rewrap, or rollback. Its role report includes direct table
+owners and roles with `SELECT` grants. The full report also contains protected status, deployment ID,
+plaintext, original, replacement, and authenticated row counts, and referenced key IDs. Superuser and
+inherited privileges still require a server-level review.
+
+Rewrap changes one database copy but cannot revoke a transaction or envelope copied before rewrap. Rollback
+leaves execution unavailable until storage is protected and passes a full protected check again. It does not
+remove signed bytes from WAL, replicas, backups, snapshots, or earlier exports.
 
 :::warning
-Signed transaction bytes remain bearer capabilities until their signer nonce is consumed. Protected
-storage covers live database payloads; it does not cover bytes before persistence, process memory,
-dead tuples, WAL, point-in-time recovery archives, replicas, backups, snapshots, restores, or
-operational exports. PostgreSQL statement or bind-parameter logging can also capture plaintext in
-the default mode and during rollback. Debug output, operational checks, and execution RPC errors do
-not expose the bytes.
+Signed transaction bytes remain bearer capabilities until their signer nonce is consumed. Protected storage
+covers live database payloads. It does not cover:
+
+- Bytes before persistence or in process memory.
+- Dead tuples, WAL, or point-in-time recovery archives.
+- Replicas, backups, snapshots, restores, or operational exports.
+
+PostgreSQL statement or bind-parameter logging can also capture plaintext in the default mode and during
+rollback. Debug output, operational checks, and execution RPC errors do not expose the bytes.
 
 A restored protected database requires its original `payload_deployment_id` and complete key
 inventory. Each database enforces signer and nonce ownership independently, so never run a restored
@@ -1331,9 +1352,9 @@ not a strict upper bound on the full call because final RPC and persistence oper
 | `deployment_manifest` | Reviewed contracts, tokens, pools, proxy bindings, identity probes, and exact call edges.         |
 
 Each `BlockchainProviderIdentity` has a stable `provider_id`, `operator_id`, and one or more opaque
-`failure_domain_ids`. All provider IDs and operator IDs must be distinct, every pair of failure
-domain sets must be disjoint, and the three normalized endpoint URIs must differ. Do not place RPC
-URLs, credentials, or provider response bodies in the manifest or retained evidence.
+`failure_domain_ids`. All provider IDs and operator IDs must be distinct. Every pair of failure domain sets
+must be disjoint. The three normalized endpoint URIs must differ. Do not place RPC URLs, credentials, or
+provider response bodies in the manifest or retained evidence.
 
 Python constructs `BlockchainVerificationConfig` with `deployment_manifest_json`. The manifest is
 parsed locally and its configured digest is checked before the client is created. The RPC sources
@@ -1371,18 +1392,27 @@ The execution tests have two layers:
 
 Default tests do not connect to a live chain. They cover:
 
-- Transaction primitives: `deposit`, `approve`, `allowance`, and `exactInputSingle` calldata;
-  EIP-1559 signing against a fixed-key vector; canonical nonce selection with pending-nonce
-  validation; fee and gas derivation; and ceiling rejection.
-- RPC verification: wrong chain or checkpoint, head skew and freshness, broken ancestry, deployment
-  and proxy changes, quote disagreement, pending and reverted receipts, partial receipt propagation,
-  disappearing receipts, divergent traces, unauthorized internal calls, exact-intent same-nonce
-  replacements, `already known`, node rejection, and timeout after send.
-- Safety checks: invalid provider independence, signer revocation, cancellation around persistence
-  and dispatch, router/factory/WETH/pool identity, approval transitions and return values, preflight
-  readiness, wrap and approval postconditions, exact wallet snapshots, connect and repeated account
-  queries, order validation, limiter denials, canonical quote provenance, slippage, token
-  orientation, exact quote-spend boundaries, stable event IDs, final fill fields, and commission.
+- Transaction primitives cover these cases:
+
+  - `deposit`, `approve`, `allowance`, and `exactInputSingle` calldata.
+  - EIP-1559 signing against a fixed-key vector.
+  - Canonical nonce selection with pending-nonce validation.
+  - Fee and gas derivation, and ceiling rejection.
+- RPC verification covers these cases:
+
+  - Wrong chain or checkpoint, head skew and freshness, and broken ancestry.
+  - Deployment and proxy changes, and quote disagreement.
+  - Pending and reverted receipts, partial receipt propagation, and disappearing receipts.
+  - Divergent traces and unauthorized internal calls.
+  - Exact-intent same-nonce replacements, `already known`, node rejection, and timeout after send.
+- Safety checks cover these cases:
+
+  - Invalid provider independence, signer revocation, and cancellation around persistence and dispatch.
+  - Router/factory/WETH/pool identity, approval transitions and return values, and preflight readiness.
+  - Wrap and approval postconditions, exact wallet snapshots, connect, and repeated account queries.
+  - Order validation, limiter denials, canonical quote provenance, slippage, token orientation, and exact
+    quote-spend boundaries.
+  - Stable event IDs, final fill fields, and commission.
 - Durability: submission ordering, one in-flight transaction, pre-broadcast signature quarantine,
   authorized exact-byte rebroadcast, authenticated replacement scans, durable ancestry resume,
   retained-history migration, event retry identity, wallet refresh ownership, and atomic evidence
@@ -1396,10 +1426,11 @@ Execution validation on public networks must remain read-only and must not load 
 
 ## Limitations
 
-- Order submission supports BUY and SELL market orders through a registered Uniswap V3 deployment
-  on the client's chain. Order lists are denied, modify and cancel operations are rejected, and
-  venue report probes return an error except mass status, which returns `Ok(None)`; all fail closed
-  with no on-chain or durable side effects. LiveNode must leave open-order checks off.
+- Order submission supports BUY and SELL market orders through a registered Uniswap V3 deployment on the
+  client's chain. Order lists are denied, and modify and cancel operations are rejected. Venue report probes
+  return an error, except mass status, which returns `Ok(None)`. All these unsupported paths fail closed with
+  no on-chain or durable side effects. LiveNode must leave open-order checks off.
+
   Quote-denominated and multi-hop orders are not supported. See [Execution](#execution).
 - Postgres-backed execution requires authenticated signed-transaction envelopes. Disconnected
   rollback can restore plaintext for incident work, but the adapter rejects execution until the

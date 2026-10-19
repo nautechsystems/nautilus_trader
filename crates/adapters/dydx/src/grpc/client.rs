@@ -19,6 +19,7 @@
 //! It handles transaction signing, broadcasting, and querying account state.
 
 use cosmrs::Tx;
+use nautilus_network::{ConnectionUrl, url_origin};
 use tonic::transport::Channel;
 
 use crate::{
@@ -83,7 +84,7 @@ pub struct DydxGrpcClient {
     perpetuals: PerpetualsClient<Channel>,
     subaccounts: SubaccountsClient<Channel>,
     accountplus: AccountPlusClient<Channel>,
-    current_url: String,
+    current_url: ConnectionUrl,
 }
 
 impl DydxGrpcClient {
@@ -122,7 +123,7 @@ impl DydxGrpcClient {
             subaccounts: SubaccountsClient::new(channel.clone()),
             accountplus: AccountPlusClient::new(channel.clone()),
             channel,
-            current_url: grpc_url,
+            current_url: grpc_url.into(),
         })
     }
 
@@ -145,18 +146,22 @@ impl DydxGrpcClient {
         for (idx, url) in grpc_urls.iter().enumerate() {
             let url_str = url.as_ref();
             log::debug!(
-                "Attempting to connect to gRPC node: {url_str} (attempt {}/{})",
+                "Attempting to connect to gRPC node: {} (attempt {}/{})",
+                url_origin(url_str),
                 idx + 1,
                 grpc_urls.len()
             );
 
             match Self::new(url_str.to_string()).await {
                 Ok(client) => {
-                    log::debug!("Successfully connected to gRPC node: {url_str}");
+                    log::debug!(
+                        "Successfully connected to gRPC node: {}",
+                        url_origin(url_str)
+                    );
                     return Ok(client);
                 }
                 Err(e) => {
-                    log::warn!("Failed to connect to gRPC node {url_str}: {e}");
+                    log::warn!("Failed to connect to gRPC node {}", url_origin(url_str));
                     last_error = Some(e);
                 }
             }
@@ -192,13 +197,14 @@ impl DydxGrpcClient {
             let url_str = url.as_ref();
 
             // Skip if it's the same URL we're currently connected to
-            if url_str == self.current_url {
-                log::debug!("Skipping current URL: {url_str}");
+            if url_str == self.current_url.expose() {
+                log::debug!("Skipping current URL: {}", url_origin(url_str));
                 continue;
             }
 
             log::debug!(
-                "Attempting to reconnect to gRPC node: {url_str} (attempt {}/{})",
+                "Attempting to reconnect to gRPC node: {} (attempt {}/{})",
+                url_origin(url_str),
                 idx + 1,
                 grpc_urls.len()
             );
@@ -229,7 +235,10 @@ impl DydxGrpcClient {
 
             match endpoint.connect().await {
                 Ok(connected_channel) => {
-                    log::debug!("Successfully reconnected to gRPC node: {url_str}");
+                    log::debug!(
+                        "Successfully reconnected to gRPC node: {}",
+                        url_origin(url_str)
+                    );
 
                     // Update all service clients with the new channel
                     self.channel = connected_channel.clone();
@@ -240,12 +249,12 @@ impl DydxGrpcClient {
                     self.clob = ClobClient::new(connected_channel.clone());
                     self.perpetuals = PerpetualsClient::new(connected_channel.clone());
                     self.subaccounts = SubaccountsClient::new(connected_channel);
-                    self.current_url = url_str.to_string();
+                    self.current_url = url_str.into();
 
                     return Ok(());
                 }
                 Err(e) => {
-                    log::warn!("Failed to reconnect to gRPC node {url_str}: {e}");
+                    log::warn!("Failed to reconnect to gRPC node {}", url_origin(url_str));
                     last_error = Some(DydxError::Grpc(Box::new(tonic::Status::unavailable(
                         format!("Connection failed: {e}"),
                     ))));
@@ -263,7 +272,7 @@ impl DydxGrpcClient {
     /// Get the currently connected gRPC node URL.
     #[must_use]
     pub fn current_url(&self) -> &str {
-        &self.current_url
+        self.current_url.expose()
     }
 
     /// Get the underlying gRPC channel.
@@ -552,5 +561,39 @@ mod tests {
         let result = DydxGrpcClient::new_with_fallback(&invalid_urls).await;
 
         assert!(matches!(result, Err(DydxError::Config(_))));
+    }
+}
+
+#[cfg(test)]
+mod logging_tests {
+    use super::*;
+
+    #[rstest::rstest]
+    #[case("http://node.example.com/grpc", "http://node.example.com")]
+    #[case(
+        "https://URL_SECRET_USER:URL_SECRET_PASSWORD@node.example.com:8443/URL_SECRET_PATH?token=URL_SECRET_QUERY",
+        "https://node.example.com:8443"
+    )]
+    #[tokio::test]
+    async fn test_debug_preserves_url_origin(#[case] url: &str, #[case] origin: &str) {
+        let channel = Channel::from_static("http://127.0.0.1:1").connect_lazy();
+
+        let client = DydxGrpcClient {
+            auth: AuthClient::new(channel.clone()),
+            bank: BankClient::new(channel.clone()),
+            base: BaseClient::new(channel.clone()),
+            tx: TxClient::new(channel.clone()),
+            clob: ClobClient::new(channel.clone()),
+            perpetuals: PerpetualsClient::new(channel.clone()),
+            subaccounts: SubaccountsClient::new(channel.clone()),
+            accountplus: AccountPlusClient::new(channel.clone()),
+            channel,
+            current_url: url.into(),
+        };
+
+        let debug = format!("{client:?}");
+        assert!(debug.contains(&format!("current_url: {origin:?}")));
+        assert!(!debug.contains("URL_SECRET"));
+        assert_eq!(client.current_url.expose(), url);
     }
 }

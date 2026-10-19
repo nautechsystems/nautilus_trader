@@ -51,28 +51,25 @@ path = "benches/foo_iai.rs"
 harness = false
 ```
 
-To opt into the nightly CI performance workflow, register the benchmark and add its crate to
-`CI_BENCH_CRATES` in the workspace `Makefile` when the list does not already include it. Add a
-deterministic Criterion target to `CODSPEED_BENCH_TARGETS` when CPU simulation preserves what the
-benchmark intends to measure. Do not add iai, Criterion's `iter_custom` or `with_filter` APIs,
-OS-dependent work, or concurrent wall-clock benchmarks to the CodSpeed subset.
+To use the nightly CI performance workflow, register the benchmark. If `CI_BENCH_CRATES` does not include its
+crate, add the crate in the workspace `Makefile`. Add a deterministic Criterion target to
+`CODSPEED_BENCH_TARGETS` when CPU simulation preserves what the benchmark intends to measure. Do not add iai,
+Criterion's `iter_custom` or `with_filter` APIs, OS-dependent work, or concurrent wall-clock benchmarks to the
+CodSpeed subset.
 
 ---
 
 ## Writing Criterion benchmarks
 
-1. **Set up outside the timing loop.** All work that doesn't change between
-   iterations belongs in the surrounding code or in `iter_batched_ref`'s
-   setup closure, not in the body passed to `iter`.
-2. **Wrap inputs in `black_box`** so the optimizer doesn't fold them away.
-3. **Use `iter_batched_ref` for mutating benches.** It excludes input
-   `Drop` from the timed region, which otherwise dominates the measurement
-   on benches that own large structures.
-4. **Add `Throughput::Elements(n)`** to size-parameterized groups so
-   Criterion reports per-element throughput.
-5. **Comment intent.** State what the benchmark is measuring (the hot path,
-   the worst case, the cache-cold case) so a future reader understands
-   what regressing it would mean.
+- **Setup**: Put all work that stays the same between iterations in the surrounding code or
+  `iter_batched_ref`'s setup closure, outside the body passed to `iter`.
+- **Inputs**: Wrap inputs in `black_box` so the optimizer cannot fold them away.
+- **Mutating benchmarks**: Use `iter_batched_ref` to exclude input `Drop` from the timed region.
+  Otherwise, dropping large owned structures dominates the measurement.
+- **Throughput**: Add `Throughput::Elements(n)` to size-parameterized groups so Criterion reports
+  per-element throughput.
+- **Intent**: Comment on what the benchmark measures (the hot path, worst case, or cache-cold case)
+  so readers understand what a regression would mean.
 
 ```rust
 use std::hint::black_box;

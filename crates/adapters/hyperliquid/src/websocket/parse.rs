@@ -404,6 +404,34 @@ pub fn parse_ws_fill_report(
 ) -> anyhow::Result<FillReport> {
     let instrument_id = instrument.id();
 
+    let venue_order_id = VenueOrderId::new(fill.oid.to_string());
+    let trade_id = make_fill_trade_id(
+        &fill.hash,
+        fill.oid,
+        fill.px,
+        fill.sz,
+        fill.time,
+        fill.start_position,
+    );
+
+    let order_side = OrderSide::from(fill.side);
+    let last_qty = parse_quantity(fill.sz, instrument, "fill.sz")?;
+    let last_px = parse_price(fill.px, instrument, "fill.px")?;
+    let liquidity_side = if fill.crossed {
+        LiquiditySide::Taker
+    } else {
+        LiquiditySide::Maker
+    };
+
+    let ts_event = millis_to_nanos(fill.time)?;
+    let fee_amount = fill.fee;
+
+    let commission_currency =
+        crate::http::parse::resolve_fee_currency(fill.fee_token.as_str(), fee_amount, instrument)?;
+
+    let commission = Money::from_decimal(fee_amount, commission_currency)
+        .with_context(|| format!("Failed to create commission from fee='{}'", fill.fee))?;
+
     if let Some(liquidation) = fill.liquidation.as_ref() {
         log::warn!(
             "Liquidation fill: {} oid={} method={:?} mark_px={} liquidated_user={}",
@@ -424,34 +452,6 @@ pub fn parse_ws_fill_report(
             fill.sz,
         );
     }
-
-    let venue_order_id = VenueOrderId::new(fill.oid.to_string());
-    let trade_id = make_fill_trade_id(
-        &fill.hash,
-        fill.oid,
-        fill.px,
-        fill.sz,
-        fill.time,
-        fill.start_position,
-    );
-
-    let order_side = OrderSide::from(fill.side);
-    let last_qty = parse_quantity(fill.sz, instrument, "fill.sz")?;
-    let last_px = parse_price(fill.px, instrument, "fill.px")?;
-    let liquidity_side = if fill.crossed {
-        LiquiditySide::Taker
-    } else {
-        LiquiditySide::Maker
-    };
-
-    let fee_amount = fill.fee;
-
-    let commission_currency =
-        crate::http::parse::resolve_fee_currency(fill.fee_token.as_str(), fee_amount, instrument)?;
-
-    let commission = Money::from_decimal(fee_amount, commission_currency)
-        .with_context(|| format!("Failed to create commission from fee='{}'", fill.fee))?;
-    let ts_event = millis_to_nanos(fill.time)?;
 
     // No client order ID available in fill data directly
     let client_order_id = None;
@@ -1126,7 +1126,7 @@ mod tests {
                     prev_day_px: dec!(49000.0),
                     mark_px: dec!(50000.0),
                     mid_px: Some(dec!(50001.0)),
-                    impact_pxs: Some(vec!["50000.0".to_string(), "50002.0".to_string()]),
+                    impact_pxs: Some(vec![dec!(50000.0), dec!(50002.0)]),
                     day_base_vlm: Some(dec!(100.0)),
                 },
                 funding: dec!(0.0001),
@@ -1169,7 +1169,7 @@ mod tests {
                     prev_day_px: dec!(49000.0),
                     mark_px: dec!(50000.0),
                     mid_px: Some(dec!(50001.0)),
-                    impact_pxs: Some(vec!["50000.0".to_string(), "50002.0".to_string()]),
+                    impact_pxs: Some(vec![dec!(50000.0), dec!(50002.0)]),
                     day_base_vlm: Some(dec!(100.0)),
                 },
                 circulating_supply: dec!(19000000.0),

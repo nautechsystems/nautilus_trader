@@ -42,6 +42,7 @@ use nautilus_model::{
     data::Data,
     identifiers::{ClientId, Venue},
 };
+use nautilus_network::url_origin;
 use tokio_tungstenite::{
     connect_async,
     tungstenite::{
@@ -211,8 +212,11 @@ impl TardisDataClient {
                 // Reconnect WS first (critical path), then refresh instruments
                 let ws_request = match build_ws_request(&url) {
                     Ok(request) => request,
-                    Err(e) => {
-                        log::error!("{e}");
+                    Err(_) => {
+                        log::error!(
+                            "Failed to build Tardis Machine request: {}",
+                            url_origin(&url)
+                        );
                         break;
                     }
                 };
@@ -248,13 +252,14 @@ impl TardisDataClient {
 
                         connected.store(false, Ordering::Release);
                     }
-                    Err(e) => {
+                    Err(_) => {
                         if cancel.is_cancelled() {
                             break;
                         }
 
                         log::warn!(
-                            "Failed to reconnect to Tardis Machine: {e}, retrying in {}s",
+                            "Failed to reconnect to Tardis Machine: {}, retrying in {}s",
+                            url_origin(&url),
                             reconnect_delay.as_secs()
                         );
                     }
@@ -295,8 +300,8 @@ impl TardisDataClient {
                     _ = interval.tick() => {
                         log::trace!("Sending PING");
 
-                        if let Err(e) = writer.send(tungstenite::Message::Ping(vec![].into())).await {
-                            log::debug!("Heartbeat send failed: {e}");
+                        if writer.send(tungstenite::Message::Ping(vec![].into())).await.is_err() {
+                            log::debug!("Heartbeat send failed");
                             break;
                         }
                     }
@@ -428,26 +433,30 @@ impl TardisDataClient {
                         }
                     }
                     Err(e) => {
-                        log::error!("Failed to deserialize message: {e}");
+                        log::error!(
+                            "Failed to deserialize message at line {}, column {}",
+                            e.line(),
+                            e.column()
+                        );
                     }
                 },
                 Some(Ok(tungstenite::Message::Close(Some(frame))))
                     if is_unsupported_streaming_error(&frame.reason) =>
                 {
-                    log::error!("Tardis Machine rejected streaming: {}", frame.reason);
+                    log::error!("Tardis Machine rejected streaming");
                     return false;
                 }
                 Some(Ok(tungstenite::Message::Close(frame))) => {
                     if let Some(frame) = frame {
-                        log::debug!("WebSocket closed: {} {}", frame.code, frame.reason);
+                        log::debug!("WebSocket closed: {}", frame.code);
                     } else {
                         log::debug!("WebSocket closed");
                     }
                     return true;
                 }
                 Some(Ok(_)) => {}
-                Some(Err(e)) => {
-                    log::warn!("WebSocket error: {e}");
+                Some(Err(_)) => {
+                    log::warn!("WebSocket error");
                     return true;
                 }
                 None => {
@@ -602,7 +611,7 @@ impl DataClient for TardisDataClient {
 
         let mode_label = if is_stream_mode { "stream" } else { "replay" };
         log::info!("Connecting to Tardis Machine {mode_label}");
-        log::debug!("URL: {url}");
+        log::debug!("URL: {}", url_origin(&url));
 
         let (ws_stream, _) = connect_async(build_ws_request(&url)?)
             .await

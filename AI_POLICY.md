@@ -39,6 +39,12 @@ the updated work before submission.
 
 These practices do not guarantee acceptance, but they can reduce avoidable review cycles.
 
+## Contribution assessment
+
+The [contribution assessment criteria](CONTRIBUTING.md#contribution-assessment) apply to all
+contributors. These criteria also inform assessment of meaningful human direction and review
+under this policy.
+
 ## Maintainer effort
 
 AI-assisted workflows should reduce the total engineering effort needed to produce a review-ready

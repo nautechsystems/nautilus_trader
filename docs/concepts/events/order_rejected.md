@@ -19,7 +19,7 @@ Beyond the [common Python order event fields](index.md#common-python-order-event
 | `account_id`     | `AccountId` | Required         | The account associated with the order.                                         |
 | `reason`         | `str`       | Required         | The venue reason or local reconciliation policy reason.                        |
 | `due_post_only`  | `bool`      | `False`          | If rejected because it was post-only and would execute immediately as a taker. |
-| `reconciliation` | `bool`      | Required         | If reconciliation generated the event; this does not imply venue confirmation. |
+| `reconciliation` | `bool`      | Required         | If reconciliation generated the event. This does not imply venue confirmation. |
 
 ## Example
 

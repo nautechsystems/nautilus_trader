@@ -39,7 +39,7 @@ Examples include BTC and ETH options on crypto derivatives venues.
 | `ts_event`            | `UnixNanos`        | `int`              | Required         | Event timestamp in nanoseconds.          |
 | `ts_init`             | `UnixNanos`        | `int`              | Required         | Initialization timestamp in nanoseconds. |
 
-*Note: Python constructors use `instrument_id`; Rust stores the same value as `id`.*
+**Note**: Python constructors use `instrument_id`. Rust stores the same value as `id`.
 
 ## Behavior
 
@@ -136,7 +136,7 @@ btc_option = CryptoOption(
 
 ## Adapters
 
-Representative adapters that create or consume `CryptoOption` instruments include:
+**Adapters that create or consume `CryptoOption` instruments include**:
 
 - [Bybit](../../integrations/bybit.md) for crypto options.
 - [Deribit](../../integrations/deribit.md) for crypto options.

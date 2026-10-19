@@ -92,8 +92,10 @@ impl Display for NetworkConfigError {
                     if index > 0 {
                         write!(f, "; ")?;
                     }
+
                     write!(f, "{error}")?;
                 }
+
                 Ok(())
             }
         }

@@ -82,9 +82,9 @@ use crate::{
         },
         models::OKXInstrument,
         parse::{
-            extract_inst_family, is_okx_spread_symbol, okx_instrument_type_from_symbol,
-            okx_status_to_market_action, parse_base_quote_from_symbol, parse_instrument_any,
-            parse_instrument_id, parse_millisecond_timestamp, parse_price, parse_quantity,
+            extract_inst_family, okx_instrument_type_from_symbol, okx_status_to_market_action,
+            parse_base_quote_from_symbol, parse_instrument_any, parse_instrument_id,
+            parse_millisecond_timestamp, parse_price, parse_quantity,
         },
         task::{spawn_task, terminate_tasks},
     },
@@ -340,7 +340,7 @@ impl OKXDataClient {
         depth: Option<std::num::NonZeroUsize>,
         params: Option<&Params>,
     ) -> OKXBookChannel {
-        if is_okx_spread_symbol(instrument_id.symbol.as_str()) {
+        if self.http_client.is_spread(instrument_id) {
             // Spreads have no incremental book channel; sprd-books5 pushes a full
             // 5-level snapshot, emitted as F_SNAPSHOT deltas to feed the book.
             return OKXBookChannel::SprdBooks5;
@@ -372,7 +372,7 @@ impl OKXDataClient {
     }
 
     fn unsubscribe_book_channel(&self, instrument_id: InstrumentId) -> anyhow::Result<()> {
-        if is_okx_spread_symbol(instrument_id.symbol.as_str()) {
+        if self.http_client.is_spread(instrument_id) {
             let ws = self.business_ws()?.clone();
             self.book_channels.remove(&instrument_id);
             self.book_sync.remove(instrument_id);
@@ -2190,7 +2190,7 @@ impl DataClient for OKXDataClient {
         }
 
         let instrument_id = cmd.instrument_id;
-        if is_okx_spread_symbol(instrument_id.symbol.as_str()) {
+        if self.http_client.is_spread(instrument_id) {
             self.book_depths.insert(instrument_id, depth);
             if let Err(e) = self.subscribe_book_channel(instrument_id, OKXBookChannel::SprdBooks5) {
                 self.book_depths.remove(&instrument_id);
@@ -2215,7 +2215,7 @@ impl DataClient for OKXDataClient {
     fn subscribe_quotes(&mut self, cmd: SubscribeQuotes) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
 
-        if is_okx_spread_symbol(instrument_id.symbol.as_str()) {
+        if self.http_client.is_spread(instrument_id) {
             let ws = self.business_ws()?.clone();
             self.spawn_ws(
                 async move {
@@ -2243,7 +2243,7 @@ impl DataClient for OKXDataClient {
     fn subscribe_trades(&mut self, cmd: SubscribeTrades) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
 
-        if is_okx_spread_symbol(instrument_id.symbol.as_str()) {
+        if self.http_client.is_spread(instrument_id) {
             let ws = self.business_ws()?.clone();
             self.spawn_ws(
                 async move {
@@ -2417,7 +2417,7 @@ impl DataClient for OKXDataClient {
             return Ok(());
         }
 
-        if !is_okx_spread_symbol(cmd.instrument_id.symbol.as_str())
+        if !self.http_client.is_spread(cmd.instrument_id)
             || !self.book_depths.contains_key(&cmd.instrument_id)
         {
             self.unsubscribe_book_channel(cmd.instrument_id)?;
@@ -2433,7 +2433,7 @@ impl DataClient for OKXDataClient {
         }
 
         let instrument_id = cmd.instrument_id;
-        if is_okx_spread_symbol(instrument_id.symbol.as_str()) {
+        if self.http_client.is_spread(instrument_id) {
             if !self.book_deltas.contains(&instrument_id) {
                 self.unsubscribe_book_channel(instrument_id)?;
             }
@@ -2456,7 +2456,7 @@ impl DataClient for OKXDataClient {
     fn unsubscribe_quotes(&mut self, cmd: &UnsubscribeQuotes) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
 
-        if is_okx_spread_symbol(instrument_id.symbol.as_str()) {
+        if self.http_client.is_spread(instrument_id) {
             let ws = self.business_ws()?.clone();
             self.spawn_ws(
                 async move {
@@ -2484,7 +2484,7 @@ impl DataClient for OKXDataClient {
     fn unsubscribe_trades(&mut self, cmd: &UnsubscribeTrades) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
 
-        if is_okx_spread_symbol(instrument_id.symbol.as_str()) {
+        if self.http_client.is_spread(instrument_id) {
             let ws = self.business_ws()?.clone();
             self.spawn_ws(
                 async move {
@@ -2815,7 +2815,8 @@ impl DataClient for OKXDataClient {
                 Ok(instrument) => {
                     let inst_id = instrument.id();
                     let symbol = inst_id.symbol.as_str();
-                    if is_okx_spread_symbol(symbol) {
+
+                    if instrument.is_spread() {
                         if !load_spreads {
                             log::error!(
                                 "Instrument {instrument_id} is a spread but load_spreads is false"
@@ -3157,12 +3158,23 @@ fn push_convention_str(out: &mut AHashSet<OKXGreeksType>, raw: &str) {
 mod tests {
     use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 
-    use axum::{Router, extract::Query, response::Json, routing::get};
+    use axum::{
+        Router,
+        extract::{
+            Query,
+            ws::{Message, WebSocketUpgrade},
+        },
+        response::Json,
+        routing::get,
+    };
     use nautilus_common::{live::runner::replace_data_event_sender, testing::wait_until_async};
     use nautilus_core::UUID4;
     use nautilus_model::{
         identifiers::Symbol,
-        instruments::{CurrencyPair, stubs::currency_pair_btcusdt},
+        instruments::{
+            CryptoFuture, CurrencyPair,
+            stubs::{crypto_future_btcusdt, currency_pair_btcusdt},
+        },
         types::{Price, Quantity},
     };
     use nautilus_network::websocket::TransportBackend;
@@ -3177,6 +3189,200 @@ mod tests {
         },
         websocket::{enums::OKXWsChannel, messages::OKXWsFrame},
     };
+
+    #[rstest]
+    #[case("BTC-USD_UM_XPERP-310404.OKX")]
+    #[case("BTC-USD_UM-261030.OKX")]
+    fn usd_margined_futures_use_regular_book_channel(
+        mut crypto_future_btcusdt: CryptoFuture,
+        #[case] instrument_id: &str,
+        #[values(false, true)] cached: bool,
+    ) {
+        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
+        replace_data_event_sender(sender);
+        let client = OKXDataClient::new(*OKX_CLIENT_ID, OKXDataClientConfig::default()).unwrap();
+        let instrument_id = InstrumentId::from(instrument_id);
+        crypto_future_btcusdt.id = instrument_id;
+        crypto_future_btcusdt.raw_symbol = instrument_id.symbol;
+
+        if cached {
+            client
+                .http_client
+                .cache_instrument(InstrumentAny::CryptoFuture(crypto_future_btcusdt));
+        }
+
+        assert_eq!(
+            client.book_channel(instrument_id, None, None),
+            OKXBookChannel::Book
+        );
+    }
+
+    #[rstest]
+    #[case("BTC-USD_UM_XPERP-310404.OKX")]
+    #[case("BTC-USD_UM-261030.OKX")]
+    #[tokio::test]
+    async fn usd_margined_futures_use_regular_subscriptions(#[case] instrument_id: &str) {
+        let (captured, mut received) = tokio::sync::mpsc::unbounded_channel();
+        let router = Router::new().route(
+            "/public",
+            get(move |upgrade: WebSocketUpgrade| {
+                let captured = captured.clone();
+                async move {
+                    upgrade.on_upgrade(move |mut socket| async move {
+                        while let Some(Ok(Message::Text(text))) = socket.next().await {
+                            let request: Value = serde_json::from_str(&text).unwrap();
+                            if request["op"] == "subscribe" || request["op"] == "unsubscribe" {
+                                captured.send(request.clone()).unwrap();
+                                for arg in request["args"].as_array().unwrap() {
+                                    socket
+                                        .send(Message::Text(
+                                            json!({"event": request["op"], "arg": arg})
+                                                .to_string()
+                                                .into(),
+                                        ))
+                                        .await
+                                        .unwrap();
+                                }
+                            }
+                        }
+                    })
+                }
+            }),
+        );
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
+        replace_data_event_sender(sender);
+        let config = OKXDataClientConfig::builder()
+            .instrument_types(vec![OKXInstrumentType::Futures])
+            .base_url_ws_public(format!("ws://{addr}/public"))
+            .build();
+        let mut client = OKXDataClient::new(*OKX_CLIENT_ID, config).unwrap();
+        client.ws_public.as_mut().unwrap().connect().await.unwrap();
+        let instrument_id = InstrumentId::from(instrument_id);
+        client
+            .subscribe_quotes(SubscribeQuotes::new(
+                instrument_id,
+                Some(*OKX_CLIENT_ID),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .unwrap();
+        client
+            .subscribe_trades(SubscribeTrades::new(
+                instrument_id,
+                Some(*OKX_CLIENT_ID),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .unwrap();
+        client
+            .subscribe_book_depth(SubscribeBookDepth::new(
+                instrument_id,
+                BookType::L2_MBP,
+                Some(*OKX_CLIENT_ID),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                false,
+                None,
+                None,
+            ))
+            .unwrap();
+        let mut frames = Vec::new();
+        for _ in 0..3 {
+            frames.push(
+                tokio::time::timeout(Duration::from_secs(5), received.recv())
+                    .await
+                    .unwrap()
+                    .unwrap(),
+            );
+        }
+
+        client
+            .unsubscribe_quotes(&UnsubscribeQuotes::new(
+                instrument_id,
+                Some(*OKX_CLIENT_ID),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .unwrap();
+        client
+            .unsubscribe_trades(&UnsubscribeTrades::new(
+                instrument_id,
+                Some(*OKX_CLIENT_ID),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .unwrap();
+        client
+            .unsubscribe_book_depth(&UnsubscribeBookDepth::new(
+                instrument_id,
+                Some(*OKX_CLIENT_ID),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .unwrap();
+
+        for _ in 0..3 {
+            frames.push(
+                tokio::time::timeout(Duration::from_secs(5), received.recv())
+                    .await
+                    .unwrap()
+                    .unwrap(),
+            );
+        }
+
+        client.ws_public.as_mut().unwrap().close().await.unwrap();
+        server.abort();
+
+        let mut actual = frames
+            .iter()
+            .map(|frame| {
+                (
+                    frame["op"].as_str().unwrap().to_string(),
+                    frame["args"].clone(),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        let mut expected = ["subscribe", "unsubscribe"]
+            .into_iter()
+            .flat_map(|op| {
+                ["bbo-tbt", "trades", "books5"]
+                    .into_iter()
+                    .map(move |channel| {
+                        (
+                            op.to_string(),
+                            json!([{"channel": channel, "instId": instrument_id.symbol.as_str()}]),
+                        )
+                    })
+            })
+            .collect::<Vec<_>>();
+
+        actual.sort_by_cached_key(|item| format!("{}{}", item.0, item.1));
+        expected.sort_by_cached_key(|item| format!("{}{}", item.0, item.1));
+
+        assert_eq!(actual, expected);
+    }
 
     #[rstest]
     #[case(1, false)]

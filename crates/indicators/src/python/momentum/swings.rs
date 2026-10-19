@@ -24,9 +24,8 @@ use crate::{indicator::Indicator, momentum::swings::Swings, python::float_precis
 impl Swings {
     /// Creates a new `Swings` instance.
     #[new]
-    #[must_use]
-    pub fn py_new(period: usize) -> Self {
-        Self::new(period)
+    pub fn py_new(period: usize) -> PyResult<Self> {
+        Self::new_checked(period).map_err(to_pyvalue_err)
     }
 
     fn __repr__(&self) -> String {

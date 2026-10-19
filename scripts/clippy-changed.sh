@@ -132,7 +132,7 @@ for p in data['packages']:
   desired_features="${DESIRED_FEATURES[*]}"
   if [ "$pkg" = "nautilus-serialization" ]; then
     # The crate has no default features, so compile each core format when its source changes
-    desired_features="$desired_features arrow arrow-display capnp sbe"
+    desired_features="$desired_features arrow arrow-display sbe"
   fi
 
   for feat in $desired_features; do

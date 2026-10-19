@@ -26,11 +26,11 @@ use ustr::Ustr;
 use super::timer::LiveTimer;
 use crate::{
     clock::{
-        CallbackRegistry, Clock, replace_existing_timer, validate_and_prepare_time_alert,
-        validate_and_prepare_timer,
+        CallbackRegistry, Clock, replace_existing_timer, validate_and_prepare_schedule,
+        validate_and_prepare_time_alert, validate_and_prepare_timer,
     },
     runner::{TimeEventSender, purge_closed_time_event_callbacks, try_get_time_event_sender},
-    timer::{TimeEventCallback, create_valid_interval},
+    timer::{TimeEventCallback, TimerInterval, TimerSchedule, create_valid_interval},
 };
 
 /// A real-time clock which uses system time.
@@ -69,6 +69,48 @@ impl LiveClock {
 
     fn replace_existing_timer_if_needed(&mut self, name: &Ustr) {
         replace_existing_timer(&mut self.timers, name);
+    }
+    fn register_timer(
+        &mut self,
+        name: Ustr,
+        interval: TimerInterval,
+        start_time_ns: UnixNanos,
+        stop_time_ns: Option<UnixNanos>,
+        callback: Option<TimeEventCallback>,
+        fire_immediately: bool,
+    ) -> anyhow::Result<()> {
+        check_predicate_true(
+            callback.is_some() | self.callbacks.has_any_callback(&name),
+            "No callbacks provided",
+        )?;
+
+        self.replace_existing_timer_if_needed(&name);
+        let callback = if let Some(callback) = callback {
+            self.callbacks.register_callback(name, callback.clone());
+            callback
+        } else {
+            self.callbacks
+                .get_callback(&name)
+                .expect("Callback should exist")
+        };
+
+        let sender = self.resolve_time_event_sender();
+
+        let mut timer = LiveTimer::new(
+            name,
+            interval,
+            start_time_ns,
+            stop_time_ns,
+            callback,
+            fire_immediately,
+            sender,
+        );
+        timer.start();
+
+        self.clear_expired_timers();
+        self.timers.insert(name, timer);
+
+        Ok(())
     }
 }
 
@@ -201,52 +243,54 @@ impl Clock for LiveClock {
         allow_past: Option<bool>,
         fire_immediately: Option<bool>,
     ) -> anyhow::Result<()> {
-        let ts_now = self.get_time_ns();
-        let (name, start_time_ns, stop_time_ns, _allow_past, fire_immediately) =
-            validate_and_prepare_timer(
-                name,
-                interval_ns,
-                start_time_ns,
-                stop_time_ns,
-                allow_past,
-                fire_immediately,
-                ts_now,
-            )?;
-
-        check_predicate_true(
-            callback.is_some() | self.callbacks.has_any_callback(&name),
-            "No callbacks provided",
-        )?;
-
-        self.replace_existing_timer_if_needed(&name);
-
-        let callback = if let Some(callback) = callback {
-            self.callbacks.register_callback(name, callback.clone());
-            callback
-        } else {
-            self.callbacks
-                .get_callback(&name)
-                .expect("Callback should exist")
-        };
-
-        let interval_ns = create_valid_interval(interval_ns);
-        let sender = self.resolve_time_event_sender();
-
-        let mut timer = LiveTimer::new(
+        let (name, start_time_ns, stop_time_ns, _, fire_immediately) = validate_and_prepare_timer(
             name,
             interval_ns,
             start_time_ns,
             stop_time_ns,
+            allow_past,
+            fire_immediately,
+            self.get_time_ns(),
+        )?;
+        self.register_timer(
+            name,
+            TimerInterval::Fixed(create_valid_interval(interval_ns)),
+            start_time_ns,
+            stop_time_ns,
             callback,
             fire_immediately,
-            sender,
-        );
-        timer.start();
+        )
+    }
 
-        self.clear_expired_timers();
-        self.timers.insert(name, timer);
-
-        Ok(())
+    fn set_timer_schedule(
+        &mut self,
+        name: &str,
+        schedule: Arc<dyn TimerSchedule>,
+        stop_time_ns: Option<UnixNanos>,
+        callback: Option<TimeEventCallback>,
+        allow_past: Option<bool>,
+        fire_immediately: Option<bool>,
+    ) -> anyhow::Result<()> {
+        let start_time_ns = schedule.start_time_ns();
+        let interval = TimerInterval::Schedule(schedule);
+        let (name, start_time_ns, stop_time_ns, _, fire_immediately) =
+            validate_and_prepare_schedule(
+                name,
+                &interval,
+                Some(start_time_ns),
+                stop_time_ns,
+                allow_past,
+                fire_immediately,
+                self.get_time_ns(),
+            )?;
+        self.register_timer(
+            name,
+            interval,
+            start_time_ns,
+            stop_time_ns,
+            callback,
+            fire_immediately,
+        )
     }
 
     fn next_time_ns(&self, name: &str) -> Option<UnixNanos> {
@@ -306,6 +350,7 @@ mod tests {
 
     use super::*;
     use crate::{
+        calendar::CalendarSchedule,
         clock::Clock,
         runner::{TimeEventMessage, TimeEventSender, replace_time_event_sender},
         testing::wait_until,
@@ -594,5 +639,33 @@ mod tests {
         assert_eq!(clock.next_time_ns("alert"), Some(alert_time));
 
         clock.cancel_timers();
+    }
+    #[rstest]
+    fn test_live_clock_registers_deadline_schedule_with_default_callback_and_inclusive_stop() {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let sender = Arc::new(CollectingSender::new(events.clone()));
+        let mut clock = LiveClock::new(Some(sender));
+        clock.register_default_handler(TimeEventCallback::from(|_| {}));
+        let origin = clock.timestamp_ns();
+        let first = origin + DurationNanos::from_millis(200);
+
+        let schedule = Arc::new(
+            CalendarSchedule::new(
+                &origin.to_datetime_utc().to_zoned(jiff::tz::TimeZone::UTC),
+                jiff::Span::new().milliseconds(200),
+            )
+            .unwrap(),
+        );
+        clock
+            .set_timer_schedule("deadline", schedule, Some(first), None, None, None)
+            .unwrap();
+        assert_eq!(clock.next_time_ns("deadline"), Some(first));
+        wait_until(|| clock.timer_count() == 0, Duration::from_secs(2));
+        let recorded = events.lock();
+        assert_eq!(recorded.len(), 1);
+        assert_eq!(recorded[0].0.name, Ustr::from("deadline"));
+        assert_eq!(recorded[0].0.ts_event, first);
+        assert!(recorded[0].0.ts_init >= first);
+        assert_eq!(clock.next_time_ns("deadline"), None);
     }
 }

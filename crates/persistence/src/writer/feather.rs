@@ -55,8 +55,10 @@ use nautilus_model::{
     data::{
         Bar, CustomData, CustomDataTrait, Data, DataBatch, FundingRateUpdate, IndexPriceUpdate,
         InstrumentStatus, MarkPriceUpdate, NautilusDataType, OptionGreeks, OrderBookDelta,
-        OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick, close::InstrumentClose,
+        OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick,
+        close::InstrumentClose,
         encode_custom_to_arrow, get_arrow_schema,
+        greeks::{GreeksData, PortfolioGreeks},
     },
     events::{
         AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied,
@@ -1350,6 +1352,8 @@ impl FeatherWriter {
         try_write!(message, FillReport);
         try_write!(message, PositionStatusReport);
         try_write!(message, ExecutionMassStatus);
+        try_write!(message, GreeksData);
+        try_write!(message, PortfolioGreeks);
 
         if let Some(deltas) = message.downcast_ref::<OrderBookDeltas>() {
             let deltas = deltas.deltas.clone();
@@ -1609,6 +1613,18 @@ fn recover_released_feather_file(partial_path: &Path) {
 }
 
 fn recover_partial_feather_file(partial_path: &Path) -> anyhow::Result<()> {
+    let metadata = match fs::symlink_metadata(partial_path) {
+        Ok(metadata) => metadata,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(e.into()),
+    };
+
+    anyhow::ensure!(
+        metadata.is_file(),
+        "Partial Feather path must be a regular file: {}",
+        partial_path.display(),
+    );
+
     let file = match OpenOptions::new().read(true).write(true).open(partial_path) {
         Ok(file) => file,
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
@@ -1878,6 +1894,66 @@ mod tests {
             .map(|batch| batch.num_rows())
             .sum::<usize>();
         assert_eq!(rows, 1);
+    }
+
+    #[rstest]
+    fn test_subscription_records_greeks_once_and_unsubscribes() {
+        use nautilus_common::msgbus::{MStr, publish_any, publish_greeks};
+        use nautilus_model::data::greeks::GreeksData;
+        use nautilus_serialization::arrow::DecodeTypedFromRecordBatch;
+        let temp_dir = TempDir::new().unwrap();
+
+        let writer = Rc::new(RefCell::new(FeatherWriter::new(
+            temp_dir.path().to_path_buf(),
+            WriterClock::Test(Arc::new(AtomicU64::new(0))),
+            RotationConfig::NoRotation,
+            None,
+            Some(0),
+        )));
+        let greeks = GreeksData::from_delta("AUD/USD.SIM".parse().unwrap(), 1.25, 8.0, 11.into());
+        let portfolio = greeks.to_portfolio_greeks();
+        let greeks_topic = MStr::topic("data.GreeksData.instrument_id=AUD/USD.SIM").unwrap();
+        let portfolio_topic = MStr::topic("data.PortfolioGreeks").unwrap();
+        let handler = FeatherWriter::subscribe_to_message_bus(writer.clone()).unwrap();
+        publish_greeks(greeks_topic, &greeks);
+        publish_any(portfolio_topic, &portfolio);
+        FeatherWriter::unsubscribe_from_message_bus(&handler);
+        publish_greeks(greeks_topic, &greeks);
+        publish_any(portfolio_topic, &portfolio);
+        writer.borrow_mut().close().unwrap();
+        let mut counts = HashMap::new();
+
+        for batch in feather_files(temp_dir.path(), FEATHER_EXTENSION)
+            .iter()
+            .flat_map(|path| read_feather_batches(path))
+        {
+            let schema = batch.schema();
+            let name = schema.metadata()["type_name"].clone();
+            *counts.entry(name.clone()).or_insert(0) += batch.num_rows();
+            match name.as_str() {
+                "GreeksData" => {
+                    let values = GreeksData::decode_typed_batch(schema.metadata(), batch).unwrap();
+                    assert_eq!(values[0].instrument_id, greeks.instrument_id);
+                    assert_eq!(values[0].greeks, greeks.greeks);
+                    assert_eq!(values[0].ts_init, greeks.ts_init);
+                }
+                "PortfolioGreeks" => {
+                    let values =
+                        PortfolioGreeks::decode_typed_batch(schema.metadata(), batch).unwrap();
+                    assert_eq!(values[0].greeks, portfolio.greeks);
+                    assert_eq!(values[0].ts_init, portfolio.ts_init);
+                }
+                _ => panic!("unexpected record type {name}"),
+            }
+        }
+
+        assert_eq!(
+            counts,
+            HashMap::from([
+                ("GreeksData".to_string(), 1),
+                ("PortfolioGreeks".to_string(), 1),
+            ])
+        );
     }
 
     #[rstest]
@@ -2886,13 +2962,29 @@ mod tests {
 
     #[rstest]
     #[cfg(unix)]
+    fn recovery_leaves_partial_file_symlinks_untouched() {
+        let temp_dir = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        let partial = write_partial_file(outside.path(), &[1, 2]);
+        let original = fs::read(&partial).unwrap();
+        let link = temp_dir.path().join("quotes_0.feather.partial");
+        std::os::unix::fs::symlink(&partial, &link).unwrap();
+
+        recover_partial_feather_files(temp_dir.path());
+
+        assert_eq!(fs::read(&partial).unwrap(), original);
+        assert_eq!(fs::read_link(&link).unwrap(), partial);
+        assert!(!link.with_extension("").exists());
+        assert!(!partial.with_extension("").exists());
+    }
+
+    #[rstest]
+    #[cfg(unix)]
     fn recovery_continues_after_a_file_it_cannot_recover() {
         let temp_dir = TempDir::new().unwrap();
         let run = temp_dir.path().join("run");
         let partial = write_partial_file(&run, &[1]);
 
-        // A partial path that resolves to a directory fails to open for writing on every Unix
-        // platform, even as root
         let unrecoverable = temp_dir.path().join("bad.feather.partial");
         std::os::unix::fs::symlink(&run, &unrecoverable).unwrap();
 
@@ -2904,8 +2996,9 @@ mod tests {
             warnings,
             vec![
                 format!(
-                    "Failed to recover Feather file {}: Is a directory (os error 21)",
-                    unrecoverable.display()
+                    "Failed to recover Feather file {}: Partial Feather path must be a regular file: {}",
+                    unrecoverable.display(),
+                    unrecoverable.display(),
                 ),
                 format!(
                     "Recovered 1 record batch(es) into Feather file {}, dropped 8 trailing byte(s)",

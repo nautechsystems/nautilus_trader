@@ -178,6 +178,8 @@ pub(super) fn parse_validated_order_status_report(
     // `Matched` does not mean fully filled, so resolve the status from the filled quantity.
     let order_status = if order.status == PolymarketOrderStatus::Matched {
         recovered_terminal_order_status(time_in_force, quantity, raw_filled_qty)
+    } else if order.status == PolymarketOrderStatus::Live && order.size_matched > Decimal::ZERO {
+        OrderStatus::PartiallyFilled
     } else {
         OrderStatus::from(order.status)
     };
@@ -582,8 +584,8 @@ pub fn adjust_market_buy_amount(
 ///
 /// # Errors
 ///
-/// Returns an error for negative rates or sizes, an exponent that is not a whole number,
-/// prices outside `[0, 1]`, or a calculation that cannot be represented.
+/// Returns an error if rates or sizes are negative, the exponent is not a whole number, prices fall
+/// outside `[0, 1]`, or a calculation cannot be represented.
 ///
 /// # References
 /// <https://docs.polymarket.com/trading/fees>
@@ -1610,7 +1612,7 @@ mod tests {
         assert_eq!(report.order_side, Some(OrderSide::Buy));
         assert_eq!(report.order_type, OrderType::Limit);
         assert_eq!(report.time_in_force, TimeInForce::Gtc);
-        assert_eq!(report.order_status, OrderStatus::Accepted);
+        assert_eq!(report.order_status, OrderStatus::PartiallyFilled);
         assert_eq!(report.price, Some(Price::from("0.5000")));
         assert_eq!(report.price.unwrap().precision, 4);
         assert_eq!(report.quantity, Quantity::from("100.000000"));
@@ -1628,6 +1630,40 @@ mod tests {
         assert_eq!(report.ts_init, UnixNanos::from(1_000_000_000u64));
         // Fixture has expiration=null which must surface as no expire_time.
         assert_eq!(report.expire_time, None);
+    }
+
+    #[rstest]
+    #[case::unfilled(PolymarketOrderStatus::Live, dec!(0), OrderStatus::Accepted)]
+    #[case::minimum_fill(PolymarketOrderStatus::Live, dec!(0.000001), OrderStatus::PartiallyFilled)]
+    #[case::partially_filled(PolymarketOrderStatus::Live, dec!(25), OrderStatus::PartiallyFilled)]
+    #[case::dust_leaves(PolymarketOrderStatus::Live, dec!(99.995), OrderStatus::PartiallyFilled)]
+    #[case::canceled(PolymarketOrderStatus::Canceled, dec!(25), OrderStatus::Canceled)]
+    #[case::expired(PolymarketOrderStatus::CanceledMarketResolved, dec!(25), OrderStatus::Expired)]
+    #[case::delayed(PolymarketOrderStatus::Delayed, dec!(0), OrderStatus::Accepted)]
+    fn test_parse_order_status_report_resting_status(
+        #[case] status: PolymarketOrderStatus,
+        #[case] size_matched: Decimal,
+        #[case] expected_status: OrderStatus,
+    ) {
+        let mut order: PolymarketOpenOrder =
+            serde_json::from_str(include_str!("../../test_data/http_open_order.json")).unwrap();
+        order.status = status;
+        order.size_matched = size_matched;
+
+        let report = parse_order_status_report(
+            &order,
+            InstrumentId::from("TEST-TOKEN.POLYMARKET"),
+            AccountId::from("POLYMARKET-001"),
+            None,
+            4,
+            6,
+            UnixNanos::from(1_000_000_000u64),
+        )
+        .unwrap();
+
+        assert_eq!(report.order_status, expected_status);
+        assert_eq!(report.quantity, Quantity::from("100.000000"));
+        assert_eq!(report.filled_qty.as_decimal(), size_matched);
     }
 
     // Verifies parse_order_status_report wires `snap_filled_qty_to_quantity`

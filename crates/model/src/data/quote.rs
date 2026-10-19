@@ -113,7 +113,7 @@ impl QuoteTick {
     ///
     /// # Panics
     ///
-    /// This function panics if:
+    /// Panics if:
     /// - `bid_price.precision` does not equal `ask_price.precision`.
     /// - `bid_size.precision` does not equal `ask_size.precision`.
     #[must_use]
@@ -136,6 +136,21 @@ impl QuoteTick {
             ts_init,
         )
         .expect(FAILED)
+    }
+
+    /// Returns whether both quotes have equal bid/ask prices and sizes.
+    ///
+    /// Ignores instrument IDs and timestamps.
+    #[must_use]
+    #[inline]
+    pub fn has_same_bid_ask(&self, other: &Self) -> bool {
+        (self.bid_price, self.ask_price, self.bid_size, self.ask_size)
+            == (
+                other.bid_price,
+                other.ask_price,
+                other.bid_size,
+                other.ask_size,
+            )
     }
 
     /// Returns the metadata for the type, for use with serialization formats.
@@ -285,6 +300,27 @@ mod tests {
         assert_eq!(quote.ask_size, Quantity::from("75000"));
         assert_eq!(quote.ts_event, UnixNanos::from(1_000_000_000));
         assert_eq!(quote.ts_init, UnixNanos::from(2_000_000_000));
+    }
+
+    #[rstest]
+    #[case::identical(create_test_quote(), true, true)]
+    #[case::bid_price(QuoteTick { bid_price: Price::from("1.0501"), ..create_test_quote() }, false, false)]
+    #[case::ask_price(QuoteTick { ask_price: Price::from("1.0506"), ..create_test_quote() }, false, false)]
+    #[case::bid_size(QuoteTick { bid_size: Quantity::from("100001"), ..create_test_quote() }, false, false)]
+    #[case::ask_size(QuoteTick { ask_size: Quantity::from("75001"), ..create_test_quote() }, false, false)]
+    #[case::instrument(QuoteTick { instrument_id: InstrumentId::from("GBPUSD.SIM"), ..create_test_quote() }, true, false)]
+    #[case::event_time(QuoteTick { ts_event: UnixNanos::from(3_000_000_000), ..create_test_quote() }, true, false)]
+    #[case::init_time(QuoteTick { ts_init: UnixNanos::from(4_000_000_000), ..create_test_quote() }, true, false)]
+    fn test_has_same_bid_ask(
+        #[case] other: QuoteTick,
+        #[case] equal_bid_ask: bool,
+        #[case] equal_quote: bool,
+    ) {
+        let quote = create_test_quote();
+
+        assert_eq!(quote.has_same_bid_ask(&other), equal_bid_ask);
+        assert_eq!(other.has_same_bid_ask(&quote), equal_bid_ask);
+        assert_eq!(quote == other, equal_quote);
     }
 
     #[rstest]

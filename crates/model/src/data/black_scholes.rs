@@ -13,6 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+pub(super) const REFINEMENT_VOL_MIN: f64 = 1e-6;
+pub(super) const REFINEMENT_VOL_MAX: f64 = 10.0;
+
 pub trait BlackScholesReal:
     Sized
     + Copy
@@ -360,8 +363,8 @@ pub fn compute_iv_and_greeks<T: BlackScholesReal>(
 
     // Clamp volatility between 0.0001% and 1000% annualized to keep outputs finite
     let vol = (vol - (num * den_safe.recip_precise()))
-        .max(T::splat(1e-6))
-        .min(T::splat(10.0));
+        .max(T::splat(REFINEMENT_VOL_MIN))
+        .min(T::splat(REFINEMENT_VOL_MAX));
 
     let inv_vol_f = vol.recip_precise();
     let inv_scaled_vol_f = inv_vol_f * inv_sqrt_t;

@@ -33,12 +33,13 @@ Examples include `EUR/USD.SIM`, `BTCUSDT.BINANCE`, and `ETH/USD.KRAKEN`.
 | `tick_scheme`     | `Option<Ustr>`     | `str \| None`      | `None`           | Registered variable tick scheme name.    |
 | `info`            | `Option<Params>`   | `dict \| None`     | `None`           | Adapter metadata.                        |
 
-*Note: Python constructors use `instrument_id`; Rust stores the same value as `id`.*
+**Note**: Python constructors use `instrument_id`. Rust stores the same value as `id`.
 
 ## Behavior
 
 - `CurrencyPair` has instrument class `Spot`.
-- Its asset class is `Cryptocurrency` when either currency has crypto type; otherwise, it is `FX`.
+- Its asset class is `Cryptocurrency` when either currency has crypto type. If neither currency has crypto
+  type, it is `FX`.
 - It has no expiration, strike price, option kind, or derivative underlying field.
 - It is never inverse. The settlement currency and cost currency are the quote currency.
 - Use this type for both fiat FX pairs and crypto spot pairs.
@@ -117,7 +118,7 @@ btcusdt = CurrencyPair(
 
 ## Adapters
 
-Representative adapters that create or consume `CurrencyPair` instruments include:
+**Adapters that create or consume `CurrencyPair` instruments include**:
 
 - [Binance](../../integrations/binance.md) for spot markets.
 - [Kraken](../../integrations/kraken.md) for spot markets.

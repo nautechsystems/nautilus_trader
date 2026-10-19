@@ -118,10 +118,12 @@ impl UUID4 {
 
     /// Returns the UUID as a string slice.
     ///
-    /// # Panics
-    ///
-    /// Never panics in practice: the stored byte representation is constructed
-    /// from valid ASCII UUID strings by [`UUID4::new`] or deserialization paths.
+    /// The stored byte representation is constructed from valid ASCII UUID strings by
+    /// [`UUID4::new`] or deserialization paths, so conversion to a string cannot panic.
+    #[allow(
+        clippy::missing_panics_doc,
+        reason = "the stored UUID representation contains only valid ASCII"
+    )]
     #[must_use]
     pub fn as_str(&self) -> &str {
         // We always store valid ASCII UUID strings

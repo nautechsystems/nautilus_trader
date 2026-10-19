@@ -1,7 +1,7 @@
 # QuoteTick
 
-`QuoteTick` represents the top-of-book bid and ask for one instrument. It carries the best available
-bid and ask prices and sizes at a specific event time.
+`QuoteTick` represents the top-of-book bid and ask for one instrument: the best available prices
+and sizes at a specific event time.
 
 ## Fields
 
@@ -19,8 +19,8 @@ bid and ask prices and sizes at a specific event time.
 
 - Bid and ask prices must use the same precision.
 - Bid and ask sizes must use the same precision.
-- `extract_price(...)` returns the `BID`, `ASK`, or `MID` price and `extract_size(...)` returns
-  the matching size; any other price type is an error.
+- `extract_price(...)` returns the `BID`, `ASK`, or `MID` price and `extract_size(...)` returns the matching
+  size. Any other price type is an error.
 - `MID` results carry one extra digit of precision, capped at `FIXED_PRECISION`.
 - Quote bars can use `BID`, `ASK`, or `MID` price types.
 
@@ -64,6 +64,6 @@ quote = QuoteTick(
 
 ## Related guides
 
-- [OrderBookDepth](order_book_depth.md) covers fixed-depth snapshots with top levels.
+- [OrderBookDepth](order_book_depth.md) covers variable-depth snapshots with top levels.
 - [Bars and aggregation](index.md#bars-and-aggregation) covers quote-to-bar aggregation.
 - [Python API reference](/docs/python-api-latest/model/data.html) lists Python members.

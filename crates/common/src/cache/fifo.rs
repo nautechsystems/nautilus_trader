@@ -75,7 +75,7 @@ where
     ///
     /// # Panics
     ///
-    /// Compile-time panic if `N == 0`.
+    /// Panics if `N == 0`. The panic occurs at compile time.
     #[must_use]
     pub fn new() -> Self {
         const { assert!(N > 0, "FifoCache capacity must be greater than zero") };
@@ -209,7 +209,7 @@ where
     ///
     /// # Panics
     ///
-    /// Compile-time panic if `N == 0`.
+    /// Panics if `N == 0`. The panic occurs at compile time.
     #[must_use]
     pub fn new() -> Self {
         const { assert!(N > 0, "FifoCacheMap capacity must be greater than zero") };

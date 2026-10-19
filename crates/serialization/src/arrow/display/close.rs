@@ -53,7 +53,7 @@ pub fn instrument_closes_schema() -> Schema {
 ///
 /// # Errors
 ///
-/// Returns an [`ArrowError`] if the Arrow `RecordBatch` cannot be constructed.
+/// Returns an error if the Arrow `RecordBatch` cannot be constructed.
 pub fn encode_instrument_closes(data: &[InstrumentClose]) -> Result<RecordBatch, ArrowError> {
     let mut instrument_id_builder = StringBuilder::new();
     let mut close_price_builder = Float64Builder::with_capacity(data.len());

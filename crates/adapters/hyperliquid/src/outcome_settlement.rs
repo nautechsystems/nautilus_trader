@@ -259,7 +259,7 @@ mod tests {
         let encoding = HyperliquidAssetId::outcome(outcome_index, outcome_side)
             .outcome_encoding()
             .unwrap();
-        let state = spot_state_with(&format!("+{encoding}"), dec!(37.25));
+        let state = spot_state_with(&format!("+{encoding}"), dec!(37));
         let mut tracker = OutcomeSettlementTracker::new();
         let fills = build_settlement_fills(
             &[settlement],
@@ -283,10 +283,11 @@ mod tests {
         );
         assert_eq!(fill.account_id, account());
         assert_eq!(fill.order_side, OrderSide::Sell);
-        assert_eq!(fill.last_qty, Quantity::from("37.25"));
+        assert_eq!(fill.last_qty, Quantity::from("37"));
         assert_eq!(
             fill.last_px,
-            Price::from_decimal_dp(Decimal::from(final_value), 4).unwrap()
+            Price::from_decimal_dp(Decimal::from(final_value), OUTCOME_PRICE_DECIMALS as u8)
+                .unwrap()
         );
         assert_eq!(fill.commission, Money::zero(currency));
         assert_eq!(fill.liquidity_side, LiquiditySide::NoLiquiditySide);
@@ -323,10 +324,10 @@ mod tests {
             },
         ];
 
-        let mut state = spot_state_with("+10", dec!(12.34));
+        let mut state = spot_state_with("+10", dec!(12));
         state
             .balances
-            .extend(spot_state_with("+20", dec!(56.78)).balances);
+            .extend(spot_state_with("+20", dec!(56)).balances);
         let mut tracker = OutcomeSettlementTracker::new();
         let fills = build_settlement_fills(
             &settlements,
@@ -343,14 +344,14 @@ mod tests {
             fills[0].instrument_id,
             InstrumentId::from("1-YES-OUTCOME.HYPERLIQUID")
         );
-        assert_eq!(fills[0].last_qty, Quantity::from("12.34"));
+        assert_eq!(fills[0].last_qty, Quantity::from("12"));
         assert_eq!(fills[0].last_px, Price::from("1.0000"));
         assert_eq!(fills[0].commission, Money::zero(Currency::USDC()));
         assert_eq!(
             fills[1].instrument_id,
             InstrumentId::from("2-YES-OUTCOME.HYPERLIQUID")
         );
-        assert_eq!(fills[1].last_qty, Quantity::from("56.78"));
+        assert_eq!(fills[1].last_qty, Quantity::from("56"));
         assert_eq!(fills[1].last_px, Price::from("0.0000"));
         assert_eq!(fills[1].commission, Money::zero(get_usdh_currency()));
         assert_eq!(tracker.len(), 2);
@@ -473,11 +474,11 @@ mod tests {
         );
         assert_eq!(fill.order_side, OrderSide::Sell);
         assert_eq!(fill.last_qty.as_decimal(), dec!(25));
-        // Quantity must match the outcome instrument's size precision (2),
+        // Quantity must match the outcome instrument's size precision (0),
         // not the quote currency precision
-        assert_eq!(fill.last_qty.precision, 2);
+        assert_eq!(fill.last_qty.precision, 0);
         assert_eq!(fill.last_px.as_decimal(), dec!(1));
-        assert_eq!(fill.last_px.precision, 4);
+        assert_eq!(fill.last_px.precision, 5);
         assert_eq!(fill.commission, Money::zero(Currency::USDC()));
         assert!(fill.commission.as_decimal().is_zero());
         assert!(tracker.contains(1, 0));
@@ -485,7 +486,7 @@ mod tests {
 
     #[rstest]
     fn fractional_balance_rounds_to_outcome_size_precision() {
-        // 25.1234567 should land at 25.12 once snapped to OUTCOME_SIZE_DECIMALS (2)
+        // 25.1234567 should land at 25 once snapped to OUTCOME_SIZE_DECIMALS (0)
         let settlement = OutcomeSettlement {
             outcome_index: 4,
             outcome_side: 0,
@@ -505,8 +506,8 @@ mod tests {
         );
 
         assert_eq!(fills.len(), 1);
-        assert_eq!(fills[0].last_qty.precision, 2);
-        assert_eq!(fills[0].last_qty.as_decimal(), dec!(25.12));
+        assert_eq!(fills[0].last_qty.precision, 0);
+        assert_eq!(fills[0].last_qty.as_decimal(), dec!(25));
     }
 
     #[rstest]

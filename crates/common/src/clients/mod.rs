@@ -21,20 +21,31 @@
 mod data;
 mod execution;
 
-use std::fmt::{Debug, Display};
+use std::{
+    any::type_name,
+    fmt::{Debug, Display},
+};
 
 pub use data::DataClient;
 pub use execution::{
     DEFAULT_POSITION_RECONCILIATION_TOLERANCE, ExecutionClient, ExecutionReportTask,
     generate_mass_status,
 };
+use nautilus_model::identifiers::ClientId;
 
 #[inline(always)]
-fn log_not_implemented<T: Debug>(cmd: &T) {
-    log::warn!("{cmd:?} - handler not implemented");
+fn log_not_implemented<T>(client_id: ClientId, _cmd: &T) {
+    log::warn!(
+        "Handler not implemented: client {client_id}, command {}",
+        type_name::<T>()
+    );
 }
 
+/// Logs trusted command context without formatting the provider error.
+///
+/// Pass only public command metadata; omit credentials and free-form parameters.
+/// Retains the error parameter for caller compatibility; its text is not logged.
 #[inline(always)]
-pub fn log_command_error<C: Debug, E: Display>(cmd: &C, e: &E) {
-    log::error!("Error on {cmd:?}: {e}");
+pub fn log_command_error<C: Debug, E: Display>(cmd: &C, _e: &E) {
+    log::error!("Client command failed: {cmd:?}");
 }

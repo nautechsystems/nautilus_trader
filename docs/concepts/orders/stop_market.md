@@ -7,16 +7,17 @@ used as a stop-loss: a SELL order against a LONG position or a BUY order against
 
 ## Use cases
 
-Use a *Stop-Market* order to prioritize execution after a price level is breached, such as for a
-protective stop-loss or breakout entry. The trigger price is not a guaranteed fill price: a fast or
-gapping market can produce substantial slippage, and the released order can still be rejected or
-remain unfilled when no market is available. A *Stop-Limit* provides price protection instead but
-may not fill.
+Use a *Stop-Market* order to prioritize execution after a price level is breached. Examples include protective
+stop-losses or breakout entries.
+
+The trigger price is **not a guaranteed fill price**. A fast or gapping market can produce substantial
+slippage. The released order can still be rejected or stay unfilled when no market is available. A
+*Stop-Limit* provides price protection instead but may not fill.
 
 ## Example
 
-In the following example we create a *Stop-Market* order on the Binance Spot/Margin exchange
-to SELL 1 BTC at a trigger price of 100,000 USDT, active until further notice:
+**Example**: create a *Stop-Market* order on the Binance Spot/Margin exchange to SELL 1 BTC. Set a trigger
+price of 100,000 USDT and keep the order active until further notice.
 
 ```rust tab="Rust"
 use nautilus_model::{

@@ -1,0 +1,162 @@
+[package]
+name = "nautilus-coinapi"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "CoinAPI market data integration adapter for the Nautilus trading engine"
+categories.workspace = true
+keywords.workspace = true
+documentation.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+name = "nautilus_coinapi"
+crate-type = ["rlib"]
+
+[features]
+default = ["high-precision"]
+fuzz = ["nautilus-live/fuzz"]
+examples = ["nautilus-live/node"]
+extension-module = ["python", "pyo3/extension-module"]
+high-precision = ["nautilus-model/high-precision"]
+python = [
+  "dep:nautilus-system",
+  "nautilus-common/python",
+  "nautilus-core/python",
+  "nautilus-live/python",
+  "nautilus-model/python",
+  "nautilus-network/python",
+  "nautilus-system/python",
+  "pyo3",
+  "pyo3-stub-gen",
+]
+simulation = [
+  "dep:madsim",
+  "nautilus-common/simulation",
+  "nautilus-core/simulation",
+  "nautilus-live/simulation",
+  "nautilus-network/simulation",
+]
+
+[package.metadata]
+cargo-fuzz = true
+
+[package.metadata.cargo-machete]
+ignored = [
+  "axum", # Used by the shared book stress tests the harness includes by path
+  "nautilus-system", # Optional dep activated only via the python feature
+  "rust_decimal_macros", # Used by the shared book stress tests the harness includes by path
+]
+
+[package.metadata.docs.rs]
+# Python docs depend on the local pyo3-stub-gen patch for now, which published crates do not carry
+features = ["high-precision", "simulation"]
+rustdoc-args = ["--cfg", "docsrs"]
+
+[dependencies]
+nautilus-common = { workspace = true, features = ["live"] }
+nautilus-core = { workspace = true }
+nautilus-live = { workspace = true }
+nautilus-model = { workspace = true }
+nautilus-network = { workspace = true, features = ["transport-sockudo"] }
+nautilus-system = { workspace = true, optional = true }
+
+ahash = { workspace = true }
+anyhow = { workspace = true }
+arc-swap = { workspace = true }
+async-trait = { workspace = true }
+bon = { workspace = true }
+csv = { workspace = true }
+flate2 = { workspace = true }
+jiff = { workspace = true }
+log = { workspace = true }
+parking_lot = { workspace = true }
+rust_decimal = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+strum = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+url = { workspace = true }
+ustr = { workspace = true }
+
+madsim = { workspace = true, optional = true }
+pyo3 = { workspace = true, optional = true }
+pyo3-stub-gen = { workspace = true, optional = true }
+
+[dev-dependencies]
+nautilus-live = { workspace = true, features = ["test-support"] }
+nautilus-testkit = { workspace = true, default-features = false, features = [
+  "testers",
+] }
+
+axum = { workspace = true }
+criterion = { workspace = true }
+dotenvy = { workspace = true }
+futures-util = { workspace = true }
+rstest = { workspace = true }
+rust_decimal_macros = { workspace = true }
+tempfile = { workspace = true }
+tokio-tungstenite = { workspace = true }
+
+[[bench]]
+name = "data"
+harness = false
+
+[[bench]]
+name = "micros"
+harness = false
+
+[[bin]]
+name = "fuzz-ws-decode"
+path = "fuzz/fuzz_targets/fuzz_ws_decode.rs"
+required-features = ["fuzz"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz-book-sync"
+path = "fuzz/fuzz_targets/fuzz_book_sync.rs"
+required-features = ["fuzz"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz-rest-symbols"
+path = "fuzz/fuzz_targets/fuzz_rest_symbols.rs"
+required-features = ["fuzz"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz-rest-history"
+path = "fuzz/fuzz_targets/fuzz_rest_history.rs"
+required-features = ["fuzz"]
+test = false
+doc = false
+bench = false
+
+[[example]]
+name = "coinapi-data-tester"
+path = "examples/node_data_tester.rs"
+required-features = ["examples"]
+doc = false
+
+# Production market-data validation; requires COINAPI_API_KEY with book stream access.
+# Run with `cargo test --package nautilus-coinapi --features examples --test coinapi-book-stress -- --timeout 10 --rounds 14`
+[[test]]
+name = "coinapi-book-stress"
+path = "tests/stress/book_stress.rs"
+harness = false
+test = false
+required-features = ["examples"]

@@ -105,7 +105,7 @@ impl RelativeVolatilityIndex {
     ///
     /// # Panics
     ///
-    /// This function panics if:
+    /// Panics if:
     /// - `period` is not in the range of 2 to `MAX_PERIOD` (inclusive).
     /// - `scalar` is not in the range of 0.0 to 100.0 (inclusive).
     /// - `ma_type` is not a valid [`MovingAverageType`].

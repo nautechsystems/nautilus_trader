@@ -15,18 +15,13 @@
 
 #![allow(unused_assignments)] // Fields are accessed via methods, false positive from nightly
 
-use std::{
-    fmt::{Debug, Display},
-    fs,
-    path::Path,
-};
+use std::fmt::{Debug, Display};
 
 use nautilus_core::{
     env::{get_or_env_var, get_or_env_var_opt},
     hex,
     string::secret::REDACTED,
 };
-use serde::Deserialize;
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 use crate::{
@@ -266,62 +261,6 @@ impl Secrets {
             environment,
         })
     }
-
-    /// Load secrets from JSON file
-    ///
-    /// Expected JSON format:
-    /// ```json
-    /// {
-    ///   "privateKey": "0x...",
-    ///   "vaultAddress": "0x..." (optional),
-    ///   "network": "mainnet" | "testnet" (optional)
-    /// }
-    /// ```
-    pub fn from_file(path: &Path) -> Result<Self> {
-        let mut content = fs::read_to_string(path).map_err(Error::Io)?;
-
-        let result = Self::from_json(&content);
-
-        // Zeroize the file content from memory
-        content.zeroize();
-
-        result
-    }
-
-    /// Parse secrets from JSON string
-    pub fn from_json(json: &str) -> Result<Self> {
-        #[derive(Deserialize, ZeroizeOnDrop)]
-        #[serde(rename_all = "camelCase")]
-        struct RawSecrets {
-            private_key: String,
-            #[serde(default)]
-            vault_address: Option<String>,
-            #[serde(default)]
-            network: Option<String>,
-        }
-
-        let raw: RawSecrets = serde_json::from_str(json)
-            .map_err(|e| Error::bad_request(format!("Invalid JSON: {e}")))?;
-
-        let private_key = EvmPrivateKey::new(&raw.private_key)?;
-
-        let vault_address = match raw.vault_address.as_deref() {
-            Some(addr) => Some(VaultAddress::parse(addr)?),
-            None => None,
-        };
-
-        let environment = if matches!(raw.network.as_deref(), Some("testnet" | "test")) {
-            HyperliquidEnvironment::Testnet
-        } else {
-            HyperliquidEnvironment::Mainnet
-        };
-
-        Ok(Self {
-            private_key,
-            vault_address,
-            environment,
-        })
-    }
 }
 
 /// Normalize EVM address to lowercase hex format
@@ -412,37 +351,6 @@ mod tests {
         assert!(debug_str.starts_with("VaultAddress(0x1234"));
         assert!(debug_str.ends_with("7890)"));
         assert!(debug_str.contains("..."));
-    }
-
-    #[rstest]
-    fn test_secrets_from_json() {
-        let json = format!(
-            r#"{{
-            "privateKey": "{TEST_PRIVATE_KEY}",
-            "vaultAddress": "{TEST_VAULT_ADDRESS}",
-            "network": "testnet"
-        }}"#
-        );
-
-        let secrets = Secrets::from_json(&json).unwrap();
-        assert_eq!(secrets.private_key.as_hex(), TEST_PRIVATE_KEY);
-        assert!(secrets.vault_address.is_some());
-        assert_eq!(secrets.vault_address.unwrap().to_hex(), TEST_VAULT_ADDRESS);
-        assert_eq!(secrets.environment, HyperliquidEnvironment::Testnet);
-    }
-
-    #[rstest]
-    fn test_secrets_from_json_minimal() {
-        let json = format!(
-            r#"{{
-            "privateKey": "{TEST_PRIVATE_KEY}"
-        }}"#
-        );
-
-        let secrets = Secrets::from_json(&json).unwrap();
-        assert_eq!(secrets.private_key.as_hex(), TEST_PRIVATE_KEY);
-        assert!(secrets.vault_address.is_none());
-        assert_eq!(secrets.environment, HyperliquidEnvironment::Mainnet);
     }
 
     #[rstest]

@@ -38,8 +38,8 @@ impl StressArgs {
     ///
     /// # Errors
     ///
-    /// Returns a message naming the first positional argument, unknown flag or scenario, missing
-    /// value, or invalid number.
+    /// Returns an error if an argument is positional, a flag or scenario is unknown, a value is
+    /// missing, or a number is invalid. The message names the first such argument.
     pub(crate) fn parse(
         args: impl IntoIterator<Item = String>,
         scenarios: &[&str],

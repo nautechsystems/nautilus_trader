@@ -551,9 +551,11 @@ impl OrderBook {
     ///
     /// See [`Self::apply_delta_unchecked`] for details on why this function exists.
     ///
-    /// # Errors
-    ///
-    /// This function currently does not return errors, but returns `Result` for API consistency.
+    /// This function does not return errors, but returns `Result` for API consistency.
+    #[allow(
+        clippy::missing_errors_doc,
+        reason = "unchecked depth application returns no integrity errors"
+    )]
     pub fn apply_depth_unchecked(
         &mut self,
         depth: &OrderBookDepth,
@@ -780,8 +782,7 @@ impl OrderBook {
     ///
     /// # Errors
     ///
-    /// Returns [`BookViewError::InstrumentMismatch`] if `self` and `own_book` have different
-    /// instrument IDs.
+    /// Returns an error if `self` and `own_book` have different instrument IDs.
     ///
     /// # Panics
     ///

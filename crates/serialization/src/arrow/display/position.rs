@@ -107,7 +107,7 @@ fn commissions_to_json(position: &Position) -> String {
 ///
 /// # Errors
 ///
-/// Returns an [`ArrowError`] if the Arrow `RecordBatch` cannot be constructed.
+/// Returns an error if the Arrow `RecordBatch` cannot be constructed.
 pub fn encode_positions(data: &[Position]) -> Result<RecordBatch, ArrowError> {
     let mut trader_id = StringBuilder::new();
     let mut strategy_id = StringBuilder::new();

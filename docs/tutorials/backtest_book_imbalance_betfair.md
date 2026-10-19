@@ -1,8 +1,8 @@
 # Book Imbalance Backtest (Betfair)
 
 :::note
-This is a **Rust-only** system tutorial. It drives the Rust `BacktestEngine`
-directly with raw Betfair streaming data, bypassing the Python and Parquet paths.
+This **Rust-only** tutorial sends raw Betfair streaming data directly to the Rust `BacktestEngine`.
+It does not use Python or Parquet.
 :::
 
 This tutorial backtests a `BookImbalanceActor` on a Betfair MATCH_ODDS market.
@@ -15,17 +15,15 @@ Betfair is a sports betting exchange where participants back (bid) and lay
 (ask) outcomes at decimal odds. Each runner has its own L2 order book that
 behaves like a financial order book.
 
-The actor reads `OrderBookDeltas` for every runner and accumulates two
-running totals per side: bid volume (back orders) and ask volume (lay
-orders). Per-batch and cumulative imbalance are computed as:
+The actor reads `OrderBookDeltas` for every runner. It keeps batch and cumulative totals for bid volume (back
+orders) and ask volume (lay orders). It calculates batch and cumulative imbalance as follows:
 
-```
+```text
 imbalance = (bid_volume - ask_volume) / (bid_volume + ask_volume)
 ```
 
-A positive value means the market is leaning toward backing the outcome.
-Sports traders use this as a starting block, often combined with price
-momentum or market-wide features.
+A positive value indicates more backing volume than lay volume for the outcome. Sports traders use this as an
+initial signal, often with price momentum or market-wide features.
 
 A release build processes about three million data points per second with
 full order book maintenance in the matching engine.
@@ -75,16 +73,14 @@ flowchart LR
 
 Place the file at:
 
-```
+```text
 test_data/local/betfair/1.253378068.gz
 ```
 
-The example's `DATA_FILE` constant points at this gitignored path. The
-results below come from a self-recorded football MATCH_ODDS market with 3
-runners and around 82,000 MCM lines recorded over 18 days. That file is not
-distributed with the repository. To run without it, pass a sample that ships
-in `test_data/betfair/`, such as `test_data/betfair/1-166811431.bz2`; the
-loader also reads `.bz2` files.
+The example's `DATA_FILE` constant points to this gitignored path. The results below use a self-recorded
+football MATCH_ODDS market with 3 runners and approximately 82,000 MCM lines over 18 days. The repository does
+not include that file. To run without it, pass a bundled sample from `test_data/betfair/`, such as
+`test_data/betfair/1-166811431.bz2`. The loader also reads `.bz2` files.
 
 ## Loading the data
 
@@ -116,8 +112,8 @@ The loader returns a `Vec<BetfairDataItem>`:
 | `RaceProgress`      | Race-level progress data.                       | -                             |
 | `CricketMatch`      | Cricket match data (from CCM).                  | -                             |
 
-The backtest engine accepts the `Data` enum, so we map the variants we need
-and skip `Status` and the Betfair-specific types:
+The backtest engine accepts the `Data` enum. The example converts the required variants and skips `Status` and
+the Betfair-specific types:
 
 ```rust
 use nautilus_model::data::Data;
@@ -146,8 +142,8 @@ for item in items {
 
 `Data::BookDeltas` boxes its `OrderBookDeltas` payload to keep the enum small.
 
-Instruments are re-emitted on every market definition update in the stream,
-so the map deduplicates them by keeping the latest version.
+The loader emits instruments on every market definition update. The map removes duplicates and keeps the
+latest version of each instrument.
 
 :::warning
 The `Status` variant carries market status transitions (PreOpen, Trading,
@@ -171,10 +167,9 @@ let actor = BookImbalanceActor::new(instrument_ids, 5000, None);
 engine.add_actor(actor)?;
 ```
 
-The second argument is the log interval: print a progress line every 5,000
-updates per runner. The example sets it with the `LOG_INTERVAL` constant, so
-edit that constant to a smaller value (`200`) and rebuild when you want to
-capture finer-grained data for the panels at the end of this tutorial.
+The second argument sets the log interval: one progress line every 5,000 updates per runner. The example sets
+this interval through the `LOG_INTERVAL` constant. For more detailed panel data, change the constant to `200`
+and rebuild the example.
 
 The full source is at
 [`crates/trading/src/examples/actors/imbalance/actor.rs`](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/trading/src/examples/actors/imbalance/actor.rs).
@@ -183,26 +178,22 @@ The full source is at
 
 A `DataActor` in Rust needs three pieces:
 
-1. A struct holding a `DataActorCore` field plus your own state.
-2. `nautilus_actor!(YourType)` to wire up the core, plus a `Debug`
+1. A struct with a `DataActorCore` field and your own state.
+1. `nautilus_actor!(YourType)` to connect the core, plus a `Debug`
    implementation.
-3. The `DataActor` trait implementation with your callbacks.
+1. The `DataActor` trait implementation with your callbacks.
 
-The framework provides blanket `Actor` and `Component` implementations for
-runtime actors. The `nautilus_actor!` macro supplies the native runtime wiring
-when your struct holds a `DataActorCore`, so normal actor code only implements
-the callbacks it needs.
+The framework provides blanket `Actor` and `Component` implementations for runtime actors. For a struct with a
+`DataActorCore`, the `nautilus_actor!` macro supplies the native runtime connections. Actor code only
+implements the callbacks it needs.
 
-On start the actor subscribes to `OrderBookDeltas` for each instrument. On
-each update it sums per-side volume from the individual deltas and
-accumulates running totals. On stop it prints a per-instrument summary.
+At startup, the actor subscribes to `OrderBookDeltas` for each instrument. On each update, it sums volume from
+the individual deltas for each side and updates the totals. On stop, it prints a summary for each instrument.
 
-Setting `managed: false` in `subscribe_book_deltas` means the data engine
-does not maintain a separate order book copy in the cache for the actor.
-The exchange-side matching engine still maintains its own book through
-`book.apply_delta()` on every delta. Set `managed: true` if your actor
-needs to read the full book state from
-`self.cache().order_book(&instrument_id)`.
+With `managed: false` in `subscribe_book_deltas`, the data engine does not keep a separate order book in the
+cache for the actor. The exchange matching engine still maintains its own book through `book.apply_delta()` on
+every delta. If your actor needs the full book state from `self.cache().order_book(&instrument_id)`, set
+`managed: true`.
 
 ## Backtest engine setup
 
@@ -239,10 +230,9 @@ engine.add_actor(actor)?;
 engine.add_data(data, None, true, true)?;
 ```
 
-The `add_data` parameters are `(data, client_id, validate, sort)`. With
-`validate: true` the engine checks the first element's instrument is
-registered (the batch is assumed homogeneous). With `sort: true` it sorts
-by timestamp.
+The `add_data` parameters are `(data, client_id, validate, sort)`. With `validate: true`, the engine checks
+that the first element's instrument is registered. It assumes that the batch is homogeneous. With `sort:
+true`, it sorts the data by timestamp.
 
 ### Run
 
@@ -250,40 +240,38 @@ by timestamp.
 engine.run(None, None, None, false)?;
 ```
 
-The four parameters are `(start, end, run_config_id, streaming)`. Passing
-`None` for start/end uses the full time range of the loaded data.
+The four parameters are `(start, end, run_config_id, streaming)`. With `None` for `start` and `end`, the
+engine uses the full time range of the loaded data.
 
 ## What happens during the run
 
 For each data point in timestamp order the engine:
 
 1. Advances the clock to the data timestamp.
-2. Routes the data to the simulated exchange, which applies each delta to
+1. Routes the data to the simulated exchange, which applies each delta to
    the per-instrument `OrderBook` and runs the matching engine cycle.
-3. Publishes the data through the data engine and message bus, triggering
+1. Publishes the data through the data engine and message bus, which calls
    the actor's `on_book_deltas` callback.
-4. Drains command queues and settles venues (processes any pending orders).
+1. Drains command queues and settles venues (processes any pending orders).
 
-The matching engine maintains a full order book per instrument. The example
-has no orders to match, so the book state is ready to use as soon as it is
-swapped for a `Strategy`.
+The matching engine maintains a full order book for each instrument. The example has no orders to match. If
+you replace the actor with a `Strategy`, the strategy can use that book state.
 
 ## Results
 
-The self-recorded MATCH_ODDS dataset has three runners and 143,098 data points;
-a release build completes in about 48 ms:
+The self-recorded MATCH_ODDS dataset has three runners and 143,098 data points. A release build completes the
+run in approximately 48 ms:
 
-```
+```text
 --- Book imbalance summary ---
   1.253378068-2426.BETFAIR   updates: 53197  bid_vol: 212225339.34  ask_vol: 117422531.85  imbalance:  0.2876
   1.253378068-48783.BETFAIR  updates: 36475  bid_vol:  52506905.49  ask_vol:  19104694.72  imbalance:  0.4664
   1.253378068-58805.BETFAIR  updates: 25426  bid_vol:  24295351.82  ask_vol:  25692733.11  imbalance: -0.0280
 ```
 
-Runner `2426` (the eventual winner, settled at BSP 2.22) ends at +0.288:
-backing flow dominates lay flow throughout the market. Runner `48783` shows
-even stronger backing pressure (+0.466) over fewer updates, while `58805`
-ends close to neutral (-0.028).
+Runner `2426` (the eventual winner, settled at BSP 2.22) ends at +0.288. Backing flow exceeds lay flow
+throughout the market. Runner `48783` has stronger backing pressure (+0.466) over fewer updates. Runner
+`58805` ends close to neutral (-0.028).
 
 ![Cumulative imbalance per runner](./assets/backtest_book_imbalance_betfair/panel_a_imbalance_lines.png)
 
@@ -347,13 +335,12 @@ The complete example is at
 
 ## Next steps
 
-- **Add a strategy**. Replace the actor with a `Strategy` implementation
+- **Strategy**: Replace the actor with a `Strategy` implementation
   that places back/lay orders based on the imbalance signal. See the
   `EmaCross` example in
   `crates/trading/src/examples/strategies/ema_cross/strategy.rs` for the
   pattern.
-- **Use managed books**. Set `managed: true` in `subscribe_book_deltas` and
-  read the full book via `self.cache().order_book(&id)` for richer signals
-  like top-of-book spread, depth ratios, or weighted mid-price.
-- **Multiple markets**. Load several `.gz` files and run them through the
+- **Managed books**: Set `managed: true` in `subscribe_book_deltas`.
+  Read the full book through `self.cache().order_book(&id)` for top-of-book spread, depth ratios, or weighted mid-price.
+- **Multiple markets**: Load several `.gz` files and run them through the
   same engine to test cross-market signals.

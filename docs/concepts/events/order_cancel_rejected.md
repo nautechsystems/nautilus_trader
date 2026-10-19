@@ -1,8 +1,7 @@
 # OrderCancelRejected
 
-`OrderCancelRejected` represents a `CancelOrder` command having been rejected by the
-trading venue. The `ExecutionEngine` applies it to the order, updates the `Cache`, and
-publishes it on the `MessageBus`. It fires when the venue rejects a cancel request.
+`OrderCancelRejected` records the trading venue's rejection of a `CancelOrder` request. The
+`ExecutionEngine` applies it to the order, updates the `Cache`, and publishes it on the `MessageBus`.
 
 Typical transition: `PENDING_CANCEL` -> previous status (for example `ACCEPTED`). Handler:
 `on_order_cancel_rejected`.

@@ -130,7 +130,7 @@ impl OptionChainManager {
             msgbus_priority,
             bootstrapped,
             deferred_cmd_queue,
-            clock: clock.clone(),
+            clock: Rc::clone(clock),
             client_id,
             raw_mode,
         };
@@ -840,7 +840,7 @@ mod tests {
     use super::*;
 
     fn make_series_id() -> OptionSeriesId {
-        OptionSeriesId::new(
+        OptionSeriesId::new_derived(
             Venue::new("DERIBIT"),
             ustr::Ustr::from("BTC"),
             ustr::Ustr::from("BTC"),
@@ -873,7 +873,7 @@ mod tests {
             timer_name: None,
             msgbus_priority: 0,
             bootstrapped: true,
-            deferred_cmd_queue: queue.clone(),
+            deferred_cmd_queue: Rc::clone(&queue),
             clock,
             client_id: None,
             raw_mode: false,
@@ -950,7 +950,7 @@ mod tests {
             timer_name: None,
             msgbus_priority: 0,
             bootstrapped: false,
-            deferred_cmd_queue: queue.clone(),
+            deferred_cmd_queue: Rc::clone(&queue),
             clock,
             client_id: None,
             raw_mode: false,

@@ -21,7 +21,7 @@ use std::{
 };
 
 use nautilus_core::string::secret::SecretString;
-use nautilus_model::identifiers::InstrumentId;
+use nautilus_model::{identifiers::InstrumentId, types::Currency};
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
 
 use crate::common::{
@@ -149,6 +149,7 @@ impl InteractiveBrokersDataClientConfig {
                 "subscription_idle_timeout_secs exceeds the supported clock range",
             );
         }
+
         Ok(())
     }
 }
@@ -189,6 +190,9 @@ pub struct InteractiveBrokersExecutionClientConfig {
     /// Raw IB account code, such as `DU123456`. The Nautilus account ID becomes
     /// `{client name}-{code}`.
     pub account_id: Option<String>,
+    /// Base currency for the account, normally the currency IB reports the account summary in.
+    /// `None` keeps a multi-currency account with one balance per currency.
+    pub base_currency: Option<Currency>,
     /// Connection timeout in seconds.
     #[builder(default = 300)]
     pub connection_timeout: u64,
@@ -450,9 +454,13 @@ impl Default for DockerizedIBGatewayConfig {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_model::types::Currency;
     use rstest::rstest;
 
-    use super::{DockerizedIBGatewayConfig, InteractiveBrokersInstrumentProviderConfig};
+    use super::{
+        DockerizedIBGatewayConfig, InteractiveBrokersExecutionClientConfig,
+        InteractiveBrokersInstrumentProviderConfig,
+    };
     use crate::common::enums::IbSecurityType;
 
     #[rstest]
@@ -469,6 +477,18 @@ mod tests {
         assert!(debug.contains("<redacted>"));
         assert!(!json.contains("secret-password"));
         assert!(!json.contains("password"));
+    }
+
+    #[rstest]
+    fn test_execution_client_config_base_currency() {
+        let config: InteractiveBrokersExecutionClientConfig =
+            serde_json::from_value(serde_json::json!({"base_currency": "EUR"})).unwrap();
+
+        assert_eq!(config.base_currency, Some(Currency::EUR()));
+        assert_eq!(
+            InteractiveBrokersExecutionClientConfig::default().base_currency,
+            None
+        );
     }
 
     #[rstest]

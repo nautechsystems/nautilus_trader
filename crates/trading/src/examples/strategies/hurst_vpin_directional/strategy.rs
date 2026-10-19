@@ -74,8 +74,8 @@ impl HurstVpinDirectional {
     ///
     /// # Errors
     ///
-    /// Returns a [`ConfigError`] if either rolling window is outside `[1, 16_384]` or the base
-    /// strategy configuration is invalid.
+    /// Returns an error if either rolling window is outside `[1, 16_384]` or the base strategy
+    /// configuration is invalid.
     pub fn new_checked(config: HurstVpinDirectionalConfig) -> ConfigResult<Self> {
         config.validate()?;
         let hurst_window = config.hurst_window;

@@ -857,7 +857,8 @@ impl PyMessageBusScope {
     ///
     /// # Errors
     ///
-    /// Returns an error for an invalid pattern, a non-callable handler, or an inactive runtime bus.
+    /// Returns an error if the operation encounters an invalid pattern, a non-callable handler, or
+    /// an inactive runtime bus.
     pub fn subscribe_topic(
         &self,
         py: Python<'_>,
@@ -900,7 +901,8 @@ impl PyMessageBusScope {
     ///
     /// # Errors
     ///
-    /// Returns an error for an invalid pattern, a non-callable handler, or an inactive runtime bus.
+    /// Returns an error if the operation encounters an invalid pattern, a non-callable handler, or
+    /// an inactive runtime bus.
     pub fn unsubscribe_topic(&self, topic: &str, handler: &Bound<'_, PyAny>) -> PyResult<()> {
         let pattern = MStr::<Pattern>::pattern_checked(topic).map_err(to_pyvalue_err)?;
         let identity = CallableIdentity::new(handler)?;
@@ -1081,7 +1083,7 @@ mod tests {
             let err = MessageBusConfig::py_new(
                 Some(SerializationEncoding::Json),
                 None,
-                Some(SerializationEncoding::Capnp),
+                Some(SerializationEncoding::Sbe),
                 None,
                 None,
                 None,
@@ -1102,7 +1104,7 @@ mod tests {
                 err.value(py).to_string(),
                 format!(
                     "MessageBusConfig.encoding_builtin has unsupported value: {} is not supported by AccountState, OrderEventAny, PositionEvent, PortfolioSnapshot",
-                    SerializationEncoding::Capnp
+                    SerializationEncoding::Sbe
                 )
             );
         });

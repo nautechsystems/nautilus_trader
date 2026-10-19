@@ -45,6 +45,7 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use nautilus_network::{
+    ConnectionUrl,
     http::create_standard_nautilus_headers,
     mode::ConnectionMode,
     ratelimiter::{RateLimiter, clock::MonotonicClock},
@@ -97,7 +98,7 @@ const AUTH_WAIT_TIMEOUT: Duration = Duration::from_secs(5);
 pub const BATCH_PROCESSING_LIMIT: usize = 20;
 /// Public/market data WebSocket client for Bybit.
 pub struct BybitWebSocketClient {
-    url: String,
+    url: ConnectionUrl,
     environment: BybitEnvironment,
     product_type: Option<BybitProductType>,
     credential: Option<Credential>,
@@ -261,7 +262,7 @@ impl BybitWebSocketClient {
             BybitRateLimiter::for_websocket(&resolved_url, None, proxy_url.as_deref());
 
         Self {
-            url: resolved_url,
+            url: resolved_url.into(),
             environment,
             product_type: Some(product_type),
             credential: None,
@@ -330,7 +331,7 @@ impl BybitWebSocketClient {
         );
 
         Self {
-            url: resolved_url,
+            url: resolved_url.into(),
             environment,
             product_type: None,
             credential,
@@ -392,7 +393,7 @@ impl BybitWebSocketClient {
         );
 
         Self {
-            url: resolved_url,
+            url: resolved_url.into(),
             environment,
             product_type: None,
             credential,
@@ -463,7 +464,7 @@ impl BybitWebSocketClient {
         })?;
 
         let config = WebSocketConfig {
-            url: self.url.clone(),
+            url: self.url.expose().to_owned(),
             headers: Self::default_headers(),
             heartbeat_interval_secs: self.heartbeat,
             heartbeat_payload: Some(ping_msg),
@@ -490,7 +491,7 @@ impl BybitWebSocketClient {
             vec![],
         ));
         let connection_rate_limiter = websocket_connection_limiter(
-            &self.url,
+            self.url.expose(),
             self.proxy_url.as_ref().map(SecretString::expose_secret),
         );
         let connection_rate_keys: Arc<[Ustr]> = Arc::from([websocket_connection_key()]);
@@ -507,13 +508,13 @@ impl BybitWebSocketClient {
             .await
             .map_err(|e| {
                 BybitWsError::Transport(format!(
-                    "Failed to connect to {}: {e}. \
-                    If this is a DNS error, check your network configuration and DNS settings.",
-                    self.url,
+                    "WebSocket connection failed: {}: {}",
+                    self.url.origin(),
+                    e.redacted_message()
                 ))
             })?;
 
-        self.connection_mode.store(client.connection_mode_atomic());
+        let connection_mode = client.connection_mode_atomic();
         let reconnect_handle = client.reconnect_handle();
         client.set_auth_tracker(self.auth_tracker.clone(), self.requires_auth);
 
@@ -531,8 +532,10 @@ impl BybitWebSocketClient {
             // Commands sent before this swap went to a closed channel and close skips
             // unsubscribes, so the new session starts from clean subscription state.
             let _guard = self.subscription_guard.lock().await;
-            *self.cmd_tx.write().await = cmd_tx.clone();
+            let mut command_sender = self.cmd_tx.write().await;
             self.subscriptions.clear();
+            *command_sender = cmd_tx.clone();
+            self.connection_mode.store(connection_mode);
         }
 
         let signal = Arc::clone(&self.signal);
@@ -2267,6 +2270,8 @@ fn orderbook_topic(instrument_id: InstrumentId, depth: u32) -> String {
 
 #[cfg(test)]
 mod tests {
+    use futures_util::StreamExt;
+    use nautilus_testkit::connection::race_command_with_publication;
     use rstest::rstest;
 
     use super::*;
@@ -2274,6 +2279,69 @@ mod tests {
         common::{enums::BybitMarketUnit, testing::load_test_json},
         websocket::{messages::BybitWsFrame, parse_bybit_ws_frame},
     };
+
+    #[tokio::test]
+    async fn command_during_sender_publication_reaches_initialized_handler() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (received_tx, mut received_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let server = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let mut socket = tokio_tungstenite::accept_async(socket).await.unwrap();
+            while let Some(Ok(message)) = socket.next().await {
+                if let tokio_tungstenite::tungstenite::Message::Text(text) = message {
+                    let payload: serde_json::Value = serde_json::from_str(text.as_str()).unwrap();
+                    let _ = received_tx.send(payload);
+                }
+            }
+        });
+
+        let url = format!("ws://{addr}");
+        let mut ws_client = BybitWebSocketClient::new_public(Some(url), 30);
+        let observer = ws_client.clone();
+        let expected = serde_json::json!({
+            "op": "subscribe",
+            "args": [
+                "publicTrade.BTCUSDT"
+            ]
+        });
+
+        let command = HandlerCommand::Subscribe {
+            topics: vec![expected.to_string()],
+        };
+
+        race_command_with_publication(
+            Arc::clone(&ws_client.cmd_tx),
+            ws_client.connect(),
+            move || command,
+            || observer.is_active(),
+        )
+        .await
+        .expect("connect failed");
+        let received = tokio::time::timeout(Duration::from_secs(2), received_rx.recv()).await;
+        ws_client.close().await.expect("disconnect failed");
+        server.abort();
+
+        let payload = received
+            .expect("startup command must reach server")
+            .unwrap();
+        assert_eq!(payload, expected);
+    }
+
+    #[rstest]
+    #[case("wss://stream.example.com/feed", "wss://stream.example.com")]
+    #[case(
+        "wss://SYN-user:SYN-password@stream.example.com:9443/SYN-path?token=SYN-query#SYN-fragment",
+        "wss://stream.example.com:9443"
+    )]
+    fn test_debug_preserves_url_origin(#[case] url: &str, #[case] origin: &str) {
+        let client = BybitWebSocketClient::new_public(Some(url.to_string()), 30);
+        let debug = format!("{client:?}");
+        assert!(debug.contains(&format!("url: {origin:?}")));
+        assert!(!debug.contains("SYN-"));
+        assert_eq!(client.url.expose(), url);
+    }
 
     #[tokio::test]
     async fn test_drop_clone_does_not_cancel_handler() {

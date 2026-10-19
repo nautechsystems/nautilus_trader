@@ -88,9 +88,9 @@ impl LinearRegression {
     ///
     /// # Panics
     ///
-    /// This function panics if:
-    /// `period` is less than two.
-    /// `period` exceeds `MAX_PERIOD` (16,777,216).
+    /// Panics if:
+    /// - `period` is less than two.
+    /// - `period` exceeds `MAX_PERIOD` (16,777,216).
     #[must_use]
     pub fn new(period: usize) -> Self {
         Self::new_checked(period).expect(FAILED)

@@ -34,8 +34,8 @@ impl GroupSizeEncoding {
     ///
     /// # Errors
     ///
-    /// Returns `BufferTooShort` if fewer than 6 bytes are available and
-    /// `GroupSizeTooLarge` when `num_in_group` exceeds [`MAX_GROUP_SIZE`].
+    /// Returns an error if fewer than 6 bytes are available or `num_in_group` exceeds
+    /// [`MAX_GROUP_SIZE`].
     pub fn decode(buf: &[u8]) -> Result<Self, SbeDecodeError> {
         if buf.len() < Self::ENCODED_LENGTH {
             return Err(SbeDecodeError::BufferTooShort {
@@ -76,8 +76,8 @@ impl GroupSize16Encoding {
     ///
     /// # Errors
     ///
-    /// Returns `BufferTooShort` if fewer than 4 bytes are available and
-    /// `GroupSizeTooLarge` when `num_in_group` exceeds [`MAX_GROUP_SIZE`].
+    /// Returns an error if fewer than 4 bytes are available or `num_in_group` exceeds
+    /// [`MAX_GROUP_SIZE`].
     pub fn decode(buf: &[u8]) -> Result<Self, SbeDecodeError> {
         if buf.len() < Self::ENCODED_LENGTH {
             return Err(SbeDecodeError::BufferTooShort {
@@ -107,8 +107,8 @@ impl GroupSize16Encoding {
 ///
 /// # Errors
 ///
-/// Returns `BufferTooShort` when the buffer does not contain the full field and
-/// `InvalidUtf8` when the payload bytes are not valid UTF-8.
+/// Returns an error if the buffer does not contain the full field or the payload bytes are not
+/// valid UTF-8.
 pub fn decode_var_string8(buf: &[u8]) -> Result<(&str, usize), SbeDecodeError> {
     let mut cursor = SbeCursor::new(buf);
     let value = cursor.read_var_string8_ref()?;

@@ -24,6 +24,7 @@ use nautilus_model::defi::{Pool, PoolProfiler};
 use nautilus_model::{
     data::{
         Bar, BarType, FundingRateUpdate, InstrumentClose, InstrumentStatus, QuoteTick, TradeTick,
+        YieldCurve,
         prices::{IndexPriceUpdate, MarkPriceUpdate},
     },
     enums::{AggregationSource, OmsType, OrderSide, PositionSide, PriceType},
@@ -170,6 +171,14 @@ impl PyCache {
         self.0
             .borrow_mut()
             .add_instrument_close(close)
+            .map_err(to_pyvalue_err)
+    }
+
+    #[pyo3(name = "add_yield_curve")]
+    fn py_add_yield_curve(&mut self, yield_curve: YieldCurve) -> PyResult<()> {
+        self.0
+            .borrow_mut()
+            .add_yield_curve(yield_curve)
             .map_err(to_pyvalue_err)
     }
 
@@ -3138,9 +3147,7 @@ impl Cache {
 impl Cache {
     /// Adds a `Pool` to the cache.
     ///
-    /// # Errors
-    ///
-    /// This function currently does not return errors but follows the same pattern as other add methods for consistency.
+    /// This function does not return errors; the result type matches the other add methods.
     #[pyo3(name = "add_pool")]
     fn py_add_pool(&mut self, pool: Pool) -> PyResult<()> {
         self.add_pool(pool).map_err(to_pyvalue_err)
@@ -3166,9 +3173,7 @@ impl Cache {
 
     /// Adds a `PoolProfiler` to the cache.
     ///
-    /// # Errors
-    ///
-    /// This function currently does not return errors but follows the same pattern as other add methods for consistency.
+    /// This function does not return errors; the result type matches the other add methods.
     #[pyo3(name = "add_pool_profiler")]
     fn py_add_pool_profiler(&mut self, pool_profiler: PoolProfiler) -> PyResult<()> {
         self.add_pool_profiler(pool_profiler)

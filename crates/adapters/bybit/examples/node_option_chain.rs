@@ -151,7 +151,7 @@ impl DataActor for OptionChainTester {
         );
 
         // Build OptionSeriesId for the nearest expiry
-        let series_id = OptionSeriesId::new(
+        let series_id = OptionSeriesId::new_derived(
             venue,
             underlying_filter,
             settlement_currency,

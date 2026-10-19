@@ -131,6 +131,29 @@ impl SandboxExecutionClient {
         clock: Rc<RefCell<dyn Clock>>,
         cache: Rc<RefCell<Cache>>,
     ) -> anyhow::Result<Self> {
+        let fee_model = config.fee_model.clone().map(FeeModelHandle::from).ok_or_else(|| {
+            anyhow::anyhow!(
+                "SandboxExecutionClientConfig requires an explicit fee_model, including an explicit zero-fee model"
+            )
+        })?;
+
+        Ok(Self::new_with_fee_model(
+            core, config, clock, cache, fee_model,
+        ))
+    }
+
+    /// Creates a sandbox execution client with a runtime fee model.
+    ///
+    /// The supplied model takes precedence over `config.fee_model` and is shared
+    /// across all matching engines for this client.
+    #[must_use]
+    pub fn new_with_fee_model(
+        core: ExecutionClientCore,
+        config: SandboxExecutionClientConfig,
+        clock: Rc<RefCell<dyn Clock>>,
+        cache: Rc<RefCell<Cache>>,
+        fee_model: FeeModelHandle,
+    ) -> Self {
         let mut balances = AHashMap::new();
         for money in &config.starting_balances {
             balances.insert(money.currency.code.to_string(), *money);
@@ -141,12 +164,6 @@ impl SandboxExecutionClient {
             .clone()
             .map(FillModelHandle::from)
             .unwrap_or_default();
-
-        let fee_model = config.fee_model.clone().map(FeeModelHandle::from).ok_or_else(|| {
-            anyhow::anyhow!(
-                "SandboxExecutionClientConfig requires an explicit fee_model, including an explicit zero-fee model"
-            )
-        })?;
 
         let inner = Rc::new_cyclic(|weak: &std::rc::Weak<RefCell<SandboxInner>>| {
             RefCell::new(SandboxInner {
@@ -175,7 +192,7 @@ impl SandboxExecutionClient {
             core.base_currency,
         );
 
-        Ok(Self {
+        Self {
             core: RefCell::new(core),
             factory,
             config,
@@ -183,7 +200,7 @@ impl SandboxExecutionClient {
             handlers: RefCell::new(None),
             clock,
             cache,
-        })
+        }
     }
 
     /// Returns a reference to the configuration.
@@ -591,6 +608,11 @@ impl ExecutionClient for SandboxExecutionClient {
 
     fn oms_type(&self) -> OmsType {
         self.config.oms_type
+    }
+
+    // Position reports are always empty, so an absent report is not evidence of a flat position
+    fn provides_bulk_position_coverage(&self, _instrument_id: InstrumentId) -> bool {
+        false
     }
 
     fn settles_contract_expirations(&self) -> bool {
@@ -1436,23 +1458,7 @@ impl SandboxInner {
 
         self.ensure_matching_engine(&instrument);
 
-        let cache = self.cache.borrow();
-
-        if let Some(engine) = self.matching_engines.get_mut(&instrument_id) {
-            if let Some(quote) = cache.quote(&instrument_id)
-                && check_quote_or_drop("cached quote tick", quote, &instrument)
-            {
-                engine.process_quote_tick(quote);
-            }
-
-            if self.config.trade_execution
-                && let Some(trade) = cache.trade(&instrument_id)
-                && check_trade_or_drop("cached trade tick", trade, &instrument)
-            {
-                engine.process_trade_tick(trade);
-            }
-        }
-        drop(cache);
+        self.seed_cached_market_data(instrument_id);
 
         if let Some(engine) = self.matching_engines.get_mut(&instrument_id) {
             engine.process_order(&mut order, self.account_id);
@@ -1494,23 +1500,7 @@ impl SandboxInner {
 
             self.ensure_matching_engine(&instrument);
 
-            let cache = self.cache.borrow();
-
-            if let Some(engine) = self.matching_engines.get_mut(&instrument_id) {
-                if let Some(quote) = cache.quote(&instrument_id)
-                    && check_quote_or_drop("cached quote tick", quote, &instrument)
-                {
-                    engine.process_quote_tick(quote);
-                }
-
-                if self.config.trade_execution
-                    && let Some(trade) = cache.trade(&instrument_id)
-                    && check_trade_or_drop("cached trade tick", trade, &instrument)
-                {
-                    engine.process_trade_tick(trade);
-                }
-            }
-            drop(cache);
+            self.seed_cached_market_data(instrument_id);
 
             if let Some(engine) = self.matching_engines.get_mut(&instrument_id) {
                 let mut order_clone = order.clone();
@@ -1541,6 +1531,40 @@ impl SandboxInner {
             false,
             false,
         )));
+    }
+
+    fn seed_cached_market_data(&mut self, instrument_id: InstrumentId) {
+        let Some(engine) = self.matching_engines.get_mut(&instrument_id) else {
+            return;
+        };
+
+        // Cached ticks initialize an empty engine; replay would replenish consumed liquidity
+        if self.config.liquidity_consumption
+            && (engine.get_book().update_count != 0 || engine.get_core().last.is_some())
+        {
+            return;
+        }
+
+        let (quote, trade) = {
+            let cache = self.cache.borrow();
+            (
+                cache.quote(&instrument_id).copied(),
+                cache.trade(&instrument_id).copied(),
+            )
+        };
+
+        if let Some(quote) = quote
+            && check_quote_or_drop("cached quote tick", &quote, &engine.instrument)
+        {
+            engine.process_quote_tick(&quote);
+        }
+
+        if self.config.trade_execution
+            && let Some(trade) = trade
+            && check_trade_or_drop("cached trade tick", &trade, &engine.instrument)
+        {
+            engine.process_trade_tick(&trade);
+        }
     }
 
     fn apply_modify_order(&mut self, cmd: &ModifyOrder) {

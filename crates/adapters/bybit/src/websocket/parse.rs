@@ -375,7 +375,8 @@ pub fn parse_orderbook_deltas(
 ///
 /// # Errors
 ///
-/// Returns an error for a different depth or message type, missing sides, or invalid price or size data.
+/// Returns an error if the depth or message type differs, a side is missing, or price or size data
+/// is invalid.
 pub fn parse_orderbook_quote(
     msg: &BybitWsOrderbookDepthMsg,
     instrument: &InstrumentAny,

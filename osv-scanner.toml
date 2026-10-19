@@ -16,6 +16,10 @@ id = "RUSTSEC-2024-0388"
 reason = "derivative crate is unmaintained, transitive dependency with no available fix"
 
 [[IgnoredVulns]]
+id = "RUSTSEC-2024-0449"
+reason = "unsafe-libyaml unmaintained, build-only via dydx-proto, parsing requires V4_PROTO_REBUILD"
+
+[[IgnoredVulns]]
 id = "RUSTSEC-2025-0143"
 reason = "capnp unsound APIs, transitive via hypersync-client, awaiting upstream fix"
 

@@ -321,7 +321,7 @@ impl OrderMatchingCore {
     ///
     /// # Errors
     ///
-    /// Returns an [`OrderError::NotFound`] if the order is not present.
+    /// Returns an error if the order is not present.
     ///
     /// # Panics
     ///

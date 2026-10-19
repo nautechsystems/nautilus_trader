@@ -78,7 +78,7 @@ pub use crate::instruments::{
     synthetic::{SyntheticInstrument, SyntheticInstrumentError},
     tick_scheme::{
         FixedTickScheme, TickScheme, TickSchemeError, TickSchemeRule, TieredTickScheme,
-        tick_scheme_rule_from_name,
+        get_tick_scheme, list_tick_schemes, register_tick_scheme, tick_scheme_rule_from_name,
     },
     tokenized_asset::TokenizedAsset,
 };
@@ -405,7 +405,7 @@ pub trait Instrument: 'static + Send {
     ///
     /// # Errors
     ///
-    /// Returns an error when `price` is a sentinel value or would require rounding.
+    /// Returns an error if `price` is a sentinel value or would require rounding.
     #[inline(always)]
     fn try_normalize_price(&self, price: Price) -> CorrectnessResult<Price> {
         if price == ERROR_PRICE {
@@ -530,7 +530,7 @@ pub trait Instrument: 'static + Send {
     ///
     /// # Errors
     ///
-    /// Returns an error when `quantity` is undefined or would require rounding.
+    /// Returns an error if `quantity` is undefined or would require rounding.
     #[inline(always)]
     fn try_normalize_qty(&self, quantity: Quantity) -> CorrectnessResult<Quantity> {
         if quantity.is_undefined() {

@@ -32,19 +32,28 @@ use nautilus_core::UnixNanos;
 use nautilus_execution::models::fee::{FeeModelAny, MakerTakerFeeModel};
 use nautilus_model::{
     data::{
-        BarSpecification, BookOrder, Data, FundingRateUpdate, NautilusDataType, OrderBookDelta,
-        OrderBookDeltas, QuoteTick, TradeTick,
+        BarSpecification, BookOrder, Data, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate,
+        NautilusDataType, OptionGreekValues, OptionGreeks, OrderBookDelta, OrderBookDeltas,
+        QuoteTick, TradeTick,
+        stubs::{
+            quote_ethusdt_binance, stub_bar, stub_delta, stub_depth10, stub_instrument_close,
+            stub_instrument_status, stub_trade_ethusdt_buy,
+        },
     },
     enums::{
-        AccountType, AggressorSide, BarAggregation, BookAction, BookType, OmsType, OrderSide,
-        PriceType, RecordFlag,
+        AccountType, AggressorSide, BarAggregation, BookAction, BookType, GreeksConvention,
+        OmsType, OrderSide, PriceType, RecordFlag,
     },
     identifiers::{InstrumentId, StrategyId, TradeId},
     instruments::{CryptoPerpetual, Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
     types::{Price, Quantity},
 };
 use nautilus_persistence::{
-    backend::parquet::catalog::ParquetDataCatalog, catalog::types::CatalogInstrumentQuery,
+    backend::parquet::catalog::ParquetDataCatalog,
+    catalog::{
+        traits::{CatalogReader, CatalogWriter},
+        types::{CatalogInstrumentQuery, CatalogQuery},
+    },
 };
 use nautilus_trading::{Strategy, StrategyConfig, StrategyCore, nautilus_strategy};
 use rstest::*;
@@ -2332,4 +2341,104 @@ fn test_load_data_config_returns_individual_book_deltas_when_unbatched(
         })
         .collect();
     assert_eq!(rows, deltas.to_vec());
+}
+
+#[rstest]
+#[case::quotes(Data::Quote(quote_ethusdt_binance()))]
+#[case::trades(Data::Trade(stub_trade_ethusdt_buy()))]
+#[case::bars(Data::Bar(stub_bar()))]
+#[case::deltas(Data::BookDelta(stub_delta()))]
+#[case::depths(Data::BookDepth(Box::new(stub_depth10())))]
+#[case::mark(Data::MarkPrice(MarkPriceUpdate::new(InstrumentId::from("ETHUSDT-PERP.BINANCE"), Price::from("1.23456"), 0.into(), 0.into())))]
+#[case::index(Data::IndexPrice(IndexPriceUpdate::new(InstrumentId::from("ETHUSDT-PERP.BINANCE"), Price::from("2.34567"), 0.into(), 0.into())))]
+#[case::funding(Data::FundingRate(FundingRateUpdate::new(InstrumentId::from("ETHUSDT-PERP.BINANCE"), Decimal::new(12345, 8), Some(480), Some(100.into()), 0.into(), 0.into())))]
+#[case::greeks(Data::OptionGreeks(OptionGreeks {
+    instrument_id: InstrumentId::from("OPTION.BINANCE"), convention: GreeksConvention::BlackScholes,
+    greeks: OptionGreekValues { delta: 0.51, gamma: 0.012, vega: 1.25, theta: -0.75, rho: 0.03 },
+    mark_iv: Some(0.63), bid_iv: Some(0.62), ask_iv: Some(0.64), underlying_price: Some(1234.5),
+    open_interest: Some(789.0), ts_event: 0.into(), ts_init: 0.into(),
+}))]
+#[case::status(Data::InstrumentStatus(stub_instrument_status()))]
+#[case::close(Data::InstrumentClose(stub_instrument_close()))]
+#[case::instrument(Data::Instrument(Box::new(InstrumentAny::CryptoPerpetual(
+    crypto_perpetual_ethusdt()
+))))]
+fn test_catalog_replay_rows_match_timestamp_aligned_batches(
+    #[case] sample: Data,
+    #[values(1, 2, 5)] chunk_size: usize,
+) {
+    let temp = TempDir::new().unwrap();
+    let mut catalog = ParquetDataCatalog::new(temp.path(), None, None, None, None);
+    let data_type = NautilusDataType::from_data(&sample);
+    let ts = 1_700_000_000_000_000_123_u64;
+
+    let rows = (0..4)
+        .map(|index| {
+            let mut value = serde_json::to_value(&sample).unwrap();
+            let payload = match &sample {
+                Data::Instrument(_) => value["data"]
+                    .as_object_mut()
+                    .unwrap()
+                    .values_mut()
+                    .next()
+                    .unwrap(),
+                _ => &mut value,
+            };
+
+            payload["ts_event"] = serde_json::json!(ts - 20 - index);
+            payload["ts_init"] = serde_json::json!(ts + index / 2);
+            if matches!(sample, Data::BookDelta(_)) {
+                payload["flags"] = serde_json::json!(RecordFlag::F_LAST as u8);
+            }
+
+            if matches!(sample, Data::BookDepth(_)) {
+                value["type"] = serde_json::json!("OrderBookDepth");
+            }
+
+            serde_json::from_value::<Data>(value).unwrap()
+        })
+        .collect::<Vec<_>>();
+
+    CatalogWriter::write_data(&mut catalog, &rows, None, None, None).unwrap();
+
+    let bar_types = match &sample {
+        Data::Bar(bar) => Some(vec![bar.bar_type.to_string()]),
+        _ => None,
+    };
+
+    let config = BacktestDataConfig::builder()
+        .data_type(data_type.clone())
+        .instrument_id(sample.instrument_id())
+        .maybe_bar_types(bar_types)
+        .catalog_path(temp.path().to_string_lossy().to_string())
+        .batch_deltas(false)
+        .build()
+        .unwrap();
+    let loaded = BacktestNode::load_data_config(&config, None, None).unwrap();
+    let mut session = catalog
+        .query_batch_session(&CatalogQuery::new(data_type), Some(chunk_size))
+        .unwrap();
+    let mut batched = Vec::new();
+    while let Some(batch) = session.next_batch().unwrap() {
+        batched.extend(batch.to_data_vec_for_compat());
+    }
+
+    let expected = rows
+        .iter()
+        .map(|row| serde_json::to_value(row).unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        loaded
+            .iter()
+            .map(|row| serde_json::to_value(row).unwrap())
+            .collect::<Vec<_>>(),
+        expected
+    );
+    assert_eq!(
+        batched
+            .iter()
+            .map(|row| serde_json::to_value(row).unwrap())
+            .collect::<Vec<_>>(),
+        expected
+    );
 }

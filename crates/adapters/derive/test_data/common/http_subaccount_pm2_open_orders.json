@@ -1,0 +1,69 @@
+{
+  "collaterals": [
+    {
+      "amount": "46.000003180419",
+      "asset_name": "USDC",
+      "asset_type": "erc20",
+      "cumulative_interest": "0.000029191747",
+      "currency": "USDC",
+      "initial_margin": "46.000029191747",
+      "maintenance_margin": "46.000029191747",
+      "mark_price": "1",
+      "mark_value": "46.000003180419",
+      "pending_interest": "0.000026011328"
+    }
+  ],
+  "collaterals_initial_margin": "46.000029191747",
+  "collaterals_maintenance_margin": "46.000029191747",
+  "collaterals_value": "46.000003180419",
+  "currency": [
+    "BTC",
+    "ETH"
+  ],
+  "failed_to_fetch": false,
+  "initial_margin": "46.000029191747",
+  "is_under_liquidation": false,
+  "label": null,
+  "maintenance_margin": "46.000029191747",
+  "manager_id": 5,
+  "margin_type": "PM2",
+  "mm_credits": "0",
+  "open_orders": [
+    {
+      "amount": "0.1",
+      "average_price": "0",
+      "cancel_reason": "",
+      "creation_timestamp": 1751600000000,
+      "direction": "buy",
+      "filled_amount": "0",
+      "instrument_name": "ETH-PERP",
+      "is_transfer": false,
+      "label": "pm2-resting-fixture",
+      "last_update_timestamp": 1751600000000,
+      "limit_price": "2050.03",
+      "max_fee": "2",
+      "mmp": false,
+      "nonce": "1751600000000001",
+      "order_fee": "0",
+      "order_id": "pm2-resting-fixture-order",
+      "order_status": "open",
+      "order_type": "limit",
+      "signature": "0xdead",
+      "signature_expiry_sec": 1751600300,
+      "signer": "0x0000000000000000000000000000000000000001",
+      "subaccount_id": 42,
+      "time_in_force": "post_only",
+      "trigger_price": null
+    }
+  ],
+  "open_orders_margin": "-44.842739996872",
+  "positions": [],
+  "positions_initial_margin": "0",
+  "positions_maintenance_margin": "0",
+  "positions_value": "0",
+  "projected_margin_change": "0",
+  "risk_universe_id": 1,
+  "subaccount_id": 42,
+  "subaccount_value": "46.000003180419",
+  "vault_deposit_holds": []
+}

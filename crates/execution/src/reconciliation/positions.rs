@@ -32,13 +32,14 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     orders::Order,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
-    types::{Money, Price, Quantity},
+    types::{Money, Quantity},
 };
 use rust_decimal::{Decimal, RoundingStrategy};
 
 use super::{
     RECONCILIATION_ORDER_TAG,
     ids::{create_synthetic_trade_id, create_synthetic_venue_order_id},
+    reconciliation_price,
     types::{FillAdjustmentResult, FillSnapshot, ReconciliationResult, VenuePositionSnapshot},
 };
 
@@ -102,12 +103,14 @@ fn process_mass_status_for_reconciliation_inner(
     let mut order_map = extracted.orders;
     let mut fill_map = extracted.fills;
     let mut order_only_ids = IndexSet::new();
+    let mut order_only_fill_keys = IndexSet::new();
 
     if fill_snapshots.is_empty() {
         return Ok(ReconciliationResult {
             orders: order_map,
             fills: fill_map,
             order_only_ids,
+            order_only_fill_keys,
         });
     }
 
@@ -173,11 +176,23 @@ fn process_mass_status_for_reconciliation_inner(
             last_zero_crossing_ts,
             current_lifecycle_fills: _,
         } => {
-            // Filter fills to current lifecycle
-            for fills in fill_map.values_mut() {
-                fills.retain(|f| f.ts_event.as_u64() > last_zero_crossing_ts);
-            }
-            fill_map.retain(|_, fills| !fills.is_empty());
+            // Drop orders filled entirely before the current lifecycle. A spanning order keeps
+            // its earlier fills as order-only: they settle its filled quantity, not the position
+            fill_map.retain(|_, fills| {
+                if !fills
+                    .iter()
+                    .any(|f| f.ts_event.as_u64() > last_zero_crossing_ts)
+                {
+                    return false;
+                }
+                order_only_fill_keys.extend(
+                    fills
+                        .iter()
+                        .filter(|f| f.ts_event.as_u64() <= last_zero_crossing_ts)
+                        .map(|f| (f.account_id, f.instrument_id, f.trade_id)),
+                );
+                true
+            });
 
             // Keep only orders that have fills or are still working
             let orders_with_fills: ahash::AHashSet<VenueOrderId> =
@@ -203,6 +218,7 @@ fn process_mass_status_for_reconciliation_inner(
         orders: order_map,
         fills: fill_map,
         order_only_ids,
+        order_only_fill_keys,
     })
 }
 
@@ -575,10 +591,7 @@ pub(super) fn create_synthetic_fill_report(
 ) -> anyhow::Result<FillReport> {
     let trade_id = create_synthetic_trade_id(fill);
     let qty = Quantity::from_decimal_dp(fill.qty, instrument.size_precision())?;
-    let px = Price::from_decimal_dp(
-        cap_price_at_instrument_max(fill.px, instrument),
-        instrument.price_precision(),
-    )?;
+    let px = reconciliation_price(cap_price_at_instrument_max(fill.px, instrument), instrument)?;
 
     Ok(FillReport::new(
         account_id,
@@ -665,6 +678,7 @@ fn extract_instrument_reports(
         orders,
         fills,
         order_only_ids: IndexSet::new(),
+        order_only_fill_keys: IndexSet::new(),
     }
 }
 

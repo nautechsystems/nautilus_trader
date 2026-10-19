@@ -1,0 +1,14 @@
+[
+  {
+    "coin": "BTC", "px": "90000", "sz": "0.0004", "side": "B",
+    "time": 1700000001000, "startPosition": "0", "dir": "Open Long",
+    "closedPnl": "0", "hash": "0xquery-fill-a", "oid": 900029,
+    "crossed": true, "fee": "0.010", "feeToken": "USDC", "builderFee": "0.003", "tid": 9291
+  },
+  {
+    "coin": "BTC", "px": "91000", "sz": "0.0006", "side": "B",
+    "time": 1700000002000, "startPosition": "0.0004", "dir": "Open Long",
+    "closedPnl": "0", "hash": "0xquery-fill-b", "oid": 900029,
+    "crossed": false, "fee": "-0.002", "feeToken": "USDC", "tid": 9292
+  }
+]

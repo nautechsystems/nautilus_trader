@@ -187,6 +187,7 @@ impl SubscriptionState {
         {
             return true;
         }
+
         false
     }
 
@@ -398,7 +399,9 @@ impl SubscriptionState {
         reason = "callers use this for side effects"
     )]
     pub fn remove_reference(&self, topic: &str) -> bool {
-        let topic_ustr = Ustr::from(topic);
+        let Some(topic_ustr) = Ustr::from_existing(topic) else {
+            return false;
+        };
 
         // Use entry API to atomically decrement and remove if zero
         // This prevents race where another thread adds a reference between the check and remove
@@ -406,7 +409,6 @@ impl SubscriptionState {
             self.reference_counts.entry(topic_ustr)
         {
             let current = entry.get().get();
-
             if current == 1 {
                 entry.remove();
                 return true;
@@ -424,7 +426,10 @@ impl SubscriptionState {
     /// Returns 0 if the topic has no references.
     #[must_use]
     pub fn get_reference_count(&self, topic: &str) -> usize {
-        let topic_ustr = Ustr::from(topic);
+        let Some(topic_ustr) = Ustr::from_existing(topic) else {
+            return 0;
+        };
+
         self.reference_counts
             .get(&topic_ustr)
             .map_or(0, |count| count.get())
@@ -501,11 +506,13 @@ fn track_topic(map: &DashMap<Ustr, AHashSet<Ustr>>, channel: &str, symbol: Optio
 ///
 /// Removes the entire channel entry if no subscriptions remain after removal.
 fn untrack_topic(map: &DashMap<Ustr, AHashSet<Ustr>>, channel: &str, symbol: Option<&str>) {
-    let symbol = topic_symbol(symbol);
+    let Some((channel, symbol)) = existing_topic(channel, symbol) else {
+        return;
+    };
 
     // Use entry API to atomically remove symbol and check if empty
     // This prevents race conditions where another thread adds a symbol between operations
-    if let dashmap::mapref::entry::Entry::Occupied(mut entry) = map.entry(Ustr::from(channel)) {
+    if let dashmap::mapref::entry::Entry::Occupied(mut entry) = map.entry(channel) {
         entry.get_mut().remove(&symbol);
         if entry.get().is_empty() {
             entry.remove();
@@ -515,9 +522,23 @@ fn untrack_topic(map: &DashMap<Ustr, AHashSet<Ustr>>, channel: &str, symbol: Opt
 
 /// Checks if a topic exists in the given map.
 fn is_tracked(map: &DashMap<Ustr, AHashSet<Ustr>>, channel: &str, symbol: Option<&str>) -> bool {
-    let symbol = topic_symbol(symbol);
-    map.get(&Ustr::from(channel))
+    let Some((channel, symbol)) = existing_topic(channel, symbol) else {
+        return false;
+    };
+
+    map.get(&channel)
         .is_some_and(|entry| entry.contains(&symbol))
+}
+
+fn existing_topic(channel: &str, symbol: Option<&str>) -> Option<(Ustr, Ustr)> {
+    let channel = Ustr::from_existing(channel)?;
+
+    let symbol = match symbol {
+        Some(symbol) => Ustr::from_existing(symbol)?,
+        None => *CHANNEL_LEVEL_MARKER,
+    };
+
+    Some((channel, symbol))
 }
 
 fn topic_symbol(symbol: Option<&str>) -> Ustr {
@@ -1231,6 +1252,107 @@ mod tests {
     }
 
     #[rstest]
+    #[case::unknown_components(false, false, true)]
+    #[case::known_channel(true, false, true)]
+    #[case::known_symbol(false, true, true)]
+    #[case::channel_only(false, false, false)]
+    #[case::interned_untracked_pair(true, true, true)]
+    fn test_unknown_acknowledgments_do_not_intern(
+        #[values("confirm_subscribe", "confirm_unsubscribe", "mark_failure")] operation: &str,
+        #[case] channel_known: bool,
+        #[case] symbol_known: bool,
+        #[case] has_symbol: bool,
+    ) {
+        let state = SubscriptionState::new('.');
+        state.mark_subscribe("cache_confirmed.active");
+        state.confirm_subscribe("cache_confirmed.active");
+        state.mark_subscribe("cache_pending.waiting");
+        state.mark_unsubscribe("cache_cancelled.leaving");
+        state.add_reference("cache_confirmed.active");
+        state.add_reference("cache_confirmed.active");
+        let confirmed = state.confirmed();
+        let pending_subscribe = state.pending_subscribe();
+        let pending_unsubscribe = state.pending_unsubscribe();
+        let desired = snapshot(&state.desired);
+        let prefix = format!("unknown_ack_{operation}_{channel_known}_{symbol_known}_{has_symbol}");
+
+        let channel = if channel_known {
+            "cache_confirmed".to_string()
+        } else {
+            format!("{prefix}_channel")
+        };
+
+        let symbol = if symbol_known {
+            "waiting".to_string()
+        } else {
+            format!("{prefix}_symbol")
+        };
+
+        let topic = if has_symbol {
+            format!("{channel}.{symbol}")
+        } else {
+            channel.clone()
+        };
+
+        let channel_before = Ustr::from_existing(&channel);
+        let symbol_before = Ustr::from_existing(&symbol);
+        assert_eq!(channel_before.is_some(), channel_known);
+        assert_eq!(symbol_before.is_some(), symbol_known);
+
+        apply_op(&state, operation, &topic);
+
+        assert_eq!(Ustr::from_existing(&channel), channel_before);
+        assert_eq!(Ustr::from_existing(&symbol), symbol_before);
+        assert_eq!(state.confirmed(), confirmed);
+        assert_eq!(state.pending_subscribe(), pending_subscribe);
+        assert_eq!(state.pending_unsubscribe(), pending_unsubscribe);
+        assert_eq!(snapshot(&state.desired), desired);
+        assert_eq!(state.reference_counts.len(), 1);
+        assert_eq!(state.get_reference_count("cache_confirmed.active"), 2);
+    }
+
+    #[rstest]
+    fn test_unknown_reference_operations_do_not_intern(#[values(false, true)] remove: bool) {
+        let state = SubscriptionState::new('.');
+        let topic = format!("unknown_reference_lookup_{remove}");
+        assert_eq!(Ustr::from_existing(&topic), None);
+
+        if remove {
+            assert!(!state.remove_reference(&topic));
+        } else {
+            assert_eq!(state.get_reference_count(&topic), 0);
+        }
+
+        assert_eq!(Ustr::from_existing(&topic), None);
+        assert!(state.is_empty());
+        assert!(state.reference_counts.is_empty());
+    }
+
+    #[rstest]
+    fn test_untrack_unknown_topic_does_not_intern(#[values(false, true)] channel_known: bool) {
+        let state = SubscriptionState::new('.');
+        state.mark_subscribe("untrack_known.retained");
+        let pending = state.pending_subscribe();
+
+        let channel = if channel_known {
+            "untrack_known".to_string()
+        } else {
+            "untrack_unknown_channel".to_string()
+        };
+
+        let symbol = format!("untrack_unknown_symbol_{channel_known}");
+        let channel_before = Ustr::from_existing(&channel);
+        assert_eq!(channel_before.is_some(), channel_known);
+        assert_eq!(Ustr::from_existing(&symbol), None);
+
+        untrack_topic(&state.pending_subscribe, &channel, Some(&symbol));
+
+        assert_eq!(Ustr::from_existing(&channel), channel_before);
+        assert_eq!(Ustr::from_existing(&symbol), None);
+        assert_eq!(state.pending_subscribe(), pending);
+    }
+
+    #[rstest]
     fn test_state_machine_invalid_transitions() {
         let state = SubscriptionState::new('.');
 
@@ -1503,6 +1625,7 @@ mod tests {
                     state_clone.add_reference(topic);
                 }
             });
+
             handles.push(handle);
         }
 
@@ -1582,6 +1705,7 @@ mod tests {
                 state_clone.mark_subscribe("tickers.BTCUSDT");
                 state_clone.confirm_subscribe("tickers.BTCUSDT");
             });
+
             handles.push(handle);
         }
 
@@ -1616,6 +1740,7 @@ mod tests {
                 // Remove 1 reference (should still have 1 remaining)
                 state_clone.remove_reference(&topic);
             });
+
             handles.push(handle);
         }
 
@@ -1670,6 +1795,7 @@ mod tests {
                 // Confirm topic2
                 state_clone.confirm_subscribe(&topic2);
             });
+
             handles.push(handle);
         }
 
@@ -1678,6 +1804,7 @@ mod tests {
         }
 
         let actual = state.all_topics().into_iter().collect::<AHashSet<_>>();
+
         let expected = (0..50)
             .flat_map(|i| {
                 let topic2 = format!("channel.SYMBOL{}", i + 100);
@@ -1721,6 +1848,7 @@ mod tests {
                 // Subscribe ACK arrives
                 state_clone.confirm_subscribe(&topic);
             });
+
             handles.push(handle);
         }
 
@@ -1755,6 +1883,7 @@ mod tests {
                     state_clone.confirm_subscribe(&topic); // Re-confirm after retry
                 }
             });
+
             handles.push(handle);
         }
 
@@ -2042,6 +2171,7 @@ mod tests {
                     .map(|(topic, _state)| topic.clone())
                     .collect::<AHashSet<_>>()
             };
+
             let confirmed = state
                 .topics_from_map(&state.confirmed)
                 .into_iter()

@@ -195,7 +195,7 @@ pub fn binance_bar_to_arrow_record_batch(
 ///
 /// # Errors
 ///
-/// Returns an `EncodingError` if decoding fails.
+/// Returns an error if decoding fails.
 pub fn decode_binance_bar_batch(
     metadata: &HashMap<String, String>,
     record_batch: &RecordBatch,

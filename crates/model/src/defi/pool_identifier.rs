@@ -58,10 +58,10 @@ impl PoolIdentifier {
     /// # Errors
     ///
     /// Returns an error if:
-    /// - String doesn't start with "0x"
-    /// - Length is neither 42 nor 66 characters
-    /// - Contains invalid hex characters
-    /// - Address checksum validation fails (for Address variant)
+    /// - String doesn't start with "0x".
+    /// - Length is neither 42 nor 66 characters.
+    /// - Contains invalid hex characters.
+    /// - Address checksum validation fails (for Address variant).
     pub fn new_checked<T: AsRef<str>>(value: T) -> anyhow::Result<Self> {
         let value = value.as_ref();
 
@@ -186,7 +186,7 @@ impl PoolIdentifier {
     ///
     /// # Errors
     ///
-    /// Returns error if this is a `PoolId` variant or if parsing fails.
+    /// Returns an error if this is a `PoolId` variant or if parsing fails.
     pub fn to_address(&self) -> anyhow::Result<Address> {
         match self {
             Self::Address(s) => Address::parse_checksummed(s.as_str(), None)
@@ -201,7 +201,7 @@ impl PoolIdentifier {
     ///
     /// # Errors
     ///
-    /// Returns error if this is an Address variant or if hex decoding fails.
+    /// Returns an error if this is an Address variant or if hex decoding fails.
     pub fn to_pool_id_bytes(&self) -> anyhow::Result<[u8; 32]> {
         match self {
             Self::PoolId(s) => {

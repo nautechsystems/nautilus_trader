@@ -90,6 +90,7 @@ canceller = "canceller"
 # Industry standard abbreviations and technical terms
 CMO = "CMO" # Chande Momentum Oscillator
 BSE = "BSE" # Bombay Stock Exchange
+RTO = "RTO" # CME Russell 2000 quarterly option root
 Pn = "Pn" # Part of PnL (Profit and Loss)
 PnL = "PnL" # Profit and Loss
 PnLs = "PnLs" # Plural of PnL
@@ -109,6 +110,7 @@ ot = "ot" # Order tag variable naming convention
 
 # External API terms (exact spelling from their documentation)
 HIGHTER = "HIGHTER" # Binance API error code (their official typo)
+hearbeat = "hearbeat" # CoinAPI WebSocket heartbeat type (their official typo)
 cummulative = "cummulative" # Binance API: cummulativeQuoteQty field (their official typo)
 cummulativeQuoteQty = "cummulativeQuoteQty" # Binance API field name
 SETTELMENT = "SETTELMENT" # Binance API: DELIVERED_SETTELMENT income type (their official typo)

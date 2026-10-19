@@ -41,6 +41,7 @@ use nautilus_network::{
     websocket::{SubscriptionState, WebSocketClient},
 };
 use rust_decimal::Decimal;
+use serde::Deserialize;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
@@ -82,8 +83,11 @@ const HEARTBEAT_MESSAGE: &str = r#"{"method":"ping"}"#;
 )]
 #[allow(private_interfaces)]
 pub enum HandlerCommand {
-    /// Set the WebSocketClient for the handler to use.
-    SetClient(WebSocketClient),
+    /// Installs the WebSocket client and acknowledges initialization.
+    SetClient {
+        client: WebSocketClient,
+        initialized: tokio::sync::oneshot::Sender<()>,
+    },
     /// Disconnect the WebSocket connection.
     Disconnect,
     /// Subscribe to the given subscriptions.
@@ -385,9 +389,10 @@ impl FeedHandler {
                     };
 
                     match cmd {
-                        HandlerCommand::SetClient(client) => {
+                        HandlerCommand::SetClient { client, initialized } => {
                             log::debug!("Setting WebSocket client in handler");
                             self.client = Some(client);
+                            let _ = initialized.send(());
                         }
                         HandlerCommand::Disconnect => {
                             log::debug!("Handler received disconnect command");
@@ -557,7 +562,12 @@ impl FeedHandler {
                                 return Some(NautilusWsMessage::Reconnected);
                             }
 
-                            match serde_json::from_str::<HyperliquidWsMessage>(&text) {
+                            let context = FrameContext {
+                                client_id: self.client_id,
+                                payload_bytes: text.len(),
+                            };
+
+                            match super::messages::decode_ws_message(&text) {
                                 Ok(msg) => {
                                     if let HyperliquidWsMessage::Post { data } = msg {
                                         self.post_router.complete(data).await;
@@ -583,10 +593,8 @@ impl FeedHandler {
                                                     );
                                                 }
                                             }
-                                            method => {
-                                                log::warn!(
-                                                    "Unknown subscription response method: {method}"
-                                                );
+                                            _ => {
+                                                context.log_conversion_error("subscription_response", log::Level::Warn);
                                             }
                                         }
                                         continue;
@@ -596,6 +604,7 @@ impl FeedHandler {
 
                                     let nautilus_msgs = Self::parse_to_nautilus_messages(
                                         msg,
+                                        context,
                                         &self.instruments,
                                         &self.cloid_cache,
                                         &self.bar_types_cache,
@@ -620,7 +629,7 @@ impl FeedHandler {
                                     }
                                 }
                                 Err(e) => {
-                                    log::error!("Error parsing WebSocket message: {e}, text: {text}");
+                                    context.log_decode_error(&text, &e);
                                 }
                             }
                         }
@@ -763,6 +772,7 @@ impl FeedHandler {
     #[expect(clippy::too_many_arguments)]
     fn parse_to_nautilus_messages(
         msg: HyperliquidWsMessage,
+        context: FrameContext,
         instruments: &AHashMap<Ustr, InstrumentAny>,
         cloid_cache: &CloidCache,
         bar_types: &AHashMap<String, BarType>,
@@ -785,6 +795,7 @@ impl FeedHandler {
                 if let Some(account_id) = account_id
                     && let Some(msg) = Self::handle_order_updates(
                         &data,
+                        context,
                         instruments,
                         cloid_cache,
                         account_id,
@@ -799,22 +810,11 @@ impl FeedHandler {
                 match data {
                     WsUserEventData::Fills { fills } => {
                         log::debug!("Received {} fill(s) from userEvents channel", fills.len());
-                        for fill in &fills {
-                            log::debug!(
-                                "Fill: oid={}, coin={}, side={:?}, sz={}, px={}",
-                                fill.oid,
-                                fill.coin,
-                                fill.side,
-                                fill.sz,
-                                fill.px
-                            );
-                        }
 
                         if let Some(account_id) = account_id {
-                            log::debug!("Processing fills with account_id={account_id}");
-
                             if let Some(msg) = Self::handle_user_fills(
                                 &fills,
+                                context,
                                 instruments,
                                 cloid_cache,
                                 account_id,
@@ -851,6 +851,7 @@ impl FeedHandler {
                 if let Some(account_id) = account_id
                     && let Some(msg) = Self::handle_user_fills(
                         &data.fills,
+                        context,
                         instruments,
                         cloid_cache,
                         account_id,
@@ -946,11 +947,17 @@ impl FeedHandler {
                 ));
             }
             HyperliquidWsMessage::UserTwapHistory { data } => {
-                result.extend(Self::handle_user_twap_history(&data, instruments, ts_init));
+                result.extend(Self::handle_user_twap_history(
+                    &data,
+                    context,
+                    instruments,
+                    ts_init,
+                ));
             }
             HyperliquidWsMessage::UserTwapSliceFills { data } => {
                 result.extend(Self::handle_user_twap_slice_fills(
                     &data,
+                    context,
                     instruments,
                     ts_init,
                 ));
@@ -967,6 +974,7 @@ impl FeedHandler {
 
     fn handle_order_updates(
         data: &[super::messages::WsOrderData],
+        context: FrameContext,
         instruments: &AHashMap<Ustr, InstrumentAny>,
         cloid_cache: &CloidCache,
         account_id: AccountId,
@@ -992,12 +1000,12 @@ impl FeedHandler {
                         }
                         exec_reports.push(ExecutionReport::Order(report));
                     }
-                    Err(e) => {
-                        log::error!("Error parsing order update: {e}");
+                    Err(_) => {
+                        context.log_conversion_error("order_update", log::Level::Error);
                     }
                 }
             } else {
-                log::debug!("No instrument found for coin: {}", order_update.order.coin);
+                context.log_conversion_error("order_instrument", log::Level::Debug);
             }
         }
 
@@ -1010,6 +1018,7 @@ impl FeedHandler {
 
     fn handle_user_fills(
         fills: &[super::messages::WsFillData],
+        context: FrameContext,
         instruments: &AHashMap<Ustr, InstrumentAny>,
         cloid_cache: &CloidCache,
         account_id: AccountId,
@@ -1025,9 +1034,7 @@ impl FeedHandler {
             }
 
             let instrument = instruments.get(&fill.coin);
-
             if let Some(instrument) = instrument {
-                log::debug!("Found instrument for fill coin={}", fill.coin);
                 match parse_ws_fill_report(fill, instrument, account_id, ts_init) {
                     Ok(mut report) => {
                         // Mark processed only after successful parse
@@ -1051,13 +1058,13 @@ impl FeedHandler {
                         );
                         exec_reports.push(ExecutionReport::Fill(report));
                     }
-                    Err(e) => {
-                        log::error!("Error parsing fill: {e}");
+                    Err(_) => {
+                        context.log_conversion_error("fill", log::Level::Error);
                     }
                 }
             } else {
                 // Not marked as processed so fill is retried if instrument loads later
-                log::warn!("No instrument found for fill coin={}", fill.coin);
+                context.log_conversion_error("fill_instrument", log::Level::Warn);
             }
         }
 
@@ -1411,8 +1418,8 @@ impl FeedHandler {
         let impact_prices = match ctx.shared.impact_pxs {
             Some(values) => match values.as_slice() {
                 [bid, ask] => Some(HyperliquidImpactPrices {
-                    bid: bid.parse::<Price>().map_err(anyhow::Error::msg)?,
-                    ask: ask.parse::<Price>().map_err(anyhow::Error::msg)?,
+                    bid: Price::from_decimal(*bid).map_err(anyhow::Error::msg)?,
+                    ask: Price::from_decimal(*ask).map_err(anyhow::Error::msg)?,
                 }),
                 other => {
                     anyhow::bail!("expected 2 impact prices, received {}", other.len());
@@ -1465,6 +1472,7 @@ impl FeedHandler {
 
     fn handle_user_twap_history(
         data: &super::messages::WsUserTwapHistoryData,
+        context: FrameContext,
         instruments: &AHashMap<Ustr, InstrumentAny>,
         ts_init: UnixNanos,
     ) -> Vec<NautilusWsMessage> {
@@ -1480,8 +1488,8 @@ impl FeedHandler {
                         CustomData::new(Arc::new(payload), Self::twap_history_data_type(&user)),
                     )));
                 }
-                Err(e) => {
-                    log::error!("Error parsing TWAP history row: {e}");
+                Err(_) => {
+                    context.log_conversion_error("twap_history", log::Level::Error);
                 }
             }
         }
@@ -1491,6 +1499,7 @@ impl FeedHandler {
 
     fn handle_user_twap_slice_fills(
         data: &super::messages::WsUserTwapSliceFillsData,
+        context: FrameContext,
         instruments: &AHashMap<Ustr, InstrumentAny>,
         ts_init: UnixNanos,
     ) -> Vec<NautilusWsMessage> {
@@ -1506,8 +1515,8 @@ impl FeedHandler {
                         CustomData::new(Arc::new(payload), Self::twap_slice_fill_data_type(&user)),
                     )));
                 }
-                Err(e) => {
-                    log::error!("Error parsing TWAP slice fill: {e}");
+                Err(_) => {
+                    context.log_conversion_error("twap_slice_fill", log::Level::Error);
                 }
             }
         }
@@ -1540,6 +1549,43 @@ impl FeedHandler {
             Some(user.to_string()),
         )
     }
+}
+
+#[derive(Clone, Copy)]
+struct FrameContext {
+    client_id: u64,
+    payload_bytes: usize,
+}
+
+impl FrameContext {
+    fn log_decode_error(self, text: &str, e: &serde_json::Error) {
+        // Error Display can echo private values, including unknown tags and invalid fields
+        let channel = serde_json::from_str::<FrameHeader>(text)
+            .map_or("unknown", |header| header.channel.as_str());
+
+        log::error!(
+            "Error parsing WebSocket message: channel={channel}, client_id={}, payload_bytes={}, category={:?}, line={}, column={}",
+            self.client_id,
+            self.payload_bytes,
+            e.classify(),
+            e.line(),
+            e.column(),
+        );
+    }
+
+    fn log_conversion_error(self, class: &'static str, level: log::Level) {
+        log::log!(
+            level,
+            "Error parsing WebSocket message: class={class}, client_id={}, payload_bytes={}, category=conversion",
+            self.client_id,
+            self.payload_bytes,
+        );
+    }
+}
+
+#[derive(Deserialize)]
+struct FrameHeader {
+    channel: HyperliquidWsChannel,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -1717,10 +1763,10 @@ pub(crate) fn create_hyperliquid_timeout_error(msg: String) -> HyperliquidWsErro
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use std::{
         sync::{
-            Arc,
+            Arc, Once,
             atomic::{AtomicBool, AtomicUsize, Ordering},
         },
         time::Duration,
@@ -1775,15 +1821,18 @@ mod tests {
 
     const SECRET_MARKER: &str = "OUTBOUND_SECRET_MARKER";
 
-    struct OutboundLogCapture {
+    struct LogCapture {
         messages: Mutex<Vec<String>>,
     }
 
-    static OUTBOUND_LOG_CAPTURE: OutboundLogCapture = OutboundLogCapture {
+    static LOG_CAPTURE: LogCapture = LogCapture {
         messages: Mutex::new(Vec::new()),
     };
 
-    impl OutboundLogCapture {
+    static LOG_INSTALL: Once = Once::new();
+    static LOG_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+    impl LogCapture {
         fn clear(&self) {
             self.messages.lock().clear();
         }
@@ -1793,18 +1842,16 @@ mod tests {
         }
     }
 
-    impl Log for OutboundLogCapture {
+    impl Log for LogCapture {
         fn enabled(&self, metadata: &Metadata<'_>) -> bool {
-            metadata.level() == Level::Debug
-                && metadata.target() == "nautilus_hyperliquid::websocket::handler"
+            metadata.level() <= Level::Debug
+                && metadata.target().starts_with("nautilus_hyperliquid::")
         }
 
         fn log(&self, record: &Record<'_>) {
             if self.enabled(record.metadata()) {
                 let message = record.args().to_string();
-                if message.starts_with("Sending ") {
-                    self.messages.lock().push(message);
-                }
+                self.messages.lock().push(message);
             }
         }
 
@@ -1919,7 +1966,7 @@ mod tests {
                     prev_day_px: dec!(49000.0),
                     mark_px: dec!(50000.0),
                     mid_px: Some(dec!(50001.0)),
-                    impact_pxs: Some(vec!["50000.0".to_string(), "50002.0".to_string()]),
+                    impact_pxs: Some(vec![dec!(50000.0), dec!(50002.0)]),
                     day_base_vlm: Some(dec!(100.0)),
                 },
                 funding: dec!(0.0001),
@@ -2263,11 +2310,96 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn malformed_private_frame_logs_omit_payloads() {
+        let _capture = capture_logs().await;
+
+        let fixtures: serde_json::Value = serde_json::from_str(include_str!(
+            "../../test_data/ws_malformed_private_frames.json"
+        ))
+        .unwrap();
+        let signal = Arc::new(AtomicBool::new(false));
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel();
+        let cloid_cache: CloidCache = Arc::new(Mutex::new(FifoCacheMap::new()));
+
+        let mut handler = FeedHandler::new(
+            signal,
+            cmd_rx,
+            raw_rx,
+            out_tx,
+            Some("HYPERLIQUID-PRIVATE_ACCOUNT_SENTINEL".into()),
+            SubscriptionState::new(':'),
+            cloid_cache,
+            PostRouter::new(),
+            Arc::new(WebSocketRateLimits::new()),
+            937,
+        );
+        let instrument = btc_perp();
+        handler.instruments.insert(Ustr::from("BTC"), instrument);
+        let mut expected = Vec::new();
+
+        for case in fixtures["decode"].as_array().unwrap() {
+            let text = case["text"].as_str().unwrap();
+            let e = super::super::messages::decode_ws_message(text).unwrap_err();
+            let channel = case["channel"].as_str().unwrap();
+            expected.push(format!(
+                "Error parsing WebSocket message: channel={channel}, client_id=937, payload_bytes={}, category={:?}, line={}, column={}",
+                text.len(), e.classify(), e.line(), e.column(),
+            ));
+            raw_tx.send(Message::Text(text.to_owned().into())).unwrap();
+        }
+
+        for case in fixtures["conversion"].as_array().unwrap() {
+            let text = case["message"].to_string();
+            super::super::messages::decode_ws_message(&text).unwrap();
+            let class = case["class"].as_str().unwrap();
+            expected.push(format!(
+                "Error parsing WebSocket message: class={class}, client_id=937, payload_bytes={}, category=conversion",
+                text.len(),
+            ));
+            raw_tx.send(Message::Text(text.into())).unwrap();
+        }
+
+        raw_tx
+            .send(Message::Text(nautilus_network::RECONNECTED.into()))
+            .unwrap();
+        drop(raw_tx);
+        drop(cmd_tx);
+
+        let next = tokio::time::timeout(Duration::from_secs(5), handler.next())
+            .await
+            .unwrap();
+        let messages = LOG_CAPTURE.messages();
+
+        let errors: Vec<_> = messages
+            .iter()
+            .filter(|message| {
+                message.starts_with("Error parsing WebSocket message:")
+                    && message.contains("client_id=937,")
+            })
+            .cloned()
+            .collect();
+
+        assert!(matches!(next, Some(NautilusWsMessage::Reconnected)));
+        assert_eq!(errors, expected);
+
+        for secret in fixtures["secrets"].as_array().unwrap() {
+            let secret = secret.as_str().unwrap();
+            assert!(
+                messages.iter().all(|message| !message.contains(secret)),
+                "private value leaked: {secret}"
+            );
+        }
+
+        assert!(errors.iter().all(|message| message.len() < 240));
+    }
+
     #[rstest]
     #[tokio::test]
     async fn outbound_subscription_logs_omit_payload_bodies() {
-        log::set_logger(&OUTBOUND_LOG_CAPTURE).expect("test logger already installed");
-        log::set_max_level(LevelFilter::Debug);
+        let _capture = capture_logs().await;
 
         let signal = Arc::new(AtomicBool::new(false));
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -2304,7 +2436,8 @@ mod tests {
         })
         .unwrap()
         .len();
-        OUTBOUND_LOG_CAPTURE.clear();
+
+        LOG_CAPTURE.clear();
 
         cmd_tx
             .send(HandlerCommand::Subscribe {
@@ -2321,7 +2454,11 @@ mod tests {
 
         assert!(handler.next().await.is_none());
 
-        let messages = OUTBOUND_LOG_CAPTURE.messages();
+        let messages: Vec<_> = LOG_CAPTURE
+            .messages()
+            .into_iter()
+            .filter(|message| message.starts_with("Sending "))
+            .collect();
 
         assert!(
             messages
@@ -2342,6 +2479,21 @@ mod tests {
             }),
             "unsubscribe metadata missing or inaccurate: {messages:?}"
         );
+    }
+
+    pub(in crate::websocket) async fn capture_logs() -> tokio::sync::MutexGuard<'static, ()> {
+        let guard = LOG_LOCK.lock().await;
+        LOG_INSTALL.call_once(|| {
+            log::set_logger(&LOG_CAPTURE).expect("test logger already installed");
+            log::set_max_level(LevelFilter::Debug);
+        });
+
+        LOG_CAPTURE.clear();
+        guard
+    }
+
+    pub(in crate::websocket) fn captured_logs() -> Vec<String> {
+        LOG_CAPTURE.messages()
     }
 
     #[tokio::test]
@@ -2581,6 +2733,9 @@ mod tests {
                     .as_any()
                     .downcast_ref::<HyperliquidAllDexsAssetCtxs>()
                     .expect("expected HyperliquidAllDexsAssetCtxs");
+                let btc_impact_prices = payload.entries[0].impact_prices.as_ref().unwrap();
+                let xyz_impact_prices = payload.entries[1].impact_prices.as_ref().unwrap();
+
                 assert_eq!(payload.entries.len(), 2);
                 assert_eq!(
                     payload.entries[0].instrument_id,
@@ -2593,6 +2748,10 @@ mod tests {
                 );
                 assert_eq!(payload.entries[0].mark_price.to_string(), "77562.0");
                 assert_eq!(payload.entries[1].day_base_volume.to_string(), "5135.2458");
+                assert_eq!(btc_impact_prices.bid.as_decimal(), dec!(77558.0));
+                assert_eq!(btc_impact_prices.ask.as_decimal(), dec!(77559.0));
+                assert_eq!(xyz_impact_prices.bid.as_decimal(), dec!(29854.0));
+                assert_eq!(xyz_impact_prices.ask.as_decimal(), dec!(29855.0));
             }
             other => panic!("expected custom data, found {other:?}"),
         }
@@ -2610,7 +2769,7 @@ mod tests {
                             prev_day_px: dec!(76317.0),
                             mark_px: dec!(77562.0),
                             mid_px: Some(dec!(77558.5)),
-                            impact_pxs: Some(vec!["77558.0".to_string(), "77559.0".to_string()]),
+                            impact_pxs: Some(vec![dec!(77558.0), dec!(77559.0)]),
                             day_base_vlm: Some(dec!(19707.77457)),
                         },
                         funding: dec!(-0.0000015186),
@@ -2624,7 +2783,7 @@ mod tests {
                             prev_day_px: dec!(2094.6),
                             mark_px: dec!(2123.7),
                             mid_px: Some(dec!(2123.95)),
-                            impact_pxs: Some(vec!["2123.65".to_string(), "2124.0".to_string()]),
+                            impact_pxs: Some(vec![dec!(2123.65), dec!(2124.0)]),
                             day_base_vlm: Some(dec!(281686.8234999999)),
                         },
                         funding: dec!(0.0000125),

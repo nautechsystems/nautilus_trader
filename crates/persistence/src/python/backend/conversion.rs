@@ -73,7 +73,7 @@ pub(crate) fn catalog_record_type_from_py(
 ///
 /// # Errors
 ///
-/// Returns a `TypeError` if `data_type` is not a `NautilusDataType`.
+/// Returns an error if `data_type` is not a `NautilusDataType`.
 pub fn nautilus_data_type_from_py(data_type: &Bound<'_, PyAny>) -> PyResult<NautilusDataType> {
     data_type
         .extract::<PyRef<'_, PyNautilusDataType>>()

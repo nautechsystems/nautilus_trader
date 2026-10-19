@@ -39,10 +39,10 @@ use rust_decimal_macros::dec;
 
 use crate::{
     common::{
-        consts::{KRAKEN_ALTNAME_KEY, KRAKEN_VENUE},
+        consts::{KRAKEN_ALTNAME_KEY, KRAKEN_PAIR_DECIMALS_KEY, KRAKEN_VENUE},
         enums::{
             KrakenFuturesOrderEventType, KrakenFuturesOrderLifecycleStatus, KrakenInstrumentType,
-            KrakenPositionSide, KrakenSpotTrigger, KrakenTriggerSignal,
+            KrakenOrderType, KrakenPositionSide, KrakenSpotTrigger, KrakenTriggerSignal,
         },
     },
     http::models::{
@@ -266,7 +266,7 @@ pub fn parse_spot_instrument(
         .price_increment(price_increment)
         .size_increment(size_increment)
         .maybe_min_quantity(min_quantity)
-        .maybe_info(pair_altname_info(pair_name, definition.altname.as_str()))
+        .maybe_info(pair_info(pair_name, definition, price_increment.precision))
         .ts_event(ts_event)
         .ts_init(ts_init)
         .build()
@@ -326,6 +326,7 @@ pub fn parse_tokenized_instrument(
         .price_precision(price_increment.precision)
         .size_precision(size_increment.precision)
         .price_increment(price_increment)
+        .maybe_info(price_scale_info(definition, price_increment.precision))
         .size_increment(size_increment)
         .maybe_min_quantity(min_quantity)
         .ts_event(ts_event)
@@ -678,22 +679,54 @@ pub fn parse_millis_timestamp(value: f64, field: &str) -> anyhow::Result<UnixNan
     Ok(UnixNanos::from(nanos))
 }
 
-/// Carries Kraken's `altname` on the instrument when it differs from the `AssetPairs` key.
+/// Builds the `info` of a Spot currency pair: Kraken's `altname` when it differs from the
+/// `AssetPairs` key, and the wire price scale when it differs from the tick-size precision.
 ///
 /// The key is the instrument `raw_symbol`, while `OpenOrders`, `ClosedOrders` and `TradesHistory`
 /// spell the pair with the altname. A client whose instruments arrive through the cache APIs never
 /// sees the `AssetPairs` response, so the alias has to travel with the instrument.
-fn pair_altname_info(pair_name: &str, altname: &str) -> Option<Params> {
-    if altname == pair_name {
-        return None;
+fn pair_info(pair_name: &str, definition: &AssetPairInfo, price_precision: u8) -> Option<Params> {
+    let mut map = IndexMap::new();
+
+    if definition.altname.as_str() != pair_name {
+        map.insert(
+            KRAKEN_ALTNAME_KEY.to_string(),
+            serde_json::Value::String(definition.altname.to_string()),
+        );
     }
 
+    insert_price_scale(&mut map, definition, price_precision);
+    (!map.is_empty()).then(|| Params::from_index_map(map))
+}
+
+/// Builds the `info` of a tokenized pair: the wire price scale alone, when it differs from the
+/// tick-size precision.
+///
+/// The altname is left out, so the alias index built from cached instruments covers currency pairs
+/// only.
+fn price_scale_info(definition: &AssetPairInfo, price_precision: u8) -> Option<Params> {
     let mut map = IndexMap::new();
-    map.insert(
-        KRAKEN_ALTNAME_KEY.to_string(),
-        serde_json::Value::String(altname.to_string()),
-    );
-    Some(Params::from_index_map(map))
+    insert_price_scale(&mut map, definition, price_precision);
+    (!map.is_empty()).then(|| Params::from_index_map(map))
+}
+
+/// Records `pair_decimals` under [`KRAKEN_PAIR_DECIMALS_KEY`] when it is finer than
+/// `price_precision`; the checksum falls back to the tick-size precision when the key is absent.
+///
+/// A coarser `pair_decimals` is not recorded: rendering a price at fewer decimals than its
+/// precision truncates rather than rounds, so hashing at that scale would mismatch every message,
+/// while the tick-size precision reproduces the venue's digits.
+fn insert_price_scale(
+    map: &mut IndexMap<String, serde_json::Value>,
+    definition: &AssetPairInfo,
+    price_precision: u8,
+) {
+    if definition.pair_decimals > price_precision {
+        map.insert(
+            KRAKEN_PAIR_DECIMALS_KEY.to_string(),
+            serde_json::Value::from(u64::from(definition.pair_decimals)),
+        );
+    }
 }
 
 /// Parses a Kraken spot order into a Nautilus OrderStatusReport.
@@ -744,31 +777,55 @@ pub fn parse_order_status_report(
         .transpose()?
         .unwrap_or(ts_accepted);
 
-    let price = if !order.price.is_empty() && order.price != "0" {
-        Some(parse_price_with_precision(
-            &order.price,
-            instrument.price_precision(),
-            "order.price",
-        )?)
-    } else {
-        None
+    // The row's top-level `price` is the average fill price, which `avg_px` carries, so the
+    // order's prices come from the fields that hold them
+    let price_precision = instrument.price_precision();
+    let row_price =
+        |value: &str, field: &str| parse_spot_order_price(order_id, value, price_precision, field);
+    let price = match order.descr.ordertype {
+        KrakenOrderType::Limit => row_price(&order.descr.price, "descr.price")?,
+        KrakenOrderType::StopLossLimit | KrakenOrderType::TakeProfitLimit => {
+            row_price(&order.descr.price2, "descr.price2")?
+        }
+        // A trailing-stop-limit's `descr.price2` holds the offset AddOrder took until `misc` marks
+        // the order `stopped` and the limit after, while its `limitprice` holds the peak price in
+        // both states
+        KrakenOrderType::TrailingStopLimit
+            if order.misc.split(',').any(|info| info == "stopped") =>
+        {
+            row_price(&order.descr.price2, "descr.price2")?
+        }
+        KrakenOrderType::Market
+        | KrakenOrderType::SettlePosition
+        | KrakenOrderType::StopLoss
+        | KrakenOrderType::TakeProfit
+        | KrakenOrderType::TrailingStop
+        | KrakenOrderType::TrailingStopLimit => None,
     };
 
-    let trigger_price = order
+    let stop_price = order
         .stopprice
-        .as_ref()
-        .and_then(|p| {
-            if !p.is_empty() && p != "0" {
-                Some(parse_price_with_precision(
-                    p,
-                    instrument.price_precision(),
-                    "order.stopprice",
-                ))
-            } else {
-                None
-            }
-        })
-        .transpose()?;
+        .as_deref()
+        .map(|value| row_price(value, "stopprice"))
+        .transpose()?
+        .flatten();
+
+    // AddOrder takes a non-trailing conditional order's trigger as its `price`, which the
+    // description holds, so it stands in for a zero `stopprice`
+    let trigger_price = match order.descr.ordertype {
+        KrakenOrderType::StopLoss
+        | KrakenOrderType::TakeProfit
+        | KrakenOrderType::StopLossLimit
+        | KrakenOrderType::TakeProfitLimit => match stop_price {
+            Some(price) => Some(price),
+            None => row_price(&order.descr.price, "descr.price")?,
+        },
+        KrakenOrderType::Market
+        | KrakenOrderType::Limit
+        | KrakenOrderType::SettlePosition
+        | KrakenOrderType::TrailingStop
+        | KrakenOrderType::TrailingStopLimit => stop_price,
+    };
 
     let expire_time = if has_expiration {
         order
@@ -816,6 +873,30 @@ pub fn parse_order_status_report(
         cancel_reason: order.reason.clone(),
         ts_triggered: None,
     })
+}
+
+/// Parses a price field of a spot order row, an empty or zero value stating no price.
+///
+/// AddOrder also takes a price relative to the market, as an expression with a `+`, `-` or `#`
+/// prefix or a `%` suffix. Such a value is not a price, so it reads as none, with a warning,
+/// rather than failing the read.
+fn parse_spot_order_price(
+    order_id: &str,
+    value: &str,
+    precision: u8,
+    field: &str,
+) -> anyhow::Result<Option<Price>> {
+    if value.is_empty() {
+        return Ok(None);
+    }
+
+    if value.starts_with(['+', '-', '#']) || value.ends_with('%') {
+        log::warn!("Spot order {order_id} {field}='{value}' is a relative price, reporting none");
+        return Ok(None);
+    }
+
+    let price = parse_price_with_precision(value, precision, field)?;
+    Ok((!price.is_zero()).then_some(price))
 }
 
 /// Computes the average price for a Kraken spot order.
@@ -957,7 +1038,7 @@ pub fn parse_futures_order_status_report(
     Ok(OrderStatusReport {
         account_id,
         instrument_id,
-        client_order_id: order.cli_ord_id.as_ref().map(|s| s.as_str().into()),
+        client_order_id: echoed_client_order_id(order.client_order_id()),
         venue_order_id,
         order_side,
         order_type,
@@ -1038,7 +1119,7 @@ pub fn parse_futures_order_event_status_report(
     Ok(OrderStatusReport {
         account_id,
         instrument_id,
-        client_order_id: event.cli_ord_id.as_ref().map(|s| s.as_str().into()),
+        client_order_id: echoed_client_order_id(event.cli_ord_id.as_deref()),
         venue_order_id,
         order_side,
         order_type,
@@ -1070,6 +1151,15 @@ pub fn parse_futures_order_event_status_report(
         cancel_reason: None,
         ts_triggered: None,
     })
+}
+
+/// The client order ID a futures response echoes, if it carries a valid one. An empty or invalid
+/// echo, which another tool on the account may have sent, names no order rather than failing the
+/// read.
+fn echoed_client_order_id(echoed: Option<&str>) -> Option<ClientOrderId> {
+    echoed
+        .filter(|id| !id.is_empty())
+        .and_then(|id| ClientOrderId::new_checked(id).ok())
 }
 
 /// Parses a Kraken futures `/orders/status` entry into a Nautilus
@@ -1147,7 +1237,7 @@ pub fn parse_futures_order_status_details_report(
     Ok(OrderStatusReport {
         account_id,
         instrument_id: instrument.id(),
-        client_order_id: details.order.cli_ord_id.as_ref().map(|s| s.as_str().into()),
+        client_order_id: echoed_client_order_id(details.order.cli_ord_id.as_deref()),
         venue_order_id,
         order_side,
         order_type,
@@ -1270,7 +1360,7 @@ pub fn parse_futures_fill_report(
         report_id: UUID4::new(),
         ts_event,
         ts_init,
-        client_order_id: fill.cli_ord_id.as_ref().map(|s| s.as_str().into()),
+        client_order_id: echoed_client_order_id(fill.client_order_id()),
         venue_position_id: None,
     })
 }
@@ -1428,7 +1518,9 @@ mod tests {
         },
         http::{
             futures::models::{FuturesFillsResponse, FuturesOpenOrder, FuturesOrderEvent},
-            models::{AssetPairsResponse, KrakenResponse},
+            models::{
+                AssetPairsResponse, KrakenResponse, SpotClosedOrdersResult, SpotOpenOrdersResult,
+            },
         },
     };
 
@@ -1438,6 +1530,21 @@ mod tests {
         let path = format!("test_data/{filename}");
         std::fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("Failed to load test data from {path}: {e}"))
+    }
+
+    /// A futures response can echo a client order ID another tool on the account sent, so an empty
+    /// or otherwise invalid one names no order rather than failing the parse.
+    #[rstest]
+    #[case::valid(Some("O-1"), Some("O-1"))]
+    #[case::absent(None, None)]
+    #[case::empty(Some(""), None)]
+    #[case::whitespace(Some(" "), None)]
+    #[case::non_ascii(Some("ordre-\u{e9}"), None)]
+    fn test_echoed_client_order_id(#[case] echoed: Option<&str>, #[case] expected: Option<&str>) {
+        assert_eq!(
+            echoed_client_order_id(echoed),
+            expected.map(ClientOrderId::from)
+        );
     }
 
     #[rstest]
@@ -1911,6 +2018,222 @@ mod tests {
         assert_eq!(report.quantity, Quantity::from("0.50000000"));
     }
 
+    /// An order ID with the price, trigger price and average fill price its report carries.
+    type ExpectedPrices<'a> = (&'a str, Option<&'a str>, Option<&'a str>, Option<Decimal>);
+
+    /// A spot report carries the order's own prices, never the row's top-level `price`, which is
+    /// the average fill price. The limit comes from `descr.price` for a limit order and from
+    /// `descr.price2` for a stop-loss-limit or take-profit-limit order, or a trailing-stop-limit
+    /// order once `misc` marks it `stopped`; a trailing-stop-limit's `limitprice`, the peak price,
+    /// never stands in. The trigger comes from `stopprice`, which a non-trailing order fills only
+    /// once triggered, so `descr.price` stands in before. Each row is a Kraken response listed in
+    /// `test_data/README.md`.
+    #[rstest]
+    #[case::untriggered_open_orders(
+        "http_open_orders_conditional.json",
+        usdc_eur_instrument(),
+        &[
+            ("OCAP01-STOPL-000001", None, Some("1.3403"), None),
+            ("OCAP02-STOPL-000002", None, Some("1.3402"), None),
+            ("OCAP03-TAKEP-000003", None, Some("0.4467"), None),
+            ("OCAP04-STLMT-000004", Some("1.3403"), Some("1.3403"), None),
+            ("OCAP05-TPLMT-000005", Some("0.4467"), Some("0.4467"), None),
+            ("OCAP06-TRAIL-000006", None, Some("1.3402"), None),
+            ("OCAP07-TRLMT-000007", None, Some("1.3402"), None),
+            ("OCAP08-LIMIT-000008", Some("0.4467"), None, None),
+        ]
+    )]
+    #[case::untriggered_canceled_orders_one_amended(
+        "http_closed_orders_conditional_canceled.json",
+        usdc_eur_instrument(),
+        &[
+            ("OCAP01-STOPL-000001", None, Some("1.4296"), None),
+            ("OCAP02-STOPL-000002", None, Some("1.3402"), None),
+            ("OCAP03-TAKEP-000003", None, Some("0.4467"), None),
+            ("OCAP04-STLMT-000004", Some("1.3403"), Some("1.3403"), None),
+            ("OCAP05-TPLMT-000005", Some("0.4467"), Some("0.4467"), None),
+            ("OCAP06-TRAIL-000006", None, Some("1.3401"), None),
+            ("OCAP07-TRLMT-000007", None, Some("1.3401"), None),
+            ("OCAP08-LIMIT-000008", Some("0.4467"), None, None),
+        ]
+    )]
+    #[case::canceled_orders_three_triggered(
+        "http_closed_orders_conditional_triggered.json",
+        usdc_eur_instrument(),
+        &[
+            ("OCAP09-STLMT-000009", Some("0.4464"), Some("1.3394"), None),
+            ("OCAP10-TPLMT-000010", Some("0.4455"), Some("0.4465"), None),
+            ("OCAP11-STLMT-000011", Some("0.4464"), Some("0.8929"), None),
+            ("OCAP12-TPLMT-000012", Some("0.4464"), Some("0.8929"), None),
+            ("OCAP13-TRLMT-000013", Some("0.4465"), Some("0.8930"), None),
+        ]
+    )]
+    #[case::documented_open_limit_orders(
+        "http_open_orders_doc_example.json",
+        xbt_usd_instrument(),
+        &[
+            ("OQCLML-BW3P3-BUCMWZ", Some("30010.0"), None, Some(dec!(11253.7) / dec!(0.375))),
+            ("OB5VMB-B4U2U-DK2WRW", Some("14500.0"), None, None),
+        ]
+    )]
+    #[case::documented_filled_market_order(
+        "http_query_orders_doc_example.json",
+        xbt_usd_instrument(),
+        &[("OMMDB2-FSB6Z-7W3HPO", None, None, Some(dec!(30000)))]
+    )]
+    fn test_parse_order_status_report_prices_the_order_from_its_own_fields(
+        #[case] filename: &str,
+        #[case] instrument: InstrumentAny,
+        #[case] expected: &[ExpectedPrices],
+    ) {
+        let rows = spot_order_rows(filename);
+
+        for &(order_id, expected_price, expected_trigger_price, expected_avg_px) in expected {
+            let report = parse_order_status_report(
+                order_id,
+                &rows[order_id],
+                &instrument,
+                AccountId::new("KRAKEN-001"),
+                TS,
+            )
+            .unwrap();
+
+            assert_eq!(report.price, expected_price.map(Price::from), "{order_id}");
+            assert_eq!(
+                report.trigger_price,
+                expected_trigger_price.map(Price::from),
+                "{order_id}"
+            );
+            assert_eq!(report.avg_px, expected_avg_px, "{order_id}");
+        }
+    }
+
+    /// A description price that is neither a price nor a relative expression fails the row. The
+    /// input is synthetic: a captured limit row with its `descr.price` replaced.
+    #[rstest]
+    fn test_parse_order_status_report_fails_on_a_malformed_order_price() {
+        let order_id = "OCAP08-LIMIT-000008";
+        let mut order = spot_order_rows("http_open_orders_conditional.json")
+            .swap_remove(order_id)
+            .unwrap();
+        order.descr.price = "abc".to_string();
+
+        let result = parse_order_status_report(
+            order_id,
+            &order,
+            &usdc_eur_instrument(),
+            AccountId::new("KRAKEN-001"),
+            TS,
+        );
+
+        assert!(result.is_err(), "{result:?}");
+    }
+
+    /// An empty price or a relative expression reads as none rather than failing the row. The
+    /// inputs are synthetic: a captured stop-loss row with its `stopprice` replaced, so
+    /// `descr.price` stands in.
+    #[rstest]
+    #[case::empty("")]
+    #[case::relative("+1.5%")]
+    fn test_parse_order_status_report_reads_an_unpriced_stop_price_as_none(
+        #[case] stop_price: &str,
+    ) {
+        let order_id = "OCAP02-STOPL-000002";
+        let mut order = spot_order_rows("http_open_orders_conditional.json")
+            .swap_remove(order_id)
+            .unwrap();
+        order.stopprice = Some(stop_price.to_string());
+
+        let report = parse_order_status_report(
+            order_id,
+            &order,
+            &usdc_eur_instrument(),
+            AccountId::new("KRAKEN-001"),
+            TS,
+        )
+        .unwrap();
+
+        assert_eq!(report.trigger_price, Some(Price::from("1.3402")));
+    }
+
+    /// An untriggered trailing-stop-limit carries no price whatever its `descr.price2` holds, so an
+    /// unsigned offset, the form Nautilus submits, never reads as its limit. The input is
+    /// synthetic: a captured untriggered row with its offset written unsigned.
+    #[rstest]
+    fn test_parse_order_status_report_prices_no_untriggered_trailing_stop_limit() {
+        let order_id = "OCAP07-TRLMT-000007";
+        let mut order = spot_order_rows("http_open_orders_conditional.json")
+            .swap_remove(order_id)
+            .unwrap();
+        order.descr.price2 = "1.0000".to_string();
+
+        let report = parse_order_status_report(
+            order_id,
+            &order,
+            &usdc_eur_instrument(),
+            AccountId::new("KRAKEN-001"),
+            TS,
+        )
+        .unwrap();
+
+        assert_eq!(report.price, None);
+        assert_eq!(report.trigger_price, Some(Price::from("1.3402")));
+    }
+
+    /// The rows of a spot OpenOrders, ClosedOrders or QueryOrders response in `test_data`.
+    fn spot_order_rows(filename: &str) -> IndexMap<String, SpotOrder> {
+        let json = load_test_json(filename);
+        if filename.starts_with("http_open_orders") {
+            let response: KrakenResponse<SpotOpenOrdersResult> =
+                serde_json::from_str(&json).unwrap();
+            response.result.unwrap().open
+        } else if filename.starts_with("http_closed_orders") {
+            let response: KrakenResponse<SpotClosedOrdersResult> =
+                serde_json::from_str(&json).unwrap();
+            response.result.unwrap().closed
+        } else {
+            let response: KrakenResponse<IndexMap<String, SpotOrder>> =
+                serde_json::from_str(&json).unwrap();
+            response.result.unwrap()
+        }
+    }
+
+    fn usdc_eur_instrument() -> InstrumentAny {
+        InstrumentAny::CurrencyPair(
+            CurrencyPair::builder()
+                .instrument_id(InstrumentId::new(Symbol::new("USDC/EUR"), *KRAKEN_VENUE))
+                .raw_symbol(Symbol::new("USDCEUR"))
+                .base_currency(Currency::USDC())
+                .quote_currency(Currency::EUR())
+                .price_precision(4)
+                .size_precision(8)
+                .price_increment(Price::from("0.0001"))
+                .size_increment(Quantity::from("0.00000001"))
+                .ts_event(TS)
+                .ts_init(TS)
+                .build()
+                .unwrap(),
+        )
+    }
+
+    fn xbt_usd_instrument() -> InstrumentAny {
+        InstrumentAny::CurrencyPair(
+            CurrencyPair::builder()
+                .instrument_id(InstrumentId::new(Symbol::new("BTC/USD"), *KRAKEN_VENUE))
+                .raw_symbol(Symbol::new("XBTUSD"))
+                .base_currency(Currency::BTC())
+                .quote_currency(Currency::USD())
+                .price_precision(1)
+                .size_precision(8)
+                .price_increment(Price::from("0.1"))
+                .size_increment(Quantity::from("0.00000001"))
+                .ts_event(TS)
+                .ts_init(TS)
+                .build()
+                .unwrap(),
+        )
+    }
+
     fn create_mock_perp() -> InstrumentAny {
         let instrument_id = InstrumentId::new(Symbol::new("PI_XBTUSD"), *KRAKEN_VENUE);
         InstrumentAny::CryptoPerpetual(
@@ -1984,6 +2307,7 @@ mod tests {
             last_update_time: "2023-11-14T22:13:20.000Z".to_string(),
             trigger_signal: None,
             cli_ord_id: Some("my-tp-1".to_string()),
+            cli_ord_id_snake_case: None,
         };
         let instrument = create_mock_perp();
         let account_id = AccountId::new("KRAKEN-001");
@@ -2017,6 +2341,7 @@ mod tests {
             last_update_time: "2023-11-14T22:13:20.000Z".to_string(),
             trigger_signal: None,
             cli_ord_id: Some("my-tpl-1".to_string()),
+            cli_ord_id_snake_case: None,
         };
         let instrument = create_mock_perp();
         let account_id = AccountId::new("KRAKEN-001");
@@ -2382,6 +2707,48 @@ mod tests {
         assert!(result.starts_with('O'));
     }
 
+    /// The wire price scale is recorded only when `pair_decimals` is finer than the tick
+    /// precision: an equal or coarser scale leaves the key absent.
+    #[rstest]
+    fn test_pair_info_records_pair_decimals_only_when_finer_than_the_tick() {
+        let json = load_test_json("http_asset_pairs_tokenized.json");
+        let response: KrakenResponse<AssetPairsResponse> = serde_json::from_str(&json).unwrap();
+        let pairs = response.result.unwrap();
+        let (pair_name, definition) = pairs.iter().next().unwrap();
+
+        let same = parse_tokenized_instrument(pair_name, definition, TS, TS).unwrap();
+        assert!(
+            same.info()
+                .is_none_or(|info| !info.contains_key(KRAKEN_PAIR_DECIMALS_KEY)),
+            "a scale equal to the tick precision is not recorded"
+        );
+
+        let mut coarser = definition.clone();
+        coarser.pair_decimals = same.price_precision() - 1;
+        let tokenized = parse_tokenized_instrument(pair_name, &coarser, TS, TS).unwrap();
+        let spot = parse_spot_instrument(pair_name, &coarser, TS, TS).unwrap();
+        for instrument in [tokenized, spot] {
+            assert!(
+                instrument
+                    .info()
+                    .is_none_or(|info| !info.contains_key(KRAKEN_PAIR_DECIMALS_KEY)),
+                "a scale coarser than the tick precision is not recorded"
+            );
+        }
+
+        let mut finer = definition.clone();
+        finer.pair_decimals = same.price_precision() + 1;
+        let tokenized = parse_tokenized_instrument(pair_name, &finer, TS, TS).unwrap();
+        let spot = parse_spot_instrument(pair_name, &finer, TS, TS).unwrap();
+        for instrument in [tokenized, spot] {
+            let recorded = instrument
+                .info()
+                .and_then(|info| info.get(KRAKEN_PAIR_DECIMALS_KEY))
+                .and_then(serde_json::Value::as_u64);
+            assert_eq!(recorded, Some(u64::from(finer.pair_decimals)));
+        }
+    }
+
     #[rstest]
     fn test_parse_tokenized_instrument() {
         let json = load_test_json("http_asset_pairs_tokenized.json");
@@ -2408,6 +2775,22 @@ mod tests {
             }
             _ => panic!("Expected TokenizedAsset, received {instrument:?}"),
         }
+
+        // A key spelled differently from the altname, at a wire scale finer than the tick: the
+        // info carries the scale and nothing else.
+        let mut finer = definition.clone();
+        finer.pair_decimals = 3;
+        let instrument = parse_tokenized_instrument("XAAPLxZUSD", &finer, TS, TS).unwrap();
+        let info = instrument.info().expect("the wire scale is recorded");
+        assert_eq!(
+            info.get(KRAKEN_PAIR_DECIMALS_KEY)
+                .and_then(serde_json::Value::as_u64),
+            Some(3)
+        );
+        assert!(
+            !info.contains_key(KRAKEN_ALTNAME_KEY),
+            "a tokenized pair carries no altname alias"
+        );
     }
 
     #[rstest]

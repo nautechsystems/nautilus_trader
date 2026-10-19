@@ -395,7 +395,7 @@ fn test_process_pool_swap(data_engine: Rc<RefCell<DataEngine>>, data_client: Dat
     ));
 
     let token0 = Token::new(
-        chain.clone(),
+        Arc::clone(&chain),
         Address::from([0x11; 20]),
         "WETH".to_string(),
         "WETH".to_string(),
@@ -403,7 +403,7 @@ fn test_process_pool_swap(data_engine: Rc<RefCell<DataEngine>>, data_client: Dat
     );
 
     let token1 = Token::new(
-        chain.clone(),
+        Arc::clone(&chain),
         Address::from([0x22; 20]),
         "USDC".to_string(),
         "USDC".to_string(),
@@ -411,8 +411,8 @@ fn test_process_pool_swap(data_engine: Rc<RefCell<DataEngine>>, data_client: Dat
     );
 
     let mut pool = Pool::new(
-        chain.clone(),
-        dex.clone(),
+        Arc::clone(&chain),
+        Arc::clone(&dex),
         Address::from([0x12; 20]),
         PoolIdentifier::new("0x1234567890123456789012345678901234567890"),
         0u64,
@@ -505,7 +505,7 @@ fn test_process_pool_liquidity_update(
     ));
 
     let token0 = Token::new(
-        chain.clone(),
+        Arc::clone(&chain),
         Address::from([0x11; 20]),
         "WETH".to_string(),
         "WETH".to_string(),
@@ -513,7 +513,7 @@ fn test_process_pool_liquidity_update(
     );
 
     let token1 = Token::new(
-        chain.clone(),
+        Arc::clone(&chain),
         Address::from([0x22; 20]),
         "USDC".to_string(),
         "USDC".to_string(),
@@ -521,8 +521,8 @@ fn test_process_pool_liquidity_update(
     );
 
     let mut pool = Pool::new(
-        chain.clone(),
-        dex.clone(),
+        Arc::clone(&chain),
+        Arc::clone(&dex),
         Address::from([0x12; 20]),
         PoolIdentifier::new("0x1234567890123456789012345678901234567890"),
         0u64,
@@ -617,7 +617,7 @@ fn test_process_pool_fee_collect(
     ));
 
     let token0 = Token::new(
-        chain.clone(),
+        Arc::clone(&chain),
         Address::from([0x11; 20]),
         "WETH".to_string(),
         "WETH".to_string(),
@@ -625,7 +625,7 @@ fn test_process_pool_fee_collect(
     );
 
     let token1 = Token::new(
-        chain.clone(),
+        Arc::clone(&chain),
         Address::from([0x22; 20]),
         "USDC".to_string(),
         "USDC".to_string(),
@@ -633,8 +633,8 @@ fn test_process_pool_fee_collect(
     );
 
     let mut pool = Pool::new(
-        chain.clone(),
-        dex.clone(),
+        Arc::clone(&chain),
+        Arc::clone(&dex),
         Address::from([0x12; 20]),
         PoolIdentifier::new("0x1234567890123456789012345678901234567890"),
         0u64,
@@ -722,7 +722,7 @@ fn test_process_pool_flash(data_engine: Rc<RefCell<DataEngine>>, data_client: Da
     ));
 
     let token0 = Token::new(
-        chain.clone(),
+        Arc::clone(&chain),
         Address::from([0x11; 20]),
         "WETH".to_string(),
         "WETH".to_string(),
@@ -730,7 +730,7 @@ fn test_process_pool_flash(data_engine: Rc<RefCell<DataEngine>>, data_client: Da
     );
 
     let token1 = Token::new(
-        chain.clone(),
+        Arc::clone(&chain),
         Address::from([0x22; 20]),
         "USDC".to_string(),
         "USDC".to_string(),
@@ -738,8 +738,8 @@ fn test_process_pool_flash(data_engine: Rc<RefCell<DataEngine>>, data_client: Da
     );
 
     let mut pool = Pool::new(
-        chain.clone(),
-        dex.clone(),
+        Arc::clone(&chain),
+        Arc::clone(&dex),
         Address::from([0x12; 20]),
         PoolIdentifier::new("0x1234567890123456789012345678901234567890"),
         0u64,
@@ -814,7 +814,7 @@ fn test_pool_updater_processes_swap_updates_profiler(
     data_client: DataClientAdapter,
 ) {
     let client_id = data_client.client_id;
-    let cache = data_engine.borrow().cache().clone();
+    let cache = Rc::clone(data_engine.borrow().cache());
     data_engine.borrow_mut().register_client(data_client, None);
 
     // Create pool test data
@@ -834,7 +834,7 @@ fn test_pool_updater_processes_swap_updates_profiler(
     ));
 
     let token0 = Token::new(
-        chain.clone(),
+        Arc::clone(&chain),
         Address::from([0x11; 20]),
         "WETH".to_string(),
         "WETH".to_string(),
@@ -842,7 +842,7 @@ fn test_pool_updater_processes_swap_updates_profiler(
     );
 
     let token1 = Token::new(
-        chain.clone(),
+        Arc::clone(&chain),
         Address::from([0x22; 20]),
         "USDC".to_string(),
         "USDC".to_string(),
@@ -850,8 +850,8 @@ fn test_pool_updater_processes_swap_updates_profiler(
     );
 
     let mut pool = Pool::new(
-        chain.clone(),
-        dex.clone(),
+        Arc::clone(&chain),
+        Arc::clone(&dex),
         Address::from([0x12; 20]),
         PoolIdentifier::new("0x1234567890123456789012345678901234567890"),
         0u64,
@@ -875,8 +875,8 @@ fn test_pool_updater_processes_swap_updates_profiler(
 
     // Add liquidity so swaps can be processed
     let mint = PoolLiquidityUpdate::new(
-        chain.clone(),
-        dex.clone(),
+        Arc::clone(&chain),
+        Arc::clone(&dex),
         instrument_id,
         PoolIdentifier::from_address(Address::from([0x12; 20])),
         PoolLiquidityUpdateType::Mint,
@@ -1004,7 +1004,7 @@ fn test_pool_updater_processes_mint_updates_profiler(
     data_client: DataClientAdapter,
 ) {
     let client_id = data_client.client_id;
-    let cache = data_engine.borrow().cache().clone();
+    let cache = Rc::clone(data_engine.borrow().cache());
     data_engine.borrow_mut().register_client(data_client, None);
 
     // Create pool test data
@@ -1024,7 +1024,7 @@ fn test_pool_updater_processes_mint_updates_profiler(
     ));
 
     let token0 = Token::new(
-        chain.clone(),
+        Arc::clone(&chain),
         Address::from([0x11; 20]),
         "WETH".to_string(),
         "WETH".to_string(),
@@ -1032,7 +1032,7 @@ fn test_pool_updater_processes_mint_updates_profiler(
     );
 
     let token1 = Token::new(
-        chain.clone(),
+        Arc::clone(&chain),
         Address::from([0x22; 20]),
         "USDC".to_string(),
         "USDC".to_string(),
@@ -1040,8 +1040,8 @@ fn test_pool_updater_processes_mint_updates_profiler(
     );
 
     let mut pool = Pool::new(
-        chain.clone(),
-        dex.clone(),
+        Arc::clone(&chain),
+        Arc::clone(&dex),
         Address::from([0x12; 20]),
         PoolIdentifier::new("0x1234567890123456789012345678901234567890"),
         0u64,
@@ -1129,7 +1129,7 @@ fn test_pool_updater_processes_burn_updates_profiler(
     data_client: DataClientAdapter,
 ) {
     let client_id = data_client.client_id;
-    let cache = data_engine.borrow().cache().clone();
+    let cache = Rc::clone(data_engine.borrow().cache());
     data_engine.borrow_mut().register_client(data_client, None);
 
     // Create pool test data
@@ -1149,7 +1149,7 @@ fn test_pool_updater_processes_burn_updates_profiler(
     ));
 
     let token0 = Token::new(
-        chain.clone(),
+        Arc::clone(&chain),
         Address::from([0x11; 20]),
         "WETH".to_string(),
         "WETH".to_string(),
@@ -1157,7 +1157,7 @@ fn test_pool_updater_processes_burn_updates_profiler(
     );
 
     let token1 = Token::new(
-        chain.clone(),
+        Arc::clone(&chain),
         Address::from([0x22; 20]),
         "USDC".to_string(),
         "USDC".to_string(),
@@ -1165,8 +1165,8 @@ fn test_pool_updater_processes_burn_updates_profiler(
     );
 
     let mut pool = Pool::new(
-        chain.clone(),
-        dex.clone(),
+        Arc::clone(&chain),
+        Arc::clone(&dex),
         Address::from([0x12; 20]),
         PoolIdentifier::new("0x1234567890123456789012345678901234567890"),
         0u64,
@@ -1191,8 +1191,8 @@ fn test_pool_updater_processes_burn_updates_profiler(
     let owner = Address::from([0xAB; 20]);
 
     let mint = PoolLiquidityUpdate::new(
-        chain.clone(),
-        dex.clone(),
+        Arc::clone(&chain),
+        Arc::clone(&dex),
         instrument_id,
         PoolIdentifier::from_address(Address::from([0x12; 20])),
         PoolLiquidityUpdateType::Mint,
@@ -1280,7 +1280,7 @@ fn test_pool_updater_processes_collect_updates_profiler(
     data_client: DataClientAdapter,
 ) {
     let client_id = data_client.client_id;
-    let cache = data_engine.borrow().cache().clone();
+    let cache = Rc::clone(data_engine.borrow().cache());
     data_engine.borrow_mut().register_client(data_client, None);
 
     // Create pool test data
@@ -1300,7 +1300,7 @@ fn test_pool_updater_processes_collect_updates_profiler(
     ));
 
     let token0 = Token::new(
-        chain.clone(),
+        Arc::clone(&chain),
         Address::from([0x11; 20]),
         "WETH".to_string(),
         "WETH".to_string(),
@@ -1308,7 +1308,7 @@ fn test_pool_updater_processes_collect_updates_profiler(
     );
 
     let token1 = Token::new(
-        chain.clone(),
+        Arc::clone(&chain),
         Address::from([0x22; 20]),
         "USDC".to_string(),
         "USDC".to_string(),
@@ -1316,8 +1316,8 @@ fn test_pool_updater_processes_collect_updates_profiler(
     );
 
     let mut pool = Pool::new(
-        chain.clone(),
-        dex.clone(),
+        Arc::clone(&chain),
+        Arc::clone(&dex),
         Address::from([0x12; 20]),
         PoolIdentifier::new("0x1234567890123456789012345678901234567890"),
         0u64,
@@ -1395,7 +1395,7 @@ fn test_pool_updater_processes_flash_updates_profiler(
     data_client: DataClientAdapter,
 ) {
     let client_id = data_client.client_id;
-    let cache = data_engine.borrow().cache().clone();
+    let cache = Rc::clone(data_engine.borrow().cache());
     data_engine.borrow_mut().register_client(data_client, None);
 
     // Create pool test data
@@ -1415,7 +1415,7 @@ fn test_pool_updater_processes_flash_updates_profiler(
     ));
 
     let token0 = Token::new(
-        chain.clone(),
+        Arc::clone(&chain),
         Address::from([0x11; 20]),
         "WETH".to_string(),
         "WETH".to_string(),
@@ -1423,7 +1423,7 @@ fn test_pool_updater_processes_flash_updates_profiler(
     );
 
     let token1 = Token::new(
-        chain.clone(),
+        Arc::clone(&chain),
         Address::from([0x22; 20]),
         "USDC".to_string(),
         "USDC".to_string(),
@@ -1431,8 +1431,8 @@ fn test_pool_updater_processes_flash_updates_profiler(
     );
 
     let mut pool = Pool::new(
-        chain.clone(),
-        dex.clone(),
+        Arc::clone(&chain),
+        Arc::clone(&dex),
         Address::from([0x12; 20]),
         PoolIdentifier::from_address(Address::from([0x12; 20])),
         0u64,
@@ -1528,7 +1528,7 @@ fn test_process_defi_pools_publishes_distinct_tradable_instruments(
     ));
 
     let token0 = Token::new(
-        chain.clone(),
+        Arc::clone(&chain),
         Address::from([0x11; 20]),
         "Base token".to_string(),
         "BASE".to_string(),
@@ -1536,7 +1536,7 @@ fn test_process_defi_pools_publishes_distinct_tradable_instruments(
     );
 
     let token1 = Token::new(
-        chain.clone(),
+        Arc::clone(&chain),
         Address::from([0x22; 20]),
         "Quote token".to_string(),
         "QUOTE".to_string(),
@@ -1547,8 +1547,8 @@ fn test_process_defi_pools_publishes_distinct_tradable_instruments(
     let address_invalid = Address::from([0xCC; 20]);
 
     let pool_a = Pool::new(
-        chain.clone(),
-        dex.clone(),
+        Arc::clone(&chain),
+        Arc::clone(&dex),
         address_a,
         PoolIdentifier::from_address(address_a),
         1,
@@ -1560,8 +1560,8 @@ fn test_process_defi_pools_publishes_distinct_tradable_instruments(
     );
 
     let pool_b = Pool::new(
-        chain.clone(),
-        dex.clone(),
+        Arc::clone(&chain),
+        Arc::clone(&dex),
         address_b,
         PoolIdentifier::from_address(address_b),
         2,
@@ -1634,7 +1634,7 @@ fn test_process_defi_pools_publishes_distinct_tradable_instruments(
         engine.process_defi_data(DefiData::Pool(pool_invalid));
     }
 
-    let cache = data_engine.borrow().cache().clone();
+    let cache = Rc::clone(data_engine.borrow().cache());
     let cache = cache.borrow();
     let messages = saving_handler.get_messages();
     let selected = cache.instrument(&id_b);
@@ -1688,7 +1688,7 @@ fn test_setup_pool_updater_skips_snapshot_when_pool_in_cache(
     ));
 
     let token0 = Token::new(
-        chain.clone(),
+        Arc::clone(&chain),
         Address::from([0x11; 20]),
         "WETH".to_string(),
         "WETH".to_string(),
@@ -1696,7 +1696,7 @@ fn test_setup_pool_updater_skips_snapshot_when_pool_in_cache(
     );
 
     let token1 = Token::new(
-        chain.clone(),
+        Arc::clone(&chain),
         Address::from([0x22; 20]),
         "USDC".to_string(),
         "USDC".to_string(),
@@ -1787,8 +1787,8 @@ fn test_pool_events_publish_while_snapshot_pending(
         )));
 
     let update = PoolLiquidityUpdate::new(
-        pool.chain.clone(),
-        pool.dex.clone(),
+        Arc::clone(&pool.chain),
+        Arc::clone(&pool.dex),
         instrument_id,
         pool.pool_identifier,
         PoolLiquidityUpdateType::Mint,
@@ -1808,8 +1808,8 @@ fn test_pool_events_publish_while_snapshot_pending(
     );
 
     let collect = PoolFeeCollect::new(
-        pool.chain.clone(),
-        pool.dex.clone(),
+        Arc::clone(&pool.chain),
+        Arc::clone(&pool.dex),
         instrument_id,
         pool.pool_identifier,
         1002u64,
@@ -1826,8 +1826,8 @@ fn test_pool_events_publish_while_snapshot_pending(
     );
 
     let flash = PoolFlash::new(
-        pool.chain.clone(),
-        pool.dex.clone(),
+        Arc::clone(&pool.chain),
+        Arc::clone(&pool.dex),
         instrument_id,
         pool.pool_identifier,
         1003u64,
@@ -1983,7 +1983,7 @@ fn test_reset_clears_pool_updater_state(
         }))
     };
 
-    let engine_cache = data_engine.borrow().cache().clone();
+    let engine_cache = Rc::clone(data_engine.borrow().cache());
     engine_cache.borrow_mut().add_pool(pool.clone()).unwrap();
     data_engine.borrow_mut().execute(subscribe());
 
@@ -2037,7 +2037,7 @@ fn test_setup_pool_updater_does_not_cache_profiler_on_initialize_failure(
     ));
 
     let token0 = Token::new(
-        chain.clone(),
+        Arc::clone(&chain),
         Address::from([0x11; 20]),
         "WETH".to_string(),
         "WETH".to_string(),
@@ -2045,7 +2045,7 @@ fn test_setup_pool_updater_does_not_cache_profiler_on_initialize_failure(
     );
 
     let token1 = Token::new(
-        chain.clone(),
+        Arc::clone(&chain),
         Address::from([0x22; 20]),
         "USDC".to_string(),
         "USDC".to_string(),
@@ -2141,7 +2141,7 @@ fn test_pool_arrival_with_snapshot_pending_does_not_create_profiler(
     ));
 
     let token0 = Token::new(
-        chain.clone(),
+        Arc::clone(&chain),
         Address::from([0x11; 20]),
         "WETH".to_string(),
         "WETH".to_string(),
@@ -2149,7 +2149,7 @@ fn test_pool_arrival_with_snapshot_pending_does_not_create_profiler(
     );
 
     let token1 = Token::new(
-        chain.clone(),
+        Arc::clone(&chain),
         Address::from([0x22; 20]),
         "USDC".to_string(),
         "USDC".to_string(),
@@ -2256,7 +2256,7 @@ fn test_pool_snapshot_handler_refuses_empty_stub_at_creation_block(
     ));
 
     let token0 = Token::new(
-        chain.clone(),
+        Arc::clone(&chain),
         Address::from([0x11; 20]),
         "WETH".to_string(),
         "WETH".to_string(),
@@ -2264,7 +2264,7 @@ fn test_pool_snapshot_handler_refuses_empty_stub_at_creation_block(
     );
 
     let token1 = Token::new(
-        chain.clone(),
+        Arc::clone(&chain),
         Address::from([0x22; 20]),
         "USDC".to_string(),
         "USDC".to_string(),
@@ -2339,7 +2339,7 @@ fn test_process_option_greeks_caches_and_publishes(
     };
 
     let _ = msgbus::get_message_bus();
-    let data_engine = make_option_chain_engine(clock.clone(), cache.clone());
+    let data_engine = make_option_chain_engine(Rc::clone(&clock), Rc::clone(&cache));
 
     let client_id = ClientId::new("DERIBIT");
     let venue = Venue::new("DERIBIT");
@@ -2347,7 +2347,7 @@ fn test_process_option_greeks_caches_and_publishes(
 
     register_mock_client(
         clock,
-        cache.clone(),
+        Rc::clone(&cache),
         client_id,
         venue,
         Some(venue),

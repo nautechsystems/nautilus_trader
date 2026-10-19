@@ -71,16 +71,19 @@ use nautilus_live::{ExecutionClientCore, SocketReconnectRegistry, SocketReconnec
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
     enums::{
-        AccountType, OmsType, OrderSide, OrderStatus, TimeInForce, TrailingOffsetType, TriggerType,
+        AccountType, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce, TrailingOffsetType,
+        TriggerType,
     },
-    events::{AccountState, OrderDenied, OrderEventAny},
+    events::{AccountState, OrderCanceled, OrderDenied, OrderEventAny},
     identifiers::{
-        AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, Symbol, TraderId,
+        AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, Symbol, TradeId, TraderId,
         VenueOrderId,
     },
+    instruments::stubs::crypto_perpetual_ethusdt,
     orders::{
         LimitIfTouchedOrder, MarketIfTouchedOrder, MarketOrder, Order, OrderAny, StopLimitOrder,
-        StopMarketOrder, TrailingStopMarketOrder,
+        StopMarketOrder, TrailingStopMarketOrder, builder::OrderTestBuilder,
+        stubs::TestOrderEventStubs,
     },
     types::{AccountBalance, Money, Price, Quantity},
 };
@@ -104,6 +107,9 @@ struct TestServerState {
     reject_trade_websocket: Arc<AtomicBool>,
     empty_orders_realtime: Arc<AtomicBool>,
     rejected_orders_realtime: Arc<AtomicBool>,
+    cancel_all_delayed_reports: Arc<AtomicBool>,
+    cancel_all_partial_fills: Arc<AtomicBool>,
+    cancel_all_history: Arc<AtomicBool>,
     orders_realtime_requests: Arc<AtomicUsize>,
     cancel_order_ret_code: Arc<AtomicUsize>,
     cancel_order_requests: Arc<AtomicUsize>,
@@ -132,6 +138,9 @@ impl Default for TestServerState {
             reject_trade_websocket: Arc::new(AtomicBool::new(false)),
             empty_orders_realtime: Arc::new(AtomicBool::new(false)),
             rejected_orders_realtime: Arc::new(AtomicBool::new(false)),
+            cancel_all_delayed_reports: Arc::new(AtomicBool::new(false)),
+            cancel_all_partial_fills: Arc::new(AtomicBool::new(false)),
+            cancel_all_history: Arc::new(AtomicBool::new(false)),
             orders_realtime_requests: Arc::new(AtomicUsize::new(0)),
             cancel_order_ret_code: Arc::new(AtomicUsize::new(0)),
             cancel_order_requests: Arc::new(AtomicUsize::new(0)),
@@ -179,7 +188,15 @@ async fn handle_get_instruments(query: Query<HashMap<String, String>>) -> impl I
         }
     };
 
-    let instruments = load_test_data(filename);
+    let mut instruments = load_test_data(filename);
+    if category == Some("linear") {
+        let list = instruments["result"]["list"].as_array_mut().unwrap();
+        let mut sol = list[1].clone();
+        sol["symbol"] = json!("SOLUSDT");
+        sol["baseCoin"] = json!("SOL");
+        list.push(sol);
+    }
+
     Json(instruments).into_response()
 }
 
@@ -274,6 +291,7 @@ async fn handle_get_empty_report_list(headers: HeaderMap) -> impl IntoResponse {
 async fn handle_get_orders_realtime(
     State(state): State<TestServerState>,
     headers: HeaderMap,
+    Query(query): Query<HashMap<String, String>>,
 ) -> impl IntoResponse {
     if !has_auth_headers(&headers) {
         return (
@@ -286,6 +304,38 @@ async fn handle_get_orders_realtime(
             })),
         )
             .into_response();
+    }
+
+    if state.cancel_all_delayed_reports.load(Ordering::Relaxed) {
+        let request = state
+            .orders_realtime_requests
+            .fetch_add(1, Ordering::Relaxed);
+        let mut orders = load_test_data("http_get_orders_realtime.json");
+        let list = orders["result"]["list"].as_array_mut().unwrap();
+        list.retain(|order| {
+            query
+                .get("orderId")
+                .is_some_and(|id| order["orderId"] == *id)
+        });
+
+        if request > 0 {
+            for order in list {
+                order["orderStatus"] = json!("Cancelled");
+                order["cancelType"] = json!("CancelByUser");
+                order["updatedTime"] = json!("1761355906606");
+                if state.cancel_all_partial_fills.load(Ordering::Relaxed) {
+                    order["orderStatus"] = json!("PartiallyFilledCanceled");
+                    order["cumExecQty"] = json!(if order["orderId"] == "open-order-1" {
+                        "0.003"
+                    } else {
+                        "0.004"
+                    });
+                    order["avgPrice"] = order["price"].clone();
+                }
+            }
+        }
+
+        return Json(orders).into_response();
     }
 
     if state.empty_orders_realtime.load(Ordering::Relaxed) {
@@ -741,7 +791,7 @@ fn create_test_router(state: TestServerState) -> Router {
         .route("/v5/account/wallet-balance", get(handle_get_wallet_balance))
         .route("/v5/position/list", get(handle_get_positions))
         .route("/v5/order/realtime", get(handle_get_orders_realtime))
-        .route("/v5/order/history", get(handle_get_empty_report_list))
+        .route("/v5/order/history", get(handle_get_orders_history))
         .route("/v5/execution/list", get(handle_get_empty_report_list))
         .route("/v5/order/create", post(handle_post_order))
         .route("/v5/order/cancel", post(handle_cancel_order))
@@ -753,6 +803,31 @@ fn create_test_router(state: TestServerState) -> Router {
         .route("/v5/private", get(handle_private_websocket))
         .route("/v5/trade", get(handle_trade_websocket))
         .with_state(state)
+}
+
+async fn handle_get_orders_history(
+    State(state): State<TestServerState>,
+    headers: HeaderMap,
+) -> axum::response::Response {
+    if !state.cancel_all_history.load(Ordering::Relaxed) || !has_auth_headers(&headers) {
+        return handle_get_empty_report_list(headers).await.into_response();
+    }
+
+    let mut orders = load_test_data("http_get_orders_realtime.json");
+    let list = orders["result"]["list"].as_array_mut().unwrap();
+
+    for order in list.iter_mut() {
+        order["orderStatus"] = json!("Cancelled");
+        order["cancelType"] = json!("CancelByUser");
+        order["updatedTime"] = json!("1761355906606");
+    }
+
+    list[0]["orderLinkId"] = json!("");
+    let mut unrelated = list[1].clone();
+    unrelated["orderId"] = json!("unrelated-order");
+    unrelated["orderLinkId"] = json!("unrelated-client");
+    list.insert(0, unrelated);
+    Json(orders).into_response()
 }
 
 async fn start_test_server()
@@ -2169,6 +2244,151 @@ async fn test_exec_client_demo_sided_cancel_all_with_empty_cache_sends_nothing()
     );
     assert!(rx.try_recv().is_err());
 
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::demo(BybitEnvironment::Demo, false, false)]
+#[case::mainnet(BybitEnvironment::Mainnet, false, false)]
+#[case::demo_partial_fill(BybitEnvironment::Demo, true, false)]
+#[case::mainnet_partial_fill(BybitEnvironment::Mainnet, true, false)]
+#[case::demo_history(BybitEnvironment::Demo, false, true)]
+#[case::mainnet_history(BybitEnvironment::Mainnet, false, true)]
+#[tokio::test]
+async fn test_exec_client_cancel_all_confirms_cancellations(
+    #[case] environment: BybitEnvironment,
+    #[case] partial_fill: bool,
+    #[case] history: bool,
+) {
+    let (addr, state) = start_test_server().await.unwrap();
+    let mut config = create_test_exec_config(addr);
+    config.environment = environment;
+    config.retry_delay_initial_ms = 10;
+    let (mut client, mut rx, cache) = create_test_execution_client_with_config(config);
+    let account_id = AccountId::from("BYBIT-001");
+    add_test_account_to_cache(&cache, account_id);
+    client.connect().await.unwrap();
+    client.start().unwrap();
+    drain_execution_events(&mut rx).await;
+
+    let instrument_id = InstrumentId::from("ETHUSDT-LINEAR.BYBIT");
+
+    for (index, side) in [OrderSide::Buy, OrderSide::Sell].into_iter().enumerate() {
+        let client_order_id = ClientOrderId::from(format!("client-open-{}", index + 1));
+        let venue_order_id = VenueOrderId::from(format!("open-order-{}", index + 1));
+        let mut builder = OrderTestBuilder::new(OrderType::Limit);
+        let order = builder
+            .instrument_id(instrument_id)
+            .client_order_id(client_order_id)
+            .strategy_id(StrategyId::from(format!("S-{}", index + 1)))
+            .side(side)
+            .quantity(Quantity::from("0.01"))
+            .price(Price::from("3930.41"))
+            .build();
+        let accepted = TestOrderEventStubs::accepted(&order, account_id, venue_order_id);
+        cache
+            .borrow_mut()
+            .add_order(order, None, Some(*BYBIT_CLIENT_ID), false)
+            .unwrap();
+        cache.borrow_mut().update_order(&accepted).unwrap();
+    }
+
+    state.orders_realtime_requests.store(0, Ordering::Relaxed);
+    state
+        .cancel_all_delayed_reports
+        .store(true, Ordering::Relaxed);
+    state
+        .cancel_all_partial_fills
+        .store(partial_fill, Ordering::Relaxed);
+    state.cancel_all_history.store(history, Ordering::Relaxed);
+    client
+        .cancel_all_orders(CancelAllOrders::new(
+            TraderId::from("TESTER-001"),
+            Some(*BYBIT_CLIENT_ID),
+            StrategyId::from("S-1"),
+            instrument_id,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+
+    let mut canceled = Vec::new();
+
+    for _ in 0..2 {
+        let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .expect("timed out waiting for order cancellation")
+            .expect("channel closed");
+
+        match event {
+            ExecutionEvent::Order(OrderEventAny::Canceled(event)) => canceled.push(event),
+            event => panic!("expected OrderCanceled, was {event:?}"),
+        }
+    }
+
+    canceled.sort_by_key(|event| event.client_order_id);
+
+    for (index, event) in canceled.iter().enumerate() {
+        let client_order_id = ClientOrderId::from(format!("client-open-{}", index + 1));
+
+        let expected = OrderCanceled::new(
+            TraderId::from("TESTER-001"),
+            StrategyId::from(format!("S-{}", index + 1)),
+            instrument_id,
+            client_order_id,
+            event.event_id,
+            UnixNanos::from(1_761_355_906_606_000_000),
+            event.ts_init,
+            false,
+            Some(VenueOrderId::from(format!("open-order-{}", index + 1))),
+            Some(account_id),
+            None,
+        );
+
+        assert_eq!(*event, expected);
+        cache
+            .borrow_mut()
+            .update_order(&OrderEventAny::Canceled(*event))
+            .unwrap();
+
+        if partial_fill {
+            let order = cache.borrow().order(&client_order_id).unwrap().clone();
+            let mut instrument = crypto_perpetual_ethusdt();
+            instrument.id = instrument_id;
+            let trade_id = TradeId::from(format!("native-fill-{}", index + 1));
+            let quantity = Quantity::from(if index == 0 { "0.003" } else { "0.004" });
+            let filled = TestOrderEventStubs::filled(
+                &order,
+                &instrument.into(),
+                Some(trade_id),
+                None,
+                Some(Price::from(if index == 0 { "3930.41" } else { "3940.42" })),
+                Some(quantity),
+                None,
+                None,
+                None,
+                Some(account_id),
+            );
+            cache.borrow_mut().update_order(&filled).unwrap();
+            let cache = cache.borrow();
+            let order = cache.order(&client_order_id).unwrap();
+
+            assert_eq!(order.status(), OrderStatus::Canceled);
+            assert_eq!(order.filled_qty(), quantity);
+            assert_eq!(order.trade_ids(), vec![&trade_id]);
+            assert_eq!(order.strategy_id(), expected.strategy_id);
+        }
+    }
+
+    assert_eq!(state.cancel_all_requests.load(Ordering::Relaxed), 1);
+    assert_eq!(
+        state.orders_realtime_requests.load(Ordering::Relaxed),
+        if history { 0 } else { 3 }
+    );
+    assert!(rx.try_recv().is_err());
     client.disconnect().await.unwrap();
 }
 

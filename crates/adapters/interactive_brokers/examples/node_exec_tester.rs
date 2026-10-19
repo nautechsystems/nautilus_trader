@@ -97,6 +97,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Err(e) if run => return Err(e.into()),
         Err(_) => "U1234567".to_string(),
     };
+
     let trader_id = TraderId::from(TRADER_ID);
     let instrument_id = active_future::es_future_instrument_id();
     let market_data_type = parse_market_data_type(
@@ -126,6 +127,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         instrument_provider: instrument_provider_config(instrument_id),
         ..Default::default()
     };
+
     let exec_engine_config = LiveExecutionEngineConfig {
         open_check_interval_secs: Some(10.0),
         position_check_interval_secs: Some(30.0),
@@ -160,6 +162,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     node.add_strategy(ExecTester::new(tester_config))?;
+
     if !run {
         println!("Built Interactive Brokers exec tester node. Set NAUTILUS_IB_RUN=1 to connect.");
         return Ok(());
