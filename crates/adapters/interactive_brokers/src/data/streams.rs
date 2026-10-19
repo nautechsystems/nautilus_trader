@@ -4616,6 +4616,7 @@ mod tests {
         now: UnixNanos,
     ) -> Vec<Bar> {
         let mut published = Vec::new();
+
         for bar in batch {
             super::dispatch_historical_bar(state, handle_revised_bars, now, *bar, |bar| {
                 published.push(bar);
